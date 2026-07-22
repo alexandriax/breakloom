@@ -50,6 +50,11 @@ type VehicleMotionState = {
   brake: boolean;
 };
 
+function isMobileRenderer() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0 || window.innerWidth <= 820;
+}
+
 const OCEAN_VERTEX = /* glsl */ `
   uniform float uTime;
   uniform float uHeight;
@@ -57,38 +62,108 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uCurrent;
   uniform float uDirection;
   uniform float uTide;
+  uniform float uWind;
   varying float vHeight;
   varying float vCrest;
+  varying float vBreaker;
+  varying float vChop;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
 
-  float wave(vec2 p, float frequency, float speed, vec2 direction, float phase) {
-    return sin(dot(p, direction) * frequency + uTime * speed + phase);
+  const float PI = 3.14159265359;
+
+  float setEnvelope() {
+    float cycle = max(18.0, uPeriod * 3.1);
+    float phase = mod(uTime, cycle);
+    float angle = ((phase - cycle * .38) / cycle) * PI * 2.0;
+    return .12 + pow(max(0.0, cos(angle) * .5 + .5), 3.2) * .88;
+  }
+
+  float gerstner(
+    inout vec3 point,
+    vec2 origin,
+    vec2 direction,
+    float wavelength,
+    float amplitude,
+    float steepness,
+    float phaseSpeed,
+    float phaseOffset
+  ) {
+    float waveNumber = PI * 2.0 / wavelength;
+    float phase = dot(origin, direction) * waveNumber + uTime * phaseSpeed + phaseOffset;
+    float sine = sin(phase);
+    float cosine = cos(phase);
+    float horizontal = steepness * amplitude;
+    point.x += direction.x * horizontal * cosine;
+    point.y += direction.y * horizontal * cosine;
+    point.z += amplitude * sine;
+    return sine;
   }
 
   void main() {
+    vec2 origin = position.xy;
     vec3 p = position;
-    float speed = 6.2831853 / max(4.0, uPeriod);
+    float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
     float angle = radians(uDirection);
     vec2 currentDir = vec2(cos(angle), sin(angle));
-    float curve = sin(angle) * 0.0019 * p.x * p.x;
-    float shore = 0.76 + smoothstep(-85.0, 8.0, p.y) * 0.72;
-    float primary = sin(p.y * 0.19 + p.x * 0.018 + curve + uTime * speed * 5.4);
-    float secondary = wave(p.xy, 0.31, speed * 7.1, normalize(vec2(-0.16, 1.0)), 1.7);
-    float cross = wave(p.xy, 0.13, -speed * 2.7, normalize(vec2(1.0, 0.68) + currentDir * .15), 0.0);
-    float micro = sin(p.x * .75 + p.y * .32 + uTime * 2.4) * .035;
-    float setCycle = max(18.0, uPeriod * 3.1);
-    float setPhase = mod(uTime, setCycle);
-    float setAngle = ((setPhase - setCycle * .38) / setCycle) * 6.2831853;
-    float setEnergy = .12 + pow(max(0.0, cos(setAngle) * .5 + .5), 3.2) * .88;
+    float curve = sin(angle) * .0019 * origin.x * origin.x;
+    vec2 curvedOrigin = vec2(origin.x, origin.y + curve);
+    float shore = .72 + smoothstep(-85.0, 8.0, origin.y) * .78;
+    float shallowCompression = mix(1.0, .76, smoothstep(-32.0, 9.0, origin.y));
+    float setEnergy = setEnvelope();
     float setLift = .78 + setEnergy * .34;
-    float elevation = uTide * .3 + max(.12, uHeight * .62) * (
-      primary * .64 * shore * setLift + secondary * .22 + cross * .11
-    ) + micro * (1.0 + uCurrent * .15);
-    p.z += elevation;
-    vHeight = elevation;
+    float amplitude = max(.12, uHeight * .62);
+    float windChop = clamp(uWind / 24.0, .12, 1.45);
+    float currentBend = clamp(uCurrent / 4.0, 0.0, 1.0);
+
+    float primary = gerstner(
+      p,
+      curvedOrigin,
+      normalize(vec2(.095 + currentDir.x * .035, 1.0)),
+      33.0 * shallowCompression,
+      amplitude * .64 * shore * setLift,
+      .78,
+      angularSpeed * 5.4,
+      0.0
+    );
+    float secondary = gerstner(
+      p,
+      origin,
+      normalize(vec2(-.16, 1.0)),
+      20.3,
+      amplitude * .22,
+      .58,
+      angularSpeed * 7.1,
+      1.7
+    );
+    float crossSwell = gerstner(
+      p,
+      origin,
+      normalize(vec2(1.0, .68) + currentDir * (.12 + currentBend * .12)),
+      47.5,
+      amplitude * .11,
+      .42,
+      -angularSpeed * 2.7,
+      0.0
+    );
+    float windWave = gerstner(
+      p,
+      origin,
+      normalize(vec2(-.72, .69)),
+      mix(8.5, 5.4, windChop / 1.45),
+      .035 + windChop * .065,
+      .34,
+      1.7 + windChop * 1.2,
+      2.4
+    );
+    float capillary = sin(origin.x * 1.35 + origin.y * .78 + uTime * (2.2 + windChop)) * (.018 + windChop * .018);
+    p.z += uTide * .3 + capillary;
+
+    vHeight = p.z;
     vCrest = primary * shore;
-    vSurface = p.xy;
+    vBreaker = smoothstep(-18.0, 12.0, origin.y) * smoothstep(.48, .96, primary * .5 + .5) * setLift;
+    vChop = abs(secondary) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
+    vSurface = origin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
@@ -100,8 +175,13 @@ const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uHeight;
   uniform float uLight;
   uniform float uCloud;
+  uniform float uWind;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
   varying float vHeight;
   varying float vCrest;
+  varying float vBreaker;
+  varying float vChop;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
 
@@ -109,35 +189,81 @@ const OCEAN_FRAGMENT = /* glsl */ `
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
   }
 
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
   void main() {
     float depth = smoothstep(14.0, -90.0, vSurface.y);
-    vec3 deep = mix(vec3(.018, .16, .20), vec3(.006, .055, .105), depth);
-    vec3 shallow = vec3(.055, .46, .46);
-    float translucence = smoothstep(-.5, .8, vHeight) * (1.0 - depth) * .45;
-    vec3 color = mix(deep, shallow, translucence);
+    vec3 abyss = vec3(.004, .032, .071);
+    vec3 offshore = vec3(.012, .115, .155);
+    vec3 lagoon = vec3(.045, .39, .38);
+    vec3 deep = mix(offshore, abyss, depth);
+    float crestLight = smoothstep(-.2, .95, vHeight) * (1.0 - depth);
+    vec3 color = mix(deep, lagoon, crestLight * .48);
     vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
+    float wind = clamp(uWind / 24.0, .0, 1.45);
+    vec2 microFlow = vec2(
+      sin(vSurface.x * 1.72 + vSurface.y * .63 + uTime * (1.7 + wind)),
+      cos(vSurface.x * .91 - vSurface.y * 1.38 - uTime * (1.35 + wind * .7))
+    );
+    surfaceNormal = normalize(surfaceNormal + vec3(microFlow.x, 0.0, microFlow.y) * (.018 + wind * .024));
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    float fresnel = pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 3.0);
-    color = mix(color, vec3(.21, .55, .62), fresnel * (.22 + uLight * .18));
-    float ripple = sin(vSurface.x * 1.7 + vSurface.y * .9 + uTime * 1.8) * .5 + .5;
-    float glint = pow(max(0.0, ripple * (vHeight + .48)), 4.0) * (.2 + uLight * .45);
-    color += vec3(.38, .82, .81) * glint;
-    float edgeSparkle = pow(max(0.0, dot(reflect(-viewDirection, surfaceNormal), normalize(vec3(-.3, .8, -.45)))), 48.0);
-    color += vec3(.82, .96, .91) * edgeSparkle * (.18 + uLight * .72);
-    float crestGate = smoothstep(.69, .94, vCrest) * smoothstep(.35, 1.2, uHeight);
-    float foamNoise = hash(floor(vSurface * vec2(.42, .16) + uTime * vec2(1.4, .1)));
-    float shoreFoam = smoothstep(5.5, 10.5, vSurface.y) * (.45 + .55 * sin(vSurface.x * .2 + uTime * 1.7));
-    float foam = max(crestGate * smoothstep(.18, .8, foamNoise), shoreFoam * .42);
-    color = mix(color, vec3(.84, .98, .95), clamp(foam, 0.0, .86));
-    color = mix(color, vec3(.025, .055, .09), uCloud * .22);
+    float fresnel = .028 + .972 * pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 5.0);
+    vec3 horizonReflection = mix(vec3(.11, .31, .39), vec3(.42, .67, .69), uLight);
+    horizonReflection = mix(horizonReflection, vec3(.09, .13, .17), uCloud * .55);
+    color = mix(color, horizonReflection, fresnel * (.38 + uLight * .28));
+
+    vec3 reflectedSun = reflect(-normalize(uSunDirection), surfaceNormal);
+    float sunGlint = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(62.0, 150.0, 1.0 - wind * .45));
+    float brokenGlint = noise(vSurface * vec2(1.8, .72) + vec2(uTime * .3, -uTime * .11));
+    sunGlint *= smoothstep(.18, .88, brokenGlint) * (1.0 + vChop * .6);
+    color += uSunColor * sunGlint * (1.1 + uLight * 3.2);
+
+    float forwardScatter = pow(max(0.0, dot(viewDirection, -normalize(uSunDirection))), 3.0);
+    color += vec3(.05, .52, .43) * crestLight * forwardScatter * (.18 + uLight * .34);
+
+    float crestGate = smoothstep(.66, 1.08, vCrest) * smoothstep(.35, 1.2, uHeight);
+    float foamBase = noise(vSurface * vec2(.35, .12) + vec2(uTime * .48, -uTime * .08));
+    float foamDetail = noise(vSurface * vec2(1.18, .48) + vec2(-uTime * .74, uTime * .12));
+    float breakerFoam = vBreaker * smoothstep(.26, .72, foamBase) * (.62 + foamDetail * .55);
+    float crestFoam = crestGate * smoothstep(.17, .76, foamDetail);
+    float shorePulse = sin(vSurface.x * .2 + uTime * 1.7 + noise(vSurface * .08) * 4.0) * .5 + .5;
+    float shoreFoam = smoothstep(4.2, 10.5, vSurface.y) * smoothstep(.27, .72, shorePulse) * .64;
+    float foam = clamp(max(max(crestFoam, breakerFoam), shoreFoam), 0.0, .94);
+    vec3 foamColor = mix(vec3(.63, .88, .84), vec3(.91, 1.0, .97), uLight);
+    color = mix(color, foamColor, foam);
+    color = mix(color, vec3(.018, .041, .065), uCloud * .2);
+    color *= .91 + noise(vSurface * 3.1 + uTime * .08) * .09;
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
-function Ocean({ settings, light, cloudCover }: { settings: SessionSettings; light: number; cloudCover: number }) {
+function Ocean({
+  settings,
+  light,
+  cloudCover,
+  windSpeed,
+  sunPosition,
+  sunColor,
+}: {
+  settings: SessionSettings;
+  light: number;
+  cloudCover: number;
+  windSpeed: number;
+  sunPosition: [number, number, number];
+  sunColor: string;
+}) {
   const material = useRef<THREE.ShaderMaterial>(null);
-  const segments = useMemo(() => (window.innerWidth < 800 ? 76 : 132), []);
+  const segments = useMemo(() => (isMobileRenderer() ? 54 : 132), []);
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -148,6 +274,9 @@ function Ocean({ settings, light, cloudCover }: { settings: SessionSettings; lig
       uTide: { value: 0 },
       uLight: { value: 1 },
       uCloud: { value: 0 },
+      uWind: { value: 0 },
+      uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
+      uSunColor: { value: new THREE.Color("#fff0ca") },
     }),
     [],
   );
@@ -163,10 +292,13 @@ function Ocean({ settings, light, cloudCover }: { settings: SessionSettings; lig
     values.uTide.value = settings.tide;
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
+    values.uWind.value = windSpeed;
+    values.uSunDirection.value.set(...sunPosition).normalize();
+    values.uSunColor.value.set(sunColor);
   });
 
   return (
-    <mesh position={[0, -0.08, -105]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+    <mesh position={[0, -0.08, -157]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[250, 330, segments, segments]} />
       <shaderMaterial
         ref={material}
@@ -314,7 +446,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
 
     board.current.rotation.z = THREE.MathUtils.damp(
       board.current.rotation.z,
-      shore ? -0.46 : riding ? state.steer * -0.13 - state.maneuverSide * state.maneuver * 0.22 : 0,
+      shore ? -0.12 : riding ? state.steer * -0.13 - state.maneuverSide * state.maneuver * 0.22 : 0,
       7,
       delta,
     );
@@ -324,11 +456,11 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       9,
       delta,
     );
-    board.current.position.x = THREE.MathUtils.damp(board.current.position.x, shore ? 0.55 : 0, 7, delta);
-    board.current.position.y = THREE.MathUtils.damp(board.current.position.y, shore ? 0.72 : 0.16, 7, delta);
+    board.current.position.x = THREE.MathUtils.damp(board.current.position.x, shore ? 0.68 : 0, 7, delta);
+    board.current.position.y = THREE.MathUtils.damp(board.current.position.y, shore ? 1.14 : 0.16, 7, delta);
     board.current.rotation.x = THREE.MathUtils.damp(
       board.current.rotation.x,
-      shore ? 0.14 : riding ? state.stance * -0.035 + state.barrel * 0.025 : 0,
+      shore ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.035 + state.barrel * 0.025 : 0,
       7,
       delta,
     );
@@ -340,11 +472,11 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
   return (
     <group ref={rig}>
       <group ref={board} position={[0, 0.16, 0]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]} scale={[1, 0.13, 1]} castShadow>
+        <mesh rotation={[Math.PI / 2, 0, 0]} scale={[1, 1, 0.13]} castShadow>
           <capsuleGeometry args={[boardSpec.width, boardSpec.length, 8, 24]} />
           <meshPhysicalMaterial color={boardSpec.color} roughness={0.26} clearcoat={0.86} clearcoatRoughness={0.13} />
         </mesh>
-        <mesh position={[0, 0.06, -0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.76, 0.14, 0.72]}>
+        <mesh position={[0, 0.06, -0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.76, 0.72, 0.14]}>
           <capsuleGeometry args={[boardSpec.width * 0.86, boardSpec.length * 0.86, 5, 20]} />
           <meshStandardMaterial color={boardSpec.accent} roughness={0.58} />
         </mesh>
@@ -992,7 +1124,7 @@ function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
         {(["performance", "fish", "longboard"] as BoardType[]).map((boardType, index) => {
           const rackBoard = BOARD_SPECS[boardType];
           return (
-            <group key={boardType} position={[-0.72 + index * 0.72, 2.66 + index * 0.055, 0.74 - index * 0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 0.1, 0.92]}>
+            <group key={boardType} position={[-0.72 + index * 0.72, 2.66 + index * 0.055, 0.74 - index * 0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 0.92, 0.1]}>
               <mesh castShadow>
                 <capsuleGeometry args={[rackBoard.width, rackBoard.length, 6, 20]} />
                 <meshPhysicalMaterial color={rackBoard.color} roughness={0.29} clearcoat={0.76} clearcoatRoughness={0.16} />
@@ -1033,6 +1165,7 @@ function Simulation({
 }: SurfSceneProps) {
   const { camera } = useThree();
   const boardSpec = BOARD_SPECS[settings.board];
+  const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const player = useRef<THREE.Group>(null);
   const van = useRef<THREE.Group>(null);
   const position = useRef(new THREE.Vector3(0, 0, 35));
@@ -1097,6 +1230,7 @@ function Simulation({
     let prompt = "Read the water";
     let waveQuality = 0;
     let barrelIntensity = 0;
+    let catchReady = false;
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
@@ -1111,7 +1245,7 @@ function Simulation({
         position.current.z -= speed * delta;
         position.current.x += steer * 3.7 * delta;
         prompt = nearVan
-          ? "Press SPACE to drive the Surfscape van"
+          ? "DRIVE / SPACE to enter the Surfscape van"
           : position.current.z > 54
             ? "The van is parked beside the coast road"
             : cleanFinish.current
@@ -1187,8 +1321,9 @@ function Simulation({
         position.current.z -= speed * delta;
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
         const ready = position.current.z < -18;
+        catchReady = ready;
         const setCopy = setState.secondsToPeak === 0 ? "Set is here" : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
-        prompt = ready ? `${setCopy} · SPACE to catch` : "Paddle beyond the break";
+        prompt = ready ? `${setCopy} · CATCH / SPACE` : "Paddle beyond the break";
         if (settings.mode === "training" && position.current.z < -34) prompt = `${setCopy} · timing assist active`;
         if (actionPressed && ready) {
           phase.current = "riding";
@@ -1285,7 +1420,7 @@ function Simulation({
           : inBarrel
             ? `Locked in the barrel · ${barrelTime.current.toFixed(1)}s`
           : steer
-            ? "Hold the rail · SPACE to release a turn"
+            ? "Hold the rail · TRICK / SPACE to release a turn"
             : pumping
               ? "Move toward the nose · pumping for speed"
               : state.back
@@ -1428,6 +1563,7 @@ function Simulation({
         rideResultId: rideResultId.current,
         vehicleMode: phase.current === "driving",
         nearVan,
+        catchReady,
         prompt,
       });
     }
@@ -1467,6 +1603,7 @@ function Simulation({
   const atmosphereBoost = coastBiome === "desert" ? 2.2 : coastBiome === "urban" ? 0.9 : coastBiome === "cold" ? 1.4 : 0;
   const backgroundColor = sunHeight < 0.08 ? "#07101e" : sunHeight < 0.3 ? "#c66f5d" : daylightSky[coastBiome];
   const fogColor = sunHeight < 0.08 ? "#07101e" : daylightFog[coastBiome];
+  const sunLightColor = sunHeight < 0.3 ? "#ff9f72" : "#fff0ca";
 
   return (
     <>
@@ -1487,8 +1624,8 @@ function Simulation({
       <directionalLight
         position={[sunX * 0.22, Math.max(6, sunHeight * 44), -30]}
         intensity={0.45 + light * 2.2}
-        color={sunHeight < 0.3 ? "#ff9f72" : "#fff0ca"}
-        castShadow={window.innerWidth > 800}
+        color={sunLightColor}
+        castShadow={!mobileRenderer}
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
         shadow-camera-far={100}
@@ -1497,7 +1634,14 @@ function Simulation({
         shadow-camera-top={35}
         shadow-camera-bottom={-35}
       />
-      <Ocean settings={settings} light={light} cloudCover={cloudCover} />
+      <Ocean
+        settings={settings}
+        light={light}
+        cloudCover={cloudCover}
+        windSpeed={windSpeed}
+        sunPosition={[sunX * 0.22, Math.max(6, sunHeight * 44), -30]}
+        sunColor={sunLightColor}
+      />
       <BeachLife beach={beach} windSpeed={windSpeed} />
       <group ref={player}>
         <WaterInteraction motion={motion} />
@@ -1517,11 +1661,12 @@ function Simulation({
 }
 
 export default function SurfScene(props: SurfSceneProps) {
+  const mobileRenderer = isMobileRenderer();
   return (
     <Canvas
       className="surf-canvas"
-      shadows
-      dpr={[1, 1.65]}
+      shadows={mobileRenderer ? false : "percentage"}
+      dpr={[1, mobileRenderer ? 1.2 : 1.65]}
       camera={{ position: [0, 4.8, 44], fov: 58, near: 0.08, far: 650 }}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping }}
       onCreated={({ gl }) => {

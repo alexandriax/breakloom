@@ -199,6 +199,13 @@ export default function SurfscapeApp() {
   }, [beach, latitude, longitude]);
 
   useEffect(() => {
+    const releaseAllControls = () => {
+      controls.current.forward = false;
+      controls.current.back = false;
+      controls.current.left = false;
+      controls.current.right = false;
+      controls.current.action = false;
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (screen !== "game") return;
       const key = event.key.toLowerCase();
@@ -223,10 +230,30 @@ export default function SurfscapeApp() {
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
     return () => {
+      releaseAllControls();
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
   }, [screen]);
+
+  useEffect(() => {
+    const releaseAllControls = () => {
+      controls.current.forward = false;
+      controls.current.back = false;
+      controls.current.left = false;
+      controls.current.right = false;
+      controls.current.action = false;
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") releaseAllControls();
+    };
+    window.addEventListener("blur", releaseAllControls);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("blur", releaseAllControls);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     const from = previousPhase.current;
@@ -325,6 +352,32 @@ export default function SurfscapeApp() {
     controls.current[name] = value;
   };
 
+  const beginControl = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">,
+  ) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setControl(name, true);
+    if (name === "action" && typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(9);
+  };
+
+  const endControl = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">,
+  ) => {
+    event.preventDefault();
+    setControl(name, false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const endMobileAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setControl("forward", false);
+    setControl("action", false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const updateBalance = (event: ReactPointerEvent<HTMLElement>) => {
     if (screen !== "game" || paused) return;
     if (event.pointerType === "mouse" && event.buttons === 0) {
@@ -333,7 +386,10 @@ export default function SurfscapeApp() {
   };
 
   const updateTouchBalance = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    if (event.type === "pointerdown" && !event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
     const bounds = event.currentTarget.getBoundingClientRect();
     controls.current.balance = THREEClamp(((event.clientX - bounds.left) / bounds.width - 0.5) * 2, -1, 1);
   };
@@ -361,6 +417,18 @@ export default function SurfscapeApp() {
     { label: "Reach 3× flow", done: stats.maxCombo >= 3 },
   ];
   const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
+  const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady;
+  const mobileActionLabel = stats.vehicleMode
+    ? "EXIT"
+    : stats.nearVan
+      ? "DRIVE"
+      : stats.phase === "riding"
+        ? "TRICK"
+        : stats.catchReady
+          ? "CATCH"
+          : stats.phase === "paddling"
+            ? "PADDLE"
+            : "MOVE";
 
   return (
     <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
@@ -689,16 +757,24 @@ export default function SurfscapeApp() {
 
           <div className="mobile-controls">
             <div className="dpad" aria-label="Movement controls">
-              <button className="up" aria-label="Forward" onPointerDown={() => setControl("forward", true)} onPointerUp={() => setControl("forward", false)} onPointerCancel={() => setControl("forward", false)}><ArrowRight /></button>
-              <button className="left" aria-label="Left" onPointerDown={() => setControl("left", true)} onPointerUp={() => setControl("left", false)} onPointerCancel={() => setControl("left", false)}><ArrowLeft /></button>
-              <button className="right" aria-label="Right" onPointerDown={() => setControl("right", true)} onPointerUp={() => setControl("right", false)} onPointerCancel={() => setControl("right", false)}><ArrowRight /></button>
-              <button className="down" aria-label="Back" onPointerDown={() => setControl("back", true)} onPointerUp={() => setControl("back", false)} onPointerCancel={() => setControl("back", false)}><ArrowRight /></button>
+              <button type="button" className="up" aria-label="Forward" onPointerDown={(event) => beginControl(event, "forward")} onPointerUp={(event) => endControl(event, "forward")} onPointerCancel={(event) => endControl(event, "forward")} onLostPointerCapture={() => setControl("forward", false)}><ArrowRight /></button>
+              <button type="button" className="left" aria-label="Left" onPointerDown={(event) => beginControl(event, "left")} onPointerUp={(event) => endControl(event, "left")} onPointerCancel={(event) => endControl(event, "left")} onLostPointerCapture={() => setControl("left", false)}><ArrowLeft /></button>
+              <button type="button" className="right" aria-label="Right" onPointerDown={(event) => beginControl(event, "right")} onPointerUp={(event) => endControl(event, "right")} onPointerCancel={(event) => endControl(event, "right")} onLostPointerCapture={() => setControl("right", false)}><ArrowRight /></button>
+              <button type="button" className="down" aria-label="Back" onPointerDown={(event) => beginControl(event, "back")} onPointerUp={(event) => endControl(event, "back")} onPointerCancel={(event) => endControl(event, "back")} onLostPointerCapture={() => setControl("back", false)}><ArrowRight /></button>
             </div>
-            <div className="touch-balance" onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
+            <div className="touch-balance" role="slider" aria-label="Balance" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round(stats.balance * 100)} tabIndex={0} onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
               <span>BALANCE</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
-            <button className="action-button" onPointerDown={() => setControl("action", true)} onPointerUp={() => setControl("action", false)} onPointerCancel={() => setControl("action", false)}>
-              <span>{stats.vehicleMode ? "EXIT" : stats.nearVan ? "DRIVE" : stats.phase === "riding" ? "TRICK" : "CATCH"}</span>
+            <button
+              type="button"
+              className={`action-button ${mobileActionIsContextual ? "is-contextual" : "is-propulsion"}`}
+              aria-label={mobileActionLabel}
+              onPointerDown={(event) => beginControl(event, mobileActionIsContextual ? "action" : "forward")}
+              onPointerUp={endMobileAction}
+              onPointerCancel={endMobileAction}
+              onLostPointerCapture={() => { setControl("forward", false); setControl("action", false); }}
+            >
+              <span>{mobileActionLabel}</span>
               {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" ? <Sparkles /> : <Waves />}
             </button>
           </div>

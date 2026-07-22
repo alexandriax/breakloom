@@ -102,6 +102,7 @@ export type GameStats = {
   rideResultId: number;
   vehicleMode: boolean;
   nearVan: boolean;
+  catchReady: boolean;
   prompt: string;
 };
 
@@ -133,6 +134,7 @@ export const INITIAL_STATS: GameStats = {
   rideResultId: 0,
   vehicleMode: false,
   nearVan: false,
+  catchReady: false,
   prompt: "Walk toward the water · or find the van",
 };
 

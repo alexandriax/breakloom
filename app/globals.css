@@ -1039,7 +1039,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .desktop-controls { flex-direction: column; align-items: flex-end; gap: 4px; }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px), (hover: none) and (pointer: coarse), (max-width: 960px) and (orientation: landscape) {
   body { overflow: hidden; }
   .surfscape.is-launch { overflow-y: auto; }
   .scene-layer::after { background: linear-gradient(180deg, rgba(3, 12, 18, 0.52), rgba(3, 12, 18, 0.88) 63%); }
@@ -1083,15 +1083,16 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .session-summary { display: none; }
   .launch-button { width: 100%; max-width: none; padding-left: 23px; }
 
-  .game-topbar { height: 64px; grid-template-columns: 1fr auto; padding: 0 14px; }
+  .game-topbar { height: calc(62px + env(safe-area-inset-top)); grid-template-columns: 1fr auto; padding: env(safe-area-inset-top) 14px 0; }
   .game-brand span { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .game-objective { position: absolute; top: 68px; left: 50%; width: calc(100vw - 80px); transform: translateX(-50%); }
-  .game-objective strong { padding: 7px 10px; background: rgba(3, 12, 17, 0.47); backdrop-filter: blur(7px); text-align: center; }
+  .game-objective { position: absolute; top: calc(66px + env(safe-area-inset-top)); left: 50%; width: calc(100vw - 54px); transform: translateX(-50%); }
+  .game-objective strong { padding: 6px 11px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(3, 12, 17, 0.58); backdrop-filter: blur(10px); text-align: center; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); }
   .game-actions button:first-child { display: none; }
-  .score-panel { top: 119px; right: 12px; width: 133px; padding: 9px 11px; }
-  .score-panel > strong { font-size: 26px; }
+  .game-actions button { width: 42px; height: 42px; border-radius: 50%; }
+  .score-panel { top: calc(112px + env(safe-area-inset-top)); right: 11px; width: 124px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.12); border-right: 2px solid var(--spot-accent); border-left: 0; background: linear-gradient(100deg, rgba(3, 13, 18, 0.3), rgba(3, 13, 18, 0.78)); border-radius: 3px; }
+  .score-panel > strong { font-size: 25px; }
   .score-panel > small { font-size: 6px; }
-  .set-panel { top: 119px; left: 12px; width: 142px; padding: 9px 10px 10px; }
+  .set-panel { top: calc(112px + env(safe-area-inset-top)); left: 11px; width: 124px; padding: 8px 10px 10px; border: 1px solid rgba(255, 255, 255, 0.12); border-left: 2px solid #71e1d3; background: linear-gradient(100deg, rgba(3, 13, 18, 0.78), rgba(3, 13, 18, 0.3)); border-radius: 3px; }
   .set-heading > div { font-size: 5px; }
   .set-heading strong { font-size: 12px; }
   .session-goals { display: none; }
@@ -1103,34 +1104,39 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .ride-grade strong { font-size: 28px; }
   .ride-recap-copy { padding: 9px 12px; }
   .ride-recap-copy > strong { font-size: 17px; }
-  .balance-instrument { width: calc(100vw - 46px); bottom: 158px; }
+  .balance-instrument { width: calc(100vw - 30px); bottom: calc(200px + env(safe-area-inset-bottom)); padding: 11px 13px; }
   .balance-label em { max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .stance-track > span { font-size: 4px; }
-  .vehicle-instrument { width: calc(100vw - 46px); min-height: 66px; bottom: 158px; padding: 7px 11px 7px 8px; }
+  .vehicle-instrument { width: calc(100vw - 30px); min-height: 66px; bottom: calc(200px + env(safe-area-inset-bottom)); padding: 7px 11px 7px 8px; }
   .vehicle-dial { width: 50px; height: 50px; }
   .vehicle-dial strong { font-size: 21px; }
   .vehicle-copy strong { font-size: 10px; }
   .vehicle-copy small { font-size: 6px; }
-  .game-conditions { left: 10px; right: 10px; bottom: 95px; overflow: hidden; }
+  .game-conditions { left: 10px; right: 10px; bottom: calc(122px + env(safe-area-inset-bottom)); overflow: hidden; border-radius: 3px; background: rgba(3, 13, 18, 0.68); }
   .game-conditions > div { min-width: 0; flex: 1; padding: 8px 6px; grid-template-columns: 14px 1fr; }
   .game-conditions > div:nth-child(3), .game-conditions > div:nth-child(5) { display: none; }
   .game-conditions svg { width: 11px; }
   .game-conditions strong { font-size: 8px; }
   .desktop-controls { display: none; }
-  .mobile-controls { position: absolute; left: 0; right: 0; bottom: 12px; display: grid; grid-template-columns: 96px 1fr 78px; align-items: end; gap: 15px; padding: 0 14px; }
-  .dpad { width: 96px; height: 70px; position: relative; }
-  .dpad button { position: absolute; width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 50%; background: rgba(3, 13, 18, 0.58); backdrop-filter: blur(8px); }
-  .dpad svg { width: 15px; }
-  .dpad .up { top: 0; left: 31px; transform: rotate(-90deg); }
-  .dpad .down { bottom: 0; left: 31px; transform: rotate(90deg); }
-  .dpad .left { bottom: 3px; left: 0; }
-  .dpad .right { bottom: 3px; right: 0; }
-  .touch-balance { height: 34px; position: relative; align-self: end; margin-bottom: 2px; border: 1px solid rgba(255, 255, 255, 0.21); background: rgba(3, 13, 18, 0.54); backdrop-filter: blur(8px); touch-action: none; }
-  .touch-balance::before { content: ""; position: absolute; top: 15px; left: 8px; right: 8px; height: 2px; background: linear-gradient(90deg, #ef664f, #6adca7 50%, #ef664f); opacity: 0.6; }
-  .touch-balance span { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 5px; letter-spacing: 0.13em; }
-  .touch-balance i { position: absolute; top: 10px; width: 4px; height: 14px; background: white; transform: translateX(-50%); box-shadow: 0 0 8px white; }
-  .action-button { width: 72px; height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid rgba(255, 255, 255, 0.46); border-radius: 50%; background: rgba(230, 96, 72, 0.68); backdrop-filter: blur(9px); font-size: 7px; font-weight: 900; letter-spacing: 0.1em; }
-  .action-button svg { width: 19px; }
+  .mobile-controls { position: absolute; left: 0; right: 0; bottom: max(10px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: 122px minmax(92px, 1fr) 86px; align-items: end; gap: 10px; padding: 0 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .dpad { width: 122px; height: 96px; position: relative; touch-action: none; }
+  .dpad button { position: absolute; width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.34); border-radius: 50%; background: radial-gradient(circle at 38% 30%, rgba(40, 73, 82, 0.82), rgba(3, 13, 18, 0.72)); box-shadow: 0 7px 22px rgba(0, 0, 0, 0.25), inset 0 1px rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); touch-action: none; }
+  .dpad button:active { transform: scale(0.92); border-color: var(--spot-accent); background: rgba(45, 141, 143, 0.72); }
+  .dpad svg { width: 18px; pointer-events: none; }
+  .dpad .up { top: 0; left: 38px; transform: rotate(-90deg); }
+  .dpad .up:active { transform: rotate(-90deg) scale(0.92); }
+  .dpad .down { bottom: 0; left: 38px; transform: rotate(90deg); }
+  .dpad .down:active { transform: rotate(90deg) scale(0.92); }
+  .dpad .left { top: 25px; left: 0; }
+  .dpad .right { top: 25px; right: 0; }
+  .touch-balance { height: 48px; position: relative; align-self: end; margin-bottom: 4px; border: 1px solid rgba(255, 255, 255, 0.27); border-radius: 24px; background: rgba(3, 13, 18, 0.68); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px rgba(255, 255, 255, 0.08); backdrop-filter: blur(10px); touch-action: none; overflow: hidden; }
+  .touch-balance::before { content: ""; position: absolute; top: 23px; left: 12px; right: 12px; height: 2px; background: linear-gradient(90deg, #ef664f, #6adca7 50%, #ef664f); opacity: 0.74; }
+  .touch-balance span { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.72); font-size: 5px; font-weight: 800; letter-spacing: 0.13em; }
+  .touch-balance i { position: absolute; top: 15px; width: 5px; height: 18px; border-radius: 4px; background: white; transform: translateX(-50%); box-shadow: 0 0 10px white; }
+  .action-button { width: 84px; height: 84px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid rgba(255, 255, 255, 0.56); border-radius: 50%; background: radial-gradient(circle at 38% 30%, rgba(255, 141, 107, 0.9), rgba(208, 67, 48, 0.82)); box-shadow: 0 12px 32px rgba(42, 10, 6, 0.36), inset 0 1px rgba(255, 255, 255, 0.24); backdrop-filter: blur(10px); font-size: 8px; font-weight: 900; letter-spacing: 0.11em; touch-action: none; }
+  .action-button.is-propulsion { border-color: rgba(181, 255, 247, 0.62); background: radial-gradient(circle at 38% 30%, rgba(89, 205, 200, 0.92), rgba(19, 92, 104, 0.86)); box-shadow: 0 12px 32px rgba(3, 31, 36, 0.38), inset 0 1px rgba(255, 255, 255, 0.22); }
+  .action-button:active { transform: scale(0.94); filter: brightness(1.12); }
+  .action-button svg { width: 21px; pointer-events: none; }
   .howto-card { max-height: calc(100dvh - 30px); overflow-y: auto; padding: 26px 20px; }
   .howto-card h2 { padding-right: 35px; }
   .howto-steps { grid-template-columns: 1fr; }
@@ -1139,6 +1145,34 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .howto-steps svg { width: 22px; }
   .howto-steps strong { margin: 8px 0 6px; }
   .launch-button.compact { width: 100%; }
+}
+
+@media (max-height: 560px) and (max-width: 960px) {
+  .game-topbar { height: 50px; padding: 0 12px; }
+  .game-brand > svg { width: 21px; }
+  .game-brand span { display: none; }
+  .game-actions button { width: 40px; height: 40px; }
+  .game-objective { top: 50px; width: calc(100vw - 260px); min-width: 270px; }
+  .game-objective strong { max-width: 100%; padding: 4px 9px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 9px; }
+  .score-panel, .set-panel { top: 78px; width: 114px; padding: 6px 8px; }
+  .score-panel > strong { display: inline-block; margin: 1px 0 3px; font-size: 21px; }
+  .score-panel > span { display: block; }
+  .score-panel > small, .set-panel .stamina-row { display: none; }
+  .set-meter { margin: 6px 0 3px; }
+  .maneuver-toast, .ride-recap { top: 126px; }
+  .game-conditions { display: none; }
+  .balance-instrument, .vehicle-instrument { bottom: calc(104px + env(safe-area-inset-bottom)); width: min(430px, calc(100vw - 270px)); }
+  .balance-instrument small, .vehicle-copy small { display: none; }
+  .mobile-controls { bottom: max(6px, env(safe-area-inset-bottom)); grid-template-columns: 114px minmax(120px, 1fr) 80px; gap: 12px; padding: 0 12px; }
+  .dpad { width: 114px; height: 84px; }
+  .dpad button { width: 44px; height: 44px; }
+  .dpad .up { left: 35px; }
+  .dpad .down { left: 35px; }
+  .dpad .left, .dpad .right { top: 20px; }
+  .touch-balance { height: 44px; margin-bottom: 2px; }
+  .touch-balance::before { top: 21px; }
+  .touch-balance i { top: 13px; }
+  .action-button { width: 78px; height: 78px; }
 }
 
 @media (max-height: 720px) and (min-width: 761px) {
