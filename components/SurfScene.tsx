@@ -61,6 +61,14 @@ type MotionState = {
   finish: number;
 };
 
+type ManeuverAttempt = {
+  name: string;
+  base: number;
+  side: number;
+  startedAt: number;
+  duration: number;
+};
+
 type VehicleMotionState = {
   speed: number;
   steer: number;
@@ -3327,8 +3335,10 @@ function Simulation({
   const maxCombo = useRef(1);
   const maneuver = useRef("");
   const maneuverScore = useRef(0);
+  const maneuverQuality = useRef(0);
   const maneuverId = useRef(0);
   const maneuverCount = useRef(0);
+  const activeManeuver = useRef<ManeuverAttempt | null>(null);
   const lastManeuverAt = useRef(-10);
   const catchQuality = useRef(0.5);
   const unstableFor = useRef(0);
@@ -3388,6 +3398,9 @@ function Simulation({
     let catchReady = false;
     let inLineup = false;
     let takeoffQuality = 0;
+    let maneuverProgress = 0;
+    let landingTarget = 0;
+    let landingWindow = 0;
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
@@ -3517,6 +3530,8 @@ function Simulation({
             rideResult.current = "";
             cleanFinish.current = false;
             finishAt.current = -1;
+            activeManeuver.current = null;
+            maneuverQuality.current = 0;
             motion.current.takeoff = 1;
             motion.current.impact = .58 + takeoffQuality * .42;
           } else if (t >= missedWaveUntil.current) {
@@ -3565,6 +3580,17 @@ function Simulation({
           stance.current * 0.07 +
           Math.sin(t * 8.2) * railSlip.current * .16 +
           Math.sign(steer) * railSlip.current * .1;
+        const attempt = activeManeuver.current;
+        if (attempt) {
+          maneuverProgress = THREE.MathUtils.clamp((t - attempt.startedAt) / attempt.duration, 0, 1);
+          const modeWindow = settings.mode === "training" ? .68 : settings.mode === "advanced" ? .38 : .52;
+          landingWindow = THREE.MathUtils.clamp(modeWindow * Math.sqrt(boardSpec.stability) + (mobileRenderer ? .08 : 0), .3, .82);
+          const landingDrift = attempt.side * (Math.sin(maneuverProgress * Math.PI) * .16 + maneuverProgress * .1);
+          landingTarget = THREE.MathUtils.clamp(balanceTarget + landingDrift, -1, 1);
+          balanceTarget = landingTarget;
+          motion.current.maneuver = Math.max(motion.current.maneuver, .12 + Math.sin(maneuverProgress * Math.PI) * .88);
+          motion.current.maneuverSide = attempt.side;
+        }
         const balanceError = Math.abs(state.balance - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82) * Math.sqrt(boardSpec.stability);
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
@@ -3595,7 +3621,34 @@ function Simulation({
           maxCombo.current = Math.max(maxCombo.current, combo.current);
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * delta;
         }
-        if (!finishing && actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94 && railSlip.current < .78) {
+        if (attempt && maneuverProgress >= 1) {
+          const landingError = Math.abs(state.balance - landingTarget);
+          const recoveryAssist = settings.mode === "training" ? 1.35 : mobileRenderer ? 1.12 : 1;
+          const landed = landingError <= landingWindow * recoveryAssist && railSlip.current < .88;
+          if (landed) {
+            const landingControl = THREE.MathUtils.clamp(1 - landingError / landingWindow, 0, 1);
+            const quality = THREE.MathUtils.clamp(.18 + landingControl * .72 + controlQuality * .1, 0, 1);
+            const points = Math.round(attempt.base * boardSpec.score * (.58 + controlQuality * .34 + quality * .48) * (0.88 + setState.energy * .28) * combo.current * (1 + barrelIntensity * .12));
+            score.current += points;
+            combo.current = Math.min(8, combo.current + .28 + quality * .48);
+            maxCombo.current = Math.max(maxCombo.current, combo.current);
+            maneuver.current = attempt.name;
+            maneuverScore.current = points;
+            maneuverQuality.current = quality;
+            maneuverCount.current += 1;
+            maneuverId.current += 1;
+            railSlip.current = Math.min(railSlip.current, .22 - quality * .12);
+            motion.current.impact = .72 + quality * .28;
+            motion.current.maneuver = 1;
+          } else {
+            maneuverQuality.current = 0;
+            unstableFor.current = 10;
+            railSlip.current = 1;
+            motion.current.impact = .62;
+          }
+          activeManeuver.current = null;
+        }
+        if (!finishing && !attempt && actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94 && railSlip.current < .78) {
           const rail = Math.abs(steer);
           let name = "High Line";
           let base = 150;
@@ -3621,22 +3674,29 @@ function Simulation({
             name = "Power Pump";
             base = 175;
           }
-          const points = Math.round(base * boardSpec.score * (0.62 + controlQuality * 0.48) * (0.88 + setState.energy * 0.28) * combo.current * (1 + barrelIntensity * 0.12));
-          score.current += points;
-          combo.current = Math.min(8, combo.current + 0.42 + controlQuality * 0.22);
-          maxCombo.current = Math.max(maxCombo.current, combo.current);
           stamina.current = Math.max(0, stamina.current - 8);
           maneuver.current = name;
-          maneuverScore.current = points;
-          maneuverCount.current += 1;
-          maneuverId.current += 1;
+          maneuverScore.current = 0;
+          maneuverQuality.current = 0;
           lastManeuverAt.current = t;
-          motion.current.maneuver = 1;
-          motion.current.maneuverSide = steer || (state.balance >= 0 ? 1 : -1);
-          motion.current.impact = 1;
+          const side = steer || (state.balance >= 0 ? 1 : -1);
+          const baseDuration = name === "Nose Ride" ? .86 : name === "Foam Floater" ? .76 : .66;
+          const timingScale = settings.mode === "training" ? 1.12 : settings.mode === "advanced" ? .94 : 1;
+          activeManeuver.current = {
+            name,
+            base,
+            side,
+            startedAt: t,
+            duration: baseDuration * timingScale + (mobileRenderer ? .08 : 0),
+          };
+          motion.current.maneuver = .16;
+          motion.current.maneuverSide = side;
+          motion.current.impact = .35;
         }
         prompt = finishing
           ? "Hold the exit — clean line"
+          : activeManeuver.current
+            ? `${activeManeuver.current.name} · reconnect with the landing marker`
           : actionPressed && railSlip.current >= .78
           ? "Fins released — reconnect the rail before the next move"
           : balanceError > failThreshold * 0.76
@@ -3661,8 +3721,9 @@ function Simulation({
           rideResultId.current += 1;
           combo.current = 1;
           railSlip.current = 1;
+          activeManeuver.current = null;
           motion.current.impact = .45;
-        } else if (!finishing && position.current.z > 11 + (character.length - 1) * 11) {
+        } else if (!finishing && !activeManeuver.current && position.current.z > 11 + (character.length - 1) * 11) {
           score.current += 750 + rideDistance.current * 11;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
@@ -3904,8 +3965,13 @@ function Simulation({
         nextSetSeconds: setState.secondsToPeak,
         maneuver: maneuver.current,
         maneuverScore: maneuverScore.current,
+        maneuverQuality: maneuverQuality.current,
         maneuverId: maneuverId.current,
         maneuverCount: maneuverCount.current,
+        maneuverActive: activeManeuver.current !== null,
+        maneuverProgress,
+        landingTarget,
+        landingWindow,
         maxCombo: Number(maxCombo.current.toFixed(1)),
         grade: sessionGrade(score.current, rideDistance.current, maneuverCount.current),
         rideScore: rideScore.current,

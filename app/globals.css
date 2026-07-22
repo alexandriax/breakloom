@@ -1047,6 +1047,10 @@ input:focus-visible {
 .maneuver-toast span { color: #71e1d3; font-size: 5px; font-weight: 900; letter-spacing: 0.18em; }
 .maneuver-toast strong { font-size: 12px; letter-spacing: 0.03em; }
 .maneuver-toast b { grid-row: 1 / 3; grid-column: 3; color: var(--spot-accent); font-family: Impact, sans-serif; font-size: 18px; letter-spacing: 0.06em; }
+.maneuver-toast.quality-stomped { border-color: rgba(190, 255, 224, .58); box-shadow: 0 14px 44px rgba(0, 0, 0, .3), inset 0 -2px #8ef3c7, 0 0 32px rgba(142, 243, 199, .1); }
+.maneuver-toast.quality-stomped > svg, .maneuver-toast.quality-stomped span { color: #baffdb; }
+.maneuver-toast.quality-recovered { border-color: rgba(242, 185, 117, .38); box-shadow: 0 14px 40px rgba(0, 0, 0, .28), inset 0 -2px #e9a968; }
+.maneuver-toast.quality-recovered > svg, .maneuver-toast.quality-recovered span { color: #f0bb7d; filter: drop-shadow(0 0 7px rgba(233, 169, 104, .56)); }
 
 .takeoff-toast { position: absolute; top: 105px; left: 50%; min-width: 218px; display: grid; grid-template-columns: 28px 1fr auto; grid-template-rows: auto auto; align-items: center; gap: 1px 9px; padding: 11px 15px 11px 11px; transform: translateX(-50%); border: 1px solid rgba(255, 196, 129, .36); background: rgba(3, 15, 21, .8); backdrop-filter: blur(11px); box-shadow: 0 14px 40px rgba(0, 0, 0, .28), inset 0 -2px #e9a968; animation: maneuver-pop 1.7s ease both; }
 .takeoff-toast.is-clean { border-color: rgba(157, 255, 238, .38); box-shadow: 0 14px 40px rgba(0, 0, 0, .28), inset 0 -2px #71e1d3; }
@@ -1097,6 +1101,11 @@ input:focus-visible {
   100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(0.98); }
 }
 
+@keyframes landing-zone-pulse {
+  from { opacity: .58; filter: saturate(.88); }
+  to { opacity: 1; filter: saturate(1.18); }
+}
+
 .balance-instrument {
   position: absolute;
   left: 50%;
@@ -1115,11 +1124,14 @@ input:focus-visible {
 .balance-label > span { display: flex; align-items: center; gap: 8px; }
 .balance-label em { padding: 3px 5px; border: 1px solid rgba(255, 255, 255, 0.14); color: var(--muted); font-size: 5px; font-style: normal; letter-spacing: 0.11em; transition: color 0.2s, border-color 0.2s, box-shadow 0.2s; }
 .balance-label em.is-barrel { border-color: rgba(113, 225, 211, 0.6); color: #b9fff6; box-shadow: inset 0 0 10px rgba(113, 225, 211, 0.12), 0 0 12px rgba(113, 225, 211, 0.1); }
+.balance-label em.is-landing { border-color: rgba(255, 200, 126, .7); color: #ffdca5; box-shadow: inset 0 0 12px rgba(235, 163, 86, .13), 0 0 13px rgba(235, 163, 86, .12); }
 .balance-label strong { color: var(--spot-accent); }
 .balance-track { position: relative; height: 6px; background: linear-gradient(90deg, #f2644e, #d9c16f 25%, #70dca8 50%, #d9c16f 75%, #f2644e); }
-.balance-track::after { content: ""; position: absolute; inset: 1px; background: rgba(3, 12, 17, 0.56); }
+.balance-track::after { content: ""; position: absolute; z-index: 0; inset: 1px; background: rgba(3, 12, 17, 0.56); }
+.landing-zone { position: absolute; z-index: 1; top: -4px; height: 14px; border: 1px solid rgba(255, 211, 146, .76); background: linear-gradient(90deg, rgba(225, 150, 72, .14), rgba(255, 226, 168, .42), rgba(225, 150, 72, .14)); box-shadow: 0 0 14px rgba(244, 186, 107, .34), inset 0 0 8px rgba(255, 231, 189, .22); animation: landing-zone-pulse .42s ease-in-out infinite alternate; }
 .balance-safe { position: absolute; z-index: 2; top: -6px; width: 18px; height: 18px; border: 1px solid var(--spot-accent); border-radius: 50%; transform: translateX(-50%); box-shadow: 0 0 16px var(--spot-accent); }
 .balance-track b { position: absolute; z-index: 3; top: -3px; width: 3px; height: 12px; background: white; transform: translateX(-50%); box-shadow: 0 0 5px white; }
+.balance-instrument.is-landing { border-color: rgba(240, 187, 119, .38); box-shadow: 0 18px 50px rgba(0, 0, 0, .33), inset 0 -2px rgba(233, 169, 104, .72); }
 .stance-track { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-top: 10px; }
 .stance-track > span { color: rgba(255, 255, 255, 0.42); font-size: 5px; letter-spacing: 0.09em; }
 .stance-track > i { position: relative; height: 2px; background: linear-gradient(90deg, var(--coral), rgba(255, 255, 255, 0.22) 50%, #71e1d3); }
@@ -1359,8 +1371,11 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .touch-balance::before { content: ""; position: absolute; top: 23px; left: 12px; right: 12px; height: 2px; background: linear-gradient(90deg, #ef664f, #6adca7 50%, #ef664f); opacity: 0.74; }
   .touch-balance span { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.72); font-size: 5px; font-weight: 800; letter-spacing: 0.13em; }
   .touch-balance i { position: absolute; top: 15px; width: 5px; height: 18px; border-radius: 4px; background: white; transform: translateX(-50%); box-shadow: 0 0 10px white; }
+  .touch-balance.is-landing { border-color: rgba(255, 210, 145, .7); box-shadow: 0 8px 24px rgba(0, 0, 0, .22), inset 0 0 19px rgba(233, 169, 104, .12), 0 0 15px rgba(233, 169, 104, .1); }
+  .touch-balance.is-landing span { color: #ffdca5; }
   .action-button { width: 100%; max-width: 84px; height: auto; aspect-ratio: 1; justify-self: end; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid rgba(255, 255, 255, 0.56); border-radius: 50%; background: radial-gradient(circle at 38% 30%, rgba(255, 141, 107, 0.9), rgba(208, 67, 48, 0.82)); box-shadow: 0 12px 32px rgba(42, 10, 6, 0.36), inset 0 1px rgba(255, 255, 255, 0.24); backdrop-filter: blur(10px); font-size: 8px; font-weight: 900; letter-spacing: 0.11em; touch-action: none; }
   .action-button.is-propulsion { border-color: rgba(181, 255, 247, 0.62); background: radial-gradient(circle at 38% 30%, rgba(89, 205, 200, 0.92), rgba(19, 92, 104, 0.86)); box-shadow: 0 12px 32px rgba(3, 31, 36, 0.38), inset 0 1px rgba(255, 255, 255, 0.22); }
+  .action-button.is-landing { border-color: rgba(255, 218, 166, .62); background: radial-gradient(circle at 38% 30%, rgba(112, 91, 69, .9), rgba(52, 45, 41, .88)); box-shadow: 0 12px 32px rgba(28, 19, 12, .34), inset 0 1px rgba(255, 255, 255, .18); }
   .action-button:active { transform: scale(0.94); filter: brightness(1.12); }
   .action-button svg { width: 21px; pointer-events: none; }
   .howto-card { max-height: calc(100dvh - 30px); overflow-y: auto; padding: 26px 20px; }

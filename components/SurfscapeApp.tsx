@@ -204,13 +204,14 @@ export default function SurfscapeApp() {
   const [sessionKey, setSessionKey] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
   const [recordsReady, setRecordsReady] = useState(false);
-  const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number } | null>(null);
+  const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
   const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
+  const previousManeuverActive = useRef(false);
   const previousRideResultId = useRef(0);
   const previousCatchReady = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
@@ -398,15 +399,20 @@ export default function SurfscapeApp() {
   }, [conditions.windSpeed, paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
+    if (stats.maneuverActive && !previousManeuverActive.current) haptic(8);
+    previousManeuverActive.current = stats.maneuverActive;
+  }, [stats.maneuverActive]);
+
+  useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
       previousManeuverId.current = stats.maneuverId;
-      setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore });
+      setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore, quality: stats.maneuverQuality });
       audio.current?.effect("turn");
-      haptic(12);
+      haptic(stats.maneuverQuality >= .82 ? [9, 16, 24] : 12);
       const timer = window.setTimeout(() => setManeuverToast(null), 1800);
       return () => window.clearTimeout(timer);
     }
-  }, [stats.maneuver, stats.maneuverId, stats.maneuverScore]);
+  }, [stats.maneuver, stats.maneuverId, stats.maneuverQuality, stats.maneuverScore]);
 
   useEffect(() => {
     const from = previousTakeoffPhase.current;
@@ -673,7 +679,7 @@ export default function SurfscapeApp() {
     : stats.nearVan
       ? "DRIVE"
       : stats.phase === "riding"
-        ? "TRICK"
+        ? stats.maneuverActive ? "BALANCE" : "TRICK"
         : stats.catchReady
           ? "CATCH"
           : stats.phase === "paddling"
@@ -685,6 +691,11 @@ export default function SurfscapeApp() {
     : 0;
   const cinemaBeat = rideToast?.result ?? (maneuverToast ? "maneuver" : takeoffToast ? "takeoff" : null);
   const cinemaBeatKey = rideToast?.id ?? maneuverToast?.id ?? (takeoffToast ? Math.round(takeoffToast.quality * 100) : 0);
+  const landingMin = Math.max(-1, stats.landingTarget - stats.landingWindow);
+  const landingMax = Math.min(1, stats.landingTarget + stats.landingWindow);
+  const landingLabel = maneuverToast
+    ? maneuverToast.quality >= .82 ? "STOMPED" : maneuverToast.quality >= .48 ? "LANDED" : "RECOVERED"
+    : "LANDED";
 
   return (
     <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
@@ -991,9 +1002,9 @@ export default function SurfscapeApp() {
           </div>
 
           {maneuverToast && !rideToast && (
-            <div className="maneuver-toast" key={maneuverToast.id}>
+            <div className={`maneuver-toast quality-${maneuverToast.quality >= .82 ? "stomped" : maneuverToast.quality >= .48 ? "clean" : "recovered"}`} key={maneuverToast.id}>
               <Sparkles />
-              <span>LANDED</span>
+              <span>{landingLabel} · {Math.round(maneuverToast.quality * 100)}%</span>
               <strong>{maneuverToast.name}</strong>
               <b>+{maneuverToast.points.toLocaleString()}</b>
             </div>
@@ -1019,12 +1030,13 @@ export default function SurfscapeApp() {
             </div>
           )}
 
-          <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""}`}>
+          <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""} ${stats.maneuverActive ? "is-landing" : ""}`}>
             <div className="balance-label">
-              <span>BALANCE <em className={stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : stanceLabel}</em></span>
+              <span>{stats.maneuverActive ? "LANDING" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : stanceLabel}</em></span>
               <strong>{Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%</strong>
             </div>
             <div className="balance-track">
+              {stats.maneuverActive && <i className="landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
               <i className="balance-safe" style={{ left: `${(stats.balanceTarget + 1) * 50}%` }} />
               <b style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
@@ -1034,7 +1046,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>Balance with mouse or thumb · shift tailward to recover rail grip</small>
+            <small>{stats.maneuverActive ? "Reconnect inside the illuminated landing zone" : "Balance with mouse or thumb · shift tailward to recover rail grip"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""}`}>
@@ -1094,12 +1106,12 @@ export default function SurfscapeApp() {
               <span ref={joystickKnob} className="analog-knob"><i /></span>
               <small>MOVE / STEER</small>
             </div>
-            <div className="touch-balance" role="slider" aria-label="Balance" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round(stats.balance * 100)} tabIndex={0} onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
-              <span>BALANCE</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
+            <div className={`touch-balance ${stats.maneuverActive ? "is-landing" : ""}`} role="slider" aria-label="Balance" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round(stats.balance * 100)} tabIndex={0} onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
+              <span>{stats.maneuverActive ? `LAND ${Math.round(stats.maneuverProgress * 100)}%` : "BALANCE"}</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
             <button
               type="button"
-              className={`action-button ${mobileActionIsContextual ? "is-contextual" : "is-propulsion"}`}
+              className={`action-button ${mobileActionIsContextual ? "is-contextual" : "is-propulsion"} ${stats.maneuverActive ? "is-landing" : ""}`}
               aria-label={mobileActionLabel}
               onPointerDown={(event) => beginControl(event, mobileActionIsContextual ? "action" : "forward")}
               onPointerUp={endMobileAction}
@@ -1136,7 +1148,7 @@ export default function SurfscapeApp() {
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the analog stick, shift nose-to-tail with W/S, and watch rail grip. Ease off or load the tail when the fins begin to release.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the stick, then press Trick to commit a move. Follow the shifting balance marker and reconnect inside the gold landing zone to bank the score.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>

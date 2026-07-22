@@ -95,8 +95,13 @@ export type GameStats = {
   nextSetSeconds: number;
   maneuver: string;
   maneuverScore: number;
+  maneuverQuality: number;
   maneuverId: number;
   maneuverCount: number;
+  maneuverActive: boolean;
+  maneuverProgress: number;
+  landingTarget: number;
+  landingWindow: number;
   maxCombo: number;
   grade: SessionGrade;
   rideScore: number;
@@ -131,8 +136,13 @@ export const INITIAL_STATS: GameStats = {
   nextSetSeconds: 0,
   maneuver: "",
   maneuverScore: 0,
+  maneuverQuality: 0,
   maneuverId: 0,
   maneuverCount: 0,
+  maneuverActive: false,
+  maneuverProgress: 0,
+  landingTarget: 0,
+  landingWindow: 0,
   maxCombo: 1,
   grade: "C",
   rideScore: 0,
