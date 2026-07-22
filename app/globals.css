@@ -1018,6 +1018,13 @@ input:focus-visible {
 .stance-track > span { color: rgba(255, 255, 255, 0.42); font-size: 5px; letter-spacing: 0.09em; }
 .stance-track > i { position: relative; height: 2px; background: linear-gradient(90deg, var(--coral), rgba(255, 255, 255, 0.22) 50%, #71e1d3); }
 .stance-track > i b { position: absolute; top: -4px; width: 3px; height: 10px; transform: translateX(-50%); background: white; box-shadow: 0 0 8px white; transition: left 0.08s linear; }
+.grip-track { display: grid; grid-template-columns: auto 1fr 27px; align-items: center; gap: 7px; margin-top: 8px; }
+.grip-track > span, .grip-track > strong { color: rgba(255, 255, 255, 0.48); font-size: 5px; font-weight: 700; letter-spacing: 0.09em; }
+.grip-track > strong { text-align: right; }
+.grip-track > i { height: 2px; overflow: hidden; background: rgba(255, 255, 255, 0.12); }
+.grip-track > i b { display: block; height: 100%; background: linear-gradient(90deg, #e97555, #71e1d3); box-shadow: 0 0 8px rgba(113, 225, 211, .65); transition: width .08s linear; }
+.grip-track.is-releasing > span, .grip-track.is-releasing > strong { color: #ff9e81; }
+.grip-track.is-releasing > i b { background: #f2644e; box-shadow: 0 0 9px rgba(242, 100, 78, .7); }
 .balance-instrument small { display: block; margin-top: 8px; color: var(--muted); font-size: 7px; text-align: center; }
 
 .vehicle-instrument {
@@ -1209,6 +1216,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .balance-instrument { width: calc(100vw - 30px); bottom: calc(200px + env(safe-area-inset-bottom)); padding: 11px 13px; }
   .balance-label em { max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .stance-track > span { font-size: 4px; }
+  .grip-track { margin-top: 7px; }
   .vehicle-instrument { width: calc(100vw - 30px); min-height: 66px; bottom: calc(200px + env(safe-area-inset-bottom)); padding: 7px 11px 7px 8px; }
   .vehicle-dial { width: 50px; height: 50px; }
   .vehicle-dial strong { font-size: 21px; }
@@ -1265,7 +1273,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .maneuver-toast, .ride-recap { top: 126px; }
   .game-conditions { display: none; }
   .balance-instrument, .vehicle-instrument { bottom: calc(104px + env(safe-area-inset-bottom)); width: min(430px, calc(100vw - 270px)); }
-  .balance-instrument small, .vehicle-copy small { display: none; }
+  .balance-instrument small, .vehicle-copy small, .grip-track { display: none; }
   .mobile-controls { bottom: max(6px, env(safe-area-inset-bottom)); grid-template-columns: 88px minmax(120px, 1fr) 80px; gap: 12px; padding: 0 12px; }
   .analog-stick { width: 84px; height: 84px; }
   .analog-ring { inset: 12px; }

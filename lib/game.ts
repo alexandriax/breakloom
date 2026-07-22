@@ -84,6 +84,8 @@ export type GameStats = {
   balance: number;
   balanceTarget: number;
   waveQuality: number;
+  railLoad: number;
+  railGrip: number;
   stance: number;
   barrelTime: number;
   barrelIntensity: number;
@@ -116,6 +118,8 @@ export const INITIAL_STATS: GameStats = {
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
+  railLoad: 0,
+  railGrip: 1,
   stance: 0,
   barrelTime: 0,
   barrelIntensity: 0,

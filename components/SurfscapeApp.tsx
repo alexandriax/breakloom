@@ -916,7 +916,10 @@ export default function SurfscapeApp() {
             <div className="stance-track">
               <span>TAIL / CONTROL</span><i><b style={{ left: `${(stats.stance + 1) * 50}%` }} /></i><span>NOSE / SPEED</span>
             </div>
-            <small>Balance with mouse or thumb · W/S shifts your stance along the board</small>
+            <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
+              <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
+            </div>
+            <small>Balance with mouse or thumb · shift tailward to recover rail grip</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""}`}>
@@ -1017,7 +1020,7 @@ export default function SurfscapeApp() {
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the analog stick, shift nose-to-tail with W/S, balance with mouse or thumb, then trigger a context-aware maneuver.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the analog stick, shift nose-to-tail with W/S, and watch rail grip. Ease off or load the tail when the fins begin to release.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>
