@@ -34,10 +34,12 @@ import {
   type MarineConditions,
 } from "@/lib/marine";
 import {
+  BOARD_SPECS,
   compassDirection,
   formatClock,
   INITIAL_STATS,
   settingsFromConditions,
+  type BoardType,
   type GameMode,
   type GameStats,
   type SessionSettings,
@@ -63,6 +65,8 @@ type RideToast = {
   barrelTime: number;
   grade: GameStats["grade"];
 };
+
+const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 
 const RECORD_KEY = "surfscape-personal-best-v1";
 
@@ -177,14 +181,14 @@ export default function SurfscapeApp() {
           setConditions(live);
           setSettings((previous) => {
             if (previous.mode === "playground") return previous;
-            return { ...settingsFromConditions(live), mode: previous.mode };
+            return { ...settingsFromConditions(live), mode: previous.mode, board: previous.board };
           });
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
           const modeled = fallbackConditions(beach);
           setConditions(modeled);
-          setSettings((previous) => ({ ...settingsFromConditions(modeled), mode: previous.mode }));
+          setSettings((previous) => ({ ...settingsFromConditions(modeled), mode: previous.mode, board: previous.board }));
         })
         .finally(() => setConditionsLoading(false));
     }, 260);
@@ -282,7 +286,7 @@ export default function SurfscapeApp() {
     if (mode === "playground") {
       setSettings((current) => ({ ...current, mode }));
     } else {
-      setSettings({ ...settingsFromConditions(conditions), mode });
+      setSettings((current) => ({ ...settingsFromConditions(conditions), mode, board: current.board }));
     }
   };
 
@@ -366,6 +370,7 @@ export default function SurfscapeApp() {
           beach={beach}
           settings={settings}
           cloudCover={conditions.cloudCover}
+          windSpeed={conditions.windSpeed}
           sunrise={conditions.sunrise}
           sunset={conditions.sunset}
           controls={controls}
@@ -452,6 +457,28 @@ export default function SurfscapeApp() {
                     </button>
                   ))}
                 </div>
+                <div className="quiver-picker">
+                  <div className="quiver-head"><span>QUIVER / 03</span><strong>Choose the board under your feet</strong></div>
+                  <div className="quiver-grid">
+                    {BOARD_OPTIONS.map((boardId) => {
+                      const board = BOARD_SPECS[boardId];
+                      return (
+                        <button
+                          key={boardId}
+                          className={settings.board === boardId ? "is-selected" : ""}
+                          onClick={() => setSettings((current) => ({ ...current, board: boardId }))}
+                          style={{ "--board-color": board.color, "--board-accent": board.accent } as CSSProperties}
+                          aria-pressed={settings.board === boardId}
+                          title={board.description}
+                        >
+                          <i className={`board-shape is-${boardId}`} />
+                          <span><small>{board.profile}</small><strong>{board.name}</strong></span>
+                          <em>SPD {Math.round(board.speed * 10)} · TURN {Math.round(board.turn * 10)} · STAB {Math.round(board.stability * 10)}</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -533,6 +560,9 @@ export default function SurfscapeApp() {
               <i />
               <span>Personal best</span>
               <strong>{personalBest.score.toLocaleString()}</strong>
+              <i />
+              <span>Board</span>
+              <strong>{BOARD_SPECS[settings.board].name}</strong>
             </div>
             <button className="launch-button" onClick={startSession}>
               <span>ENTER THE WATER</span>
@@ -547,7 +577,7 @@ export default function SurfscapeApp() {
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
-              <div><strong>SURFSCAPE</strong><span>{zoneLabel} · {beach.name}</span></div>
+              <div><strong>SURFSCAPE</strong><span>{zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
             </div>
             <div className="game-objective"><span>{stats.phase}</span><strong>{stats.prompt}</strong></div>
             <div className="game-actions">
@@ -695,7 +725,7 @@ export default function SurfscapeApp() {
             <span className="overline">FIELD GUIDE 01</span>
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
-              <article><span>01</span><Waves /><strong>Enter</strong><p>Use W or the D-pad to walk through the shallows until your board begins to float.</p></article>
+              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board from the roof-rack quiver, then use W or the D-pad to walk through the shallows.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D, shift nose-to-tail with W/S, balance with mouse or thumb, then press Space to land a context-aware maneuver.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>

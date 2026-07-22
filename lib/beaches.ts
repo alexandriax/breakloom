@@ -5,6 +5,8 @@ export type SurfZone = {
   note: string;
 };
 
+export type CoastBiome = "urban" | "tropical" | "dune" | "rugged" | "cold" | "volcanic" | "desert";
+
 export type Beach = {
   id: string;
   name: string;
@@ -299,3 +301,12 @@ export function getBeach(id: string) {
   return BEACHES.find((beach) => beach.id === id) ?? DEFAULT_BEACH;
 }
 
+export function getCoastBiome(id: string): CoastBiome {
+  if (["pipeline", "teahupoo", "uluwatu", "cloudbreak"].includes(id)) return "tropical";
+  if (["rockaway", "snapper-rocks"].includes(id)) return "urban";
+  if (["hossegor", "jeffreys-bay"].includes(id)) return "dune";
+  if (["nazare"].includes(id)) return "rugged";
+  if (["mavericks", "trestles"].includes(id)) return "cold";
+  if (id === "raglan") return "volcanic";
+  return "desert";
+}

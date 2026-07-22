@@ -472,6 +472,23 @@ input:focus-visible {
 }
 .mode-card > i svg { width: 12px; }
 
+.quiver-picker { margin-top: 12px; border: 1px solid var(--line); background: rgba(5, 17, 23, 0.62); backdrop-filter: blur(14px); }
+.quiver-head { height: 28px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.quiver-head span { color: var(--spot-accent); font-size: 6px; font-weight: 800; letter-spacing: 0.15em; }
+.quiver-head strong { color: var(--muted); font-size: 6px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
+.quiver-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+.quiver-grid button { min-width: 0; min-height: 60px; display: grid; grid-template-columns: 42px 1fr; grid-template-rows: 1fr auto; align-items: center; gap: 0 7px; padding: 7px 9px; border: 0; border-right: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; transition: background 0.2s, box-shadow 0.2s; }
+.quiver-grid button:last-child { border-right: 0; }
+.quiver-grid button.is-selected { background: color-mix(in srgb, var(--spot-accent) 12%, rgba(6, 20, 27, 0.72)); box-shadow: inset 0 -2px var(--spot-accent); }
+.quiver-grid button > span { min-width: 0; }
+.quiver-grid button small { display: block; color: var(--spot-accent); font-size: 5px; letter-spacing: 0.11em; text-transform: uppercase; }
+.quiver-grid button strong { display: block; margin-top: 4px; overflow: hidden; font-size: 8px; white-space: nowrap; text-overflow: ellipsis; }
+.quiver-grid button em { grid-column: 1 / 3; color: rgba(255, 255, 255, 0.43); font-size: 5px; font-style: normal; letter-spacing: 0.05em; text-align: right; }
+.board-shape { position: relative; width: 34px; height: 8px; display: block; border-radius: 50%; background: var(--board-color); box-shadow: 0 2px 9px rgba(0, 0, 0, 0.42); transform: rotate(-8deg); }
+.board-shape::after { content: ""; position: absolute; left: 7px; right: 7px; top: 2px; bottom: 2px; border-radius: 50%; background: var(--board-accent); }
+.board-shape.is-fish { width: 31px; height: 10px; border-radius: 60% 60% 42% 42%; }
+.board-shape.is-longboard { width: 40px; height: 8px; }
+
 .planner {
   min-width: 0;
   background: linear-gradient(180deg, rgba(5, 17, 24, 0.64), rgba(5, 15, 22, 0.88));
@@ -1045,6 +1062,11 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .mode-grid { grid-template-columns: 1fr; }
   .mode-card { min-height: 110px; padding-right: 72px; }
   .mode-card > p { max-width: 310px; }
+  .quiver-head { height: 34px; }
+  .quiver-grid { grid-template-columns: 1fr; }
+  .quiver-grid button { min-height: 52px; grid-template-columns: 50px 1fr auto; grid-template-rows: 1fr; border-right: 0; border-bottom: 1px solid var(--line); }
+  .quiver-grid button:last-child { border-bottom: 0; }
+  .quiver-grid button em { grid-column: 3; font-size: 5px; }
   .planner { order: 0; margin: 17px -1px 0; background: rgba(4, 15, 21, 0.68); }
   .planner-mobile-toggle { width: 100%; height: 48px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border: 1px solid var(--line); background: rgba(4, 15, 21, 0.82); text-align: left; font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
   .planner-mobile-toggle svg { width: 15px; }

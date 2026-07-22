@@ -1,12 +1,13 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { RoundedBox, Sky, Sparkles } from "@react-three/drei";
+import { RoundedBox, Sky, Sparkles, useTexture } from "@react-three/drei";
 import { MutableRefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { Beach } from "@/lib/beaches";
-import type { GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { sessionGrade, waveHeightAt, waveSetState } from "@/lib/game";
+import type { Beach, CoastBiome } from "@/lib/beaches";
+import { getCoastBiome } from "@/lib/beaches";
+import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
+import { BOARD_SPECS, sessionGrade, waveHeightAt, waveSetState } from "@/lib/game";
 
 export type ControlState = {
   forward: boolean;
@@ -21,6 +22,7 @@ type SurfSceneProps = {
   beach: Beach;
   settings: SessionSettings;
   cloudCover: number;
+  windSpeed: number;
   sunrise: string;
   sunset: string;
   controls: MutableRefObject<ControlState>;
@@ -177,7 +179,7 @@ function Ocean({ settings, light, cloudCover }: { settings: SessionSettings; lig
   );
 }
 
-function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
+function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionState>; boardType: BoardType }) {
   const rig = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const board = useRef<THREE.Group>(null);
@@ -251,21 +253,29 @@ function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
   const skin = "#a96343";
   const suit = "#071c27";
   const suitPanel = "#123d49";
+  const boardSpec = BOARD_SPECS[boardType];
+  const finXs = boardType === "performance" ? [-0.16, 0, 0.16] : boardType === "fish" ? [-0.19, 0.19] : [0];
   return (
     <group ref={rig}>
       <group ref={board} position={[0, 0.16, 0]}>
         <mesh rotation={[Math.PI / 2, 0, 0]} scale={[1, 0.13, 1]} castShadow>
-          <capsuleGeometry args={[0.34, 2.65, 8, 22]} />
-          <meshPhysicalMaterial color="#ece3d1" roughness={0.28} clearcoat={0.8} clearcoatRoughness={0.15} />
+          <capsuleGeometry args={[boardSpec.width, boardSpec.length, 8, 24]} />
+          <meshPhysicalMaterial color={boardSpec.color} roughness={0.26} clearcoat={0.86} clearcoatRoughness={0.13} />
         </mesh>
-        <mesh position={[0, 0.06, -0.1]} rotation={[Math.PI / 2, 0, 0]} scale={[0.78, 0.14, 0.75]}>
-          <capsuleGeometry args={[0.29, 2.25, 5, 18]} />
-          <meshStandardMaterial color="#f26b4d" roughness={0.62} />
+        <mesh position={[0, 0.06, -0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.76, 0.14, 0.72]}>
+          <capsuleGeometry args={[boardSpec.width * 0.86, boardSpec.length * 0.86, 5, 20]} />
+          <meshStandardMaterial color={boardSpec.accent} roughness={0.58} />
         </mesh>
-        <mesh position={[0, -0.02, 1.56]} rotation={[0.15, 0, 0]}>
-          <boxGeometry args={[0.055, 0.3, 0.24]} />
-          <meshStandardMaterial color="#f3efe6" />
+        <mesh position={[0, 0.1, -0.35]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[boardSpec.width * 0.34, boardSpec.width * 0.43, 28]} />
+          <meshBasicMaterial color="#f7f2e8" transparent opacity={0.72} />
         </mesh>
+        {finXs.map((x) => (
+          <mesh key={x} position={[x, -0.02, boardSpec.length * 0.56]} rotation={[0.15, 0, 0]}>
+            <boxGeometry args={[0.045, boardType === "longboard" ? 0.39 : 0.28, boardType === "longboard" ? 0.3 : 0.21]} />
+            <meshStandardMaterial color="#f3efe6" roughness={0.46} />
+          </mesh>
+        ))}
       </group>
 
       <group ref={body} position={[0, 0.95, 0]}>
@@ -501,7 +511,220 @@ function Bird({ offset, speed }: { offset: number; speed: number }) {
   );
 }
 
-function BeachLife({ tropical }: { tropical: boolean }) {
+function PalmTree({
+  position,
+  scale = 1,
+  wind,
+  phase,
+}: {
+  position: [number, number, number];
+  scale?: number;
+  wind: number;
+  phase: number;
+}) {
+  const crown = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (!crown.current) return;
+    const sway = Math.sin(clock.elapsedTime * (0.72 + wind * 0.34) + phase) * (0.035 + wind * 0.075);
+    crown.current.rotation.z = sway;
+    crown.current.rotation.x = sway * 0.4;
+  });
+  return (
+    <group position={position} scale={scale} rotation={[0, phase * 0.3, -0.045]}>
+      <mesh position={[0, 3.8, 0]} castShadow>
+        <cylinderGeometry args={[0.2, 0.38, 7.6, 9]} />
+        <meshStandardMaterial color="#745035" roughness={0.98} />
+      </mesh>
+      <group ref={crown} position={[0, 7.55, 0]}>
+        {Array.from({ length: 8 }, (_, index) => (
+          <mesh key={index} rotation={[0, (index / 8) * Math.PI * 2, 0.92]} position={[0, -0.05, 0]} castShadow>
+            <coneGeometry args={[0.68, 4.9, 7]} />
+            <meshStandardMaterial color={index % 2 ? "#2d674c" : "#39775a"} roughness={0.88} side={THREE.DoubleSide} />
+          </mesh>
+        ))}
+        <mesh position={[0, -0.25, 0]}>
+          <sphereGeometry args={[0.42, 10, 8]} />
+          <meshStandardMaterial color="#5c4b2e" roughness={1} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function PineTree({ position, scale = 1 }: { position: [number, number, number]; scale?: number }) {
+  return (
+    <group position={position} scale={scale}>
+      <mesh position={[0, 2.5, 0]} castShadow>
+        <cylinderGeometry args={[0.13, 0.25, 5, 8]} />
+        <meshStandardMaterial color="#4d3d32" roughness={1} />
+      </mesh>
+      {[2.7, 4.1, 5.35].map((height, index) => (
+        <mesh key={height} position={[0, height, 0]} castShadow>
+          <coneGeometry args={[1.8 - index * 0.36, 2.8, 10]} />
+          <meshStandardMaterial color={index % 2 ? "#294c43" : "#34584b"} roughness={0.96} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function CoastBackdrop({ biome, wind }: { biome: CoastBiome; wind: number }) {
+  if (biome === "urban") {
+    const buildings = Array.from({ length: 12 }, (_, index) => ({
+      x: -112 + index * 20,
+      height: 9 + ((index * 7) % 17),
+      width: 10 + ((index * 5) % 8),
+      depth: 8 + ((index * 3) % 6),
+    }));
+    return (
+      <group>
+        <mesh position={[0, -0.05, 101]} receiveShadow>
+          <boxGeometry args={[250, 0.48, 10]} />
+          <meshStandardMaterial color="#8a6c4d" roughness={0.92} />
+        </mesh>
+        {Array.from({ length: 28 }, (_, index) => (
+          <mesh key={index} position={[-121 + index * 9, 0.22, 101]} receiveShadow>
+            <boxGeometry args={[7.5, 0.08, 9.4]} />
+            <meshStandardMaterial color={index % 2 ? "#9b7954" : "#856646"} roughness={0.95} />
+          </mesh>
+        ))}
+        {buildings.map((building, index) => (
+          <group key={building.x} position={[building.x, 0, 118 + (index % 3) * 3]}>
+            <mesh position={[0, building.height / 2, 0]} castShadow receiveShadow>
+              <boxGeometry args={[building.width, building.height, building.depth]} />
+              <meshStandardMaterial color={["#6e7779", "#8c7968", "#59666b", "#94887b"][index % 4]} roughness={0.86} />
+            </mesh>
+            {Array.from({ length: Math.max(2, Math.floor(building.height / 3)) }, (_, floor) => (
+              <mesh key={floor} position={[0, 2 + floor * 2.6, -building.depth / 2 - 0.01]}>
+                <planeGeometry args={[building.width * 0.72, 0.58]} />
+                <meshStandardMaterial color="#b4d5d0" emissive="#5d8f92" emissiveIntensity={0.18} roughness={0.32} />
+              </mesh>
+            ))}
+          </group>
+        ))}
+      </group>
+    );
+  }
+  if (biome === "tropical") {
+    return (
+      <group>
+        {[[-54, 99, 0.92], [-39, 109, 1.12], [-18, 101, 0.82], [38, 106, 1.04], [62, 98, 0.9]].map(([x, z, scale], index) => (
+          <PalmTree key={x} position={[x, 0, z]} scale={scale} wind={wind} phase={index * 1.7} />
+        ))}
+        {[-78, 78].map((x, index) => (
+          <mesh key={x} position={[x, 2.5, 115]} scale={[11, 4.6 + index, 7]} rotation={[0.2, index * 0.7, 0.1]} castShadow receiveShadow>
+            <dodecahedronGeometry args={[1, 1]} />
+            <meshStandardMaterial color="#536550" roughness={0.96} />
+          </mesh>
+        ))}
+        {Array.from({ length: 13 }, (_, index) => (
+          <mesh key={index} position={[-93 + index * 15, 1.1, 113 + (index % 3) * 4]} scale={[3.2, 1.7, 2.5]}>
+            <sphereGeometry args={[1, 10, 7]} />
+            <meshStandardMaterial color={index % 2 ? "#315a48" : "#456b50"} roughness={1} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+  if (biome === "dune") {
+    return (
+      <group>
+        {Array.from({ length: 52 }, (_, index) => {
+          const x = -120 + ((index * 37) % 240);
+          const z = 94 + ((index * 17) % 24);
+          return (
+            <group key={index} position={[x, 0, z]} rotation={[0, index * 0.62, 0]}>
+              {[-0.24, 0, 0.24].map((blade, bladeIndex) => (
+                <mesh key={blade} position={[blade, 0.65 + bladeIndex * 0.09, 0]} rotation={[0, 0, blade * 0.55]}>
+                  <coneGeometry args={[0.035, 1.35 + bladeIndex * 0.18, 5]} />
+                  <meshStandardMaterial color={bladeIndex % 2 ? "#71815c" : "#87916a"} roughness={1} />
+                </mesh>
+              ))}
+            </group>
+          );
+        })}
+      </group>
+    );
+  }
+  if (biome === "rugged") {
+    return (
+      <group>
+        {Array.from({ length: 9 }, (_, index) => (
+          <mesh key={index} position={[-112 + index * 28, 5 + (index % 3) * 2.4, 118 + (index % 2) * 8]} scale={[16, 8 + (index % 3) * 2, 11]} rotation={[0.1, index * 0.4, 0.08]} castShadow receiveShadow>
+            <dodecahedronGeometry args={[1, 1]} />
+            <meshStandardMaterial color={index % 2 ? "#7c715f" : "#95856e"} roughness={0.98} />
+          </mesh>
+        ))}
+        <group position={[-68, 12, 107]}>
+          <mesh position={[0, 5, 0]} castShadow>
+            <cylinderGeometry args={[1.45, 2.1, 10, 14]} />
+            <meshStandardMaterial color="#e8ddc8" roughness={0.75} />
+          </mesh>
+          <mesh position={[0, 10.3, 0]}>
+            <cylinderGeometry args={[1.75, 1.55, 1.4, 14]} />
+            <meshStandardMaterial color="#b64037" roughness={0.62} />
+          </mesh>
+          <pointLight position={[0, 10.3, -1.5]} intensity={1.3} distance={34} color="#fff0ba" />
+        </group>
+      </group>
+    );
+  }
+  if (biome === "cold") {
+    return (
+      <group>
+        {Array.from({ length: 7 }, (_, index) => (
+          <PineTree key={index} position={[-92 + index * 31, 0, 106 + (index % 2) * 8]} scale={0.86 + (index % 3) * 0.16} />
+        ))}
+        {[-105, -84, 88, 109].map((x, index) => (
+          <mesh key={x} position={[x, 3.2 + (index % 2) * 1.5, 111]} scale={[9, 5.2, 7]} rotation={[0.2, index, 0]} castShadow>
+            <dodecahedronGeometry args={[1, 1]} />
+            <meshStandardMaterial color="#586461" roughness={1} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+  if (biome === "volcanic") {
+    return (
+      <group>
+        {Array.from({ length: 18 }, (_, index) => (
+          <mesh key={index} position={[-112 + ((index * 31) % 224), 0.8 + (index % 4) * 0.35, 95 + ((index * 11) % 26)]} scale={[1.8 + (index % 3), 1.2 + (index % 2), 1.5 + ((index + 1) % 4) * 0.5]} rotation={[index * 0.13, index * 0.8, 0.1]} castShadow>
+            <dodecahedronGeometry args={[1, 0]} />
+            <meshStandardMaterial color={index % 2 ? "#292c2a" : "#3b3d38"} roughness={0.96} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+  return (
+    <group>
+      {Array.from({ length: 9 }, (_, index) => (
+        <mesh key={index} position={[-115 + index * 29, 3.2 + (index % 3) * 1.8, 116 + (index % 2) * 7]} scale={[15, 5 + (index % 3) * 2, 9]} rotation={[0.04, index * 0.31, 0.08]} castShadow receiveShadow>
+          <dodecahedronGeometry args={[1, 1]} />
+          <meshStandardMaterial color={index % 2 ? "#a36f49" : "#bd8255"} roughness={1} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function createTiledSandTexture(source: THREE.Texture, repeatX: number, repeatY: number) {
+  const texture = source.clone();
+  texture.wrapS = THREE.MirroredRepeatWrapping;
+  texture.wrapT = THREE.MirroredRepeatWrapping;
+  texture.repeat.set(repeatX, repeatY);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function BeachLife({ beach, windSpeed }: { beach: Beach; windSpeed: number }) {
+  const biome = getCoastBiome(beach.id);
+  const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
+  const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
+  const sandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 11), [sandTextureSource]);
+  const wetSandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 2), [sandTextureSource]);
   const dunes = useMemo(
     () =>
       Array.from({ length: 22 }, (_, index) => ({
@@ -511,15 +734,28 @@ function BeachLife({ tropical }: { tropical: boolean }) {
       })),
     [],
   );
+  useEffect(() => () => {
+    sandTexture.dispose();
+    wetSandTexture.dispose();
+  }, [sandTexture, wetSandTexture]);
+  const surface = {
+    urban: ["#c0aa91", "#756a60"],
+    tropical: ["#e0c499", "#88735c"],
+    dune: ["#c7ad86", "#776b5e"],
+    rugged: ["#b49a7c", "#6f665e"],
+    cold: ["#a6a39a", "#606965"],
+    volcanic: ["#454744", "#252b2a"],
+    desert: ["#c08c62", "#725a49"],
+  }[biome];
   return (
     <group>
       <mesh position={[0, -0.5, 64]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[250, 125, 20, 20]} />
-        <meshStandardMaterial color="#bc9464" roughness={1} metalness={0} />
+        <meshStandardMaterial color={surface[0]} map={sandTexture} bumpMap={sandTexture} bumpScale={0.045} roughness={0.93} metalness={0} />
       </mesh>
       <mesh position={[0, -0.43, 21]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[250, 18]} />
-        <meshStandardMaterial color="#8f7659" roughness={1} />
+        <meshStandardMaterial color={surface[1]} map={wetSandTexture} bumpMap={wetSandTexture} bumpScale={0.025} roughness={0.76} metalness={0.04} />
       </mesh>
       <group position={[0, 0, 78]}>
         <mesh position={[0, -0.35, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
@@ -567,10 +803,10 @@ function BeachLife({ tropical }: { tropical: boolean }) {
           </mesh>
         </group>
       </group>
-      {dunes.filter((dune) => dune.z > 88).map((dune, index) => (
+      {biome !== "urban" && biome !== "rugged" && dunes.filter((dune) => dune.z > 88).map((dune, index) => (
         <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, 0.8 + (index % 3) * 0.28, dune.s * 0.72]} receiveShadow>
           <sphereGeometry args={[1, 12, 8]} />
-          <meshStandardMaterial color={index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
+          <meshStandardMaterial color={biome === "volcanic" ? index % 2 ? "#373a36" : "#484a43" : index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
         </mesh>
       ))}
       <group position={[-10, 0, 50]}>
@@ -609,20 +845,7 @@ function BeachLife({ tropical }: { tropical: boolean }) {
           </mesh>
         </group>
       ))}
-      {tropical && (
-        <group position={[-38, 0, 101]} rotation={[0, 0, -0.08]}>
-          <mesh position={[0, 4.5, 0]}>
-            <cylinderGeometry args={[0.3, 0.55, 9, 9]} />
-            <meshStandardMaterial color="#6d4c31" roughness={1} />
-          </mesh>
-          {Array.from({ length: 7 }, (_, index) => (
-            <mesh key={index} position={[0, 9, 0]} rotation={[0, (index / 7) * Math.PI * 2, 0.78]}>
-              <coneGeometry args={[0.75, 5.4, 6]} />
-              <meshStandardMaterial color="#2e6250" roughness={0.9} side={THREE.DoubleSide} />
-            </mesh>
-          ))}
-        </group>
-      )}
+      <CoastBackdrop biome={biome} wind={wind} />
     </group>
   );
 }
@@ -732,16 +955,21 @@ function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
           <boxGeometry args={[3.45, 0.1, 0.14]} />
           <meshStandardMaterial color="#1b2528" metalness={0.68} roughness={0.34} />
         </mesh>
-        {[
-          { x: -0.72, color: "#f0e5cf", z: 0.65 },
-          { x: 0, color: "#3babb2", z: 0.8 },
-          { x: 0.72, color: "#f3b85e", z: 0.58 },
-        ].map((board, index) => (
-          <mesh key={index} position={[board.x, 2.66 + index * 0.06, board.z]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 0.1, 0.95]} castShadow>
-            <capsuleGeometry args={[0.31, 3.05, 6, 18]} />
-            <meshPhysicalMaterial color={board.color} roughness={0.31} clearcoat={0.7} clearcoatRoughness={0.19} />
-          </mesh>
-        ))}
+        {(["performance", "fish", "longboard"] as BoardType[]).map((boardType, index) => {
+          const rackBoard = BOARD_SPECS[boardType];
+          return (
+            <group key={boardType} position={[-0.72 + index * 0.72, 2.66 + index * 0.055, 0.74 - index * 0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 0.1, 0.92]}>
+              <mesh castShadow>
+                <capsuleGeometry args={[rackBoard.width, rackBoard.length, 6, 20]} />
+                <meshPhysicalMaterial color={rackBoard.color} roughness={0.29} clearcoat={0.76} clearcoatRoughness={0.16} />
+              </mesh>
+              <mesh position={[0, 0.06, -0.08]} scale={[0.7, 1, 0.72]}>
+                <capsuleGeometry args={[rackBoard.width * 0.82, rackBoard.length * 0.82, 4, 16]} />
+                <meshStandardMaterial color={rackBoard.accent} roughness={0.58} />
+              </mesh>
+            </group>
+          );
+        })}
         <mesh position={[0, 0.12, 3.04]}>
           <boxGeometry args={[1.4, 0.5, 0.06]} />
           <meshStandardMaterial color="#dcd2b5" roughness={0.64} />
@@ -761,6 +989,7 @@ function Simulation({
   beach,
   settings,
   cloudCover,
+  windSpeed,
   sunrise,
   sunset,
   controls,
@@ -769,6 +998,7 @@ function Simulation({
   onReady,
 }: SurfSceneProps) {
   const { camera } = useThree();
+  const boardSpec = BOARD_SPECS[settings.board];
   const player = useRef<THREE.Group>(null);
   const van = useRef<THREE.Group>(null);
   const position = useRef(new THREE.Vector3(0, 0, 35));
@@ -919,7 +1149,7 @@ function Simulation({
         if (state.forward) stamina.current = Math.max(0, stamina.current - delta * 7.5);
         else stamina.current = Math.min(100, stamina.current + delta * 10);
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
-        speed = Math.max(0, move) * 4.2 * paddleEfficiency + (state.back ? -1.2 : 0);
+        speed = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + (state.back ? -1.2 : 0);
         position.current.z -= speed * delta;
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
         const ready = position.current.z < -18;
@@ -951,17 +1181,17 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
-        speed = waveSpeed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
+        speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
         position.current.z += speed * delta;
-        position.current.x += steer * (4.4 + speed * 0.18) * (1 + tailPressure * 0.38 - nosePressure * 0.12) * delta;
+        position.current.x += steer * boardSpec.turn * (4.4 + speed * 0.18) * (1 + tailPressure * 0.38 - nosePressure * 0.12) * delta;
         rideDistance.current += speed * delta;
         balanceTarget =
-          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) +
+          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) / boardSpec.stability +
           Math.sin(t * 3.1) * settings.currentStrength * 0.045 -
           steer * (0.22 + tailPressure * 0.08) +
           stance.current * 0.07;
         const balanceError = Math.abs(state.balance - balanceTarget);
-        const failThreshold = settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82;
+        const failThreshold = (settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82) * Math.sqrt(boardSpec.stability);
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
         const wavePhase = Math.sin(position.current.z * 0.19 + position.current.x * 0.018 + t * 0.72);
         waveQuality = THREE.MathUtils.clamp((wavePhase + 1) * 0.42 + setState.energy * 0.16 + catchQuality.current * 0.08, 0, 1);
@@ -981,9 +1211,9 @@ function Simulation({
           const rail = Math.abs(steer);
           let name = "High Line";
           let base = 150;
-          if (nosePressure > 0.62 && rail < 0.32 && waveQuality > 0.55) {
+          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55) {
             name = "Nose Ride";
-            base = 340;
+            base = settings.board === "longboard" ? 440 : 340;
           } else if (tailPressure > 0.58 && rail > 0.42 && waveQuality > 0.54) {
             name = "Tail Release";
             base = 390;
@@ -1003,7 +1233,7 @@ function Simulation({
             name = "Power Pump";
             base = 175;
           }
-          const points = Math.round(base * (0.62 + controlQuality * 0.48) * (0.88 + setState.energy * 0.28) * combo.current * (1 + barrelIntensity * 0.12));
+          const points = Math.round(base * boardSpec.score * (0.62 + controlQuality * 0.48) * (0.88 + setState.energy * 0.28) * combo.current * (1 + barrelIntensity * 0.12));
           score.current += points;
           combo.current = Math.min(8, combo.current + 0.42 + controlQuality * 0.22);
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -1181,18 +1411,39 @@ function Simulation({
   const sunHeight = Math.max(-0.08, Math.sin(hourAngle));
   const sunX = Math.cos(hourAngle) * 160;
   const light = THREE.MathUtils.clamp(sunHeight * 1.1 + 0.12, 0.08, 1);
-  const tropical = ["pipeline", "teahupoo", "snapper-rocks", "uluwatu", "cloudbreak"].includes(beach.id);
+  const coastBiome = getCoastBiome(beach.id);
+  const daylightSky: Record<CoastBiome, string> = {
+    urban: "#7897a0",
+    tropical: "#65a7ae",
+    dune: "#829da0",
+    rugged: "#7f9398",
+    cold: "#657f89",
+    volcanic: "#688786",
+    desert: "#a29a88",
+  };
+  const daylightFog: Record<CoastBiome, string> = {
+    urban: "#80989d",
+    tropical: "#82a9a4",
+    dune: "#9a9e91",
+    rugged: "#8d918d",
+    cold: "#708188",
+    volcanic: "#6f8580",
+    desert: "#ad9b7e",
+  };
+  const atmosphereBoost = coastBiome === "desert" ? 2.2 : coastBiome === "urban" ? 0.9 : coastBiome === "cold" ? 1.4 : 0;
+  const backgroundColor = sunHeight < 0.08 ? "#07101e" : sunHeight < 0.3 ? "#c66f5d" : daylightSky[coastBiome];
+  const fogColor = sunHeight < 0.08 ? "#07101e" : daylightFog[coastBiome];
 
   return (
     <>
-      <color attach="background" args={[sunHeight < 0.08 ? "#07101e" : sunHeight < 0.3 ? "#c66f5d" : "#6a9bae"]} />
-      <fog attach="fog" args={[sunHeight < 0.08 ? "#07101e" : "#7e9fa6", 55, 240]} />
+      <color attach="background" args={[backgroundColor]} />
+      <fog attach="fog" args={[fogColor, 55, 240]} />
       <Sky
         distance={450000}
         sunPosition={[sunX, Math.max(-8, sunHeight * 150), -120]}
         inclination={0.49}
         azimuth={0.24}
-        turbidity={5.2 + cloudCover * 0.025}
+        turbidity={5.2 + cloudCover * 0.025 + atmosphereBoost}
         rayleigh={sunHeight < 0.2 ? 3.8 : 1.7}
         mieCoefficient={0.008}
         mieDirectionalG={0.85}
@@ -1213,17 +1464,17 @@ function Simulation({
         shadow-camera-bottom={-35}
       />
       <Ocean settings={settings} light={light} cloudCover={cloudCover} />
-      <BeachLife tropical={tropical} />
+      <BeachLife beach={beach} windSpeed={windSpeed} />
       <group ref={player}>
         <WaterInteraction motion={motion} />
-        <SurferModel motion={motion} />
+        <SurferModel motion={motion} boardType={settings.board} />
       </group>
       <group ref={van}>
         <SurfVan motion={vanMotion} />
       </group>
-      <Bird offset={0} speed={1} />
-      <Bird offset={7} speed={0.82} />
-      <Bird offset={15} speed={1.15} />
+      <Bird offset={0} speed={1 + windSpeed * 0.008} />
+      <Bird offset={7} speed={0.82 + windSpeed * 0.006} />
+      <Bird offset={15} speed={1.15 + windSpeed * 0.007} />
       {sunHeight < 0.22 && (
         <Sparkles count={70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={0.45} color="#dcefff" />
       )}

@@ -3,9 +3,69 @@ import type { MarineConditions } from "./marine";
 export type GameMode = "training" | "advanced" | "playground";
 export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
 export type SessionGrade = "C" | "B" | "A" | "S";
+export type BoardType = "performance" | "fish" | "longboard";
+
+export const BOARD_SPECS: Record<BoardType, {
+  name: string;
+  profile: string;
+  description: string;
+  length: number;
+  width: number;
+  speed: number;
+  turn: number;
+  stability: number;
+  paddle: number;
+  score: number;
+  color: string;
+  accent: string;
+}> = {
+  performance: {
+    name: "Apex 6'2",
+    profile: "Performance",
+    description: "Fast rail changes and the highest maneuver ceiling.",
+    length: 2.5,
+    width: 0.32,
+    speed: 1,
+    turn: 1.16,
+    stability: 0.9,
+    paddle: 0.94,
+    score: 1.12,
+    color: "#eee5d3",
+    accent: "#f26b4d",
+  },
+  fish: {
+    name: "Drift Twin 5'8",
+    profile: "Flow / Speed",
+    description: "Carries speed through soft sections with loose twin-fin flow.",
+    length: 2.3,
+    width: 0.39,
+    speed: 1.08,
+    turn: 1.02,
+    stability: 1.02,
+    paddle: 1.06,
+    score: 1.04,
+    color: "#45aeb5",
+    accent: "#f2c568",
+  },
+  longboard: {
+    name: "Horizon 9'1",
+    profile: "Trim / Stability",
+    description: "Effortless paddle power, steady trim, and true nose rides.",
+    length: 3.45,
+    width: 0.43,
+    speed: 0.96,
+    turn: 0.82,
+    stability: 1.28,
+    paddle: 1.2,
+    score: 0.98,
+    color: "#f1d9a7",
+    accent: "#d75d48",
+  },
+};
 
 export type SessionSettings = {
   mode: GameMode;
+  board: BoardType;
   waveHeight: number;
   wavePeriod: number;
   currentStrength: number;
@@ -103,6 +163,7 @@ export function settingsFromConditions(conditions: MarineConditions): SessionSet
   const localHour = Number(conditions.observedAt.slice(11, 13));
   return {
     mode: "training",
+    board: "performance",
     waveHeight: conditions.waveHeight,
     wavePeriod: conditions.wavePeriod,
     currentStrength: conditions.currentVelocity,
