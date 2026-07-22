@@ -99,6 +99,8 @@ const EMPTY_CONTROLS: ControlState = {
   right: false,
   action: false,
   balance: 0,
+  lookYaw: 0,
+  lookPitch: 0,
 };
 
 function qualityLabel(conditions: MarineConditions) {
@@ -139,6 +141,13 @@ export default function SurfscapeApp() {
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
   const previousRideResultId = useRef(0);
+  const lookGesture = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    yaw: number;
+    pitch: number;
+  } | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -395,6 +404,43 @@ export default function SurfscapeApp() {
     controls.current.balance = THREEClamp(((event.clientX - bounds.left) / bounds.width - 0.5) * 2, -1, 1);
   };
 
+  const beginCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (paused) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.classList.add("is-dragging");
+    lookGesture.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      yaw: controls.current.lookYaw,
+      pitch: controls.current.lookPitch,
+    };
+  };
+
+  const updateCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = lookGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId || paused) return;
+    event.preventDefault();
+    const span = Math.max(320, Math.min(window.innerWidth, 900));
+    const verticalSpan = Math.max(260, Math.min(window.innerHeight, 700));
+    controls.current.lookYaw = THREEClamp(gesture.yaw - ((event.clientX - gesture.x) / span) * 2.45, -1, 1);
+    controls.current.lookPitch = THREEClamp(gesture.pitch + ((event.clientY - gesture.y) / verticalSpan) * 2.1, -1, 1);
+  };
+
+  const endCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (lookGesture.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    lookGesture.current = null;
+    event.currentTarget.classList.remove("is-dragging");
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const centerCameraLook = () => {
+    controls.current.lookYaw = 0;
+    controls.current.lookPitch = 0;
+  };
+
   const localTime = formatClock(conditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
   const conditionQuality = qualityLabel(conditions);
@@ -643,6 +689,22 @@ export default function SurfscapeApp() {
 
       {screen === "game" && (
         <section className={`game-ui ${paused ? "is-paused" : ""}`}>
+          <div
+            className="camera-look-surface"
+            aria-label="Drag to look around"
+            onPointerDown={beginCameraLook}
+            onPointerMove={updateCameraLook}
+            onPointerUp={endCameraLook}
+            onPointerCancel={endCameraLook}
+            onLostPointerCapture={(event) => {
+              lookGesture.current = null;
+              event.currentTarget.classList.remove("is-dragging");
+            }}
+            onDoubleClick={centerCameraLook}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <span>{stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"}</span>
+          </div>
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
@@ -745,6 +807,7 @@ export default function SurfscapeApp() {
                 <span><kbd>W</kbd><kbd>S</kbd> throttle / brake</span>
                 <span><kbd>A</kbd><kbd>D</kbd> steer</span>
                 <span><kbd>SPACE</kbd> exit when stopped</span>
+                <span><span className="mouse-icon" /> drag view to look</span>
               </>
             ) : (
               <>
@@ -802,7 +865,7 @@ export default function SurfscapeApp() {
             <span className="overline">FIELD GUIDE 01</span>
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
-              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board from the roof-rack quiver, then use W or the D-pad to walk through the shallows.</p></article>
+              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board from the roof-rack quiver, walk through the shallows, and drag the open view to look around.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D, shift nose-to-tail with W/S, balance with mouse or thumb, then press Space to land a context-aware maneuver.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>

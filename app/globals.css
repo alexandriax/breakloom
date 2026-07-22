@@ -743,8 +743,35 @@ input:focus-visible {
 .mobile-controls,
 .pause-overlay { pointer-events: auto; }
 
+.camera-look-surface {
+  position: absolute;
+  z-index: 1;
+  inset: 70px 0 88px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.camera-look-surface.is-dragging { cursor: grabbing; }
+.is-paused .camera-look-surface { pointer-events: none; }
+
+.camera-look-surface > span {
+  position: absolute;
+  right: 25px;
+  bottom: 4px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: 0 2px 9px rgba(0, 0, 0, 0.86);
+  pointer-events: none;
+}
+
 .game-topbar {
   position: absolute;
+  z-index: 3;
   top: 0;
   left: 0;
   right: 0;
@@ -1118,7 +1145,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .game-conditions svg { width: 11px; }
   .game-conditions strong { font-size: 8px; }
   .desktop-controls { display: none; }
-  .mobile-controls { position: absolute; left: 0; right: 0; bottom: max(10px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: 122px minmax(92px, 1fr) 86px; align-items: end; gap: 10px; padding: 0 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .camera-look-surface { inset: calc(62px + env(safe-area-inset-top)) 0 calc(112px + env(safe-area-inset-bottom)); }
+  .camera-look-surface > span { right: 12px; bottom: 5px; font-size: 5px; opacity: .76; }
+  .mobile-controls { position: absolute; z-index: 4; left: 0; right: 0; bottom: max(10px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: 122px minmax(92px, 1fr) 86px; align-items: end; gap: 10px; padding: 0 10px; touch-action: none; user-select: none; -webkit-user-select: none; }
   .dpad { width: 122px; height: 96px; position: relative; touch-action: none; }
   .dpad button { position: absolute; width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.34); border-radius: 50%; background: radial-gradient(circle at 38% 30%, rgba(40, 73, 82, 0.82), rgba(3, 13, 18, 0.72)); box-shadow: 0 7px 22px rgba(0, 0, 0, 0.25), inset 0 1px rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); touch-action: none; }
   .dpad button:active { transform: scale(0.92); border-color: var(--spot-accent); background: rgba(45, 141, 143, 0.72); }

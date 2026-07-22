@@ -16,6 +16,8 @@ export type ControlState = {
   right: boolean;
   action: boolean;
   balance: number;
+  lookYaw: number;
+  lookPitch: number;
 };
 
 type SurfSceneProps = {
@@ -188,7 +190,9 @@ const OCEAN_FRAGMENT = /* glsl */ `
   varying vec3 vWorldPosition;
 
   float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
   }
 
   float noise(vec2 p) {
@@ -307,6 +311,116 @@ function Ocean({
         uniforms={uniforms}
         vertexShader={OCEAN_VERTEX}
         fragmentShader={OCEAN_FRAGMENT}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
+const SHORELINE_VERTEX = /* glsl */ `
+  varying vec2 vUv;
+  varying vec2 vSurface;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vUv = uv;
+    vSurface = position.xy;
+    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const SHORELINE_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uTide;
+  uniform float uWind;
+  uniform float uLight;
+  varying vec2 vUv;
+  varying vec2 vSurface;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  void main() {
+    float land = 1.0 - vUv.y;
+    float along = vSurface.x;
+    float wind = clamp(uWind / 24.0, 0.0, 1.4);
+    float slowSet = sin(uTime * .31) * .5 + .5;
+    float edgeNoise = noise(vec2(along * .055 + uTime * .024, uTime * .055));
+    float runup = .36 + slowSet * .13 + sin(along * .038 + uTime * .16) * .035;
+    runup += (edgeNoise - .5) * .075 + uTide * .025;
+
+    float wet = 1.0 - smoothstep(runup - .02, runup + .27, land);
+    float glass = 1.0 - smoothstep(.015, .24, abs(land - runup + .11));
+    float edgeDistance = abs(land - runup + (noise(vec2(along * .19, land * 9.0 - uTime * .17)) - .5) * .028);
+    float lace = 1.0 - smoothstep(.009, .038, edgeDistance);
+    float bubbles = noise(vec2(along * .78 - uTime * .46, land * 45.0 + uTime * .24));
+    float foam = lace * smoothstep(.27, .72, bubbles);
+
+    float backwashPhase = fract((land - runup) * 10.5 + uTime * .13);
+    float backwash = (1.0 - smoothstep(.0, .09, abs(backwashPhase - .5))) * wet;
+    backwash *= smoothstep(.61, .89, noise(vec2(along * .32, land * 23.0 + uTime * .08))) * .24;
+
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    float grazing = pow(1.0 - abs(viewDirection.y), 3.0);
+    vec3 wetColor = mix(vec3(.018, .105, .12), vec3(.075, .29, .27), uLight);
+    wetColor += vec3(.18, .31, .3) * glass * grazing * (.24 + uLight * .28);
+    vec3 foamColor = mix(vec3(.57, .79, .76), vec3(.94, 1.0, .96), uLight);
+    float foamMask = clamp(foam + backwash, 0.0, .95);
+    vec3 color = mix(wetColor, foamColor, foamMask);
+    color *= .9 + noise(vec2(along * 1.9, land * 28.0 - uTime * (.08 + wind * .06))) * .1;
+
+    float sideFade = smoothstep(0.0, .025, vUv.x) * smoothstep(0.0, .025, 1.0 - vUv.x);
+    float alpha = (wet * (.15 + glass * .13) + foamMask * .78) * sideFade;
+    alpha *= smoothstep(.0, .045, land) * (1.0 - smoothstep(.9, 1.0, land));
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, .92));
+  }
+`;
+
+function ShorelineWash({ settings, light, windSpeed }: { settings: SessionSettings; light: number; windSpeed: number }) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uTide: { value: 0 },
+    uWind: { value: 0 },
+    uLight: { value: 1 },
+  }), []);
+
+  useFrame(({ clock }) => {
+    if (!material.current) return;
+    const values = material.current.uniforms;
+    values.uTime.value = clock.elapsedTime;
+    values.uTide.value = THREE.MathUtils.lerp(values.uTide.value, settings.tide, .025);
+    values.uWind.value = windSpeed;
+    values.uLight.value = light;
+  });
+
+  return (
+    <mesh position={[0, -0.405, 20]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+      <planeGeometry args={[250, 32]} />
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={SHORELINE_VERTEX}
+        fragmentShader={SHORELINE_FRAGMENT}
+        transparent
+        depthWrite={false}
         side={THREE.DoubleSide}
       />
     </mesh>
@@ -747,6 +861,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
 }
 
 const SPRAY_PARTICLES = 48;
+const FOOTPRINT_COUNT = 28;
 
 function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> }) {
   const wake = useRef<THREE.Group>(null);
@@ -890,6 +1005,117 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
         />
       </points>
     </group>
+  );
+}
+
+function FootprintTrail({
+  motion,
+  targetPosition,
+}: {
+  motion: MutableRefObject<MotionState>;
+  targetPosition: MutableRefObject<THREE.Vector3>;
+}) {
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const previousPosition = useRef(new THREE.Vector3());
+  const traveled = useRef(0);
+  const cursor = useRef(0);
+  const footSide = useRef(-1);
+  const prints = useRef(Array.from({ length: FOOTPRINT_COUNT }, () => ({ x: 0, y: -100, z: 0, age: 0, side: 1 })));
+  const footprintTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 96;
+    canvas.height = 192;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "rgba(255,255,255,.9)";
+      context.beginPath();
+      context.ellipse(48, 128, 21, 43, -.05, 0, Math.PI * 2);
+      context.fill();
+      context.beginPath();
+      context.ellipse(49, 56, 27, 36, .04, 0, Math.PI * 2);
+      context.fill();
+      [22, 35, 48, 61, 73].forEach((x, index) => {
+        context.beginPath();
+        context.ellipse(x, 19 + Math.abs(index - 2) * 3, 6.5 - Math.abs(index - 2) * .45, 9 - Math.abs(index - 2) * .7, 0, 0, Math.PI * 2);
+        context.fill();
+      });
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    const current = targetPosition.current;
+    previousPosition.current.copy(current);
+    if (mesh.current) {
+      prints.current.forEach((print, index) => {
+        dummy.position.set(0, -100, 0);
+        dummy.updateMatrix();
+        mesh.current?.setMatrixAt(index, dummy.matrix);
+        print.age = 0;
+      });
+      mesh.current.instanceMatrix.needsUpdate = true;
+    }
+    return () => footprintTexture.dispose();
+  }, [dummy, footprintTexture, targetPosition]);
+
+  useFrame((_, delta) => {
+    if (!mesh.current) return;
+    const current = targetPosition.current;
+    const state = motion.current;
+    const stepDistance = current.distanceTo(previousPosition.current);
+    if (state.phase === "shore" && state.speed > .4 && current.z > 10 && current.z < 69) {
+      traveled.current += stepDistance;
+      if (traveled.current > .58) {
+        const side = footSide.current;
+        footSide.current *= -1;
+        traveled.current %= .58;
+        const print = prints.current[cursor.current++ % FOOTPRINT_COUNT];
+        print.x = current.x + side * .17;
+        print.z = current.z + (side > 0 ? .08 : -.08);
+        print.y = THREE.MathUtils.lerp(-.39, -.465, THREE.MathUtils.smoothstep(current.z, 24, 36));
+        print.age = 13;
+        print.side = side;
+      }
+    } else if (state.phase !== "shore") {
+      traveled.current = 0;
+    }
+    previousPosition.current.copy(current);
+
+    prints.current.forEach((print, index) => {
+      print.age = Math.max(0, print.age - delta);
+      if (print.age <= 0) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+      } else {
+        const fade = THREE.MathUtils.smoothstep(print.age, 0, 2.4);
+        dummy.position.set(print.x, print.y, print.z);
+        dummy.rotation.set(-Math.PI / 2, 0, print.side * .055);
+        dummy.scale.set(.31 * fade, .58 * fade, 1);
+      }
+      dummy.updateMatrix();
+      mesh.current?.setMatrixAt(index, dummy.matrix);
+    });
+    mesh.current.instanceMatrix.needsUpdate = true;
+  });
+
+  return (
+    <instancedMesh ref={mesh} args={[undefined, undefined, FOOTPRINT_COUNT]} frustumCulled={false} renderOrder={3}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial
+        map={footprintTexture}
+        color="#2a211b"
+        transparent
+        opacity={.34}
+        alphaTest={.08}
+        depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={-2}
+      />
+    </instancedMesh>
   );
 }
 
@@ -1396,6 +1622,8 @@ function Simulation({
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false });
   const cameraTarget = useRef(new THREE.Vector3());
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
+  const cameraOffset = useRef(new THREE.Vector3());
+  const cameraOrbit = useRef(new THREE.Spherical());
 
   useEffect(() => {
     onReady();
@@ -1699,6 +1927,17 @@ function Simulation({
       );
       cameraTarget.current.set(position.current.x, playerY + 0.9 - barrelCamera * 0.2, position.current.z + (riding ? 5.4 : -3));
     }
+    const lookScale = riding ? .34 : driving ? .76 : 1;
+    cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
+    cameraOrbit.current.setFromVector3(cameraOffset.current);
+    cameraOrbit.current.theta += state.lookYaw * 1.68 * lookScale;
+    cameraOrbit.current.phi = THREE.MathUtils.clamp(
+      cameraOrbit.current.phi + state.lookPitch * .62 * lookScale,
+      .38,
+      Math.PI * .49,
+    );
+    cameraOffset.current.setFromSpherical(cameraOrbit.current);
+    cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
     const cameraShake = riding
       ? motion.current.maneuver * 0.1 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
       : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * 0.55) * 0.16 : 0;
@@ -1830,6 +2069,8 @@ function Simulation({
         sunColor={sunLightColor}
       />
       <BeachLife beach={beach} windSpeed={windSpeed} />
+      <ShorelineWash settings={settings} light={light} windSpeed={windSpeed} />
+      <FootprintTrail motion={motion} targetPosition={position} />
       <group ref={player}>
         <BreakingWave motion={motion} settings={settings} light={light} cloudCover={cloudCover} />
         <WaterInteraction motion={motion} />
