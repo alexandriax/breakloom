@@ -1,6 +1,6 @@
 # Surfscape
 
-Surfscape is a browser-based 3D surfing game driven by current marine forecast data. Pick an exact paddle-out on a real OpenStreetMap shoreline, read the local swell, walk into the water, paddle beyond the break, and surf a procedural wave.
+Surfscape is a browser-based 3D surfing game driven by current marine forecast data. Pick an exact paddle-out on a real OpenStreetMap shoreline, read the local swell, walk into the water, paddle beyond the break, and surf a procedural wave set.
 
 You can also walk up to the coast road, enter the Surfscape van, and drive between peaks with three boards on the roof rack.
 
@@ -16,11 +16,14 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Controls
 
 - `WASD` or arrow keys: walk, paddle, and steer
+- `W` while riding: pump for speed (uses stamina)
 - Mouse horizontal position: balance while riding
-- `Space`: catch a wave
+- `Space`: catch a wave; while riding, land a context-sensitive maneuver
 - `Space` beside the parked van: enter; stop and press again to exit
 - `Esc`: pause
-- Mobile: on-screen D-pad, balance rail, and Catch button
+- Mobile: on-screen D-pad, balance rail, and context-sensitive Catch/Move button
+
+Wave sets build and fade on the swell radar. Better-timed catches start with more flow, while stamina management, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, or High Line lands cleanly. Session objectives, grades, and personal bests are saved in the browser.
 
 ## Live data
 
@@ -36,4 +39,4 @@ The build automatically accounts for project-page paths such as `username.github
 
 ## Scope
 
-This version is a high-quality vertical slice: one procedural surfer, thirteen coastlines, selectable zones, live conditions, training/advanced/playground modes, scoring, procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
+This version is a high-quality vertical slice: one procedural surfer, thirteen coastlines, selectable zones, live conditions, grouped wave sets, stamina and maneuver systems, training/advanced/playground modes, persistent scoring, a drivable surf van, procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.

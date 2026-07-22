@@ -6,7 +6,7 @@ import { MutableRefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Beach } from "@/lib/beaches";
 import type { GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { waveHeightAt } from "@/lib/game";
+import { sessionGrade, waveHeightAt, waveSetState } from "@/lib/game";
 
 export type ControlState = {
   forward: boolean;
@@ -35,6 +35,8 @@ type MotionState = {
   steer: number;
   speed: number;
   wipeout: number;
+  maneuver: number;
+  maneuverSide: number;
 };
 
 type VehicleMotionState = {
@@ -70,8 +72,13 @@ const OCEAN_VERTEX = /* glsl */ `
     float secondary = wave(p.xy, 0.31, speed * 7.1, normalize(vec2(-0.16, 1.0)), 1.7);
     float cross = wave(p.xy, 0.13, -speed * 2.7, normalize(vec2(1.0, 0.68) + currentDir * .15), 0.0);
     float micro = sin(p.x * .75 + p.y * .32 + uTime * 2.4) * .035;
+    float setCycle = max(18.0, uPeriod * 3.1);
+    float setPhase = mod(uTime, setCycle);
+    float setAngle = ((setPhase - setCycle * .38) / setCycle) * 6.2831853;
+    float setEnergy = .12 + pow(max(0.0, cos(setAngle) * .5 + .5), 3.2) * .88;
+    float setLift = .78 + setEnergy * .34;
     float elevation = uTide * .3 + max(.12, uHeight * .62) * (
-      primary * .64 * shore + secondary * .22 + cross * .11
+      primary * .64 * shore * setLift + secondary * .22 + cross * .11
     ) + micro * (1.0 + uCurrent * .15);
     p.z += elevation;
     vHeight = elevation;
@@ -180,15 +187,32 @@ function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
     body.current.rotation.z = THREE.MathUtils.damp(
       body.current.rotation.z,
-      wipeout ? 1.7 : riding ? -state.balance * 0.34 : 0,
+      wipeout ? 1.7 : riding ? -state.balance * 0.34 + state.maneuverSide * state.maneuver * 0.34 : 0,
       7,
+      delta,
+    );
+    body.current.rotation.y = THREE.MathUtils.damp(
+      body.current.rotation.y,
+      riding ? state.maneuverSide * state.maneuver * 0.74 : 0,
+      9,
       delta,
     );
     body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.42 : riding ? 0.54 : 0.95, 8, delta);
     rig.current.rotation.z = wipeout ? state.wipeout * 2.1 : 0;
 
     board.current.rotation.x = THREE.MathUtils.damp(board.current.rotation.x, shore ? 0.14 : 0, 7, delta);
-    board.current.rotation.z = THREE.MathUtils.damp(board.current.rotation.z, shore ? -0.46 : riding ? state.steer * -0.13 : 0, 7, delta);
+    board.current.rotation.z = THREE.MathUtils.damp(
+      board.current.rotation.z,
+      shore ? -0.46 : riding ? state.steer * -0.13 - state.maneuverSide * state.maneuver * 0.22 : 0,
+      7,
+      delta,
+    );
+    board.current.rotation.y = THREE.MathUtils.damp(
+      board.current.rotation.y,
+      riding ? state.maneuverSide * state.maneuver * 0.52 : 0,
+      9,
+      delta,
+    );
     board.current.position.x = THREE.MathUtils.damp(board.current.position.x, shore ? 0.55 : 0, 7, delta);
     board.current.position.y = THREE.MathUtils.damp(board.current.position.y, shore ? 0.72 : 0.16, 7, delta);
 
@@ -196,8 +220,8 @@ function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
       const stroke = paddle ? Math.sin(t * 5.6) : shore ? Math.sin(t * state.speed * 1.8) * 0.5 : 0;
       leftArm.current.rotation.x = paddle ? stroke * 1.05 : riding ? -0.55 : stroke;
       rightArm.current.rotation.x = paddle ? -stroke * 1.05 : riding ? 0.55 : -stroke;
-      leftArm.current.rotation.z = riding ? 1.1 : 0.22;
-      rightArm.current.rotation.z = riding ? -1.1 : -0.22;
+      leftArm.current.rotation.z = riding ? 1.1 + state.maneuver * 0.34 : 0.22;
+      rightArm.current.rotation.z = riding ? -1.1 - state.maneuver * 0.34 : -0.22;
     }
     if (leftLeg.current && rightLeg.current) {
       const step = shore ? Math.sin(t * state.speed * 2.2) * 0.5 : 0;
@@ -590,12 +614,20 @@ function Simulation({
   const score = useRef(0);
   const combo = useRef(1);
   const rideDistance = useRef(0);
+  const stamina = useRef(100);
+  const maxCombo = useRef(1);
+  const maneuver = useRef("");
+  const maneuverScore = useRef(0);
+  const maneuverId = useRef(0);
+  const maneuverCount = useRef(0);
+  const lastManeuverAt = useRef(-10);
+  const catchQuality = useRef(0.5);
   const unstableFor = useRef(0);
   const wipeoutAt = useRef(0);
   const actionLatch = useRef(false);
   const lastStatsAt = useRef(0);
   const cleanFinish = useRef(false);
-  const motion = useRef<MotionState>({ phase: "shore", balance: 0, steer: 0, speed: 0, wipeout: 0 });
+  const motion = useRef<MotionState>({ phase: "shore", balance: 0, steer: 0, speed: 0, wipeout: 0, maneuver: 0, maneuverSide: 0 });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false });
   const cameraTarget = useRef(new THREE.Vector3());
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
@@ -612,6 +644,7 @@ function Simulation({
     const steer = (state.right ? 1 : 0) - (state.left ? 1 : 0);
     const move = (state.forward ? 1 : 0) - (state.back ? 1 : 0);
     const modeDifficulty = settings.mode === "advanced" ? 1.12 : settings.mode === "training" ? 0.62 : 0.86;
+    const setState = waveSetState(t, settings.wavePeriod);
     let speed = 0;
     let balanceTarget = 0;
     let prompt = "Read the water";
@@ -624,6 +657,7 @@ function Simulation({
 
     if (active) {
       if (currentPhase === "shore") {
+        stamina.current = Math.min(100, stamina.current + delta * 12);
         speed = move * 4.4;
         position.current.z -= speed * delta;
         position.current.x += steer * 3.7 * delta;
@@ -640,6 +674,7 @@ function Simulation({
         }
         if (position.current.z < 8) phase.current = "wading";
       } else if (currentPhase === "driving") {
+        stamina.current = Math.min(100, stamina.current + delta * 15);
         const throttle = move;
         const movingForward = vanSpeed.current > 0.4;
         const braking = throttle < 0 && movingForward;
@@ -686,6 +721,7 @@ function Simulation({
           }
         }
       } else if (currentPhase === "wading") {
+        stamina.current = Math.min(100, stamina.current + delta * 7);
         speed = move * 2.5;
         position.current.z -= speed * delta;
         position.current.x += steer * 2 * delta;
@@ -693,22 +729,32 @@ function Simulation({
         if (position.current.z > 10) phase.current = "shore";
         if (position.current.z < 1) phase.current = "paddling";
       } else if (currentPhase === "paddling") {
-        speed = Math.max(0, move) * 4.2 + (state.back ? -1.2 : 0);
+        if (state.forward) stamina.current = Math.max(0, stamina.current - delta * 7.5);
+        else stamina.current = Math.min(100, stamina.current + delta * 10);
+        const paddleEfficiency = 0.58 + stamina.current * 0.0042;
+        speed = Math.max(0, move) * 4.2 * paddleEfficiency + (state.back ? -1.2 : 0);
         position.current.z -= speed * delta;
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
         const ready = position.current.z < -18;
-        prompt = ready ? "Wave approaching — press SPACE to catch it" : "Paddle beyond the break";
-        if (settings.mode === "training" && position.current.z < -34) prompt = "Press SPACE — timing window assisted";
+        const setCopy = setState.secondsToPeak === 0 ? "Set is here" : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
+        prompt = ready ? `${setCopy} · SPACE to catch` : "Paddle beyond the break";
+        if (settings.mode === "training" && position.current.z < -34) prompt = `${setCopy} · timing assist active`;
         if (actionPressed && ready) {
           phase.current = "riding";
           rideDistance.current = 0;
           unstableFor.current = 0;
-          combo.current = 1;
+          catchQuality.current = setState.energy;
+          combo.current = 0.9 + setState.energy * 0.8;
+          maxCombo.current = Math.max(maxCombo.current, combo.current);
+          score.current += Math.round(90 + setState.energy * 360);
           cleanFinish.current = false;
         }
       } else if (currentPhase === "riding") {
         const waveSpeed = 8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1;
-        speed = waveSpeed + Math.max(0, move) * 2.4;
+        const pumping = state.forward && stamina.current > 1;
+        stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
+        const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
+        speed = waveSpeed * (0.88 + setState.energy * 0.16) + pumpBoost - Math.max(0, -move) * 1.5;
         position.current.z += speed * delta;
         position.current.x += steer * (4.4 + speed * 0.18) * delta;
         rideDistance.current += speed * delta;
@@ -720,12 +766,52 @@ function Simulation({
         const failThreshold = settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82;
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
         const wavePhase = Math.sin(position.current.z * 0.19 + position.current.x * 0.018 + t * 0.72);
-        waveQuality = (wavePhase + 1) * 0.5;
+        waveQuality = THREE.MathUtils.clamp((wavePhase + 1) * 0.42 + setState.energy * 0.16 + catchQuality.current * 0.08, 0, 1);
         const controlQuality = Math.max(0, 1 - balanceError / 1.2);
         const turnBonus = Math.abs(steer) * 12;
-        combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(steer) * delta * 0.15);
+        combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(steer) * delta * 0.15 + (pumping ? delta * 0.04 : 0));
+        maxCombo.current = Math.max(maxCombo.current, combo.current);
         score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * delta;
-        prompt = balanceError > failThreshold * 0.76 ? "Shift your weight toward the marker" : steer ? "Hold the rail — finish the turn" : "Stay in the pocket";
+        if (actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94) {
+          const rail = Math.abs(steer);
+          let name = "High Line";
+          let base = 150;
+          if (waveQuality > 0.72 && rail > 0.42) {
+            name = "Lip Snap";
+            base = 360;
+          } else if (waveQuality > 0.68) {
+            name = "Foam Floater";
+            base = 305;
+          } else if (waveQuality < 0.32 && rail > 0.38) {
+            name = "Pocket Cutback";
+            base = 285;
+          } else if (rail > 0.52) {
+            name = "Rail Carve";
+            base = 230;
+          } else if (pumping) {
+            name = "Power Pump";
+            base = 175;
+          }
+          const points = Math.round(base * (0.62 + controlQuality * 0.48) * (0.88 + setState.energy * 0.28) * combo.current);
+          score.current += points;
+          combo.current = Math.min(8, combo.current + 0.42 + controlQuality * 0.22);
+          maxCombo.current = Math.max(maxCombo.current, combo.current);
+          stamina.current = Math.max(0, stamina.current - 8);
+          maneuver.current = name;
+          maneuverScore.current = points;
+          maneuverCount.current += 1;
+          maneuverId.current += 1;
+          lastManeuverAt.current = t;
+          motion.current.maneuver = 1;
+          motion.current.maneuverSide = steer || (state.balance >= 0 ? 1 : -1);
+        }
+        prompt = balanceError > failThreshold * 0.76
+          ? "Shift your weight toward the marker"
+          : steer
+            ? "Hold the rail · SPACE to release a turn"
+            : pumping
+              ? "Pump for speed · watch your stamina"
+              : "Stay in the pocket · SPACE for a maneuver";
         if (unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
           phase.current = "wipeout";
           wipeoutAt.current = t;
@@ -737,6 +823,7 @@ function Simulation({
           position.current.z = 17;
         }
       } else if (currentPhase === "wipeout") {
+        stamina.current = Math.min(100, stamina.current + delta * 14);
         speed = 0;
         prompt = "Wipeout — reset in the foam";
         motion.current.wipeout = Math.min(1.8, t - wipeoutAt.current);
@@ -768,6 +855,7 @@ function Simulation({
     motion.current.balance = state.balance;
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
+    motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
@@ -813,6 +901,15 @@ function Simulation({
         balance: state.balance,
         balanceTarget,
         waveQuality,
+        stamina: Math.round(stamina.current),
+        setEnergy: setState.energy,
+        nextSetSeconds: setState.secondsToPeak,
+        maneuver: maneuver.current,
+        maneuverScore: maneuverScore.current,
+        maneuverId: maneuverId.current,
+        maneuverCount: maneuverCount.current,
+        maxCombo: Number(maxCombo.current.toFixed(1)),
+        grade: sessionGrade(score.current, rideDistance.current, maneuverCount.current),
         vehicleMode: phase.current === "driving",
         nearVan,
         prompt,

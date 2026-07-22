@@ -5,8 +5,10 @@ import {
   ArrowLeft,
   ArrowRight,
   AudioLines,
+  BatteryMedium,
   CarFront,
   ChevronDown,
+  CircleCheck,
   Crosshair,
   Droplets,
   Gauge,
@@ -17,6 +19,7 @@ import {
   RotateCcw,
   Settings2,
   Sparkles,
+  Target,
   Volume2,
   VolumeX,
   Waves,
@@ -50,6 +53,9 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 });
 
 type Screen = "launch" | "game";
+type PersonalBest = { score: number; distance: number; combo: number };
+
+const RECORD_KEY = "surfscape-personal-best-v1";
 
 const MODES: Array<{ id: GameMode; name: string; kicker: string; description: string }> = [
   {
@@ -110,9 +116,46 @@ export default function SurfscapeApp() {
   const [showPlanner, setShowPlanner] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
+  const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
+  const [recordsReady, setRecordsReady] = useState(false);
+  const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number } | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const previousPhase = useRef(stats.phase);
+  const previousManeuverId = useRef(0);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(RECORD_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved) as Partial<PersonalBest>;
+          setPersonalBest({
+            score: Number(parsed.score) || 0,
+            distance: Number(parsed.distance) || 0,
+            combo: Number(parsed.combo) || 1,
+          });
+        }
+      } catch {
+        // A private browsing policy may disable local storage; the session still works.
+      } finally {
+        setRecordsReady(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!recordsReady) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(RECORD_KEY, JSON.stringify(personalBest));
+      } catch {
+        // Bests remain available for the current tab when storage is unavailable.
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [personalBest, recordsReady]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -181,6 +224,16 @@ export default function SurfscapeApp() {
     audio.current?.setVehicle(paused ? 0 : stats.speed, !paused && stats.vehicleMode);
   }, [paused, stats.phase, stats.speed, stats.vehicleMode]);
 
+  useEffect(() => {
+    if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
+      previousManeuverId.current = stats.maneuverId;
+      setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore });
+      audio.current?.effect("turn");
+      const timer = window.setTimeout(() => setManeuverToast(null), 1800);
+      return () => window.clearTimeout(timer);
+    }
+  }, [stats.maneuver, stats.maneuverId, stats.maneuverScore]);
+
   const chooseBeach = (next: Beach) => {
     const startingZone = next.zones[Math.min(1, next.zones.length - 1)];
     setBeach(next);
@@ -204,6 +257,8 @@ export default function SurfscapeApp() {
     audio.current.setEnabled(soundEnabled);
     controls.current = { ...EMPTY_CONTROLS };
     setStats(INITIAL_STATS);
+    previousManeuverId.current = 0;
+    setManeuverToast(null);
     setSessionKey((value) => value + 1);
     setPaused(false);
     setScreen("game");
@@ -246,6 +301,22 @@ export default function SurfscapeApp() {
   const conditionQuality = qualityLabel(conditions);
   const accentStyle = { "--spot-accent": beach.palette[0], "--sand-accent": beach.palette[1] } as CSSProperties;
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
+  const handleStats = useCallback((next: GameStats) => {
+    setStats(next);
+    setPersonalBest((current) => {
+      const updated = {
+        score: Math.max(current.score, next.score),
+        distance: Math.max(current.distance, next.rideDistance),
+        combo: Math.max(current.combo, next.maxCombo),
+      };
+      return updated.score === current.score && updated.distance === current.distance && updated.combo === current.combo ? current : updated;
+    });
+  }, []);
+  const objectives = [
+    { label: "Ride 40 m", done: stats.rideDistance >= 40 },
+    { label: "Land 2 moves", done: stats.maneuverCount >= 2 },
+    { label: "Reach 3× flow", done: stats.maxCombo >= 3 },
+  ];
 
   return (
     <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
@@ -259,7 +330,7 @@ export default function SurfscapeApp() {
           sunset={conditions.sunset}
           controls={controls}
           active={screen === "game" && !paused}
-          onStats={setStats}
+          onStats={handleStats}
           onReady={handleSceneReady}
         />
       </div>
@@ -419,6 +490,9 @@ export default function SurfscapeApp() {
               <i />
               <span>{zoneLabel}</span>
               <strong>{localTime} {conditions.timezoneAbbreviation}</strong>
+              <i />
+              <span>Personal best</span>
+              <strong>{personalBest.score.toLocaleString()}</strong>
             </div>
             <button className="launch-button" onClick={startSession}>
               <span>ENTER THE WATER</span>
@@ -443,11 +517,41 @@ export default function SurfscapeApp() {
           </header>
 
           <div className="score-panel">
-            <span>SESSION SCORE</span>
+            <span>SESSION SCORE <b>{stats.grade}</b></span>
             <strong>{stats.score.toLocaleString()}</strong>
             <div><i style={{ width: `${Math.min(100, stats.combo * 12.5)}%` }} /></div>
-            <small>{stats.combo.toFixed(1)}× flow multiplier</small>
+            <small>{stats.combo.toFixed(1)}× flow · best {personalBest.score.toLocaleString()}</small>
           </div>
+
+          <div className="set-panel">
+            <div className="set-heading">
+              <div><Waves /><span>SWELL RADAR</span></div>
+              <strong>{stats.nextSetSeconds === 0 ? "SET HERE" : `${Math.ceil(stats.nextSetSeconds)}s`}</strong>
+            </div>
+            <div className="set-meter"><i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></div>
+            <div className="stamina-row">
+              <span><BatteryMedium /> STAMINA</span>
+              <div><i style={{ width: `${stats.stamina}%` }} /></div>
+              <strong>{stats.stamina}</strong>
+            </div>
+            <div className="session-goals">
+              <span><Target /> SESSION LINES</span>
+              {objectives.map((objective) => (
+                <small key={objective.label} className={objective.done ? "is-done" : ""}>
+                  {objective.done ? <CircleCheck /> : <i />} {objective.label}
+                </small>
+              ))}
+            </div>
+          </div>
+
+          {maneuverToast && (
+            <div className="maneuver-toast" key={maneuverToast.id}>
+              <Sparkles />
+              <span>LANDED</span>
+              <strong>{maneuverToast.name}</strong>
+              <b>+{maneuverToast.points.toLocaleString()}</b>
+            </div>
+          )}
 
           <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""}`}>
             <div className="balance-label"><span>BALANCE</span><strong>{Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%</strong></div>
@@ -489,7 +593,8 @@ export default function SurfscapeApp() {
             ) : (
               <>
                 <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move / steer</span>
-                <span><kbd>SPACE</kbd> {stats.nearVan ? "drive van" : "catch wave"}</span>
+                <span><kbd>W</kbd> {stats.phase === "riding" ? "pump for speed" : "move / paddle"}</span>
+                <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "land maneuver" : stats.nearVan ? "drive van" : "catch wave"}</span>
                 <span><span className="mouse-icon" /> mouse to balance</span>
               </>
             )}
@@ -506,8 +611,8 @@ export default function SurfscapeApp() {
               <span>BALANCE</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
             <button className="action-button" onPointerDown={() => setControl("action", true)} onPointerUp={() => setControl("action", false)} onPointerCancel={() => setControl("action", false)}>
-              <span>{stats.vehicleMode ? "EXIT" : stats.nearVan ? "DRIVE" : "CATCH"}</span>
-              {stats.vehicleMode || stats.nearVan ? <CarFront /> : <Waves />}
+              <span>{stats.vehicleMode ? "EXIT" : stats.nearVan ? "DRIVE" : stats.phase === "riding" ? "MOVE" : "CATCH"}</span>
+              {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" ? <Sparkles /> : <Waves />}
             </button>
           </div>
 
@@ -516,7 +621,7 @@ export default function SurfscapeApp() {
               <div className="pause-card">
                 <span className="overline">SESSION PAUSED</span>
                 <h2>Listen to the break.</h2>
-                <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Reset your line or return to the coast map.</p>
+                <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => setPaused(false)}><Play /> Return to water</button>
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
                 <button onClick={() => { setStats(INITIAL_STATS); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
@@ -535,7 +640,7 @@ export default function SurfscapeApp() {
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Use W or the D-pad to walk through the shallows until your board begins to float.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D. Move your mouse or thumb toward the balance marker to stay on rail.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D, use W to pump, balance with mouse or thumb, then press Space to land a context-aware maneuver.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>

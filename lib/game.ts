@@ -2,6 +2,7 @@ import type { MarineConditions } from "./marine";
 
 export type GameMode = "training" | "advanced" | "playground";
 export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
+export type SessionGrade = "C" | "B" | "A" | "S";
 
 export type SessionSettings = {
   mode: GameMode;
@@ -22,6 +23,15 @@ export type GameStats = {
   balance: number;
   balanceTarget: number;
   waveQuality: number;
+  stamina: number;
+  setEnergy: number;
+  nextSetSeconds: number;
+  maneuver: string;
+  maneuverScore: number;
+  maneuverId: number;
+  maneuverCount: number;
+  maxCombo: number;
+  grade: SessionGrade;
   vehicleMode: boolean;
   nearVan: boolean;
   prompt: string;
@@ -36,10 +46,42 @@ export const INITIAL_STATS: GameStats = {
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
+  stamina: 100,
+  setEnergy: 0,
+  nextSetSeconds: 0,
+  maneuver: "",
+  maneuverScore: 0,
+  maneuverId: 0,
+  maneuverCount: 0,
+  maxCombo: 1,
+  grade: "C",
   vehicleMode: false,
   nearVan: false,
   prompt: "Walk toward the water · or find the van",
 };
+
+export function waveSetState(elapsed: number, wavePeriod: number) {
+  const cycle = Math.max(18, wavePeriod * 3.1);
+  const phase = ((elapsed % cycle) + cycle) % cycle;
+  const peakAt = cycle * 0.38;
+  const angularDistance = ((phase - peakAt) / cycle) * Math.PI * 2;
+  const pulse = Math.pow(Math.max(0, Math.cos(angularDistance) * 0.5 + 0.5), 3.2);
+  const energy = Math.min(1, 0.12 + pulse * 0.88);
+  const secondsToPeak = (peakAt - phase + cycle) % cycle;
+  return {
+    energy,
+    secondsToPeak: secondsToPeak < 0.75 ? 0 : secondsToPeak,
+    cycle,
+  };
+}
+
+export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
+  const performance = score + rideDistance * 18 + maneuverCount * 420;
+  if (performance >= 11500) return "S";
+  if (performance >= 6500) return "A";
+  if (performance >= 2600) return "B";
+  return "C";
+}
 
 export function settingsFromConditions(conditions: MarineConditions): SessionSettings {
   const localHour = Number(conditions.observedAt.slice(11, 13));
@@ -63,6 +105,8 @@ export function waveHeightAt(
   const amplitude = Math.max(0.12, settings.waveHeight * 0.62);
   const period = Math.max(4, settings.wavePeriod);
   const speed = (Math.PI * 2) / period;
+  const setEnergy = waveSetState(elapsed, period).energy;
+  const setLift = 0.78 + setEnergy * 0.34;
   const shoreBoost = 0.72 + Math.max(0, Math.min(1, (z + 90) / 98)) * 0.75;
   const currentCurve = Math.sin((settings.currentDirection * Math.PI) / 180) * 0.0022;
   const p1 = z * 0.19 + x * 0.018 + x * x * currentCurve + elapsed * speed * 5.4;
@@ -70,7 +114,7 @@ export function waveHeightAt(
   const p3 = z * 0.09 + x * 0.13 - elapsed * speed * 2.7;
   return (
     settings.tide * 0.3 +
-    amplitude * shoreBoost * Math.sin(p1) * 0.64 +
+    amplitude * setLift * shoreBoost * Math.sin(p1) * 0.64 +
     amplitude * Math.sin(p2) * 0.22 +
     amplitude * Math.sin(p3) * 0.11
   );
