@@ -23,6 +23,9 @@ export type GameStats = {
   balance: number;
   balanceTarget: number;
   waveQuality: number;
+  stance: number;
+  barrelTime: number;
+  barrelIntensity: number;
   stamina: number;
   setEnergy: number;
   nextSetSeconds: number;
@@ -32,6 +35,11 @@ export type GameStats = {
   maneuverCount: number;
   maxCombo: number;
   grade: SessionGrade;
+  rideScore: number;
+  rideManeuvers: number;
+  rideGrade: SessionGrade;
+  rideResult: "" | "clean" | "wipeout";
+  rideResultId: number;
   vehicleMode: boolean;
   nearVan: boolean;
   prompt: string;
@@ -46,6 +54,9 @@ export const INITIAL_STATS: GameStats = {
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
+  stance: 0,
+  barrelTime: 0,
+  barrelIntensity: 0,
   stamina: 100,
   setEnergy: 0,
   nextSetSeconds: 0,
@@ -55,6 +66,11 @@ export const INITIAL_STATS: GameStats = {
   maneuverCount: 0,
   maxCombo: 1,
   grade: "C",
+  rideScore: 0,
+  rideManeuvers: 0,
+  rideGrade: "C",
+  rideResult: "",
+  rideResultId: 0,
   vehicleMode: false,
   nearVan: false,
   prompt: "Walk toward the water · or find the van",

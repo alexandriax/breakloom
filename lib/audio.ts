@@ -2,6 +2,9 @@ export class SurfscapeAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private ocean: AudioBufferSourceNode | null = null;
+  private surf: AudioBufferSourceNode | null = null;
+  private surfGain: GainNode | null = null;
+  private surfFilter: BiquadFilterNode | null = null;
   private pad: OscillatorNode[] = [];
   private engine: OscillatorNode[] = [];
   private engineGain: GainNode | null = null;
@@ -42,6 +45,22 @@ export class SurfscapeAudio {
     ocean.connect(oceanFilter).connect(oceanGain).connect(this.master);
     ocean.start();
     this.ocean = ocean;
+
+    const surf = this.context.createBufferSource();
+    const surfFilter = this.context.createBiquadFilter();
+    const surfGain = this.context.createGain();
+    surf.buffer = buffer;
+    surf.loop = true;
+    surf.playbackRate.value = 1.18;
+    surfFilter.type = "highpass";
+    surfFilter.frequency.value = 1050;
+    surfFilter.Q.value = 0.7;
+    surfGain.gain.value = 0;
+    surf.connect(surfFilter).connect(surfGain).connect(this.master);
+    surf.start();
+    this.surf = surf;
+    this.surfFilter = surfFilter;
+    this.surfGain = surfGain;
 
     const engineGain = this.context.createGain();
     const engineFilter = this.context.createBiquadFilter();
@@ -96,6 +115,19 @@ export class SurfscapeAudio {
       oscillator.frequency.cancelScheduledValues(now);
       oscillator.frequency.linearRampToValueAtTime((index ? 86 : 43) + revs * (index ? 92 : 46), now + 0.1);
     });
+  }
+
+  setSurf(speed: number, active: boolean, setEnergy: number, barrel: number) {
+    if (!this.context || !this.surfGain || !this.surfFilter || !this.surf) return;
+    const now = this.context.currentTime;
+    const velocity = Math.min(1, Math.max(0, speed - 5) / 13);
+    const targetGain = active && this.enabled ? 0.018 + velocity * 0.14 + barrel * 0.055 + setEnergy * 0.018 : 0;
+    this.surfGain.gain.cancelScheduledValues(now);
+    this.surfGain.gain.linearRampToValueAtTime(targetGain, now + 0.12);
+    this.surfFilter.frequency.cancelScheduledValues(now);
+    this.surfFilter.frequency.linearRampToValueAtTime(900 + velocity * 1250 + barrel * 420, now + 0.12);
+    this.surf.playbackRate.cancelScheduledValues(now);
+    this.surf.playbackRate.linearRampToValueAtTime(1.02 + velocity * 0.38 + barrel * 0.08, now + 0.12);
   }
 
   effect(kind: "catch" | "turn" | "wipeout" | "finish") {

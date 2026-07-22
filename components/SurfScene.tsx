@@ -37,6 +37,8 @@ type MotionState = {
   wipeout: number;
   maneuver: number;
   maneuverSide: number;
+  stance: number;
+  barrel: number;
 };
 
 type VehicleMotionState = {
@@ -56,6 +58,7 @@ const OCEAN_VERTEX = /* glsl */ `
   varying float vHeight;
   varying float vCrest;
   varying vec2 vSurface;
+  varying vec3 vWorldPosition;
 
   float wave(vec2 p, float frequency, float speed, vec2 direction, float phase) {
     return sin(dot(p, direction) * frequency + uTime * speed + phase);
@@ -84,6 +87,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vHeight = elevation;
     vCrest = primary * shore;
     vSurface = p.xy;
+    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
@@ -97,6 +101,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
   varying float vHeight;
   varying float vCrest;
   varying vec2 vSurface;
+  varying vec3 vWorldPosition;
 
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -108,9 +113,16 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 shallow = vec3(.055, .46, .46);
     float translucence = smoothstep(-.5, .8, vHeight) * (1.0 - depth) * .45;
     vec3 color = mix(deep, shallow, translucence);
+    vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    float fresnel = pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 3.0);
+    color = mix(color, vec3(.21, .55, .62), fresnel * (.22 + uLight * .18));
     float ripple = sin(vSurface.x * 1.7 + vSurface.y * .9 + uTime * 1.8) * .5 + .5;
     float glint = pow(max(0.0, ripple * (vHeight + .48)), 4.0) * (.2 + uLight * .45);
     color += vec3(.38, .82, .81) * glint;
+    float edgeSparkle = pow(max(0.0, dot(reflect(-viewDirection, surfaceNormal), normalize(vec3(-.3, .8, -.45)))), 48.0);
+    color += vec3(.82, .96, .91) * edgeSparkle * (.18 + uLight * .72);
     float crestGate = smoothstep(.69, .94, vCrest) * smoothstep(.35, 1.2, uHeight);
     float foamNoise = hash(floor(vSurface * vec2(.42, .16) + uTime * vec2(1.4, .1)));
     float shoreFoam = smoothstep(5.5, 10.5, vSurface.y) * (.45 + .55 * sin(vSurface.x * .2 + uTime * 1.7));
@@ -198,9 +210,9 @@ function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
       delta,
     );
     body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.42 : riding ? 0.54 : 0.95, 8, delta);
+    body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = wipeout ? state.wipeout * 2.1 : 0;
 
-    board.current.rotation.x = THREE.MathUtils.damp(board.current.rotation.x, shore ? 0.14 : 0, 7, delta);
     board.current.rotation.z = THREE.MathUtils.damp(
       board.current.rotation.z,
       shore ? -0.46 : riding ? state.steer * -0.13 - state.maneuverSide * state.maneuver * 0.22 : 0,
@@ -215,6 +227,12 @@ function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
     );
     board.current.position.x = THREE.MathUtils.damp(board.current.position.x, shore ? 0.55 : 0, 7, delta);
     board.current.position.y = THREE.MathUtils.damp(board.current.position.y, shore ? 0.72 : 0.16, 7, delta);
+    board.current.rotation.x = THREE.MathUtils.damp(
+      board.current.rotation.x,
+      shore ? 0.14 : riding ? state.stance * -0.035 + state.barrel * 0.025 : 0,
+      7,
+      delta,
+    );
 
     if (leftArm.current && rightArm.current) {
       const stroke = paddle ? Math.sin(t * 5.6) : shore ? Math.sin(t * state.speed * 1.8) * 0.5 : 0;
@@ -301,6 +319,153 @@ function SurferModel({ motion }: { motion: MutableRefObject<MotionState> }) {
           </mesh>
         </group>
       </group>
+    </group>
+  );
+}
+
+const SPRAY_PARTICLES = 48;
+
+function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> }) {
+  const wake = useRef<THREE.Group>(null);
+  const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
+  const spray = useRef<THREE.Points>(null);
+  const sprayMaterial = useRef<THREE.PointsMaterial>(null);
+  const positions = useMemo(() => {
+    const values = new Float32Array(SPRAY_PARTICLES * 3);
+    for (let index = 0; index < SPRAY_PARTICLES; index += 1) values[index * 3 + 1] = -20;
+    return values;
+  }, []);
+  const velocities = useRef(new Float32Array(SPRAY_PARTICLES * 3));
+  const life = useRef(new Float32Array(SPRAY_PARTICLES));
+  const cursor = useRef(0);
+  const emission = useRef(0);
+  const previousManeuver = useRef(0);
+  const particleTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(32, 32, 2, 32, 32, 30);
+      gradient.addColorStop(0, "rgba(255,255,255,1)");
+      gradient.addColorStop(0.34, "rgba(214,255,248,.95)");
+      gradient.addColorStop(1, "rgba(214,255,248,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 64, 64);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => () => particleTexture.dispose(), [particleTexture]);
+
+  useFrame(({ clock }, delta) => {
+    const state = motion.current;
+    const riding = state.phase === "riding";
+    const paddling = state.phase === "paddling" || state.phase === "wading";
+    if (wake.current) {
+      wake.current.visible = riding || paddling;
+      const speedScale = THREE.MathUtils.clamp(state.speed / 13, 0.2, 1.35);
+      wake.current.scale.z = THREE.MathUtils.damp(wake.current.scale.z, paddling ? 0.56 : speedScale, 6, delta);
+      wake.current.position.y = Math.sin(clock.elapsedTime * 7.5) * 0.018;
+    }
+    const targetOpacity = riding ? 0.2 + Math.min(0.38, state.speed * 0.018) : paddling ? 0.16 : 0;
+    wakeMaterials.current.forEach((material, index) => {
+      if (!material) return;
+      const stagger = index > 1 ? 0.68 : 1;
+      material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity * stagger, 7, delta);
+    });
+    const positionAttribute = spray.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const particlePositions = positionAttribute?.array as Float32Array | undefined;
+
+    const emit = (count: number, impact: boolean) => {
+      if (!particlePositions) return;
+      for (let particle = 0; particle < count; particle += 1) {
+        const index = cursor.current++ % SPRAY_PARTICLES;
+        const offset = index * 3;
+        const railSide = Math.abs(state.steer) > 0.12 ? -Math.sign(state.steer) : Math.random() > 0.5 ? 1 : -1;
+        particlePositions[offset] = railSide * (0.22 + Math.random() * (impact ? 0.5 : 0.22));
+        particlePositions[offset + 1] = 0.08 + Math.random() * 0.18;
+        particlePositions[offset + 2] = impact ? Math.random() * 0.7 - 0.15 : -0.32 - Math.random() * 0.8;
+        velocities.current[offset] = railSide * (0.75 + Math.random() * (impact ? 2.7 : 1.25));
+        velocities.current[offset + 1] = 0.65 + Math.random() * (impact ? 2.6 : 1.35) + state.barrel * 0.5;
+        velocities.current[offset + 2] = -(1.4 + Math.random() * (impact ? 3.6 : 2.2));
+        life.current[index] = impact ? 0.9 + Math.random() * 0.35 : 0.46 + Math.random() * 0.38;
+      }
+    };
+
+    if (riding) {
+      emission.current += delta * (Math.abs(state.steer) * 18 + state.barrel * 12 + Math.max(0, state.speed - 9) * 0.8);
+      if (emission.current >= 1) {
+        const count = Math.min(5, Math.floor(emission.current));
+        emit(count, false);
+        emission.current -= count;
+      }
+      if (state.maneuver > 0.82 && previousManeuver.current <= 0.82) emit(18, true);
+    }
+    previousManeuver.current = state.maneuver;
+
+    if (!particlePositions) return;
+    for (let index = 0; index < SPRAY_PARTICLES; index += 1) {
+      if (life.current[index] <= 0) continue;
+      const offset = index * 3;
+      life.current[index] -= delta;
+      particlePositions[offset] += velocities.current[offset] * delta;
+      particlePositions[offset + 1] += velocities.current[offset + 1] * delta;
+      particlePositions[offset + 2] += velocities.current[offset + 2] * delta;
+      velocities.current[offset + 1] -= delta * 3.4;
+      velocities.current[offset] *= 1 - delta * 0.55;
+      if (life.current[index] <= 0 || particlePositions[offset + 1] < -0.08) particlePositions[offset + 1] = -20;
+    }
+    if (positionAttribute) positionAttribute.needsUpdate = true;
+    if (sprayMaterial.current) sprayMaterial.current.opacity = THREE.MathUtils.damp(sprayMaterial.current.opacity, riding ? 0.88 : 0, 7, delta);
+  });
+
+  return (
+    <group ref={wake}>
+      {[-0.24, 0.24].map((x, index) => (
+        <mesh key={x} position={[x, 0.035, -2.9]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.2, 5.8]} />
+          <meshBasicMaterial
+            ref={(material) => { wakeMaterials.current[index] = material; }}
+            color={index ? "#d9fff7" : "#9eece2"}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      ))}
+      {[0, 1].map((index) => (
+        <mesh key={index} position={[0, 0.045, -1.3 - index * 1.85]} rotation={[-Math.PI / 2, 0, 0]} scale={[1 + index * 0.6, 1.45 + index * 0.85, 1]}>
+          <ringGeometry args={[0.3, 0.78, 28]} />
+          <meshBasicMaterial
+            ref={(material) => { wakeMaterials.current[index + 2] = material; }}
+            color="#cafff7"
+            transparent
+            opacity={0}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+      <points ref={spray} frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={sprayMaterial}
+          map={particleTexture}
+          color="#d8fff8"
+          size={0.24}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={0.03}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
     </group>
   );
 }
@@ -614,6 +779,14 @@ function Simulation({
   const score = useRef(0);
   const combo = useRef(1);
   const rideDistance = useRef(0);
+  const stance = useRef(0);
+  const barrelTime = useRef(0);
+  const rideStartScore = useRef(0);
+  const rideScore = useRef(0);
+  const rideManeuverStart = useRef(0);
+  const rideGrade = useRef<GameStats["rideGrade"]>("C");
+  const rideResult = useRef<"" | "clean" | "wipeout">("");
+  const rideResultId = useRef(0);
   const stamina = useRef(100);
   const maxCombo = useRef(1);
   const maneuver = useRef("");
@@ -627,7 +800,17 @@ function Simulation({
   const actionLatch = useRef(false);
   const lastStatsAt = useRef(0);
   const cleanFinish = useRef(false);
-  const motion = useRef<MotionState>({ phase: "shore", balance: 0, steer: 0, speed: 0, wipeout: 0, maneuver: 0, maneuverSide: 0 });
+  const motion = useRef<MotionState>({
+    phase: "shore",
+    balance: 0,
+    steer: 0,
+    speed: 0,
+    wipeout: 0,
+    maneuver: 0,
+    maneuverSide: 0,
+    stance: 0,
+    barrel: 0,
+  });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false });
   const cameraTarget = useRef(new THREE.Vector3());
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
@@ -649,6 +832,7 @@ function Simulation({
     let balanceTarget = 0;
     let prompt = "Read the water";
     let waveQuality = 0;
+    let barrelIntensity = 0;
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
@@ -657,6 +841,7 @@ function Simulation({
 
     if (active) {
       if (currentPhase === "shore") {
+        stance.current = THREE.MathUtils.damp(stance.current, 0, 4, delta);
         stamina.current = Math.min(100, stamina.current + delta * 12);
         speed = move * 4.4;
         position.current.z -= speed * delta;
@@ -674,6 +859,7 @@ function Simulation({
         }
         if (position.current.z < 8) phase.current = "wading";
       } else if (currentPhase === "driving") {
+        stance.current = THREE.MathUtils.damp(stance.current, 0, 4, delta);
         stamina.current = Math.min(100, stamina.current + delta * 15);
         const throttle = move;
         const movingForward = vanSpeed.current > 0.4;
@@ -721,6 +907,7 @@ function Simulation({
           }
         }
       } else if (currentPhase === "wading") {
+        stance.current = THREE.MathUtils.damp(stance.current, 0, 3, delta);
         stamina.current = Math.min(100, stamina.current + delta * 7);
         speed = move * 2.5;
         position.current.z -= speed * delta;
@@ -742,32 +929,50 @@ function Simulation({
         if (actionPressed && ready) {
           phase.current = "riding";
           rideDistance.current = 0;
+          barrelTime.current = 0;
+          stance.current = 0;
           unstableFor.current = 0;
           catchQuality.current = setState.energy;
           combo.current = 0.9 + setState.energy * 0.8;
           maxCombo.current = Math.max(maxCombo.current, combo.current);
+          rideStartScore.current = score.current;
+          rideManeuverStart.current = maneuverCount.current;
           score.current += Math.round(90 + setState.energy * 360);
+          rideResult.current = "";
           cleanFinish.current = false;
         }
       } else if (currentPhase === "riding") {
         const waveSpeed = 8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1;
         const pumping = state.forward && stamina.current > 1;
+        if (state.forward) stance.current = Math.min(1, stance.current + delta * 0.72);
+        else if (state.back) stance.current = Math.max(-1, stance.current - delta * 0.86);
+        else stance.current = THREE.MathUtils.damp(stance.current, 0, 1.05, delta);
+        const nosePressure = Math.max(0, stance.current);
+        const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
-        speed = waveSpeed * (0.88 + setState.energy * 0.16) + pumpBoost - Math.max(0, -move) * 1.5;
+        speed = waveSpeed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
         position.current.z += speed * delta;
-        position.current.x += steer * (4.4 + speed * 0.18) * delta;
+        position.current.x += steer * (4.4 + speed * 0.18) * (1 + tailPressure * 0.38 - nosePressure * 0.12) * delta;
         rideDistance.current += speed * delta;
         balanceTarget =
-          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) +
+          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) +
           Math.sin(t * 3.1) * settings.currentStrength * 0.045 -
-          steer * 0.22;
+          steer * (0.22 + tailPressure * 0.08) +
+          stance.current * 0.07;
         const balanceError = Math.abs(state.balance - balanceTarget);
         const failThreshold = settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82;
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
         const wavePhase = Math.sin(position.current.z * 0.19 + position.current.x * 0.018 + t * 0.72);
         waveQuality = THREE.MathUtils.clamp((wavePhase + 1) * 0.42 + setState.energy * 0.16 + catchQuality.current * 0.08, 0, 1);
         const controlQuality = Math.max(0, 1 - balanceError / 1.2);
+        const inBarrel = waveQuality > 0.72 && controlQuality > 0.72 && Math.abs(steer) < 0.68 && stance.current > -0.58;
+        barrelIntensity = inBarrel ? THREE.MathUtils.clamp((waveQuality - 0.62) * 2.5 + controlQuality * 0.2, 0, 1) : 0;
+        if (inBarrel) {
+          barrelTime.current += delta;
+          combo.current = Math.min(8, combo.current + delta * 0.23);
+          score.current += (26 + barrelTime.current * 4) * controlQuality * combo.current * delta;
+        }
         const turnBonus = Math.abs(steer) * 12;
         combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(steer) * delta * 0.15 + (pumping ? delta * 0.04 : 0));
         maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -776,7 +981,13 @@ function Simulation({
           const rail = Math.abs(steer);
           let name = "High Line";
           let base = 150;
-          if (waveQuality > 0.72 && rail > 0.42) {
+          if (nosePressure > 0.62 && rail < 0.32 && waveQuality > 0.55) {
+            name = "Nose Ride";
+            base = 340;
+          } else if (tailPressure > 0.58 && rail > 0.42 && waveQuality > 0.54) {
+            name = "Tail Release";
+            base = 390;
+          } else if (waveQuality > 0.72 && rail > 0.42) {
             name = "Lip Snap";
             base = 360;
           } else if (waveQuality > 0.68) {
@@ -792,7 +1003,7 @@ function Simulation({
             name = "Power Pump";
             base = 175;
           }
-          const points = Math.round(base * (0.62 + controlQuality * 0.48) * (0.88 + setState.energy * 0.28) * combo.current);
+          const points = Math.round(base * (0.62 + controlQuality * 0.48) * (0.88 + setState.energy * 0.28) * combo.current * (1 + barrelIntensity * 0.12));
           score.current += points;
           combo.current = Math.min(8, combo.current + 0.42 + controlQuality * 0.22);
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -807,17 +1018,29 @@ function Simulation({
         }
         prompt = balanceError > failThreshold * 0.76
           ? "Shift your weight toward the marker"
+          : inBarrel
+            ? `Locked in the barrel · ${barrelTime.current.toFixed(1)}s`
           : steer
             ? "Hold the rail · SPACE to release a turn"
             : pumping
-              ? "Pump for speed · watch your stamina"
-              : "Stay in the pocket · SPACE for a maneuver";
+              ? "Move toward the nose · pumping for speed"
+              : state.back
+                ? "Tail pressure · tighter turning response"
+                : "W nose / pump · S tail / control · SPACE maneuver";
         if (unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
           phase.current = "wipeout";
           wipeoutAt.current = t;
+          rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
+          rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
+          rideResult.current = "wipeout";
+          rideResultId.current += 1;
           combo.current = 1;
         } else if (position.current.z > 11) {
           score.current += 750 + rideDistance.current * 11;
+          rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
+          rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
+          rideResult.current = "clean";
+          rideResultId.current += 1;
           cleanFinish.current = true;
           phase.current = "shore";
           position.current.z = 17;
@@ -856,6 +1079,8 @@ function Simulation({
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
+    motion.current.stance = stance.current;
+    motion.current.barrel = THREE.MathUtils.damp(motion.current.barrel, barrelIntensity, 6, delta);
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
@@ -880,15 +1105,34 @@ function Simulation({
         vanPosition.current.z + forwardZ * 6.2,
       );
     } else {
+      const barrelCamera = riding ? motion.current.barrel : 0;
       cameraPosition.current.set(
-        position.current.x + (riding ? steer * -1.7 : 0),
-        playerY + (riding ? 3.2 : 4.9),
-        position.current.z + (riding ? -8.4 : paddling ? 9.5 : 10.5),
+        position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 : 0),
+        playerY + (riding ? 3.2 - barrelCamera * 0.72 : 4.9),
+        position.current.z + (riding ? -8.4 + barrelCamera * 1.45 : paddling ? 9.5 : 10.5),
       );
-      cameraTarget.current.set(position.current.x, playerY + 0.9, position.current.z + (riding ? 5.4 : -3));
+      cameraTarget.current.set(position.current.x, playerY + 0.9 - barrelCamera * 0.2, position.current.z + (riding ? 5.4 : -3));
     }
+    const cameraShake = riding
+      ? motion.current.maneuver * 0.1 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
+      : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * 0.55) * 0.16 : 0;
+    cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
+    cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
     camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * (driving ? 3.8 : riding ? 3.1 : 2.4)));
     camera.lookAt(cameraTarget.current);
+    camera.rotateZ(riding ? -steer * 0.018 - motion.current.maneuverSide * motion.current.maneuver * 0.025 : driving ? vanMotion.current.steer * -0.012 : 0);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      const targetFov = driving
+        ? 59 + Math.min(5, Math.abs(vanSpeed.current) * 0.2)
+        : riding
+          ? 58 + Math.min(8, Math.max(0, speed - 7) * 0.72) + motion.current.maneuver * 2.4
+          : paddling ? 56 : 58;
+      const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
+      if (Math.abs(camera.fov - nextFov) > 0.005) {
+        const focalLength = 0.5 * camera.getFilmHeight() / Math.tan(THREE.MathUtils.degToRad(nextFov * 0.5));
+        camera.setFocalLength(focalLength);
+      }
+    }
 
     if (active && t - lastStatsAt.current > 0.11) {
       lastStatsAt.current = t;
@@ -901,6 +1145,9 @@ function Simulation({
         balance: state.balance,
         balanceTarget,
         waveQuality,
+        stance: stance.current,
+        barrelTime: Number(barrelTime.current.toFixed(1)),
+        barrelIntensity: motion.current.barrel,
         stamina: Math.round(stamina.current),
         setEnergy: setState.energy,
         nextSetSeconds: setState.secondsToPeak,
@@ -910,6 +1157,11 @@ function Simulation({
         maneuverCount: maneuverCount.current,
         maxCombo: Number(maxCombo.current.toFixed(1)),
         grade: sessionGrade(score.current, rideDistance.current, maneuverCount.current),
+        rideScore: rideScore.current,
+        rideManeuvers: Math.max(0, maneuverCount.current - rideManeuverStart.current),
+        rideGrade: rideGrade.current,
+        rideResult: rideResult.current,
+        rideResultId: rideResultId.current,
         vehicleMode: phase.current === "driving",
         nearVan,
         prompt,
@@ -963,6 +1215,7 @@ function Simulation({
       <Ocean settings={settings} light={light} cloudCover={cloudCover} />
       <BeachLife tropical={tropical} />
       <group ref={player}>
+        <WaterInteraction motion={motion} />
         <SurferModel motion={motion} />
       </group>
       <group ref={van}>

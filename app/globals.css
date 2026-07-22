@@ -833,10 +833,43 @@ input:focus-visible {
 .maneuver-toast strong { font-size: 12px; letter-spacing: 0.03em; }
 .maneuver-toast b { grid-row: 1 / 3; grid-column: 3; color: var(--spot-accent); font-family: Impact, sans-serif; font-size: 18px; letter-spacing: 0.06em; }
 
+.ride-recap {
+  position: absolute;
+  top: 101px;
+  left: 50%;
+  min-width: 360px;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  transform: translateX(-50%);
+  border: 1px solid rgba(157, 255, 238, 0.3);
+  border-bottom: 2px solid #71e1d3;
+  background: linear-gradient(105deg, rgba(3, 17, 23, 0.91), rgba(4, 20, 27, 0.72));
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
+  animation: ride-recap 3.6s ease both;
+}
+.ride-recap.is-wipeout { border-color: rgba(242, 100, 78, 0.38); border-bottom-color: var(--coral); }
+.ride-grade { min-height: 74px; display: grid; place-items: center; align-content: center; gap: 3px; border-right: 1px solid rgba(255, 255, 255, 0.12); background: rgba(113, 225, 211, 0.08); }
+.is-wipeout .ride-grade { background: rgba(242, 100, 78, 0.08); }
+.ride-grade span { color: #a6fff2; font-size: 5px; font-weight: 900; letter-spacing: 0.14em; }
+.is-wipeout .ride-grade span { color: #ffad9c; }
+.ride-grade strong { font-family: Impact, sans-serif; font-size: 34px; line-height: 0.9; color: #bafff6; }
+.is-wipeout .ride-grade strong { color: #ffad9c; }
+.ride-recap-copy { display: flex; flex-direction: column; justify-content: center; padding: 11px 16px; }
+.ride-recap-copy > span { color: var(--muted); font-size: 5px; letter-spacing: 0.18em; }
+.ride-recap-copy > strong { margin: 4px 0 3px; font-family: Impact, sans-serif; font-size: 20px; letter-spacing: 0.07em; }
+.ride-recap-copy > small { color: rgba(255, 255, 255, 0.58); font-size: 7px; letter-spacing: 0.04em; }
+
 @keyframes maneuver-pop {
   0% { opacity: 0; transform: translateX(-50%) translateY(14px) scale(0.94); }
   13%, 74% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
   100% { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.98); }
+}
+
+@keyframes ride-recap {
+  0% { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.95); }
+  9%, 78% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(0.98); }
 }
 
 .balance-instrument {
@@ -854,11 +887,18 @@ input:focus-visible {
 }
 .balance-instrument.is-active { opacity: 1; transform: translateX(-50%) translateY(0); }
 .balance-label { display: flex; justify-content: space-between; margin-bottom: 9px; font-size: 8px; letter-spacing: 0.13em; }
+.balance-label > span { display: flex; align-items: center; gap: 8px; }
+.balance-label em { padding: 3px 5px; border: 1px solid rgba(255, 255, 255, 0.14); color: var(--muted); font-size: 5px; font-style: normal; letter-spacing: 0.11em; transition: color 0.2s, border-color 0.2s, box-shadow 0.2s; }
+.balance-label em.is-barrel { border-color: rgba(113, 225, 211, 0.6); color: #b9fff6; box-shadow: inset 0 0 10px rgba(113, 225, 211, 0.12), 0 0 12px rgba(113, 225, 211, 0.1); }
 .balance-label strong { color: var(--spot-accent); }
 .balance-track { position: relative; height: 6px; background: linear-gradient(90deg, #f2644e, #d9c16f 25%, #70dca8 50%, #d9c16f 75%, #f2644e); }
 .balance-track::after { content: ""; position: absolute; inset: 1px; background: rgba(3, 12, 17, 0.56); }
 .balance-safe { position: absolute; z-index: 2; top: -6px; width: 18px; height: 18px; border: 1px solid var(--spot-accent); border-radius: 50%; transform: translateX(-50%); box-shadow: 0 0 16px var(--spot-accent); }
 .balance-track b { position: absolute; z-index: 3; top: -3px; width: 3px; height: 12px; background: white; transform: translateX(-50%); box-shadow: 0 0 5px white; }
+.stance-track { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-top: 10px; }
+.stance-track > span { color: rgba(255, 255, 255, 0.42); font-size: 5px; letter-spacing: 0.09em; }
+.stance-track > i { position: relative; height: 2px; background: linear-gradient(90deg, var(--coral), rgba(255, 255, 255, 0.22) 50%, #71e1d3); }
+.stance-track > i b { position: absolute; top: -4px; width: 3px; height: 10px; transform: translateX(-50%); background: white; box-shadow: 0 0 8px white; transition: left 0.08s linear; }
 .balance-instrument small { display: block; margin-top: 8px; color: var(--muted); font-size: 7px; text-align: center; }
 
 .vehicle-instrument {
@@ -1036,7 +1076,14 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .maneuver-toast { top: 198px; min-width: 194px; padding: 9px 12px 9px 9px; }
   .maneuver-toast strong { font-size: 10px; }
   .maneuver-toast b { font-size: 15px; }
+  .ride-recap { top: 194px; min-width: min(330px, calc(100vw - 30px)); grid-template-columns: 62px 1fr; }
+  .ride-grade { min-height: 66px; }
+  .ride-grade strong { font-size: 28px; }
+  .ride-recap-copy { padding: 9px 12px; }
+  .ride-recap-copy > strong { font-size: 17px; }
   .balance-instrument { width: calc(100vw - 46px); bottom: 158px; }
+  .balance-label em { max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .stance-track > span { font-size: 4px; }
   .vehicle-instrument { width: calc(100vw - 46px); min-height: 66px; bottom: 158px; padding: 7px 11px 7px 8px; }
   .vehicle-dial { width: 50px; height: 50px; }
   .vehicle-dial strong { font-size: 21px; }

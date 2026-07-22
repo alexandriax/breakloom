@@ -16,14 +16,15 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Controls
 
 - `WASD` or arrow keys: walk, paddle, and steer
-- `W` while riding: pump for speed (uses stamina)
+- `W` while riding: move forward and pump for speed (uses stamina)
+- `S` while riding: step toward the tail for tighter rail control
 - Mouse horizontal position: balance while riding
 - `Space`: catch a wave; while riding, land a context-sensitive maneuver
 - `Space` beside the parked van: enter; stop and press again to exit
 - `Esc`: pause
 - Mobile: on-screen D-pad, balance rail, and context-sensitive Catch/Move button
 
-Wave sets build and fade on the swell radar. Better-timed catches start with more flow, while stamina management, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, or High Line lands cleanly. Session objectives, grades, and personal bests are saved in the browser.
+Wave sets build and fade on the swell radar. Better-timed catches start with more flow, while stamina management, nose-to-tail stance, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Stay composed high on the face to hold the barrel. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
 
 ## Live data
 
@@ -39,4 +40,4 @@ The build automatically accounts for project-page paths such as `username.github
 
 ## Scope
 
-This version is a high-quality vertical slice: one procedural surfer, thirteen coastlines, selectable zones, live conditions, grouped wave sets, stamina and maneuver systems, training/advanced/playground modes, persistent scoring, a drivable surf van, procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
+This version is a high-quality vertical slice: one procedural surfer, thirteen coastlines, selectable zones, live conditions, grouped wave sets, stance/stamina/barrel/maneuver systems, reactive wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
