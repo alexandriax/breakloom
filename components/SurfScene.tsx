@@ -896,6 +896,197 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
 useGLTF.preload(SURFER_MODEL_URL);
 useGLTF.preload(VAN_MODEL_URL);
 
+function boardWidthAt(boardType: BoardType, normalizedLength: number) {
+  const profile = Math.max(0, Math.sin(Math.PI * normalizedLength));
+  if (boardType === "performance") return Math.pow(profile, .46) * (.9 + normalizedLength * .1);
+  if (boardType === "fish") return Math.pow(profile, .31) * (1.06 - normalizedLength * .08);
+  return Math.pow(profile, .36) * (.94 + Math.sin(normalizedLength * Math.PI) * .06);
+}
+
+function createBoardOutline(boardType: BoardType, length: number, halfWidth: number) {
+  const nose = length * .5;
+  const tail = -length * .5;
+  const rightSide: THREE.Vector2[] = [];
+  for (let index = 1; index < 32; index += 1) {
+    const normalized = 1 - index / 32;
+    rightSide.push(new THREE.Vector2(
+      halfWidth * boardWidthAt(boardType, normalized),
+      tail + normalized * length,
+    ));
+  }
+  const points = [new THREE.Vector2(0, nose), ...rightSide];
+  if (boardType === "fish") {
+    points.push(
+      new THREE.Vector2(halfWidth * .58, tail + .015),
+      new THREE.Vector2(0, tail + length * .075),
+      new THREE.Vector2(-halfWidth * .58, tail + .015),
+    );
+  } else if (boardType === "performance") {
+    points.push(
+      new THREE.Vector2(halfWidth * .29, tail + .018),
+      new THREE.Vector2(-halfWidth * .29, tail + .018),
+    );
+  } else {
+    points.push(new THREE.Vector2(0, tail));
+  }
+  rightSide.slice().reverse().forEach((point) => points.push(new THREE.Vector2(-point.x, point.y)));
+  return points;
+}
+
+function createSurfboardGeometry(
+  boardType: BoardType,
+  length: number,
+  halfWidth: number,
+  thickness: number,
+  inset = false,
+) {
+  const shape = new THREE.Shape(createBoardOutline(boardType, length, halfWidth));
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    steps: 1,
+    curveSegments: 12,
+    bevelEnabled: true,
+    bevelSegments: inset ? 2 : 3,
+    bevelThickness: thickness * .26,
+    bevelSize: Math.min(halfWidth * .07, thickness * .22),
+  });
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, thickness * .5, 0);
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let index = 0; index < positions.count; index += 1) {
+    const z = positions.getZ(index);
+    const normalized = THREE.MathUtils.clamp(Math.abs(z) / (length * .5), 0, 1.12);
+    const rocker = Math.pow(normalized, 3.25) * (z > 0 ? length * .047 : length * .022);
+    positions.setY(index, positions.getY(index) + rocker);
+  }
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function createFinGeometry() {
+  const thickness = .026;
+  const profile = [
+    new THREE.Vector2(0, -.17),
+    new THREE.Vector2(-.29, -.065),
+    new THREE.Vector2(-.22, .105),
+    new THREE.Vector2(0, .18),
+  ];
+  const vertices: number[] = [];
+  [-thickness, thickness].forEach((x) => profile.forEach((point) => vertices.push(x, point.x, point.y)));
+  const indices = [
+    0, 1, 2, 0, 2, 3,
+    4, 6, 5, 4, 7, 6,
+    0, 4, 5, 0, 5, 1,
+    1, 5, 6, 1, 6, 2,
+    2, 6, 7, 2, 7, 3,
+    3, 7, 4, 3, 4, 0,
+  ];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
+  const spec = BOARD_SPECS[boardType];
+  const thickness = boardType === "longboard" ? .105 : boardType === "fish" ? .115 : .098;
+  const boardGeometry = useMemo(
+    () => createSurfboardGeometry(boardType, spec.length, spec.width, thickness),
+    [boardType, spec.length, spec.width, thickness],
+  );
+  const deckGeometry = useMemo(
+    () => createSurfboardGeometry(boardType, spec.length * .84, spec.width * .76, .022, true),
+    [boardType, spec.length, spec.width],
+  );
+  const finGeometry = useMemo(() => createFinGeometry(), []);
+  const leashGeometry = useMemo(() => {
+    const tail = -spec.length * .5;
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, .1, tail + .09),
+      new THREE.Vector3(spec.width * .58, .035, tail - .2),
+      new THREE.Vector3(spec.width * .24, -.015, tail - .52),
+      new THREE.Vector3(-spec.width * .54, .01, tail - .82),
+    ]);
+    return new THREE.TubeGeometry(curve, 14, .012, 5, false);
+  }, [spec.length, spec.width]);
+  const finXs = boardType === "performance"
+    ? [-spec.width * .46, 0, spec.width * .46]
+    : boardType === "fish"
+      ? [-spec.width * .5, spec.width * .5]
+      : [0];
+  const finScale = boardType === "longboard" ? 1.32 : boardType === "fish" ? 1.08 : .9;
+  const tailPosition = -spec.length * .38;
+  const waxPositions = boardType === "longboard" ? [-.55, -.08, .42, .88] : [-.35, .08, .48];
+
+  useEffect(() => () => {
+    boardGeometry.dispose();
+    deckGeometry.dispose();
+    finGeometry.dispose();
+    leashGeometry.dispose();
+  }, [boardGeometry, deckGeometry, finGeometry, leashGeometry]);
+
+  return (
+    <group>
+      <mesh geometry={boardGeometry} castShadow receiveShadow>
+        <meshPhysicalMaterial
+          color={spec.color}
+          roughness={.2}
+          metalness={.015}
+          clearcoat={1}
+          clearcoatRoughness={.1}
+          sheen={.18}
+          sheenColor={spec.accent}
+        />
+      </mesh>
+      <mesh geometry={deckGeometry} position={[0, thickness * .63, -.035]} scale={[1, 1, 1.03]}>
+        <meshPhysicalMaterial color={spec.accent} roughness={.43} clearcoat={.48} clearcoatRoughness={.24} />
+      </mesh>
+      <mesh position={[0, thickness * .91, 0]}>
+        <boxGeometry args={[.018, .013, spec.length * .9]} />
+        <meshStandardMaterial color={boardType === "longboard" ? "#9b6a3d" : "#f1e1bd"} roughness={.52} />
+      </mesh>
+      {waxPositions.map((z, index) => (
+        <mesh key={z} position={[(index % 2 ? 1 : -1) * spec.width * .11, thickness * 1.08, z]} rotation={[-Math.PI / 2, 0, index * .23]} scale={[1.15, .72, 1]}>
+          <circleGeometry args={[spec.width * .42, 18]} />
+          <meshStandardMaterial color="#f4efe2" roughness={.96} transparent opacity={.28} depthWrite={false} />
+        </mesh>
+      ))}
+      {[0, 1, 2].map((index) => (
+        <mesh key={index} position={[0, thickness * 1.13, -spec.length * .29 - index * .145]} rotation={[0, 0, index === 2 ? -.025 : .025]}>
+          <boxGeometry args={[spec.width * (.9 - index * .08), .025 + index * .006, .105]} />
+          <meshStandardMaterial color="#172428" roughness={.91} />
+        </mesh>
+      ))}
+      <mesh position={[0, thickness * 1.18, spec.length * .18]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[spec.width * .19, spec.width * .255, 28]} />
+        <meshBasicMaterial color="#fff9eb" transparent opacity={.82} />
+      </mesh>
+      <mesh geometry={leashGeometry}>
+        <meshStandardMaterial color="#101a1d" roughness={.72} />
+      </mesh>
+      <mesh position={[0, thickness * 1.08, -spec.length * .43]}>
+        <cylinderGeometry args={[.045, .045, .022, 12]} />
+        <meshStandardMaterial color="#111b1e" roughness={.56} />
+      </mesh>
+      {finXs.map((x) => (
+        <mesh
+          key={x}
+          geometry={finGeometry}
+          position={[x, -thickness * .62, tailPosition + (x === 0 ? -.015 : .08)]}
+          rotation={[0, x === 0 ? 0 : Math.sign(x) * .09, -x * .16]}
+          scale={[finScale, finScale * (x === 0 ? 1 : .88), finScale]}
+          castShadow
+        >
+          <meshPhysicalMaterial color={x === 0 ? "#e9ede7" : spec.accent} roughness={.28} clearcoat={.72} transparent opacity={.94} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionState>; boardType: BoardType }) {
   const rig = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -950,29 +1141,10 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
 
   });
 
-  const boardSpec = BOARD_SPECS[boardType];
-  const finXs = boardType === "performance" ? [-0.16, 0, 0.16] : boardType === "fish" ? [-0.19, 0.19] : [0];
   return (
     <group ref={rig}>
       <group ref={board} position={[0, 0.16, 0]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]} scale={[1, 1, 0.13]} castShadow>
-          <capsuleGeometry args={[boardSpec.width, boardSpec.length, 8, 24]} />
-          <meshPhysicalMaterial color={boardSpec.color} roughness={0.26} clearcoat={0.86} clearcoatRoughness={0.13} />
-        </mesh>
-        <mesh position={[0, 0.06, -0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.76, 0.72, 0.14]}>
-          <capsuleGeometry args={[boardSpec.width * 0.86, boardSpec.length * 0.86, 5, 20]} />
-          <meshStandardMaterial color={boardSpec.accent} roughness={0.58} />
-        </mesh>
-        <mesh position={[0, 0.1, -0.35]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[boardSpec.width * 0.34, boardSpec.width * 0.43, 28]} />
-          <meshBasicMaterial color="#f7f2e8" transparent opacity={0.72} />
-        </mesh>
-        {finXs.map((x) => (
-          <mesh key={x} position={[x, -0.02, boardSpec.length * 0.56]} rotation={[0.15, 0, 0]}>
-            <boxGeometry args={[0.045, boardType === "longboard" ? 0.39 : 0.28, boardType === "longboard" ? 0.3 : 0.21]} />
-            <meshStandardMaterial color="#f3efe6" roughness={0.46} />
-          </mesh>
-        ))}
+        <PremiumSurfboard boardType={boardType} />
       </group>
 
       <group ref={body} position={[0, 1.02, 0]}>
