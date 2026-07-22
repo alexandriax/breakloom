@@ -2118,9 +2118,285 @@ function RoadSurface({ weatherCode, light }: { weatherCode: number; light: numbe
   );
 }
 
-function BeachLife({ beach, windSpeed, weatherCode, light }: { beach: Beach; windSpeed: number; weatherCode: number; light: number }) {
+type VisitorActivity = "walk" | "watch" | "photo" | "relax";
+
+type VisitorPalette = {
+  skin: string;
+  shirt: string;
+  shorts: string;
+  hair: string;
+};
+
+function BeachVisitor({
+  position,
+  rotation,
+  activity,
+  palette,
+  phase,
+  observerPosition,
+  scale = 1,
+}: {
+  position: [number, number, number];
+  rotation: number;
+  activity: VisitorActivity;
+  palette: VisitorPalette;
+  phase: number;
+  observerPosition: MutableRefObject<THREE.Vector3>;
+  scale?: number;
+}) {
+  const root = useRef<THREE.Group>(null);
+  const torso = useRef<THREE.Group>(null);
+  const head = useRef<THREE.Group>(null);
+  const upperArms = useRef<Array<THREE.Group | null>>([]);
+  const lowerArms = useRef<Array<THREE.Group | null>>([]);
+  const upperLegs = useRef<Array<THREE.Group | null>>([]);
+  const lowerLegs = useRef<Array<THREE.Group | null>>([]);
+  const baseX = position[0];
+
+  useFrame(({ clock }, delta) => {
+    const t = clock.elapsedTime + phase;
+    const walking = activity === "walk";
+    const photographing = activity === "photo";
+    const relaxed = activity === "relax";
+    const stride = walking ? Math.sin(t * 3.35) : 0;
+    const breathing = Math.sin(t * .86) * .012;
+    if (root.current) {
+      root.current.position.x = walking ? baseX + Math.sin(t * .24) * 5.8 : baseX;
+      root.current.position.y = relaxed ? -.26 : Math.abs(stride) * .018;
+      root.current.rotation.y = THREE.MathUtils.damp(root.current.rotation.y, rotation + (walking && Math.cos(t * .24) < 0 ? Math.PI : 0), 5, delta);
+    }
+    if (torso.current) {
+      torso.current.rotation.x = THREE.MathUtils.damp(torso.current.rotation.x, relaxed ? -.08 : walking ? stride * -.035 : breathing, 6, delta);
+      torso.current.rotation.z = THREE.MathUtils.damp(torso.current.rotation.z, walking ? stride * .025 : Math.sin(t * .43) * .018, 5, delta);
+    }
+    if (head.current) {
+      const currentX = root.current?.position.x ?? baseX;
+      const dx = observerPosition.current.x - currentX;
+      const dz = observerPosition.current.z - position[2];
+      const glanceDistance = Math.hypot(dx, dz);
+      const worldAngle = Math.atan2(dx, dz);
+      const rootRotation = root.current?.rotation.y ?? rotation;
+      const relativeAngle = Math.atan2(Math.sin(worldAngle - rootRotation), Math.cos(worldAngle - rootRotation));
+      const glance = glanceDistance < 14 && !photographing && !relaxed
+        ? THREE.MathUtils.clamp(relativeAngle, -.72, .72)
+        : activity === "watch" ? Math.sin(t * .34) * .28 : 0;
+      head.current.rotation.x = THREE.MathUtils.damp(head.current.rotation.x, photographing ? -.08 : relaxed ? -.14 : 0, 6, delta);
+      head.current.rotation.y = THREE.MathUtils.damp(head.current.rotation.y, glance, 4, delta);
+    }
+    upperArms.current.forEach((arm, index) => {
+      if (!arm) return;
+      const side = index ? -1 : 1;
+      const targetX = photographing ? -1.02 + side * .05 : relaxed ? -.3 : walking ? stride * side * .68 : Math.sin(t * .72 + index) * .045;
+      const targetZ = photographing ? side * -.44 : side * -.075;
+      arm.rotation.x = THREE.MathUtils.damp(arm.rotation.x, targetX, 7, delta);
+      arm.rotation.z = THREE.MathUtils.damp(arm.rotation.z, targetZ, 7, delta);
+    });
+    lowerArms.current.forEach((arm, index) => {
+      if (!arm) return;
+      const side = index ? -1 : 1;
+      arm.rotation.x = THREE.MathUtils.damp(arm.rotation.x, photographing ? -1.12 : relaxed ? -.42 : 0, 7, delta);
+      arm.rotation.z = THREE.MathUtils.damp(arm.rotation.z, photographing ? side * .34 : 0, 7, delta);
+    });
+    upperLegs.current.forEach((leg, index) => {
+      if (!leg) return;
+      const side = index ? -1 : 1;
+      leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, relaxed ? -1.38 : walking ? stride * side * .64 : 0, 8, delta);
+      leg.rotation.z = THREE.MathUtils.damp(leg.rotation.z, relaxed ? side * .12 : side * .025, 7, delta);
+    });
+    lowerLegs.current.forEach((leg, index) => {
+      if (!leg) return;
+      const side = index ? -1 : 1;
+      const bend = relaxed ? 1.08 : walking ? Math.max(0, -stride * side) * .78 : 0;
+      leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, bend, 8, delta);
+    });
+  });
+
+  return (
+    <group ref={root} position={position} rotation={[0, rotation, 0]} scale={scale}>
+      <group ref={torso} position={[0, 1.17, 0]}>
+        <mesh castShadow>
+          <capsuleGeometry args={[.18, .52, 5, 10]} />
+          <meshStandardMaterial color={palette.shirt} roughness={.72} />
+        </mesh>
+        <mesh position={[0, -.31, 0]} castShadow>
+          <capsuleGeometry args={[.185, .18, 4, 9]} />
+          <meshStandardMaterial color={palette.shorts} roughness={.78} />
+        </mesh>
+        <group ref={head} position={[0, .57, 0]}>
+          <mesh position={[0, -.075, 0]} castShadow>
+            <cylinderGeometry args={[.07, .08, .16, 10]} />
+            <meshStandardMaterial color={palette.skin} roughness={.66} />
+          </mesh>
+          <mesh position={[0, .13, 0]} castShadow>
+            <sphereGeometry args={[.16, 14, 10]} />
+            <meshStandardMaterial color={palette.skin} roughness={.62} />
+          </mesh>
+          <mesh position={[0, .205, .015]} scale={[1.02, .48, 1.02]} castShadow>
+            <sphereGeometry args={[.158, 12, 8, 0, Math.PI * 2, 0, Math.PI * .62]} />
+            <meshStandardMaterial color={palette.hair} roughness={.88} />
+          </mesh>
+        </group>
+        {[-1, 1].map((side, index) => (
+          <group key={`arm-${side}`} ref={(joint) => { upperArms.current[index] = joint; }} position={[side * .235, .2, 0]}>
+            <mesh position={[0, -.2, 0]} castShadow>
+              <capsuleGeometry args={[.065, .27, 4, 8]} />
+              <meshStandardMaterial color={palette.shirt} roughness={.74} />
+            </mesh>
+            <group ref={(joint) => { lowerArms.current[index] = joint; }} position={[0, -.4, 0]}>
+              <mesh position={[0, -.18, 0]} castShadow>
+                <capsuleGeometry args={[.052, .25, 4, 8]} />
+                <meshStandardMaterial color={palette.skin} roughness={.66} />
+              </mesh>
+              <mesh position={[0, -.35, 0]} scale={[.8, 1.1, .7]} castShadow>
+                <sphereGeometry args={[.068, 10, 8]} />
+                <meshStandardMaterial color={palette.skin} roughness={.64} />
+              </mesh>
+            </group>
+          </group>
+        ))}
+        {activity === "photo" && (
+          <mesh position={[0, .13, -.46]} rotation={[0, 0, Math.PI / 2]} castShadow>
+            <boxGeometry args={[.17, .025, .1]} />
+            <meshStandardMaterial color="#10171a" metalness={.58} roughness={.28} />
+          </mesh>
+        )}
+      </group>
+      {[-1, 1].map((side, index) => (
+        <group key={`leg-${side}`} ref={(joint) => { upperLegs.current[index] = joint; }} position={[side * .105, .84, 0]}>
+          <mesh position={[0, -.25, 0]} castShadow>
+            <capsuleGeometry args={[.082, .38, 4, 8]} />
+            <meshStandardMaterial color={palette.skin} roughness={.68} />
+          </mesh>
+          <group ref={(joint) => { lowerLegs.current[index] = joint; }} position={[0, -.51, 0]}>
+            <mesh position={[0, -.22, 0]} castShadow>
+              <capsuleGeometry args={[.066, .33, 4, 8]} />
+              <meshStandardMaterial color={palette.skin} roughness={.68} />
+            </mesh>
+            <mesh position={[0, -.46, -.055]} scale={[.08, .055, .16]} castShadow>
+              <sphereGeometry args={[1, 10, 7]} />
+              <meshStandardMaterial color={activity === "walk" ? "#e8e1d2" : palette.skin} roughness={.72} />
+            </mesh>
+          </group>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function LifeguardFlag({ wind }: { wind: number }) {
+  const flag = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    if (!flag.current) return;
+    flag.current.rotation.y = Math.sin(clock.elapsedTime * (4.2 + wind * 1.8)) * (.08 + wind * .1);
+    flag.current.rotation.z = -.04 - wind * .035;
+  });
+  return (
+    <group position={[2.55, 6.25, 0]}>
+      <mesh position={[0, -1.1, 0]}>
+        <cylinderGeometry args={[.025, .035, 2.3, 8]} />
+        <meshStandardMaterial color="#bfc7c4" metalness={.72} roughness={.34} />
+      </mesh>
+      <mesh ref={flag} position={[.62, -.08, 0]}>
+        <planeGeometry args={[1.25, .58, 8, 2]} />
+        <meshStandardMaterial color="#f35f45" emissive="#6d140d" emissiveIntensity={.12} roughness={.7} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+function LifeguardStation({ wind, light }: { wind: number; light: number }) {
+  return (
+    <group position={[13, 0, 61]}>
+      {[[-2, -1.35], [2, -1.35], [-2, 1.35], [2, 1.35]].map(([x, z]) => (
+        <mesh key={`${x}-${z}`} position={[x, 1.25, z]} castShadow>
+          <cylinderGeometry args={[.105, .14, 2.5, 10]} />
+          <meshStandardMaterial color="#d4c49f" roughness={.82} />
+        </mesh>
+      ))}
+      <mesh position={[0, 2.22, 0]} castShadow receiveShadow>
+        <boxGeometry args={[5.35, .23, 3.7]} />
+        <meshStandardMaterial color="#c8ad78" roughness={.78} />
+      </mesh>
+      <mesh position={[0, 3.25, .2]} castShadow receiveShadow>
+        <boxGeometry args={[4.45, 2.05, 2.75]} />
+        <meshStandardMaterial color="#173d46" roughness={.68} />
+      </mesh>
+      <mesh position={[0, 3.48, -1.39]}>
+        <planeGeometry args={[3.25, 1.12]} />
+        <meshStandardMaterial color="#75cbd0" emissive="#163c45" emissiveIntensity={.22 + light * .12} metalness={.18} roughness={.22} />
+      </mesh>
+      <mesh position={[-2.24, 3.34, .1]} rotation={[0, -Math.PI / 2, 0]}>
+        <planeGeometry args={[1.7, 1.1]} />
+        <meshStandardMaterial color="#70bbc0" emissive="#163c45" emissiveIntensity={.18} metalness={.16} roughness={.26} />
+      </mesh>
+      <mesh position={[0, 4.52, .15]} castShadow>
+        <boxGeometry args={[5.25, .22, 3.65]} />
+        <meshStandardMaterial color="#f0d28f" roughness={.75} />
+      </mesh>
+      {[-2.45, 2.45].map((x) => (
+        <group key={x} position={[x, 2.95, -1.65]}>
+          <mesh position={[0, .35, 0]}><cylinderGeometry args={[.035, .045, 1.45, 7]} /><meshStandardMaterial color="#d9d3c4" metalness={.54} roughness={.42} /></mesh>
+          <mesh position={[0, 1.05, .45]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[.025, .035, .9, 7]} /><meshStandardMaterial color="#d9d3c4" metalness={.54} roughness={.42} /></mesh>
+        </group>
+      ))}
+      {Array.from({ length: 6 }, (_, index) => (
+        <mesh key={index} position={[-2.95 - index * .35, 1.88 - index * .3, .85]} castShadow receiveShadow>
+          <boxGeometry args={[1.2, .13, .52]} />
+          <meshStandardMaterial color="#b79d70" roughness={.86} />
+        </mesh>
+      ))}
+      <mesh position={[-3.15, 1.25, .18]} rotation={[0, 0, -.5]}>
+        <cylinderGeometry args={[.035, .045, 3.1, 7]} />
+        <meshStandardMaterial color="#d5d0c3" metalness={.48} roughness={.45} />
+      </mesh>
+      <group position={[2.72, 1.5, .48]} rotation={[.12, 0, -.08]}>
+        <mesh castShadow>
+          <capsuleGeometry args={[.34, 2.25, 8, 16]} />
+          <meshPhysicalMaterial color="#e86243" roughness={.48} clearcoat={.28} clearcoatRoughness={.28} />
+        </mesh>
+        <mesh position={[0, -.94, -.35]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[.12, .025, 8, 20]} />
+          <meshStandardMaterial color="#152a30" roughness={.55} />
+        </mesh>
+      </group>
+      <pointLight position={[0, 4.05, -1.7]} intensity={.08 + (1 - light) * 1.25} distance={20} color="#ffdca1" />
+      <LifeguardFlag wind={wind} />
+    </group>
+  );
+}
+
+function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: boolean; weatherCode: number; observerPosition: MutableRefObject<THREE.Vector3> }) {
+  const weather = weatherProfile(weatherCode);
+  const sheltered = weather.storm || weather.kind !== "none" || weather.fog;
+  const visitors = useMemo(() => [
+    { position: [-18, 0, 43] as [number, number, number], rotation: Math.PI, activity: "walk" as const, phase: .3, palette: { skin: "#9a5c3b", shirt: "#d55c48", shorts: "#203842", hair: "#21150f" } },
+    { position: [27, 0, 46] as [number, number, number], rotation: Math.PI, activity: "photo" as const, phase: 2.1, palette: { skin: "#c98d69", shirt: "#e2c15b", shorts: "#374b5d", hair: "#5b3828" } },
+    { position: [-34, 0, 56] as [number, number, number], rotation: Math.PI * .84, activity: "watch" as const, phase: 4.2, palette: { skin: "#6e3e2e", shirt: "#244c5f", shorts: "#ddd4bf", hair: "#17110f" } },
+    { position: [7, 0, 51] as [number, number, number], rotation: Math.PI * 1.08, activity: "relax" as const, phase: 6.4, palette: { skin: "#d2a07a", shirt: "#e87861", shorts: "#36585d", hair: "#7a4d2d" } },
+  ], []);
+  const visibleVisitors = sheltered ? [] : mobile ? visitors.slice(0, 2) : visitors;
+  return (
+    <group>
+      {visibleVisitors.map((visitor, index) => <BeachVisitor key={index} {...visitor} observerPosition={observerPosition} scale={index === 1 ? .94 : 1} />)}
+      {!sheltered && (
+        <group position={[7, -.47, 51]} rotation={[-Math.PI / 2, 0, -.18]}>
+          <mesh receiveShadow><planeGeometry args={[2.4, 1.15]} /><meshStandardMaterial color="#e8b852" roughness={.92} /></mesh>
+          {[-.66, 0, .66].map((x) => <mesh key={x} position={[x, 0, .006]}><planeGeometry args={[.12, 1.15]} /><meshBasicMaterial color="#f4e3b5" /></mesh>)}
+        </group>
+      )}
+      <group position={[-29, 0, 53]}>
+        <mesh position={[0, .28, 0]} castShadow><boxGeometry args={[.65, .5, .48]} /><meshStandardMaterial color="#e8ded0" roughness={.62} /></mesh>
+        <mesh position={[0, .56, 0]} castShadow><boxGeometry args={[.69, .1, .52]} /><meshStandardMaterial color="#da6249" roughness={.55} /></mesh>
+        <mesh position={[0, .3, -.25]}><boxGeometry args={[.24, .16, .04]} /><meshStandardMaterial color="#a8d8d3" metalness={.18} roughness={.28} /></mesh>
+      </group>
+    </group>
+  );
+}
+
+function BeachLife({ beach, windSpeed, weatherCode, light, playerPosition }: { beach: Beach; windSpeed: number; weatherCode: number; light: number; playerPosition: MutableRefObject<THREE.Vector3> }) {
   const biome = getCoastBiome(beach.id);
   const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
+  const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
   const sandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 11), [sandTextureSource]);
   const wetSandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 2), [sandTextureSource]);
@@ -2215,32 +2491,8 @@ function BeachLife({ beach, windSpeed, weatherCode, light }: { beach: Beach; win
           <meshStandardMaterial color="#e75e43" roughness={0.72} side={THREE.DoubleSide} />
         </mesh>
       </group>
-      <group position={[13, 0, 61]}>
-        <mesh position={[0, 1.4, 0]} castShadow>
-          <boxGeometry args={[5.2, 2.8, 3.8]} />
-          <meshStandardMaterial color="#173d46" roughness={0.76} />
-        </mesh>
-        <mesh position={[0, 3, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
-          <cylinderGeometry args={[3.6, 3.6, 1.1, 4]} />
-          <meshStandardMaterial color="#f2d190" roughness={0.9} />
-        </mesh>
-        <mesh position={[0, 1.45, -1.92]}>
-          <planeGeometry args={[1.7, 1.7]} />
-          <meshStandardMaterial color="#69d8d2" emissive="#123c48" emissiveIntensity={0.3} />
-        </mesh>
-      </group>
-      {[[-5, 45], [20, 42], [31, 51], [-31, 57]].map(([x, z], index) => (
-        <group key={index} position={[x, 0, z]} rotation={[0, index * 1.7, 0]}>
-          <mesh position={[0, 1.18, 0]} castShadow>
-            <capsuleGeometry args={[0.2, 1.05, 4, 8]} />
-            <meshStandardMaterial color={["#1b3649", "#ef775d", "#dfc15e", "#425b64"][index]} />
-          </mesh>
-          <mesh position={[0, 2.05, 0]}>
-            <sphereGeometry args={[0.22, 10, 8]} />
-            <meshStandardMaterial color={["#8a5137", "#d19a76", "#70442f", "#b87651"][index]} />
-          </mesh>
-        </group>
-      ))}
+      <LifeguardStation wind={wind} light={light} />
+      <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
       <CoastBackdrop biome={biome} wind={wind} />
     </group>
   );
@@ -3124,7 +3376,7 @@ function Simulation({
         sunPosition={oceanSunPosition}
         sunColor={sunLightColor}
       />
-      <BeachLife beach={beach} windSpeed={windSpeed} weatherCode={weatherCode} light={light} />
+      <BeachLife beach={beach} windSpeed={windSpeed} weatherCode={weatherCode} light={light} playerPosition={position} />
       <ShorelineWash settings={settings} light={light} windSpeed={windSpeed} />
       <FootprintTrail motion={motion} targetPosition={position} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
