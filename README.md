@@ -27,7 +27,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `Space` beside the parked van: enter; stop and press again to exit
 - `C`: cycle Follow, Immersive, and Cinematic cameras
 - `Esc`: pause
-- Mobile: analog movement stick, precision balance rail, camera switcher, phase haptics, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
+- Mobile: analog movement stick, target-tracking balance rail with landing zones and haptic lock feedback, camera switcher, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
 
 Wave sets build and fade on the swell radar. Once caught, a GPU-shaped wave face steepens beside the surfer, pitches a translucent falling-water curtain, throws directional crest spray, and closes into a misty barrel as line quality rises. Every ride commits to a moving left or right shoulder: each break's peel and variability sweep the power pocket down the line, so going too deep risks a closeout while outrunning it onto the shoulder loses speed and flow. Live cloud cover, wind, and WMO weather conditions shape a moving marine sky with haze, sun corona, moonlight, rain, snow, sea fog, lightning, and night-star visibility; Wave Lab can override the weather for custom sessions. Better-timed catches start with more flow, while pocket tracking, stamina management, nose-to-tail stance, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
 

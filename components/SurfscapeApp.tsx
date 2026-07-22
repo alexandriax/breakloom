@@ -282,6 +282,8 @@ export default function SurfscapeApp() {
   const previousManeuverActive = useRef(false);
   const previousRideResultId = useRef(0);
   const previousCatchReady = useRef(false);
+  const previousBalanceLock = useRef(false);
+  const lastBalanceHapticAt = useRef(0);
   const previousTakeoffPhase = useRef(stats.phase);
   const joystickKnob = useRef<HTMLSpanElement>(null);
   const joystickPointer = useRef<number | null>(null);
@@ -483,6 +485,21 @@ export default function SurfscapeApp() {
     if (stats.maneuverActive && !previousManeuverActive.current) haptic(8);
     previousManeuverActive.current = stats.maneuverActive;
   }, [stats.maneuverActive]);
+
+  useEffect(() => {
+    if (stats.phase !== "riding") {
+      previousBalanceLock.current = false;
+      return;
+    }
+    const tolerance = stats.maneuverActive ? Math.max(.09, stats.landingWindow * .58) : .13;
+    const locked = Math.abs(stats.balance - stats.balanceTarget) <= tolerance;
+    const now = performance.now();
+    if (locked && !previousBalanceLock.current && now - lastBalanceHapticAt.current > 360) {
+      haptic(stats.maneuverActive ? 8 : 4);
+      lastBalanceHapticAt.current = now;
+    }
+    previousBalanceLock.current = locked;
+  }, [stats.balance, stats.balanceTarget, stats.landingWindow, stats.maneuverActive, stats.phase]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -687,6 +704,7 @@ export default function SurfscapeApp() {
     event.preventDefault();
     if (event.type === "pointerdown" && !event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.setPointerCapture(event.pointerId);
+      haptic(3);
     }
     const bounds = event.currentTarget.getBoundingClientRect();
     controls.current.balance = THREEClamp(((event.clientX - bounds.left) / bounds.width - 0.5) * 2, -1, 1);
@@ -787,12 +805,28 @@ export default function SurfscapeApp() {
     : stats.nearVan
       ? "DRIVE"
       : stats.phase === "riding"
-        ? stats.maneuverActive ? "BALANCE" : "TRICK"
+        ? stats.maneuverActive ? "STICK IT" : "TRICK"
         : stats.catchReady
           ? "CATCH"
           : stats.phase === "paddling"
             ? "PADDLE"
             : "MOVE";
+  const mobileContext = stats.vehicleMode
+    ? { title: "COAST RUNNER", detail: "Stick to drive · stop before exit" }
+    : stats.phase === "shore"
+      ? { title: "BEACH TRAVERSE", detail: "Full stick runs · drag scene to look" }
+      : stats.phase === "wading"
+        ? { title: "SHOREBREAK", detail: "Push through until the board floats" }
+        : stats.phase === "paddling"
+          ? stats.catchReady
+            ? { title: "TAKEOFF OPEN", detail: "Release paddle · tap CATCH now" }
+            : { title: "READ THE CREST", detail: "Paddle beyond the break" }
+          : stats.phase === "wipeout"
+            ? { title: "UNDERWATER", detail: "Breathe · the board is resetting" }
+            : { title: "LINE RESET", detail: "Read the next wall of water" };
+  const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
+  const touchBalancePosition = (THREEClamp(stats.balance, -.94, .94) + 1) * 50;
+  const touchTargetPosition = (THREEClamp(stats.balanceTarget, -.94, .94) + 1) * 50;
   const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
   const velocityIntensity = stats.phase === "riding"
     ? Math.min(.34, Math.max(0, stats.speed - 8.5) * .026 + stats.barrelIntensity * .11)
@@ -1063,7 +1097,7 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui ${paused ? "is-paused" : ""}`}>
+        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""}`}>
           <div
             className="camera-look-surface"
             aria-label="Drag to look around"
@@ -1250,7 +1284,7 @@ export default function SurfscapeApp() {
             )}
           </div>
 
-          <div className="mobile-controls">
+          <div className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""}`}>
             <div
               className="analog-stick"
               role="group"
@@ -1265,9 +1299,35 @@ export default function SurfscapeApp() {
               <span ref={joystickKnob} className="analog-knob"><i /></span>
               <small>{stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
             </div>
-            <div className={`touch-balance ${stats.maneuverActive ? "is-landing" : ""}`} role="slider" aria-label="Balance" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round(stats.balance * 100)} tabIndex={0} onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
-              <span>{stats.maneuverActive ? `LAND ${Math.round(stats.maneuverProgress * 100)}%` : "BALANCE"}</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
-            </div>
+            {stats.phase === "riding" ? (
+              <div
+                className={`touch-balance ${stats.maneuverActive ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
+                role="slider"
+                aria-label="Surf balance. Match your white thumb marker to the glowing target."
+                aria-valuemin={-100}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(stats.balance * 100)}
+                tabIndex={0}
+                onPointerDown={updateTouchBalance}
+                onPointerMove={updateTouchBalance}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                  event.preventDefault();
+                  controls.current.balance = THREEClamp(controls.current.balance + (event.key === "ArrowRight" ? .08 : -.08), -1, 1);
+                }}
+              >
+                <span><em>{stats.maneuverActive ? `LAND ${Math.round(stats.maneuverProgress * 100)}%` : "MATCH TARGET"}</em><strong>{balanceAccuracy}%</strong></span>
+                {stats.maneuverActive && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
+                <i className="touch-balance-target" style={{ left: `${touchTargetPosition}%` }} />
+                <b className="touch-balance-thumb" style={{ left: `${touchBalancePosition}%` }} />
+                <small><em>LEAN LEFT</em><em>LEAN RIGHT</em></small>
+              </div>
+            ) : (
+              <div className={`touch-context ${stats.catchReady ? "is-ready" : ""}`} aria-live="polite">
+                <strong>{mobileContext.title}</strong>
+                <small>{mobileContext.detail}</small>
+              </div>
+            )}
             <button
               type="button"
               className={`action-button ${mobileActionIsContextual ? "is-contextual" : "is-propulsion"} ${stats.maneuverActive ? "is-landing" : ""}`}

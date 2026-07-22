@@ -1403,16 +1403,31 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .analog-stick:active .analog-knob { border-color: white; box-shadow: 0 5px 14px rgba(0, 0, 0, 0.5), inset 0 1px rgba(255, 255, 255, 0.4), 0 0 24px rgba(87, 226, 211, 0.34); }
   .analog-knob i { width: 12px; height: 12px; border: 1px solid rgba(255, 255, 255, 0.54); border-radius: 50%; background: rgba(255, 255, 255, 0.13); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25); }
   .analog-stick small { position: absolute; z-index: 3; left: 50%; bottom: -2px; padding: 2px 6px; border-radius: 6px; background: rgba(3, 13, 18, 0.86); color: rgba(208, 255, 249, 0.78); font-size: 5px; font-weight: 900; letter-spacing: 0.13em; white-space: nowrap; transform: translateX(-50%); pointer-events: none; }
-  .touch-balance { height: 48px; position: relative; align-self: end; margin-bottom: 4px; border: 1px solid rgba(255, 255, 255, 0.27); border-radius: 24px; background: rgba(3, 13, 18, 0.68); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22), inset 0 1px rgba(255, 255, 255, 0.08); backdrop-filter: blur(10px); touch-action: none; overflow: hidden; }
-  .touch-balance::before { content: ""; position: absolute; top: 23px; left: 12px; right: 12px; height: 2px; background: linear-gradient(90deg, #ef664f, #6adca7 50%, #ef664f); opacity: 0.74; }
-  .touch-balance span { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); color: rgba(255, 255, 255, 0.72); font-size: 5px; font-weight: 800; letter-spacing: 0.13em; }
-  .touch-balance i { position: absolute; top: 15px; width: 5px; height: 18px; border-radius: 4px; background: white; transform: translateX(-50%); box-shadow: 0 0 10px white; }
-  .touch-balance.is-landing { border-color: rgba(255, 210, 145, .7); box-shadow: 0 8px 24px rgba(0, 0, 0, .22), inset 0 0 19px rgba(233, 169, 104, .12), 0 0 15px rgba(233, 169, 104, .1); }
-  .touch-balance.is-landing span { color: #ffdca5; }
+  .touch-balance { height: 70px; position: relative; align-self: end; margin-bottom: 2px; border: 1px solid rgba(255, 255, 255, 0.27); border-radius: 18px; background: linear-gradient(180deg, rgba(7, 24, 30, .78), rgba(2, 12, 17, .84)); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.08); backdrop-filter: blur(12px); touch-action: none; overflow: hidden; }
+  .touch-balance::before { content: ""; position: absolute; top: 38px; left: 11px; right: 11px; height: 4px; border-radius: 3px; background: linear-gradient(90deg, rgba(239, 102, 79, .9), rgba(217, 193, 111, .82) 25%, rgba(106, 220, 167, .94) 50%, rgba(217, 193, 111, .82) 75%, rgba(239, 102, 79, .9)); box-shadow: 0 0 9px rgba(106, 220, 167, .12); opacity: .9; }
+  .touch-balance > span { position: absolute; z-index: 5; top: 7px; left: 9px; right: 9px; display: flex; align-items: center; justify-content: space-between; color: rgba(255, 255, 255, 0.72); font-size: 6px; font-weight: 900; letter-spacing: 0.11em; pointer-events: none; }
+  .touch-balance > span em { color: rgba(219, 255, 250, .72); font-style: normal; }
+  .touch-balance > span strong { color: #b9fff6; font-size: 8px; }
+  .touch-balance > small { position: absolute; z-index: 5; left: 9px; right: 9px; bottom: 7px; display: flex; justify-content: space-between; color: rgba(255, 255, 255, .42); font-size: 4px; font-weight: 800; letter-spacing: .08em; pointer-events: none; }
+  .touch-balance > small em { font-style: normal; }
+  .touch-balance-target { position: absolute; z-index: 3; top: 29px; width: 22px; height: 22px; border: 2px solid #77f0dc; border-radius: 50%; background: rgba(63, 201, 180, .15); transform: translateX(-50%); box-shadow: 0 0 15px rgba(113, 225, 211, .78), inset 0 0 8px rgba(113, 225, 211, .32); pointer-events: none; transition: left .08s linear; }
+  .touch-balance-thumb { position: absolute; z-index: 4; top: 26px; width: 8px; height: 29px; border: 1px solid rgba(255, 255, 255, .9); border-radius: 5px; background: white; transform: translateX(-50%); box-shadow: 0 0 11px white, 0 2px 8px rgba(0, 0, 0, .5); pointer-events: none; }
+  .touch-landing-zone { position: absolute; z-index: 2; top: 31px; height: 18px; border: 1px solid rgba(255, 211, 146, .78); border-radius: 5px; background: linear-gradient(90deg, rgba(225, 150, 72, .12), rgba(255, 226, 168, .4), rgba(225, 150, 72, .12)); box-shadow: 0 0 13px rgba(244, 186, 107, .34); animation: landing-zone-pulse .42s ease-in-out infinite alternate; pointer-events: none; }
+  .touch-balance.is-locked { border-color: rgba(132, 255, 225, .58); box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 20px rgba(75, 211, 183, .11), 0 0 17px rgba(82, 226, 196, .13); }
+  .touch-balance.is-locked .touch-balance-thumb { background: #d8fff7; box-shadow: 0 0 14px #9cffe9, 0 2px 8px rgba(0, 0, 0, .5); }
+  .touch-balance.is-landing { border-color: rgba(255, 210, 145, .7); box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 20px rgba(233, 169, 104, .12), 0 0 16px rgba(233, 169, 104, .12); }
+  .touch-balance.is-landing > span em { color: #ffdca5; }
+  .touch-context { min-height: 58px; align-self: end; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; margin-bottom: 6px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, .15); border-radius: 14px; background: linear-gradient(180deg, rgba(5, 20, 27, .64), rgba(3, 13, 18, .78)); box-shadow: 0 9px 25px rgba(0, 0, 0, .2), inset 0 1px rgba(255, 255, 255, .06); backdrop-filter: blur(10px); text-align: center; pointer-events: none; }
+  .touch-context strong { color: #cffff7; font-size: 7px; letter-spacing: .12em; }
+  .touch-context small { color: rgba(255, 255, 255, .58); font-size: 6px; line-height: 1.25; }
+  .touch-context.is-ready { border-color: rgba(113, 225, 211, .62); box-shadow: 0 9px 25px rgba(0, 0, 0, .2), inset 0 0 20px rgba(65, 208, 189, .12), 0 0 16px rgba(93, 235, 216, .16); }
+  .touch-context.is-ready strong { color: #aaffed; text-shadow: 0 0 9px rgba(113, 225, 211, .74); }
   .action-button { width: 100%; max-width: 84px; height: auto; aspect-ratio: 1; justify-self: end; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid rgba(255, 255, 255, 0.56); border-radius: 50%; background: radial-gradient(circle at 38% 30%, rgba(255, 141, 107, 0.9), rgba(208, 67, 48, 0.82)); box-shadow: 0 12px 32px rgba(42, 10, 6, 0.36), inset 0 1px rgba(255, 255, 255, 0.24); backdrop-filter: blur(10px); font-size: 8px; font-weight: 900; letter-spacing: 0.11em; touch-action: none; }
   .action-button.is-propulsion { border-color: rgba(181, 255, 247, 0.62); background: radial-gradient(circle at 38% 30%, rgba(89, 205, 200, 0.92), rgba(19, 92, 104, 0.86)); box-shadow: 0 12px 32px rgba(3, 31, 36, 0.38), inset 0 1px rgba(255, 255, 255, 0.22); }
   .action-button.is-landing { border-color: rgba(255, 218, 166, .62); background: radial-gradient(circle at 38% 30%, rgba(112, 91, 69, .9), rgba(52, 45, 41, .88)); box-shadow: 0 12px 32px rgba(28, 19, 12, .34), inset 0 1px rgba(255, 255, 255, .18); }
+  .mobile-controls.is-catch-ready .action-button { border-color: #c7fff6; background: radial-gradient(circle at 38% 30%, rgba(126, 242, 220, .98), rgba(18, 122, 124, .92)); box-shadow: 0 12px 34px rgba(3, 31, 36, .42), inset 0 1px rgba(255, 255, 255, .3), 0 0 26px rgba(111, 235, 215, .32); animation: catch-control-pulse .54s ease-in-out infinite alternate; }
   .action-button:active { transform: scale(0.94); filter: brightness(1.12); }
+  .mobile-controls.is-catch-ready .action-button:active { animation: none; transform: scale(.94); filter: brightness(1.14); }
   .action-button svg { width: 21px; pointer-events: none; }
   .howto-card { max-height: calc(100dvh - 30px); overflow-y: auto; padding: 26px 20px; }
   .howto-card h2 { padding-right: 35px; }
@@ -1422,6 +1437,20 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .howto-steps svg { width: 22px; }
   .howto-steps strong { margin: 8px 0 6px; }
   .launch-button.compact { width: 100%; }
+
+  .game-ui.phase-riding .game-conditions,
+  .game-ui.phase-driving .game-conditions { display: none; }
+  .game-ui.phase-riding .balance-instrument { bottom: calc(126px + env(safe-area-inset-bottom)); padding: 9px 12px; }
+  .game-ui.phase-riding .balance-instrument .balance-label,
+  .game-ui.phase-riding .balance-instrument .balance-track,
+  .game-ui.phase-riding .balance-instrument > small { display: none; }
+  .game-ui.phase-riding .balance-instrument .stance-track { margin-top: 0; }
+  .game-ui.phase-driving .vehicle-instrument { bottom: calc(126px + env(safe-area-inset-bottom)); }
+}
+
+@keyframes catch-control-pulse {
+  from { transform: scale(.98); filter: brightness(.96); }
+  to { transform: scale(1.025); filter: brightness(1.12); }
 }
 
 @media (max-height: 560px) and (max-width: 960px) {
@@ -1445,9 +1474,14 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .analog-ring { inset: 12px; }
   .analog-knob { width: 40px; height: 40px; }
   .analog-stick small { bottom: -4px; }
-  .touch-balance { height: 44px; margin-bottom: 2px; }
-  .touch-balance::before { top: 21px; }
-  .touch-balance i { top: 13px; }
+  .touch-balance { height: 58px; margin-bottom: 1px; }
+  .touch-balance::before { top: 31px; }
+  .touch-balance-target { top: 22px; width: 21px; height: 21px; }
+  .touch-balance-thumb { top: 19px; height: 28px; }
+  .touch-landing-zone { top: 24px; height: 17px; }
+  .touch-balance > span { top: 5px; }
+  .touch-balance > small { display: none; }
+  .touch-context { min-height: 50px; margin-bottom: 2px; }
   .action-button { width: 78px; height: 78px; }
 }
 
