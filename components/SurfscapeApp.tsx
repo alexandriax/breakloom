@@ -139,6 +139,7 @@ const EMPTY_CONTROLS: ControlState = {
   back: false,
   left: false,
   right: false,
+  sprint: false,
   action: false,
   moveX: 0,
   moveY: 0,
@@ -368,6 +369,7 @@ export default function SurfscapeApp() {
       controls.current.back = false;
       controls.current.left = false;
       controls.current.right = false;
+      controls.current.sprint = false;
       controls.current.action = false;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
@@ -375,13 +377,14 @@ export default function SurfscapeApp() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (screen !== "game") return;
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
+      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
       }
       if (key === "w" || key === "arrowup") controls.current.forward = true;
       if (key === "s" || key === "arrowdown") controls.current.back = true;
       if (key === "a" || key === "arrowleft") controls.current.left = true;
       if (key === "d" || key === "arrowright") controls.current.right = true;
+      if (key === "shift") controls.current.sprint = true;
       if (key === " ") controls.current.action = true;
       if (key === "c" && !event.repeat) {
         controls.current.lookYaw = 0;
@@ -397,6 +400,7 @@ export default function SurfscapeApp() {
       if (key === "s" || key === "arrowdown") controls.current.back = false;
       if (key === "a" || key === "arrowleft") controls.current.left = false;
       if (key === "d" || key === "arrowright") controls.current.right = false;
+      if (key === "shift") controls.current.sprint = false;
       if (key === " ") controls.current.action = false;
     };
     window.addEventListener("keydown", onKeyDown, { passive: false });
@@ -414,6 +418,7 @@ export default function SurfscapeApp() {
       controls.current.back = false;
       controls.current.left = false;
       controls.current.right = false;
+      controls.current.sprint = false;
       controls.current.action = false;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
@@ -1227,8 +1232,17 @@ export default function SurfscapeApp() {
               </>
             ) : (
               <>
-                <span><kbd>A</kbd><kbd>D</kbd> steer / rail</span>
-                <span><kbd>W</kbd><kbd>S</kbd> {stats.phase === "riding" ? "nose / tail stance" : "move / paddle"}</span>
+                {stats.phase === "shore" || stats.phase === "wading" ? (
+                  <>
+                    <span><kbd>WASD</kbd> camera-relative move</span>
+                    <span><kbd>SHIFT</kbd> run across the beach</span>
+                  </>
+                ) : (
+                  <>
+                    <span><kbd>A</kbd><kbd>D</kbd> steer / rail</span>
+                    <span><kbd>W</kbd><kbd>S</kbd> {stats.phase === "riding" ? "nose / tail stance" : "paddle"}</span>
+                  </>
+                )}
                 <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "land maneuver" : stats.nearVan ? "drive van" : "catch wave"}</span>
                 <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
                 <span><span className="mouse-icon" /> mouse to balance</span>
@@ -1240,7 +1254,7 @@ export default function SurfscapeApp() {
             <div
               className="analog-stick"
               role="group"
-              aria-label="Analog movement stick. Drag to move and steer."
+              aria-label="Analog movement stick. Drag partway to walk or fully to run."
               onPointerDown={updateJoystick}
               onPointerMove={updateJoystick}
               onPointerUp={endJoystick}
@@ -1249,7 +1263,7 @@ export default function SurfscapeApp() {
             >
               <span className="analog-ring" />
               <span ref={joystickKnob} className="analog-knob"><i /></span>
-              <small>MOVE / STEER</small>
+              <small>{stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
             </div>
             <div className={`touch-balance ${stats.maneuverActive ? "is-landing" : ""}`} role="slider" aria-label="Balance" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round(stats.balance * 100)} tabIndex={0} onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
               <span>{stats.maneuverActive ? `LAND ${Math.round(stats.maneuverProgress * 100)}%` : "BALANCE"}</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />

@@ -17,7 +17,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Controls
 
-- `WASD` or arrow keys: walk, paddle, and steer
+- `WASD` or arrow keys: camera-relative movement on land, then paddle and steer in the water
+- Hold `Shift` to run on desktop; push the mobile stick fully to run
 - Drag the open scene: orbit the chase camera; double-click or double-tap to recenter
 - `W` while riding: move forward and pump for speed (uses stamina)
 - `S` while riding: step toward the tail for tighter rail control
