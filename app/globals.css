@@ -1241,7 +1241,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .vehicle-copy small { font-size: 6px; }
   .game-conditions { left: 10px; right: 10px; bottom: calc(122px + env(safe-area-inset-bottom)); overflow: hidden; border-radius: 3px; background: rgba(3, 13, 18, 0.68); }
   .game-conditions > div { min-width: 0; flex: 1; padding: 8px 6px; grid-template-columns: 14px 1fr; }
-  .game-conditions > div:nth-child(3), .game-conditions > div:nth-child(5) { display: none; }
+  .game-conditions > div:nth-child(5), .game-conditions > div:nth-child(6) { display: none; }
   .game-conditions svg { width: 11px; }
   .game-conditions strong { font-size: 8px; }
   .desktop-controls { display: none; }

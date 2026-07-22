@@ -7,6 +7,19 @@ export type SurfZone = {
 
 export type CoastBiome = "urban" | "tropical" | "dune" | "rugged" | "cold" | "volcanic" | "desert";
 
+export type BreakKind = "beach" | "reef" | "point" | "slab" | "canyon";
+
+export type BreakCharacter = {
+  kind: BreakKind;
+  line: "LEFT" | "RIGHT" | "A-FRAME";
+  peel: number;
+  power: number;
+  steepness: number;
+  hollow: number;
+  variability: number;
+  length: number;
+};
+
 export type Beach = {
   id: string;
   name: string;
@@ -309,4 +322,55 @@ export function getCoastBiome(id: string): CoastBiome {
   if (["mavericks", "trestles"].includes(id)) return "cold";
   if (id === "raglan") return "volcanic";
   return "desert";
+}
+
+const BREAK_CHARACTERS: Record<string, BreakCharacter> = {
+  rockaway: { kind: "beach", line: "A-FRAME", peel: 0, power: .84, steepness: .62, hollow: .28, variability: .9, length: .76 },
+  pipeline: { kind: "reef", line: "A-FRAME", peel: 0, power: 1.24, steepness: 1.08, hollow: 1, variability: .28, length: .82 },
+  teahupoo: { kind: "slab", line: "LEFT", peel: -.88, power: 1.34, steepness: 1.18, hollow: 1, variability: .2, length: .78 },
+  "jeffreys-bay": { kind: "point", line: "RIGHT", peel: .92, power: 1.02, steepness: .74, hollow: .52, variability: .12, length: 1.34 },
+  "snapper-rocks": { kind: "point", line: "RIGHT", peel: .86, power: .96, steepness: .68, hollow: .42, variability: .2, length: 1.3 },
+  uluwatu: { kind: "reef", line: "LEFT", peel: -.82, power: 1.1, steepness: .88, hollow: .72, variability: .24, length: 1.08 },
+  trestles: { kind: "reef", line: "A-FRAME", peel: 0, power: .94, steepness: .66, hollow: .28, variability: .2, length: .98 },
+  hossegor: { kind: "beach", line: "A-FRAME", peel: 0, power: 1.14, steepness: .9, hollow: .78, variability: .82, length: .76 },
+  nazare: { kind: "canyon", line: "A-FRAME", peel: .1, power: 1.38, steepness: 1.02, hollow: .46, variability: .64, length: .9 },
+  cloudbreak: { kind: "reef", line: "LEFT", peel: -.9, power: 1.18, steepness: .94, hollow: .84, variability: .18, length: 1.18 },
+  mavericks: { kind: "reef", line: "RIGHT", peel: .76, power: 1.34, steepness: 1.06, hollow: .62, variability: .32, length: .88 },
+  raglan: { kind: "point", line: "LEFT", peel: -.88, power: .92, steepness: .66, hollow: .34, variability: .14, length: 1.36 },
+  chicama: { kind: "point", line: "LEFT", peel: -.94, power: .82, steepness: .54, hollow: .22, variability: .08, length: 1.48 },
+};
+
+const ZONE_CHARACTER_OVERRIDES: Record<string, Partial<BreakCharacter>> = {
+  "rockaway:Beach 92nd": { line: "RIGHT", peel: .34, power: .94, steepness: .72, hollow: .4, variability: .56 },
+  "rockaway:Beach 98th": { power: 1.02, steepness: .78, hollow: .46, variability: .7 },
+  "pipeline:Ehukai": { power: .92, steepness: .72, hollow: .48, variability: .62, length: .74 },
+  "pipeline:First Reef": { line: "LEFT", peel: -.54, steepness: 1.14, hollow: 1 },
+  "pipeline:Backdoor": { line: "RIGHT", peel: .82, power: 1.28, steepness: 1.12, hollow: 1, length: .9 },
+  "teahupoo:West Bowl": { power: 1.4, variability: .3, length: .86 },
+  "teahupoo:Inside": { power: .76, steepness: .68, hollow: .42, variability: .42, length: .72 },
+  "jeffreys-bay:Boneyards": { power: 1.08, steepness: .84, length: .98 },
+  "jeffreys-bay:Impossibles": { power: .9, steepness: .62, hollow: .34, length: 1.46 },
+  "snapper-rocks:Rainbow Bay": { power: .88, steepness: .58, hollow: .28, length: 1.4 },
+  "snapper-rocks:Greenmount": { power: .82, steepness: .52, hollow: .22, length: 1.48 },
+  "uluwatu:Temples": { steepness: .72, hollow: .48, length: 1.32 },
+  "uluwatu:Racetracks": { power: 1.14, steepness: .98, hollow: .8, length: 1.22 },
+  "trestles:Uppers": { line: "RIGHT", peel: .64, power: 1.02, steepness: .74 },
+  "trestles:Church": { line: "RIGHT", peel: .52, power: .86, steepness: .54, length: 1.32 },
+  "hossegor:La Gravière": { power: 1.2, steepness: 1.04, hollow: .94, variability: .64 },
+  "hossegor:La Nord": { power: 1.34, steepness: 1.02, variability: .46 },
+  "nazare:Praia do Norte": { power: 1.46, steepness: 1.12, variability: .58 },
+  "nazare:South Beach": { power: .74, steepness: .6, hollow: .22, variability: .4, length: .86 },
+  "cloudbreak:The Point": { steepness: .78, hollow: .62, length: 1.28 },
+  "cloudbreak:Shish Kabobs": { power: 1.22, steepness: 1.04, hollow: .9, length: .92 },
+  "mavericks:Mushrooms": { power: 1.4, variability: .4 },
+  "mavericks:Pillar Point": { power: .92, steepness: .72, hollow: .36, length: 1.04 },
+  "raglan:Indicators": { power: 1.02, steepness: .76, length: 1.12 },
+  "raglan:Manu Bay": { power: .82, steepness: .56, length: 1.5 },
+  "chicama:Malpaso": { power: .92, steepness: .64, length: 1.22 },
+  "chicama:El Hombre": { power: .74, steepness: .46, length: 1.56 },
+};
+
+export function getBreakCharacter(id: string, zoneName = ""): BreakCharacter {
+  const base = BREAK_CHARACTERS[id] ?? BREAK_CHARACTERS.rockaway;
+  return { ...base, ...ZONE_CHARACTER_OVERRIDES[`${id}:${zoneName}`] };
 }

@@ -11,7 +11,6 @@ import {
   CircleCheck,
   CloudSun,
   Crosshair,
-  Droplets,
   Gauge,
   LoaderCircle,
   MapPin,
@@ -28,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { CSSProperties, PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
-import { BEACHES, DEFAULT_BEACH, type Beach } from "@/lib/beaches";
+import { BEACHES, DEFAULT_BEACH, getBreakCharacter, type Beach } from "@/lib/beaches";
 import {
   fallbackConditions,
   fetchMarineConditions,
@@ -587,6 +586,7 @@ export default function SurfscapeApp() {
   const localTime = formatClock(conditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
   const conditionQuality = qualityLabel(conditions);
+  const breakCharacter = getBreakCharacter(beach.id, zoneLabel);
   const accentStyle = { "--spot-accent": beach.palette[0], "--sand-accent": beach.palette[1] } as CSSProperties;
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
   const handleStats = useCallback((next: GameStats) => {
@@ -627,6 +627,7 @@ export default function SurfscapeApp() {
         <SurfScene
           key={`${beach.id}-${sessionKey}`}
           beach={beach}
+          zoneName={zoneLabel}
           settings={settings}
           cloudCover={sessionCloudCover}
           windSpeed={conditions.windSpeed}
@@ -793,6 +794,7 @@ export default function SurfscapeApp() {
                 <p className="break-description">{beach.description}</p>
                 <div className="break-meta">
                   <span><Waves /> {beach.breakType}</span>
+                  <span><ArrowRight /> {breakCharacter.line} · {breakCharacter.kind.toUpperCase()}</span>
                   <span><Gauge /> Difficulty {beach.difficulty}/5</span>
                   <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
                   <span className="data-credit">Model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD · Not for navigation</span>
@@ -969,7 +971,7 @@ export default function SurfscapeApp() {
           <div className="game-conditions">
             <div><Waves /><span>FACE</span><strong>{settings.waveHeight.toFixed(1)} m</strong></div>
             <div><Wind /><span>PERIOD</span><strong>{settings.wavePeriod.toFixed(1)} s</strong></div>
-            <div><Droplets /><span>CURRENT</span><strong>{settings.currentStrength.toFixed(1)} km/h</strong></div>
+            <div><ArrowRight /><span>BREAK LINE</span><strong>{breakCharacter.line}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div><Crosshair /><span>DISTANCE</span><strong>{stats.rideDistance.toFixed(0)} m</strong></div>
             <div><CloudSun /><span>SKY</span><strong>{weatherLabel(sessionWeatherCode)}</strong></div>

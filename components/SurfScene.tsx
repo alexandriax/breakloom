@@ -4,10 +4,10 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
 import { MutableRefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { Beach, CoastBiome } from "@/lib/beaches";
-import { getCoastBiome } from "@/lib/beaches";
+import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
+import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { BOARD_SPECS, sessionGrade, waveHeightAt, waveSetState } from "@/lib/game";
+import { BOARD_SPECS, primaryWavePhaseAt, sessionGrade, waveHeightAt, waveSetState } from "@/lib/game";
 
 export type ControlState = {
   forward: boolean;
@@ -26,6 +26,7 @@ export type CameraMode = "follow" | "immersive" | "cinematic";
 
 type SurfSceneProps = {
   beach: Beach;
+  zoneName: string;
   settings: SessionSettings;
   cloudCover: number;
   windSpeed: number;
@@ -120,6 +121,11 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uDirection;
   uniform float uTide;
   uniform float uWind;
+  uniform float uPeel;
+  uniform float uPower;
+  uniform float uSteepness;
+  uniform float uHollow;
+  uniform float uVariability;
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
@@ -159,33 +165,36 @@ const OCEAN_VERTEX = /* glsl */ `
 
   void main() {
     vec2 origin = position.xy;
+    vec2 surfaceOrigin = vec2(origin.x, -origin.y - 157.0);
     vec3 p = position;
     float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
     float angle = radians(uDirection);
     vec2 currentDir = vec2(cos(angle), sin(angle));
+    float section = sin(surfaceOrigin.x * .07 + uTime * .05) * uVariability * 2.3;
+    float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section;
     float curve = sin(angle) * .0019 * origin.x * origin.x;
-    vec2 curvedOrigin = vec2(origin.x, origin.y + curve);
-    float shore = .72 + smoothstep(-85.0, 8.0, origin.y) * .78;
-    float shallowCompression = mix(1.0, .76, smoothstep(-32.0, 9.0, origin.y));
+    vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
+    float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
+    float shallowCompression = mix(1.0, mix(.82, .69, uSteepness), smoothstep(-32.0, 9.0, breakCoord));
     float setEnergy = setEnvelope();
     float setLift = .78 + setEnergy * .34;
-    float amplitude = max(.12, uHeight * .62);
+    float amplitude = max(.12, uHeight * .62) * uPower;
     float windChop = clamp(uWind / 24.0, .12, 1.45);
     float currentBend = clamp(uCurrent / 4.0, 0.0, 1.0);
 
     float primary = gerstner(
       p,
       curvedOrigin,
-      normalize(vec2(.095 + currentDir.x * .035, 1.0)),
+      normalize(vec2(.095 + uPeel * .075 + currentDir.x * .035, 1.0)),
       33.0 * shallowCompression,
       amplitude * .64 * shore * setLift,
-      .78,
+      clamp(.46 + uSteepness * .32, .58, .88),
       angularSpeed * 5.4,
       0.0
     );
     float secondary = gerstner(
       p,
-      origin,
+      surfaceOrigin,
       normalize(vec2(-.16, 1.0)),
       20.3,
       amplitude * .22,
@@ -195,7 +204,7 @@ const OCEAN_VERTEX = /* glsl */ `
     );
     float crossSwell = gerstner(
       p,
-      origin,
+      surfaceOrigin,
       normalize(vec2(1.0, .68) + currentDir * (.12 + currentBend * .12)),
       47.5,
       amplitude * .11,
@@ -205,7 +214,7 @@ const OCEAN_VERTEX = /* glsl */ `
     );
     float windWave = gerstner(
       p,
-      origin,
+      surfaceOrigin,
       normalize(vec2(-.72, .69)),
       mix(8.5, 5.4, windChop / 1.45),
       .035 + windChop * .065,
@@ -213,14 +222,15 @@ const OCEAN_VERTEX = /* glsl */ `
       1.7 + windChop * 1.2,
       2.4
     );
-    float capillary = sin(origin.x * 1.35 + origin.y * .78 + uTime * (2.2 + windChop)) * (.018 + windChop * .018);
+    float capillary = sin(surfaceOrigin.x * 1.35 + surfaceOrigin.y * .78 + uTime * (2.2 + windChop)) * (.018 + windChop * .018);
     p.z += uTide * .3 + capillary;
 
     vHeight = p.z;
     vCrest = primary * shore;
-    vBreaker = smoothstep(-18.0, 12.0, origin.y) * smoothstep(.48, .96, primary * .5 + .5) * setLift;
+    float breakerThreshold = mix(.58, .4, uHollow);
+    vBreaker = smoothstep(-18.0, 12.0, breakCoord) * smoothstep(breakerThreshold, .96, primary * .5 + .5) * setLift * (.72 + uHollow * .34);
     vChop = abs(secondary) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
-    vSurface = origin;
+    vSurface = surfaceOrigin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
@@ -308,6 +318,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
 
 function Ocean({
   settings,
+  character,
   light,
   cloudCover,
   windSpeed,
@@ -315,6 +326,7 @@ function Ocean({
   sunColor,
 }: {
   settings: SessionSettings;
+  character: BreakCharacter;
   light: number;
   cloudCover: number;
   windSpeed: number;
@@ -334,10 +346,15 @@ function Ocean({
       uLight: { value: 1 },
       uCloud: { value: 0 },
       uWind: { value: 0 },
+      uPeel: { value: character.peel },
+      uPower: { value: character.power },
+      uSteepness: { value: character.steepness },
+      uHollow: { value: character.hollow },
+      uVariability: { value: character.variability },
       uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
       uSunColor: { value: new THREE.Color("#fff0ca") },
     }),
-    [],
+    [character],
   );
 
   useFrame(({ clock }) => {
@@ -352,6 +369,11 @@ function Ocean({
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uWind.value = windSpeed;
+    values.uPeel.value = THREE.MathUtils.lerp(values.uPeel.value, character.peel, .035);
+    values.uPower.value = THREE.MathUtils.lerp(values.uPower.value, character.power, .035);
+    values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness, .035);
+    values.uHollow.value = THREE.MathUtils.lerp(values.uHollow.value, character.hollow, .035);
+    values.uVariability.value = THREE.MathUtils.lerp(values.uVariability.value, character.variability, .035);
     values.uSunDirection.value.set(...sunPosition).normalize();
     values.uSunColor.value.set(sunColor);
   });
@@ -700,11 +722,13 @@ const BREAKING_FOAM_FRAGMENT = /* glsl */ `
 function BreakingWave({
   motion,
   settings,
+  character,
   light,
   cloudCover,
 }: {
   motion: MutableRefObject<MotionState>;
   settings: SessionSettings;
+  character: BreakCharacter;
   light: number;
   cloudCover: number;
 }) {
@@ -712,7 +736,7 @@ function BreakingWave({
   const faceMaterial = useRef<THREE.ShaderMaterial>(null);
   const curtainMaterial = useRef<THREE.ShaderMaterial>(null);
   const foamMaterial = useRef<THREE.ShaderMaterial>(null);
-  const lineSide = useRef(1);
+  const lineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
   const warmupFrames = useRef(1);
   const faceUniforms = useMemo(() => ({
     uTime: { value: 0 },
@@ -752,23 +776,31 @@ function BreakingWave({
     return positions;
   }, []);
 
+  useEffect(() => {
+    lineSide.current = character.peel === 0 ? 1 : Math.sign(character.peel);
+  }, [character.peel]);
+
   useFrame(({ clock }, delta) => {
     if (!group.current || !faceMaterial.current || !curtainMaterial.current || !foamMaterial.current) return;
     const state = motion.current;
     const riding = state.phase === "riding";
     if (riding && Math.abs(state.steer) > .12) lineSide.current = Math.sign(state.steer);
     const targetCurl = riding
-      ? THREE.MathUtils.clamp(state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12, .08, 1.16)
+      ? THREE.MathUtils.clamp(
+          (state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12) * (.72 + character.hollow * .3 + character.steepness * .08),
+          .08,
+          1.28,
+        )
       : 0;
     const targetOpacity = riding
-      ? THREE.MathUtils.clamp(.32 + state.waveQuality * .25 + state.barrel * .3, .32, .88)
+      ? THREE.MathUtils.clamp(.28 + state.waveQuality * .25 + state.barrel * .3 + character.power * .045, .3, .92)
       : 0;
     const targetCurtain = riding
-      ? THREE.MathUtils.clamp((state.waveQuality - .42) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .92)
+      ? THREE.MathUtils.clamp((state.waveQuality - .5 + character.hollow * .14) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .96)
       : 0;
     const values = faceMaterial.current.uniforms;
     values.uTime.value = clock.elapsedTime;
-    values.uWaveHeight.value = THREE.MathUtils.damp(values.uWaveHeight.value, settings.waveHeight, 3.5, delta);
+    values.uWaveHeight.value = THREE.MathUtils.damp(values.uWaveHeight.value, settings.waveHeight * (.9 + character.power * .1), 3.5, delta);
     values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, state.setEnergy, 4, delta);
     values.uCurl.value = THREE.MathUtils.damp(values.uCurl.value, targetCurl, 5.5, delta);
     values.uSide.value = THREE.MathUtils.damp(values.uSide.value, lineSide.current, 3.2, delta);
@@ -2793,6 +2825,7 @@ function VehicleSurfaceEffects({
 
 function Simulation({
   beach,
+  zoneName,
   settings,
   cloudCover,
   windSpeed,
@@ -2808,6 +2841,7 @@ function Simulation({
 }: SurfSceneProps) {
   const { camera } = useThree();
   const boardSpec = BOARD_SPECS[settings.board];
+  const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const player = useRef<THREE.Group>(null);
   const van = useRef<THREE.Group>(null);
@@ -2980,9 +3014,7 @@ function Simulation({
         position.current.z = Math.max(-52, position.current.z);
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
         const inLineup = position.current.z < -18;
-        const currentCurve = Math.sin((settings.currentDirection * Math.PI) / 180) * .0022;
-        const primarySpeed = (Math.PI * 2 / Math.max(4, settings.wavePeriod)) * 5.4;
-        const takeoffPhase = position.current.z * .19 + position.current.x * .018 + position.current.x * position.current.x * currentCurve + t * primarySpeed;
+        const takeoffPhase = primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character);
         const crestAlignment = THREE.MathUtils.smoothstep(Math.sin(takeoffPhase), -.08, .96);
         const staminaTiming = .82 + stamina.current * .0018;
         const deepWaterAssist = settings.mode === "training" && position.current.z < -34 ? .08 : 0;
@@ -2990,7 +3022,8 @@ function Simulation({
         takeoffQuality = inLineup
           ? THREE.MathUtils.clamp(crestAlignment * (.38 + setState.energy * .62) * staminaTiming + deepWaterAssist + touchTimingAssist, 0, 1)
           : 0;
-        const takeoffThreshold = settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36;
+        const breakDemand = Math.max(0, character.power + character.steepness - 1.85) * .055;
+        const takeoffThreshold = (settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36) + breakDemand;
         catchReady = inLineup && t >= missedWaveUntil.current && takeoffQuality >= takeoffThreshold;
         const setCopy = setState.secondsToPeak === 0 ? "Set is here" : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
         prompt = !inLineup
@@ -3029,7 +3062,7 @@ function Simulation({
         if (position.current.z > 1) phase.current = "wading";
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
-        const waveSpeed = 8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1;
+        const waveSpeed = (8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1) * (.88 + character.power * .12);
         const pumping = move > 0.08 && stamina.current > 1;
         if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
         else if (move < -0.08) stance.current = Math.max(-1, stance.current + delta * 0.86 * move);
@@ -3041,7 +3074,7 @@ function Simulation({
         speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
         const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const railDemand = Math.abs(steer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12);
+        const railDemand = Math.abs(steer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + character.steepness * .1);
         const railGrip = gripBase + priorWaveQuality * .2 + tailPressure * .08 - nosePressure * .1;
         const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
         const assistedSlip = settings.mode === "training" ? rawSlip * .52 : rawSlip;
@@ -3059,7 +3092,7 @@ function Simulation({
         position.current.x += (railLoad * boardSpec.turn * (4.4 + speed * 0.18) * (1 + tailPressure * 0.38 - nosePressure * 0.12) * turnGrip + drift) * delta;
         rideDistance.current += speed * delta;
         balanceTarget =
-          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) / boardSpec.stability +
+          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) * (.88 + character.power * .08 + character.variability * .1) / boardSpec.stability +
           Math.sin(t * 3.1) * settings.currentStrength * 0.045 -
           steer * (0.22 + tailPressure * 0.08) +
           stance.current * 0.07 +
@@ -3068,11 +3101,22 @@ function Simulation({
         const balanceError = Math.abs(state.balance - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82) * Math.sqrt(boardSpec.stability);
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
-        const wavePhase = Math.sin(position.current.z * 0.19 + position.current.x * 0.018 + t * 0.72);
-        waveQuality = THREE.MathUtils.clamp((wavePhase + 1) * 0.42 + setState.energy * 0.16 + catchQuality.current * 0.08, 0, 1);
+        const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
+        const lineMatch = Math.abs(character.peel) < .18
+          ? 1 - Math.abs(steer) * .08
+          : THREE.MathUtils.clamp(.58 + steer * character.peel * .42, .2, 1);
+        const sectionQuality = 1 - character.variability * (.12 + Math.abs(Math.sin(position.current.x * .11 + t * .17)) * .18);
+        waveQuality = THREE.MathUtils.clamp(
+          (wavePhase + 1) * .36 + setState.energy * .14 + catchQuality.current * .08 + lineMatch * .16 + sectionQuality * .08,
+          0,
+          1,
+        );
         const controlQuality = Math.max(0, 1 - balanceError / 1.2) * (1 - railSlip.current * .36);
-        const inBarrel = waveQuality > 0.72 && controlQuality > 0.72 && Math.abs(steer) < 0.68 && stance.current > -0.58;
-        barrelIntensity = inBarrel ? THREE.MathUtils.clamp((waveQuality - 0.62) * 2.5 + controlQuality * 0.2, 0, 1) : 0;
+        const barrelThreshold = .8 - character.hollow * .18;
+        const inBarrel = waveQuality > barrelThreshold && controlQuality > .72 && Math.abs(steer) < .68 && stance.current > -.58;
+        barrelIntensity = inBarrel
+          ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + character.hollow) + controlQuality * .16, 0, 1)
+          : 0;
         if (inBarrel) {
           barrelTime.current += delta;
           combo.current = Math.min(8, combo.current + delta * 0.23);
@@ -3081,7 +3125,7 @@ function Simulation({
         const turnBonus = Math.abs(railLoad) * (12 + compression * 5) * (1 - railSlip.current * .42);
         combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(railLoad) * (1 - railSlip.current) * delta * 0.15 + (pumping ? delta * 0.04 : 0));
         maxCombo.current = Math.max(maxCombo.current, combo.current);
-        score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * delta;
+        score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * delta;
         if (actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94 && railSlip.current < .78) {
           const rail = Math.abs(steer);
           let name = "High Line";
@@ -3147,7 +3191,7 @@ function Simulation({
           combo.current = 1;
           railSlip.current = 1;
           motion.current.impact = .45;
-        } else if (position.current.z > 11) {
+        } else if (position.current.z > 11 + (character.length - 1) * 11) {
           score.current += 750 + rideDistance.current * 11;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
@@ -3173,7 +3217,7 @@ function Simulation({
 
     const landRange = phase.current === "shore" || phase.current === "driving";
     position.current.x = THREE.MathUtils.clamp(position.current.x, landRange ? -118 : -52, landRange ? 118 : 52);
-    const waterY = waveHeightAt(position.current.x, position.current.z, t, settings);
+    const waterY = waveHeightAt(position.current.x, position.current.z, t, settings, character);
     const isWater = phase.current !== "shore";
     if (phase.current !== "riding") {
       railSlip.current = THREE.MathUtils.damp(railSlip.current, 0, 4.2, delta);
@@ -3478,6 +3522,7 @@ function Simulation({
       />
       <Ocean
         settings={settings}
+        character={character}
         light={light}
         cloudCover={cloudCover}
         windSpeed={windSpeed}
@@ -3489,7 +3534,7 @@ function Simulation({
       <FootprintTrail motion={motion} targetPosition={position} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <group ref={player}>
-        <BreakingWave motion={motion} settings={settings} light={light} cloudCover={cloudCover} />
+        <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaterInteraction motion={motion} />
         <SurferModel motion={motion} boardType={settings.board} />
       </group>

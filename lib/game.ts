@@ -1,4 +1,5 @@
 import type { MarineConditions } from "./marine";
+import type { BreakCharacter } from "./beaches";
 
 export type GameMode = "training" | "advanced" | "playground";
 export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
@@ -188,15 +189,21 @@ export function waveHeightAt(
   z: number,
   elapsed: number,
   settings: SessionSettings,
+  character?: BreakCharacter,
 ) {
-  const amplitude = Math.max(0.12, settings.waveHeight * 0.62);
+  const power = character?.power ?? 1;
+  const steepness = character?.steepness ?? .7;
+  const peel = character?.peel ?? 0;
+  const variability = character?.variability ?? .4;
+  const amplitude = Math.max(0.12, settings.waveHeight * 0.62) * power;
   const period = Math.max(4, settings.wavePeriod);
   const speed = (Math.PI * 2) / period;
   const setEnergy = waveSetState(elapsed, period).energy;
   const setLift = 0.78 + setEnergy * 0.34;
-  const shoreBoost = 0.72 + Math.max(0, Math.min(1, (z + 90) / 98)) * 0.75;
-  const currentCurve = Math.sin((settings.currentDirection * Math.PI) / 180) * 0.0022;
-  const p1 = z * 0.19 + x * 0.018 + x * x * currentCurve + elapsed * speed * 5.4;
+  const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
+  const breakZ = z + x * peel * .16 + section;
+  const shoreBoost = 0.72 + Math.max(0, Math.min(1, (breakZ + 90) / 98)) * (.58 + steepness * .24);
+  const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const p2 = z * 0.31 - x * 0.05 + elapsed * speed * 7.1 + 1.7;
   const p3 = z * 0.09 + x * 0.13 - elapsed * speed * 2.7;
   return (
@@ -205,6 +212,35 @@ export function waveHeightAt(
     amplitude * Math.sin(p2) * 0.22 +
     amplitude * Math.sin(p3) * 0.11
   );
+}
+
+function smoothstep(edge0: number, edge1: number, value: number) {
+  const normalized = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return normalized * normalized * (3 - 2 * normalized);
+}
+
+export function primaryWavePhaseAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+) {
+  const steepness = character?.steepness ?? .7;
+  const peel = character?.peel ?? 0;
+  const variability = character?.variability ?? .4;
+  const angle = (settings.currentDirection * Math.PI) / 180;
+  const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
+  const breakZ = z + x * peel * .16 + section;
+  const shoaling = smoothstep(-32, 9, breakZ);
+  const shallowScale = .82 + (.69 - .82) * steepness;
+  const compression = 1 + (shallowScale - 1) * shoaling;
+  const directionX = .095 + peel * .075 + Math.cos(angle) * .035;
+  const directionLength = Math.hypot(directionX, 1);
+  const curvedZ = breakZ + Math.sin(angle) * .0019 * x * x;
+  const waveNumber = (Math.PI * 2) / (33 * compression);
+  const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
+  return (x * directionX / directionLength + curvedZ / directionLength) * waveNumber + elapsed * angularSpeed * 5.4;
 }
 
 export function compassDirection(degrees: number) {
