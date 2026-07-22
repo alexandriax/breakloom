@@ -112,7 +112,7 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
 const TRAINING_STEPS = [
   { title: "Enter the shallows", detail: "Move from the sand into the water." },
   { title: "Reach the lineup", detail: "Paddle beyond the breaking waves." },
-  { title: "Read the crest", detail: "Wait for the takeoff window to open." },
+  { title: "Read the crest", detail: "Turn toward shore and wait for the takeoff window." },
   { title: "Commit to the drop", detail: "Catch the wave when the shoulder appears." },
   { title: "Track the pocket", detail: "Steer into the power zone and hold it for 15 metres." },
   { title: "Set the rail", detail: "Load a turn and land your first maneuver." },
@@ -474,12 +474,13 @@ export default function SurfscapeApp() {
       paused ? 0.34 : 1,
       sessionWeatherCode,
     );
+    const movementSpeed = stats.phase === "paddling" ? stats.speed * stats.paddleEffort : stats.speed;
     audio.current?.setMovement(
       stats.phase,
-      paused ? 0 : stats.speed,
+      paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverActive && !previousManeuverActive.current) haptic(8);
@@ -820,7 +821,11 @@ export default function SurfscapeApp() {
         : stats.phase === "paddling"
           ? stats.catchReady
             ? { title: "TAKEOFF OPEN", detail: "Release paddle · tap CATCH now" }
-            : { title: "READ THE CREST", detail: "Paddle beyond the break" }
+            : stats.inLineup && stats.takeoffAlignment < .3
+              ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
+              : stats.inLineup
+                ? { title: "HOLD THE LINEUP", detail: "Board is set · wait for the crest pulse" }
+                : { title: "READ THE CREST", detail: "Hold PADDLE · left stick turns" }
           : stats.phase === "wipeout"
             ? { title: "UNDERWATER", detail: "Breathe · the board is resetting" }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
@@ -1366,7 +1371,7 @@ export default function SurfscapeApp() {
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
-              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. The foam pulse tightens as a catchable crest arrives; after the drop, follow the moving caustic seam toward the open shoulder.</p></article>
+              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break, turn the board back toward shore, and watch the foam pulse tighten as a catchable crest arrives. After the drop, follow the caustic seam.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the stick, then press Trick to commit a move. Follow the shifting balance marker and reconnect inside the gold landing zone to bank the score.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>

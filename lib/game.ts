@@ -87,6 +87,7 @@ export type GameStats = {
   rideDistance: number;
   pocketDistance: number;
   speed: number;
+  paddleEffort: number;
   balance: number;
   balanceTarget: number;
   waveQuality: number;
@@ -122,6 +123,7 @@ export type GameStats = {
   nearVan: boolean;
   inLineup: boolean;
   catchReady: boolean;
+  takeoffAlignment: number;
   takeoffQuality: number;
   prompt: string;
 };
@@ -133,6 +135,7 @@ export const INITIAL_STATS: GameStats = {
   rideDistance: 0,
   pocketDistance: 0,
   speed: 0,
+  paddleEffort: 0,
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
@@ -168,6 +171,7 @@ export const INITIAL_STATS: GameStats = {
   nearVan: false,
   inLineup: false,
   catchReady: false,
+  takeoffAlignment: 0,
   takeoffQuality: 0,
   prompt: "Walk toward the water · or find the van",
 };
