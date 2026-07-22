@@ -1,6 +1,6 @@
 import type { GamePhase } from "./game";
 
-type EffectKind = "catch" | "turn" | "wipeout" | "finish" | "coach";
+type EffectKind = "catch" | "release" | "turn" | "wipeout" | "finish" | "coach";
 
 const CHORDS = [
   [0, 7, 12, 19],
@@ -318,6 +318,10 @@ export class SurfscapeAudio {
       this.noiseBurst(now, .48, 780, .7, .18, "bandpass", 0, .08);
       this.tone(now, 92, 176, .58, .095, "sine", 0, .12);
       this.tone(now + .055, 184, 272, .42, .036, "triangle", -.18, .2);
+    } else if (kind === "release") {
+      this.noiseBurst(now, .34, 1180, .72, .13, "bandpass", this.foleySide * .28, .04);
+      this.tone(now, 112, 224, .28, .035, "triangle", this.foleySide * .2, .12);
+      this.tone(now + .075, 224, 168, .24, .026, "sine", -this.foleySide * .18, .16);
     } else if (kind === "turn") {
       this.noiseBurst(now, .24, 1650, .85, .14, "bandpass", this.foleySide * .36, .05);
       this.tone(now, 142, 118, .22, .04, "triangle", this.foleySide * .25, .08);

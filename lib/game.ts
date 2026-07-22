@@ -110,6 +110,9 @@ export type GameStats = {
   maneuverCount: number;
   maneuverActive: boolean;
   maneuverProgress: number;
+  maneuverPhase: "line" | "load" | "release" | "air" | "land";
+  trickCharge: number;
+  maneuverAirborne: boolean;
   landingTarget: number;
   landingWindow: number;
   maxCombo: number;
@@ -158,6 +161,9 @@ export const INITIAL_STATS: GameStats = {
   maneuverCount: 0,
   maneuverActive: false,
   maneuverProgress: 0,
+  maneuverPhase: "line",
+  trickCharge: 0,
+  maneuverAirborne: false,
   landingTarget: 0,
   landingWindow: 0,
   maxCombo: 1,

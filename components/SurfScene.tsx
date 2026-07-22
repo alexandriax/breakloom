@@ -56,6 +56,9 @@ type MotionState = {
   wipeout: number;
   maneuver: number;
   maneuverSide: number;
+  maneuverLift: number;
+  maneuverSpin: number;
+  trickCharge: number;
   stance: number;
   barrel: number;
   rail: number;
@@ -75,8 +78,12 @@ function dampAngle(current: number, target: number, responsiveness: number, delt
 
 type ManeuverAttempt = {
   name: string;
+  family: "trim" | "carve" | "lip" | "air";
   base: number;
   side: number;
+  charge: number;
+  lift: number;
+  rotation: number;
   startedAt: number;
   duration: number;
 };
@@ -998,21 +1005,21 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
       joint.rotation.z = THREE.MathUtils.damp(joint.rotation.z, z, responsiveness, delta);
     };
 
-    const rideLean = (state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * .08) * (1 - state.takeoff * .72);
+    const rideLean = (state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * (.08 + state.trickCharge * .06)) * (1 - state.takeoff * .72);
     pose("Pelvis", riding ? -0.08 - state.compression * .12 + state.stance * 0.045 : walking ? step * 0.025 : 0, riding ? state.rail * -0.1 : 0, riding ? rideLean * 0.35 : 0, 7);
-    pose("Torso", paddle ? -0.1 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 : walking ? runLean - step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 : 0, riding ? rideLean : 0, 7);
+    pose("Torso", paddle ? -0.1 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 : walking ? runLean - step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 : 0, riding ? rideLean : 0, 7);
     pose("Head", paddle ? -0.24 : riding ? -0.12 - state.compression * .08 + state.barrel * 0.08 : 0, riding ? state.rail * 0.14 : 0, riding ? -rideLean * 0.4 : 0, 8);
 
     pose(
       "UpperArm.L",
-      wipeout ? 1.2 : paddle ? stroke * 1.18 : riding ? -0.48 - state.maneuver * 0.22 : step * 0.56,
+      wipeout ? 1.2 : paddle ? stroke * 1.18 : riding ? -0.48 - state.maneuver * 0.22 + state.trickCharge * .28 - state.maneuverLift * .22 : step * 0.56,
       riding ? -0.12 + state.rail * 0.12 : 0,
       riding ? 1.03 + state.maneuver * 0.32 + state.slip * .16 : paddle ? 0.14 : 0.08,
       9,
     );
     pose(
       "UpperArm.R",
-      wipeout ? -1.1 : paddle ? -stroke * 1.18 : riding ? 0.48 + state.maneuver * 0.22 : -step * 0.56,
+      wipeout ? -1.1 : paddle ? -stroke * 1.18 : riding ? 0.48 + state.maneuver * 0.22 - state.trickCharge * .28 + state.maneuverLift * .22 : -step * 0.56,
       riding ? 0.12 + state.rail * 0.12 : 0,
       riding ? -1.03 - state.maneuver * 0.32 - state.slip * .16 : paddle ? -0.14 : -0.08,
       9,
@@ -1257,10 +1264,11 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 : riding ? 0.84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 : riding ? 0.84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : 0, 9, delta);
-    rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 : 0, 8, delta);
+    rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 + state.maneuverSpin : 0, state.maneuverLift > .12 ? 13 : 8, delta);
+    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, riding ? state.maneuverLift : 0, state.maneuverLift > .08 ? 13 : 9, delta);
 
     board.current.rotation.z = THREE.MathUtils.damp(
       board.current.rotation.z,
@@ -1270,7 +1278,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
     );
     board.current.rotation.y = THREE.MathUtils.damp(
       board.current.rotation.y,
-      riding ? state.maneuverSide * state.maneuver * 0.52 + state.slip * Math.sign(state.rail) * .18 : 0,
+      riding ? state.maneuverSide * state.maneuver * 0.52 + state.slip * Math.sign(state.rail) * .18 - state.maneuverSpin * .22 : 0,
       9,
       delta,
     );
@@ -1283,7 +1291,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
     );
     board.current.rotation.x = THREE.MathUtils.damp(
       board.current.rotation.x,
-      carrying ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 + state.takeoff * .09 : 0,
+      carrying ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : 0,
       7,
       delta,
     );
@@ -1478,6 +1486,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const cursor = useRef(0);
   const emission = useRef(0);
   const previousManeuver = useRef(0);
+  const previousLift = useRef(0);
   const previousTakeoff = useRef(0);
   const wakeTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
@@ -1547,7 +1556,8 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       wake.current.rotation.y = THREE.MathUtils.damp(wake.current.rotation.y, riding ? state.rail * -.11 - Math.sign(state.rail) * state.slip * .08 : 0, 7, delta);
       wake.current.position.y = Math.sin(clock.elapsedTime * 7.5) * 0.018;
     }
-    const targetOpacity = riding ? 0.2 + Math.min(0.38, state.speed * 0.018) + Math.abs(state.rail) * .12 + state.slip * .16 : paddling ? .045 + state.paddleEffort * .14 + Math.min(.08, state.speed * .018) : 0;
+    const waterContact = 1 - THREE.MathUtils.smoothstep(state.maneuverLift, .14, .5);
+    const targetOpacity = riding ? (0.2 + Math.min(0.38, state.speed * 0.018) + Math.abs(state.rail) * .12 + state.slip * .16) * waterContact : paddling ? .045 + state.paddleEffort * .14 + Math.min(.08, state.speed * .018) : 0;
     wakeMaterials.current.forEach((material, index) => {
       if (!material) return;
       const side = index === 0 ? -1 : 1;
@@ -1565,7 +1575,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
         const offset = index * 3;
         const railSide = Math.abs(state.rail) > 0.1 ? -Math.sign(state.rail) : Math.random() > 0.5 ? 1 : -1;
         particlePositions[offset] = railSide * (0.22 + Math.random() * (impact ? 0.5 : 0.22));
-        particlePositions[offset + 1] = 0.08 + Math.random() * 0.18;
+        particlePositions[offset + 1] = state.maneuverLift + 0.08 + Math.random() * 0.18;
         particlePositions[offset + 2] = impact ? Math.random() * 0.7 - 0.15 : -0.32 - Math.random() * 0.8;
         velocities.current[offset] = railSide * (0.75 + state.slip * 1.4 + Math.abs(state.rail) * state.speed * .055 + Math.random() * (impact ? 2.7 : 1.25));
         velocities.current[offset + 1] = 0.65 + state.compression * .42 + state.slip * .5 + Math.random() * (impact ? 2.6 : 1.35) + state.barrel * 0.5;
@@ -1582,9 +1592,12 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
         emission.current -= count;
       }
       if (state.maneuver > 0.82 && previousManeuver.current <= 0.82) emit(mobile ? 12 : 24, true);
+      if (state.maneuverLift > .2 && previousLift.current <= .2) emit(mobile ? 10 : 20, true);
+      if (state.maneuverLift < .08 && previousLift.current >= .08) emit(mobile ? 16 : 30, true);
       if (state.takeoff > .82 && previousTakeoff.current <= .82) emit(mobile ? 8 : 15, true);
     }
     previousManeuver.current = state.maneuver;
+    previousLift.current = state.maneuverLift;
     previousTakeoff.current = state.takeoff;
 
     if (!particlePositions) return;
@@ -3564,6 +3577,7 @@ function Simulation({
   const maneuverId = useRef(0);
   const maneuverCount = useRef(0);
   const activeManeuver = useRef<ManeuverAttempt | null>(null);
+  const trickCharge = useRef(0);
   const lastManeuverAt = useRef(-10);
   const catchQuality = useRef(0.5);
   const unstableFor = useRef(0);
@@ -3590,6 +3604,9 @@ function Simulation({
     wipeout: 0,
     maneuver: 0,
     maneuverSide: 0,
+    maneuverLift: 0,
+    maneuverSpin: 0,
+    trickCharge: 0,
     stance: 0,
     barrel: 0,
     rail: 0,
@@ -3655,6 +3672,8 @@ function Simulation({
     let takeoffAlignment = 0;
     let takeoffQuality = 0;
     let maneuverProgress = 0;
+    let maneuverPhase: GameStats["maneuverPhase"] = "line";
+    let maneuverAirborne = false;
     let landingTarget = 0;
     let landingWindow = 0;
     let runBlend = 0;
@@ -3663,6 +3682,7 @@ function Simulation({
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
     const actionPressed = state.action && !actionLatch.current;
+    const actionReleased = !state.action && actionLatch.current;
     actionLatch.current = state.action;
 
     if (!active) {
@@ -3920,15 +3940,34 @@ function Simulation({
           Math.sin(t * (4.7 + windExposure * 1.8) + position.current.z * .08) * onshoreChop * .13 / boardSpec.stability +
           Math.sign(steer) * railSlip.current * .1;
         const attempt = activeManeuver.current;
+        const loadAvailable = !finishing && !attempt && t - lastManeuverAt.current > .72 && stamina.current > 5 && railSlip.current < .8;
+        if (loadAvailable && state.action) {
+          if (actionPressed) trickCharge.current = Math.max(trickCharge.current, .08);
+          const loadRate = settings.mode === "training" ? 1.48 : settings.mode === "advanced" ? 1.08 : 1.24;
+          trickCharge.current = Math.min(1, trickCharge.current + delta * loadRate);
+          stamina.current = Math.max(0, stamina.current - delta * (2.2 + trickCharge.current * 3.2));
+          compression = Math.max(compression, .28 + trickCharge.current * .72);
+          maneuverPhase = "load";
+        } else if (!attempt && !state.action && !actionReleased) {
+          trickCharge.current = THREE.MathUtils.damp(trickCharge.current, 0, 8, delta);
+        }
         if (attempt) {
           maneuverProgress = THREE.MathUtils.clamp((t - attempt.startedAt) / attempt.duration, 0, 1);
           const modeWindow = settings.mode === "training" ? .68 : settings.mode === "advanced" ? .38 : .52;
-          landingWindow = THREE.MathUtils.clamp(modeWindow * Math.sqrt(boardSpec.stability) + (mobileRenderer ? .08 : 0), .3, .82);
-          const landingDrift = attempt.side * (Math.sin(maneuverProgress * Math.PI) * .16 + maneuverProgress * .1);
+          const familyWindow = attempt.family === "air" ? .82 : attempt.family === "lip" ? .92 : 1;
+          landingWindow = THREE.MathUtils.clamp((modeWindow * Math.sqrt(boardSpec.stability) + (mobileRenderer ? .08 : 0)) * familyWindow, .27, .82);
+          const arc = Math.pow(Math.sin(maneuverProgress * Math.PI), .82);
+          const lift = attempt.lift * arc;
+          const spin = attempt.side * attempt.rotation * Math.sin(maneuverProgress * Math.PI);
+          const landingDrift = attempt.side * (arc * (.14 + attempt.rotation * .035) + maneuverProgress * (.08 + attempt.charge * .05));
           landingTarget = THREE.MathUtils.clamp(balanceTarget + landingDrift, -1, 1);
           balanceTarget = landingTarget;
-          motion.current.maneuver = Math.max(motion.current.maneuver, .12 + Math.sin(maneuverProgress * Math.PI) * .88);
+          motion.current.maneuver = Math.max(motion.current.maneuver, .12 + arc * .88);
           motion.current.maneuverSide = attempt.side;
+          motion.current.maneuverLift = lift;
+          motion.current.maneuverSpin = spin;
+          maneuverAirborne = attempt.family === "air" && lift > .18;
+          maneuverPhase = maneuverProgress < .2 ? "release" : maneuverAirborne && maneuverProgress < .72 ? "air" : "land";
         }
         const balanceError = Math.abs(state.balance - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82) * Math.sqrt(boardSpec.stability);
@@ -3969,8 +4008,9 @@ function Simulation({
           const landed = landingError <= landingWindow * recoveryAssist && railSlip.current < .88;
           if (landed) {
             const landingControl = THREE.MathUtils.clamp(1 - landingError / landingWindow, 0, 1);
-            const quality = THREE.MathUtils.clamp(.18 + landingControl * .72 + controlQuality * .1, 0, 1);
-            const points = Math.round(attempt.base * boardSpec.score * (.58 + controlQuality * .34 + quality * .48) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
+            const setupQuality = .52 + attempt.charge * .48;
+            const quality = THREE.MathUtils.clamp(.14 + landingControl * .66 + controlQuality * .1 + setupQuality * .1, 0, 1);
+            const points = Math.round(attempt.base * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
             maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -3989,57 +4029,93 @@ function Simulation({
             motion.current.impact = .62;
           }
           activeManeuver.current = null;
+          trickCharge.current = 0;
         }
-        if (!finishing && !attempt && actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94 && railSlip.current < .78) {
+        const wantsRelease = !attempt && actionReleased;
+        if (!finishing && wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
+          const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
           const rail = Math.abs(steer);
           let name = "High Line";
+          let family: ManeuverAttempt["family"] = "trim";
           let base = 150;
+          let lift = .04;
+          let rotation = .08;
           if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55) {
             name = "Nose Ride";
             base = settings.board === "longboard" ? 440 : 340;
-          } else if (tailPressure > 0.58 && rail > 0.42 && waveQuality > 0.54) {
-            name = "Tail Release";
-            base = 390;
-          } else if (waveQuality > 0.72 && rail > 0.42) {
+          } else if (charge > .82 && tailPressure > .34 && rail > .38 && waveQuality > .7 && speed > 10.2 && linePosition < .5) {
+            family = "air";
+            name = charge > .95 && rail > .62 ? "Alley-Oop" : "Air Reverse";
+            base = name === "Alley-Oop" ? 780 : 690;
+            lift = .82 + charge * .62 + settings.waveHeight * .08;
+            rotation = name === "Alley-Oop" ? 2.35 : 1.72;
+          } else if (tailPressure > .56 && rail > .42 && waveQuality > .54) {
+            family = "lip";
+            name = charge > .68 ? "Layback Release" : "Tail Release";
+            base = charge > .68 ? 470 : 390;
+            lift = .22 + charge * .28;
+            rotation = .64 + charge * .34;
+          } else if (waveQuality > .72 && rail > .42) {
+            family = "lip";
             name = "Lip Snap";
             base = 360;
+            lift = .18 + charge * .3;
+            rotation = .58 + charge * .42;
           } else if (waveQuality > 0.68) {
+            family = "lip";
             name = "Foam Floater";
             base = 305;
-          } else if (waveQuality < 0.32 && rail > 0.38) {
-            name = "Pocket Cutback";
-            base = 285;
+            lift = .22 + charge * .24;
+            rotation = .26;
+          } else if (linePosition > .5 && rail > .38) {
+            family = "carve";
+            name = charge > .7 ? "Roundhouse Cutback" : "Pocket Cutback";
+            base = charge > .7 ? 410 : 285;
+            lift = .08;
+            rotation = .72 + charge * .36;
           } else if (rail > 0.52) {
-            name = "Rail Carve";
-            base = 230;
+            family = "carve";
+            name = charge > .72 ? "Power Carve" : "Rail Carve";
+            base = charge > .72 ? 330 : 230;
+            lift = .06;
+            rotation = .5 + charge * .34;
           } else if (pumping) {
             name = "Power Pump";
             base = 175;
           }
-          stamina.current = Math.max(0, stamina.current - 8);
+          stamina.current = Math.max(0, stamina.current - (5 + charge * 8 + (family === "air" ? 5 : 0)));
           maneuver.current = name;
           maneuverScore.current = 0;
           maneuverQuality.current = 0;
           lastManeuverAt.current = t;
           const side = steer || (state.balance >= 0 ? 1 : -1);
-          const baseDuration = name === "Nose Ride" ? .86 : name === "Foam Floater" ? .76 : .66;
+          const baseDuration = family === "air" ? 1.04 : name === "Nose Ride" ? .92 : name === "Foam Floater" ? .8 : family === "carve" ? .78 : .7;
           const timingScale = settings.mode === "training" ? 1.12 : settings.mode === "advanced" ? .94 : 1;
           activeManeuver.current = {
             name,
+            family,
             base,
             side,
+            charge,
+            lift,
+            rotation,
             startedAt: t,
-            duration: baseDuration * timingScale + (mobileRenderer ? .08 : 0),
+            duration: (baseDuration + charge * .12) * timingScale + (mobileRenderer ? .08 : 0),
           };
+          trickCharge.current = 0;
           motion.current.maneuver = .16;
           motion.current.maneuverSide = side;
           motion.current.impact = .35;
+        } else if (wantsRelease) {
+          trickCharge.current = 0;
         }
         prompt = finishing
           ? "Hold the exit — clean line"
           : activeManeuver.current
-            ? `${activeManeuver.current.name} · reconnect with the landing marker`
-          : actionPressed && railSlip.current >= .78
+            ? `${activeManeuver.current.name} · ${maneuverPhase === "air" ? "spot the landing" : "reconnect with the landing marker"}`
+          : trickCharge.current > .05
+            ? `Board loaded ${Math.round(trickCharge.current * 100)}% · release to throw the move`
+          : actionReleased && railSlip.current >= .78
           ? "Fins released — reconnect the rail before the next move"
           : balanceError > failThreshold * 0.76
           ? "Shift your weight toward the marker"
@@ -4054,14 +4130,14 @@ function Simulation({
           : lineControl > .76 && Math.abs(steer) < .18
             ? "Power pocket locked · build speed or release a move"
           : steer
-            ? "Hold the rail · TRICK / SPACE to release a turn"
+            ? "Hold the rail · hold TRICK / SPACE to load, then release"
             : pumping
               ? "Move toward the nose · pumping for speed"
               : move < -0.08
                 ? "Tail pressure · tighter turning response"
                 : Math.abs(character.peel) > .18
                   ? `${character.peel > 0 ? "Right" : "Left"} shoulder opening · set the rail toward the caustic seam`
-                  : "W nose / pump · S tail / control · SPACE maneuver";
+                  : "W nose / pump · S tail / control · hold SPACE, then release";
         if (!finishing && unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
           phase.current = "wipeout";
           wipeoutAt.current = t;
@@ -4147,6 +4223,7 @@ function Simulation({
     motion.current.balance = state.balance;
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
+    if (phase.current !== "riding") trickCharge.current = 0;
     motion.current.run = THREE.MathUtils.damp(motion.current.run, runBlend, 8, delta);
     motion.current.paddleEffort = THREE.MathUtils.damp(motion.current.paddleEffort, paddleEffort, 9, delta);
     motion.current.waveQuality = THREE.MathUtils.damp(motion.current.waveQuality, waveQuality, 5, delta);
@@ -4156,6 +4233,11 @@ function Simulation({
     motion.current.sectionPressure = THREE.MathUtils.damp(motion.current.sectionPressure, sectionPressure, 6, delta);
     motion.current.setEnergy = setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
+    motion.current.trickCharge = THREE.MathUtils.damp(motion.current.trickCharge, trickCharge.current, trickCharge.current > motion.current.trickCharge ? 12 : 8, delta);
+    if (!activeManeuver.current) {
+      motion.current.maneuverLift = THREE.MathUtils.damp(motion.current.maneuverLift, 0, 11, delta);
+      motion.current.maneuverSpin = THREE.MathUtils.damp(motion.current.maneuverSpin, 0, 12, delta);
+    }
     motion.current.stance = stance.current;
     motion.current.barrel = THREE.MathUtils.damp(motion.current.barrel, barrelIntensity, 6, delta);
     motion.current.rail = THREE.MathUtils.damp(motion.current.rail, railLoad, 8, delta);
@@ -4260,41 +4342,42 @@ function Simulation({
       const barrelCamera = riding ? motion.current.barrel : 0;
       const takeoffBeat = riding ? motion.current.takeoff : 0;
       const maneuverBeat = riding ? motion.current.maneuver : 0;
+      const maneuverAir = riding ? motion.current.maneuverLift : 0;
       const finishBeat = riding ? motion.current.finish : 0;
       const directorSide = motion.current.maneuverSide || (character.peel < 0 ? -1 : 1);
       const speedLead = riding ? THREE.MathUtils.smoothstep(speed, 9.5, 17.5) : 0;
       if (cameraMode === "immersive") {
         cameraPosition.current.set(
           position.current.x + (riding ? steer * -1.1 - barrelCamera * .8 + directorSide * maneuverBeat * .28 : .68),
-          playerY + (riding ? 1.82 - barrelCamera * .26 - takeoffBeat * .28 + maneuverBeat * .2 + finishBeat * .28 : 3.05),
+          playerY + (riding ? 1.82 - barrelCamera * .26 - takeoffBeat * .28 + maneuverBeat * .2 + maneuverAir * .48 + finishBeat * .28 : 3.05),
           position.current.z + (riding ? -4.15 + barrelCamera * .82 + takeoffBeat * 1.12 - maneuverBeat * .42 - finishBeat * .75 : 5.8),
         );
         cameraTarget.current.set(
           position.current.x + (riding ? steer * .28 + directorSide * maneuverBeat * .16 : 0),
-          playerY + (riding ? .72 : 1.18),
+          playerY + (riding ? .72 + maneuverAir * .68 : 1.18),
           position.current.z + (riding ? 4.65 + speedLead * 1.45 + finishBeat * 2.1 : -3.2),
         );
       } else if (cameraMode === "cinematic") {
         const side = directorSide;
         cameraPosition.current.set(
           position.current.x + side * (riding ? 7.2 - maneuverBeat * 2.8 - takeoffBeat * 1.45 : 5.8),
-          playerY + (riding ? 2.45 - takeoffBeat * .48 + maneuverBeat * .68 + finishBeat * 1.08 : 3.1),
+          playerY + (riding ? 2.45 - takeoffBeat * .48 + maneuverBeat * .68 + maneuverAir * .74 + finishBeat * 1.08 : 3.1),
           position.current.z + (riding ? -1.6 - takeoffBeat * 2.9 + maneuverBeat * .62 - finishBeat * 3.2 : 4.5),
         );
         cameraTarget.current.set(
           position.current.x - side * (riding ? .5 + maneuverBeat * .58 : .16),
-          playerY + (riding ? .82 : 1.02),
+          playerY + (riding ? .82 + maneuverAir * .7 : 1.02),
           position.current.z + (riding ? 2.6 + speedLead * 1.8 + finishBeat * 3.4 : -1.8),
         );
       } else {
         cameraPosition.current.set(
           position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 + directorSide * maneuverBeat * .7 : 0),
-          playerY + (riding ? 3.2 - barrelCamera * .72 - takeoffBeat * .38 + maneuverBeat * .38 + finishBeat * .66 : 4.9),
+          playerY + (riding ? 3.2 - barrelCamera * .72 - takeoffBeat * .38 + maneuverBeat * .38 + maneuverAir * .58 + finishBeat * .66 : 4.9),
           position.current.z + (riding ? -8.4 + barrelCamera * 1.45 + takeoffBeat * 2.15 - maneuverBeat * .72 - finishBeat * 1.9 : 10.5),
         );
         cameraTarget.current.set(
           position.current.x + (riding ? directorSide * maneuverBeat * .18 : 0),
-          playerY + .9 - barrelCamera * .2,
+          playerY + .9 - barrelCamera * .2 + maneuverAir * .72,
           position.current.z + (riding ? 5.4 + speedLead * 1.9 + finishBeat * 3.7 : -3),
         );
       }
@@ -4379,6 +4462,9 @@ function Simulation({
         maneuverCount: maneuverCount.current,
         maneuverActive: activeManeuver.current !== null,
         maneuverProgress,
+        maneuverPhase,
+        trickCharge: motion.current.trickCharge,
+        maneuverAirborne,
         landingTarget,
         landingWindow,
         maxCombo: Number(maxCombo.current.toFixed(1)),
