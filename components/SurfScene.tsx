@@ -59,6 +59,8 @@ type VehicleMotionState = {
   steer: number;
   driving: boolean;
   brake: boolean;
+  wetness: number;
+  offRoad: number;
 };
 
 function isMobileRenderer() {
@@ -90,6 +92,14 @@ function weatherProfile(code: number): WeatherProfile {
   }
   if ([95, 96, 99].includes(code)) return { kind: "rain", intensity: 1, fog: false, storm: true };
   return { kind: "none", intensity: 0, fog: false, storm: false };
+}
+
+function weatherWetness(code: number) {
+  const profile = weatherProfile(code);
+  if (profile.kind === "rain") return THREE.MathUtils.clamp(.28 + profile.intensity * .72, 0, 1);
+  if (profile.kind === "snow") return .24 + profile.intensity * .2;
+  if (profile.fog) return .12;
+  return 0;
 }
 
 function seededRandom(index: number, salt = 0) {
@@ -2013,7 +2023,102 @@ function createTiledSandTexture(source: THREE.Texture, repeatX: number, repeatY:
   return texture;
 }
 
-function BeachLife({ beach, windSpeed }: { beach: Beach; windSpeed: number }) {
+const ROAD_VERTEX = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vUv = uv;
+    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const ROAD_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uWetness;
+  uniform float uLight;
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash(cell), hash(cell + vec2(1.0, 0.0)), f.x),
+      mix(hash(cell + vec2(0.0, 1.0)), hash(cell + vec2(1.0)), f.x),
+      f.y
+    );
+  }
+
+  float fbm(vec2 p) {
+    float value = noise(p) * .58;
+    value += noise(p * 2.07 + 4.1) * .27;
+    value += noise(p * 4.13 - 7.8) * .15;
+    return value;
+  }
+
+  void main() {
+    vec2 road = vec2(vUv.x * 92.0, vUv.y * 7.0);
+    float aggregate = fbm(road * 2.2);
+    float coarse = fbm(road * .24 + vec2(17.0, 3.0));
+    float laneWear = exp(-pow((vUv.y - .28) * 17.0, 2.0)) + exp(-pow((vUv.y - .72) * 17.0, 2.0));
+    float seam = (1.0 - smoothstep(0.0, .018, abs(fract(vUv.x * 5.0 + .17) - .5))) * .16;
+    vec3 dryAsphalt = mix(vec3(.055, .061, .06), vec3(.105, .112, .108), aggregate * .72 + coarse * .28);
+    dryAsphalt *= 1.0 - laneWear * .075 - seam;
+
+    float puddleField = fbm(road * .11 + vec2(2.8, -1.4));
+    float puddles = smoothstep(.55, .78, puddleField + laneWear * .09) * uWetness;
+    float wetFilm = uWetness * (.58 + puddles * .42);
+    vec3 color = mix(dryAsphalt, dryAsphalt * vec3(.38, .46, .48), wetFilm);
+
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    float grazing = pow(1.0 - abs(viewDirection.y), 2.7);
+    float ripple = noise(road * 1.35 + vec2(uTime * .18, -uTime * .1));
+    vec3 skyReflection = mix(vec3(.07, .105, .12), vec3(.3, .48, .51), uLight);
+    skyReflection *= .78 + ripple * .22;
+    color = mix(color, skyReflection, wetFilm * grazing * (.52 + puddles * .34));
+
+    float mica = smoothstep(.91, .985, hash(floor(road * 5.5))) * (1.0 - uWetness * .65);
+    color += vec3(.18, .2, .19) * mica * (.18 + uLight * .28);
+    float edge = smoothstep(0.0, .018, vUv.y) * smoothstep(0.0, .018, 1.0 - vUv.y);
+    gl_FragColor = vec4(color * (.97 + edge * .03), 1.0);
+  }
+`;
+
+function RoadSurface({ weatherCode, light }: { weatherCode: number; light: number }) {
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const wetness = weatherWetness(weatherCode);
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uWetness: { value: 0 },
+    uLight: { value: 1 },
+  }), []);
+
+  useFrame(({ clock }, delta) => {
+    if (!material.current) return;
+    material.current.uniforms.uTime.value = clock.elapsedTime;
+    material.current.uniforms.uWetness.value = THREE.MathUtils.damp(material.current.uniforms.uWetness.value, wetness, 2.6, delta);
+    material.current.uniforms.uLight.value = THREE.MathUtils.damp(material.current.uniforms.uLight.value, light, 2.6, delta);
+  });
+
+  return (
+    <mesh position={[0, -0.35, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[250, 14]} />
+      <shaderMaterial ref={material} uniforms={uniforms} vertexShader={ROAD_VERTEX} fragmentShader={ROAD_FRAGMENT} />
+    </mesh>
+  );
+}
+
+function BeachLife({ beach, windSpeed, weatherCode, light }: { beach: Beach; windSpeed: number; weatherCode: number; light: number }) {
   const biome = getCoastBiome(beach.id);
   const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
   const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
@@ -2052,10 +2157,7 @@ function BeachLife({ beach, windSpeed }: { beach: Beach; windSpeed: number }) {
         <meshStandardMaterial color={surface[1]} map={wetSandTexture} bumpMap={wetSandTexture} bumpScale={0.025} roughness={0.76} metalness={0.04} />
       </mesh>
       <group position={[0, 0, 78]}>
-        <mesh position={[0, -0.35, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[250, 14]} />
-          <meshStandardMaterial color="#252a2b" roughness={0.94} metalness={0.02} />
-        </mesh>
+        <RoadSurface weatherCode={weatherCode} light={light} />
         <mesh position={[0, -0.31, -6.5]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[250, 0.18]} />
           <meshStandardMaterial color="#dfd6b5" roughness={0.78} />
@@ -2158,7 +2260,7 @@ function prepareVanScene(source: THREE.Group) {
   return model;
 }
 
-function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
+function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionState>; darkness: number }) {
   const { scene } = useGLTF(VAN_MODEL_URL);
   const model = useMemo(() => prepareVanScene(scene), [scene]);
   const body = useRef<THREE.Object3D | null>(null);
@@ -2166,6 +2268,7 @@ function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
   const steerRight = useRef<THREE.Object3D | null>(null);
   const wheels = useRef<THREE.Object3D[]>([]);
   const brakeMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
+  const headLights = useRef<Array<THREE.PointLight | null>>([]);
 
   useEffect(() => {
     body.current = model.getObjectByName("VanBody") ?? null;
@@ -2204,13 +2307,212 @@ function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
     brakeMaterials.current.forEach((material) => {
       material.emissiveIntensity = THREE.MathUtils.damp(material.emissiveIntensity, targetBrakeIntensity, 12, delta);
     });
+    const headlightIntensity = .08 + darkness * (1.85 + state.wetness * .72);
+    headLights.current.forEach((headlight) => {
+      if (!headlight) return;
+      headlight.intensity = THREE.MathUtils.damp(headlight.intensity, headlightIntensity, 5.5, delta);
+      headlight.distance = THREE.MathUtils.damp(headlight.distance, 11 + darkness * 13, 4, delta);
+    });
   });
 
   return (
     <group>
       <primitive object={model} />
-      <pointLight position={[-1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.5} distance={13} decay={1.8} />
-      <pointLight position={[1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.5} distance={13} decay={1.8} />
+      <pointLight ref={(light) => { headLights.current[0] = light; }} position={[-1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.08} distance={11} decay={1.8} />
+      <pointLight ref={(light) => { headLights.current[1] = light; }} position={[1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.08} distance={11} decay={1.8} />
+    </group>
+  );
+}
+
+const VAN_TRACK_COUNT = 44;
+
+function VehicleSurfaceEffects({
+  motion,
+  targetPosition,
+  heading,
+  mobile,
+}: {
+  motion: MutableRefObject<VehicleMotionState>;
+  targetPosition: MutableRefObject<THREE.Vector3>;
+  heading: MutableRefObject<number>;
+  mobile: boolean;
+}) {
+  const particleCount = mobile ? 28 : 58;
+  const particles = useRef<THREE.Points>(null);
+  const particleMaterial = useRef<THREE.PointsMaterial>(null);
+  const tracks = useRef<THREE.InstancedMesh>(null);
+  const trackMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const positions = useMemo(() => {
+    const values = new Float32Array(particleCount * 3);
+    for (let index = 0; index < particleCount; index += 1) values[index * 3 + 1] = -100;
+    return values;
+  }, [particleCount]);
+  const velocities = useRef(new Float32Array(particleCount * 3));
+  const life = useRef(new Float32Array(particleCount));
+  const particleKind = useRef(new Float32Array(particleCount));
+  const particleCursor = useRef(0);
+  const emission = useRef(0);
+  const trackCursor = useRef(0);
+  const traveled = useRef(0);
+  const previousPosition = useRef(new THREE.Vector3());
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const wetParticleColor = useMemo(() => new THREE.Color("#d7f2ee"), []);
+  const dustParticleColor = useMemo(() => new THREE.Color("#b99a72"), []);
+  const roadTrackColor = useMemo(() => new THREE.Color("#11191a"), []);
+  const sandTrackColor = useMemo(() => new THREE.Color("#5a4734"), []);
+  const trackData = useRef(Array.from({ length: VAN_TRACK_COUNT }, () => ({ x: 0, y: -100, z: 0, heading: 0, age: 0 })));
+  const particleTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(32, 32, 2, 32, 32, 30);
+      gradient.addColorStop(0, "rgba(255,255,255,.98)");
+      gradient.addColorStop(.32, "rgba(255,255,255,.72)");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 64, 64);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    previousPosition.current.copy(targetPosition.current);
+    tracks.current?.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    return () => particleTexture.dispose();
+  }, [particleTexture, targetPosition]);
+
+  useFrame((_, delta) => {
+    const state = motion.current;
+    const current = targetPosition.current;
+    const distance = current.distanceTo(previousPosition.current);
+    const speed = Math.abs(state.speed);
+    const driveStrength = state.driving ? THREE.MathUtils.smoothstep(speed, 1.1, 9.5) : 0;
+    const wetSpray = state.wetness * (1 - state.offRoad * .72);
+    const dust = state.offRoad * (1 - state.wetness * .78);
+    const dominantDust = dust > wetSpray;
+    const surfaceStrength = Math.max(wetSpray, dust);
+    const forwardX = -Math.sin(heading.current);
+    const forwardZ = -Math.cos(heading.current);
+    const rightX = Math.cos(heading.current);
+    const rightZ = -Math.sin(heading.current);
+    const rearX = current.x - forwardX * 2.38;
+    const rearZ = current.z - forwardZ * 2.38;
+    const positionAttribute = particles.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const particlePositions = positionAttribute?.array as Float32Array | undefined;
+
+    emission.current += delta * driveStrength * (wetSpray * 34 + dust * 24);
+    if (particlePositions && emission.current >= 1) {
+      const count = Math.min(5, Math.floor(emission.current));
+      emission.current -= count;
+      for (let particle = 0; particle < count; particle += 1) {
+        const index = particleCursor.current++ % particleCount;
+        const offset = index * 3;
+        const side = particle % 2 ? 1 : -1;
+        const scatter = (Math.random() - .5) * .22;
+        particlePositions[offset] = rearX + rightX * (side * 1.02 + scatter);
+        particlePositions[offset + 1] = -.02 + Math.random() * .22;
+        particlePositions[offset + 2] = rearZ + rightZ * (side * 1.02 + scatter);
+        const backwash = 1.1 + Math.random() * (dominantDust ? 2.8 : 2.1);
+        const lateral = side * (.28 + Math.random() * .72);
+        velocities.current[offset] = -forwardX * backwash + rightX * lateral;
+        velocities.current[offset + 1] = (dominantDust ? .42 : .7) + Math.random() * (dominantDust ? .72 : 1.15);
+        velocities.current[offset + 2] = -forwardZ * backwash + rightZ * lateral;
+        life.current[index] = dominantDust ? .72 + Math.random() * .52 : .42 + Math.random() * .38;
+        particleKind.current[index] = dominantDust ? 1 : 0;
+      }
+    }
+
+    if (particlePositions && positionAttribute) {
+      for (let index = 0; index < particleCount; index += 1) {
+        if (life.current[index] <= 0) continue;
+        const offset = index * 3;
+        life.current[index] -= delta;
+        particlePositions[offset] += velocities.current[offset] * delta;
+        particlePositions[offset + 1] += velocities.current[offset + 1] * delta;
+        particlePositions[offset + 2] += velocities.current[offset + 2] * delta;
+        const isDust = particleKind.current[index] > .5;
+        velocities.current[offset + 1] -= delta * (isDust ? .18 : 3.7);
+        velocities.current[offset] *= 1 - delta * (isDust ? .52 : 1.2);
+        velocities.current[offset + 2] *= 1 - delta * (isDust ? .52 : 1.2);
+        if (life.current[index] <= 0 || (!isDust && particlePositions[offset + 1] < -.28)) particlePositions[offset + 1] = -100;
+      }
+      positionAttribute.needsUpdate = true;
+    }
+
+    if (particleMaterial.current) {
+      particleMaterial.current.opacity = THREE.MathUtils.damp(particleMaterial.current.opacity, driveStrength * (.36 + surfaceStrength * .5), 5, delta);
+      particleMaterial.current.size = THREE.MathUtils.damp(particleMaterial.current.size, dominantDust ? .42 : .24, 5, delta);
+      particleMaterial.current.color.lerp(dominantDust ? dustParticleColor : wetParticleColor, 1 - Math.exp(-delta * 4));
+    }
+
+    const markStrength = Math.max(state.offRoad, state.wetness * .72, state.brake ? .9 : 0);
+    if (state.driving && driveStrength > .08 && markStrength > .12) {
+      traveled.current += distance;
+      if (traveled.current > .78) {
+        traveled.current %= .78;
+        for (const side of [-1, 1]) {
+          const mark = trackData.current[trackCursor.current++ % VAN_TRACK_COUNT];
+          mark.x = rearX + rightX * side * 1.02;
+          mark.z = rearZ + rightZ * side * 1.02;
+          mark.y = THREE.MathUtils.lerp(-.285, -.455, state.offRoad);
+          mark.heading = heading.current;
+          mark.age = state.offRoad > .25 ? 11 : state.brake ? 6.5 : 8;
+        }
+      }
+    } else if (!state.driving) {
+      traveled.current = 0;
+    }
+    previousPosition.current.copy(current);
+
+    if (tracks.current) {
+      trackData.current.forEach((mark, index) => {
+        mark.age = Math.max(0, mark.age - delta);
+        if (mark.age <= 0) {
+          dummy.position.set(0, -100, 0);
+          dummy.scale.setScalar(.001);
+        } else {
+          const fade = THREE.MathUtils.smoothstep(mark.age, 0, 1.8);
+          dummy.position.set(mark.x, mark.y, mark.z);
+          dummy.rotation.set(-Math.PI / 2, mark.heading, 0);
+          dummy.scale.set(.88 * fade, 1, 1);
+        }
+        dummy.updateMatrix();
+        tracks.current?.setMatrixAt(index, dummy.matrix);
+      });
+      tracks.current.instanceMatrix.needsUpdate = true;
+    }
+    if (trackMaterial.current) {
+      trackMaterial.current.opacity = THREE.MathUtils.damp(trackMaterial.current.opacity, .12 + markStrength * .2, 4, delta);
+      trackMaterial.current.color.lerp(state.offRoad > .35 ? sandTrackColor : roadTrackColor, 1 - Math.exp(-delta * 3));
+    }
+  });
+
+  return (
+    <group>
+      <instancedMesh ref={tracks} args={[undefined, undefined, VAN_TRACK_COUNT]} frustumCulled={false} renderOrder={3}>
+        <planeGeometry args={[.24, 1.38]} />
+        <meshBasicMaterial ref={trackMaterial} color="#11191a" transparent opacity={0} depthWrite={false} polygonOffset polygonOffsetFactor={-3} />
+      </instancedMesh>
+      <points ref={particles} frustumCulled={false}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={particleMaterial}
+          map={particleTexture}
+          color="#d7f2ee"
+          size={.24}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={.03}
+          depthWrite={false}
+        />
+      </points>
     </group>
   );
 }
@@ -2277,7 +2579,7 @@ function Simulation({
     stance: 0,
     barrel: 0,
   });
-  const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false });
+  const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false, wetness: 0, offRoad: 0 });
   const cameraTarget = useRef(new THREE.Vector3());
   const cameraLookTarget = useRef(new THREE.Vector3(0, 1, 32));
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
@@ -2357,7 +2659,7 @@ function Simulation({
         } else if (roadEdge > 4.3) {
           prompt = "Ease back onto the coast road";
         } else if (Math.abs(vanSpeed.current) < 0.8) {
-          prompt = "W to drive · A/D to steer · SPACE to exit";
+          prompt = mobileRenderer ? "Use the stick to drive · DRIVE to exit" : "W to drive · A/D to steer · SPACE to exit";
         } else {
           prompt = "Cruise the shoreline · stop before exiting";
         }
@@ -2560,6 +2862,8 @@ function Simulation({
     vanMotion.current.steer = steer;
     vanMotion.current.driving = phase.current === "driving";
     vanMotion.current.brake = phase.current === "driving" && state.back && vanSpeed.current > 0.3;
+    vanMotion.current.wetness = weatherWetness(weatherCode);
+    vanMotion.current.offRoad = THREE.MathUtils.smoothstep(Math.abs(vanPosition.current.z - 78), 3.9, 6.1);
 
     const riding = phase.current === "riding";
     const paddling = phase.current === "paddling" || phase.current === "wading";
@@ -2736,6 +3040,7 @@ function Simulation({
   const directLight = 1 - cloudFactor * .52;
   const daylightStrength = THREE.MathUtils.smoothstep(solarElevation, -.04, .14);
   const moonlightStrength = 1 - THREE.MathUtils.smoothstep(solarElevation, -.02, .16);
+  const vanDarkness = THREE.MathUtils.clamp(1 - daylightStrength + (weather.storm ? .38 : weather.fog ? .22 : weather.intensity * .16), 0, 1);
   const coastBiome = getCoastBiome(beach.id);
   const daylightSky: Record<CoastBiome, string> = {
     urban: "#7897a0",
@@ -2819,16 +3124,17 @@ function Simulation({
         sunPosition={oceanSunPosition}
         sunColor={sunLightColor}
       />
-      <BeachLife beach={beach} windSpeed={windSpeed} />
+      <BeachLife beach={beach} windSpeed={windSpeed} weatherCode={weatherCode} light={light} />
       <ShorelineWash settings={settings} light={light} windSpeed={windSpeed} />
       <FootprintTrail motion={motion} targetPosition={position} />
+      <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <group ref={player}>
         <BreakingWave motion={motion} settings={settings} light={light} cloudCover={cloudCover} />
         <WaterInteraction motion={motion} />
         <SurferModel motion={motion} boardType={settings.board} />
       </group>
       <group ref={van}>
-        <SurfVan motion={vanMotion} />
+        <SurfVan motion={vanMotion} darkness={vanDarkness} />
       </group>
       {weather.kind === "none" && !weather.fog && !weather.storm && (
         <>
