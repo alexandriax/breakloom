@@ -15,6 +15,8 @@ export type ControlState = {
   left: boolean;
   right: boolean;
   action: boolean;
+  moveX: number;
+  moveY: number;
   balance: number;
   lookYaw: number;
   lookPitch: number;
@@ -1800,8 +1802,8 @@ function Simulation({
     const t = clock.elapsedTime;
     const state = controls.current;
     const currentPhase = phase.current;
-    const steer = (state.right ? 1 : 0) - (state.left ? 1 : 0);
-    const move = (state.forward ? 1 : 0) - (state.back ? 1 : 0);
+    const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX, -1, 1);
+    const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY, -1, 1);
     const modeDifficulty = settings.mode === "advanced" ? 1.12 : settings.mode === "training" ? 0.62 : 0.86;
     const setState = waveSetState(t, settings.wavePeriod);
     let speed = 0;
@@ -1893,10 +1895,10 @@ function Simulation({
         if (position.current.z > 10) phase.current = "shore";
         if (position.current.z < 1) phase.current = "paddling";
       } else if (currentPhase === "paddling") {
-        if (state.forward) stamina.current = Math.max(0, stamina.current - delta * 7.5);
+        if (move > 0.08) stamina.current = Math.max(0, stamina.current - delta * 7.5 * move);
         else stamina.current = Math.min(100, stamina.current + delta * 10);
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
-        speed = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + (state.back ? -1.2 : 0);
+        speed = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + Math.min(0, move) * 1.2;
         position.current.z -= speed * delta;
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
         const ready = position.current.z < -18;
@@ -1921,9 +1923,9 @@ function Simulation({
         }
       } else if (currentPhase === "riding") {
         const waveSpeed = 8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1;
-        const pumping = state.forward && stamina.current > 1;
-        if (state.forward) stance.current = Math.min(1, stance.current + delta * 0.72);
-        else if (state.back) stance.current = Math.max(-1, stance.current - delta * 0.86);
+        const pumping = move > 0.08 && stamina.current > 1;
+        if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
+        else if (move < -0.08) stance.current = Math.max(-1, stance.current + delta * 0.86 * move);
         else stance.current = THREE.MathUtils.damp(stance.current, 0, 1.05, delta);
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
@@ -2002,7 +2004,7 @@ function Simulation({
             ? "Hold the rail · TRICK / SPACE to release a turn"
             : pumping
               ? "Move toward the nose · pumping for speed"
-              : state.back
+              : move < -0.08
                 ? "Tail pressure · tighter turning response"
                 : "W nose / pump · S tail / control · SPACE maneuver";
         if (unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {

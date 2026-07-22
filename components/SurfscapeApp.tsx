@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import {
-  ArrowLeft,
   ArrowRight,
   AudioLines,
   BatteryMedium,
@@ -72,6 +71,10 @@ const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15
 
 const RECORD_KEY = "surfscape-personal-best-v1";
 
+function haptic(pattern: number | number[]) {
+  if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern);
+}
+
 const MODES: Array<{ id: GameMode; name: string; kicker: string; description: string }> = [
   {
     id: "training",
@@ -99,6 +102,8 @@ const EMPTY_CONTROLS: ControlState = {
   left: false,
   right: false,
   action: false,
+  moveX: 0,
+  moveY: 0,
   balance: 0,
   lookYaw: 0,
   lookPitch: 0,
@@ -142,6 +147,8 @@ export default function SurfscapeApp() {
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
   const previousRideResultId = useRef(0);
+  const joystickKnob = useRef<HTMLSpanElement>(null);
+  const joystickPointer = useRef<number | null>(null);
   const lookGesture = useRef<{
     pointerId: number;
     x: number;
@@ -216,6 +223,8 @@ export default function SurfscapeApp() {
       controls.current.left = false;
       controls.current.right = false;
       controls.current.action = false;
+      controls.current.moveX = 0;
+      controls.current.moveY = 0;
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (screen !== "game") return;
@@ -254,6 +263,8 @@ export default function SurfscapeApp() {
       controls.current.left = false;
       controls.current.right = false;
       controls.current.action = false;
+      controls.current.moveX = 0;
+      controls.current.moveY = 0;
     };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") releaseAllControls();
@@ -269,9 +280,19 @@ export default function SurfscapeApp() {
   useEffect(() => {
     const from = previousPhase.current;
     if (from !== stats.phase) {
-      if (stats.phase === "riding") audio.current?.effect("catch");
-      if (stats.phase === "wipeout") audio.current?.effect("wipeout");
-      if (from === "riding" && stats.phase === "shore") audio.current?.effect("finish");
+      if (stats.phase === "riding") {
+        audio.current?.effect("catch");
+        haptic([14, 24, 28]);
+      }
+      if (stats.phase === "driving") haptic(18);
+      if (stats.phase === "wipeout") {
+        audio.current?.effect("wipeout");
+        haptic([34, 36, 58]);
+      }
+      if (from === "riding" && stats.phase === "shore") {
+        audio.current?.effect("finish");
+        haptic([10, 22, 10]);
+      }
       previousPhase.current = stats.phase;
     }
     audio.current?.setVehicle(paused ? 0 : stats.speed, !paused && stats.vehicleMode);
@@ -299,6 +320,7 @@ export default function SurfscapeApp() {
       previousManeuverId.current = stats.maneuverId;
       setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore });
       audio.current?.effect("turn");
+      haptic(12);
       const timer = window.setTimeout(() => setManeuverToast(null), 1800);
       return () => window.clearTimeout(timer);
     }
@@ -339,6 +361,13 @@ export default function SurfscapeApp() {
     }
   };
 
+  function clearAnalogMovement() {
+    controls.current.moveX = 0;
+    controls.current.moveY = 0;
+    joystickPointer.current = null;
+    if (joystickKnob.current) joystickKnob.current.style.transform = "translate3d(-50%, -50%, 0)";
+  }
+
   const startSession = async () => {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
@@ -346,6 +375,7 @@ export default function SurfscapeApp() {
     audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
+    clearAnalogMovement();
     setStats(INITIAL_STATS);
     previousManeuverId.current = 0;
     previousRideResultId.current = 0;
@@ -362,6 +392,7 @@ export default function SurfscapeApp() {
     audio.current?.setMovement(stats.phase, 0, false);
     audio.current?.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover, 0.42);
     controls.current = { ...EMPTY_CONTROLS };
+    clearAnalogMovement();
     setScreen("launch");
     setPaused(false);
   };
@@ -388,22 +419,47 @@ export default function SurfscapeApp() {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     setControl(name, true);
-    if (name === "action" && typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(9);
-  };
-
-  const endControl = (
-    event: ReactPointerEvent<HTMLButtonElement>,
-    name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">,
-  ) => {
-    event.preventDefault();
-    setControl(name, false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (name === "action") haptic(9);
   };
 
   const endMobileAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setControl("forward", false);
     setControl("action", false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const updateJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (paused) return;
+    event.preventDefault();
+    if (event.type === "pointerdown") {
+      if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+      joystickPointer.current = event.pointerId;
+      haptic(4);
+    }
+    if (joystickPointer.current !== event.pointerId) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const radius = Math.min(bounds.width, bounds.height) * 0.31;
+    let x = event.clientX - (bounds.left + bounds.width / 2);
+    let y = event.clientY - (bounds.top + bounds.height / 2);
+    const distance = Math.hypot(x, y);
+    if (distance > radius) {
+      x *= radius / distance;
+      y *= radius / distance;
+    }
+    const normalizedX = x / radius;
+    const normalizedY = -y / radius;
+    controls.current.moveX = Math.abs(normalizedX) < 0.08 ? 0 : normalizedX;
+    controls.current.moveY = Math.abs(normalizedY) < 0.08 ? 0 : normalizedY;
+    if (joystickKnob.current) {
+      joystickKnob.current.style.transform = `translate3d(calc(-50% + ${x.toFixed(1)}px), calc(-50% + ${y.toFixed(1)}px), 0)`;
+    }
+  };
+
+  const endJoystick = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (joystickPointer.current !== event.pointerId) return;
+    event.preventDefault();
+    clearAnalogMovement();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -732,7 +788,7 @@ export default function SurfscapeApp() {
             <div className="game-objective"><span>{stats.phase}</span><strong>{stats.prompt}</strong></div>
             <div className="game-actions">
               <button onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
-              <button onClick={() => setPaused(true)} aria-label="Pause"><Pause /></button>
+              <button onClick={() => { clearAnalogMovement(); setPaused(true); }} aria-label="Pause"><Pause /></button>
             </div>
           </header>
 
@@ -840,11 +896,19 @@ export default function SurfscapeApp() {
           </div>
 
           <div className="mobile-controls">
-            <div className="dpad" aria-label="Movement controls">
-              <button type="button" className="up" aria-label="Forward" onPointerDown={(event) => beginControl(event, "forward")} onPointerUp={(event) => endControl(event, "forward")} onPointerCancel={(event) => endControl(event, "forward")} onLostPointerCapture={() => setControl("forward", false)}><ArrowRight /></button>
-              <button type="button" className="left" aria-label="Left" onPointerDown={(event) => beginControl(event, "left")} onPointerUp={(event) => endControl(event, "left")} onPointerCancel={(event) => endControl(event, "left")} onLostPointerCapture={() => setControl("left", false)}><ArrowLeft /></button>
-              <button type="button" className="right" aria-label="Right" onPointerDown={(event) => beginControl(event, "right")} onPointerUp={(event) => endControl(event, "right")} onPointerCancel={(event) => endControl(event, "right")} onLostPointerCapture={() => setControl("right", false)}><ArrowRight /></button>
-              <button type="button" className="down" aria-label="Back" onPointerDown={(event) => beginControl(event, "back")} onPointerUp={(event) => endControl(event, "back")} onPointerCancel={(event) => endControl(event, "back")} onLostPointerCapture={() => setControl("back", false)}><ArrowRight /></button>
+            <div
+              className="analog-stick"
+              role="group"
+              aria-label="Analog movement stick. Drag to move and steer."
+              onPointerDown={updateJoystick}
+              onPointerMove={updateJoystick}
+              onPointerUp={endJoystick}
+              onPointerCancel={endJoystick}
+              onLostPointerCapture={() => clearAnalogMovement()}
+            >
+              <span className="analog-ring" />
+              <span ref={joystickKnob} className="analog-knob"><i /></span>
+              <small>MOVE / STEER</small>
             </div>
             <div className="touch-balance" role="slider" aria-label="Balance" aria-valuemin={-100} aria-valuemax={100} aria-valuenow={Math.round(stats.balance * 100)} tabIndex={0} onPointerDown={updateTouchBalance} onPointerMove={updateTouchBalance}>
               <span>BALANCE</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
@@ -869,9 +933,9 @@ export default function SurfscapeApp() {
                 <span className="overline">SESSION PAUSED</span>
                 <h2>Listen to the break.</h2>
                 <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
-                <button className="primary-pause" onClick={() => setPaused(false)}><Play /> Return to water</button>
+                <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { setStats(INITIAL_STATS); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}
@@ -887,7 +951,7 @@ export default function SurfscapeApp() {
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board from the roof-rack quiver, walk through the shallows, and drag the open view to look around.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D, shift nose-to-tail with W/S, balance with mouse or thumb, then press Space to land a context-aware maneuver.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the analog stick, shift nose-to-tail with W/S, balance with mouse or thumb, then trigger a context-aware maneuver.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>

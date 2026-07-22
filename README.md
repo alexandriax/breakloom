@@ -25,7 +25,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `Space`: catch a wave; while riding, land a context-sensitive maneuver
 - `Space` beside the parked van: enter; stop and press again to exit
 - `Esc`: pause
-- Mobile: multi-touch D-pad, balance rail, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
+- Mobile: analog movement stick, precision balance rail, phase haptics, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
 
 Wave sets build and fade on the swell radar. Once caught, a GPU-shaped wave face steepens beside the surfer, pitches its lip, throws animated crest spray, and closes into a translucent barrel as line quality rises. Live cloud cover and wind shape a moving marine sky with haze, sun corona, moonlight, and night-star visibility. Better-timed catches start with more flow, while stamina management, nose-to-tail stance, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
 
