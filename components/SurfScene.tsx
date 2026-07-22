@@ -36,6 +36,8 @@ type MotionState = {
   balance: number;
   steer: number;
   speed: number;
+  waveQuality: number;
+  setEnergy: number;
   wipeout: number;
   maneuver: number;
   maneuverSide: number;
@@ -308,6 +310,249 @@ function Ocean({
         side={THREE.DoubleSide}
       />
     </mesh>
+  );
+}
+
+const BREAKING_WAVE_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uWaveHeight;
+  uniform float uEnergy;
+  uniform float uCurl;
+  uniform float uSide;
+  varying vec2 vUv;
+  varying float vPocket;
+  varying float vFoam;
+  varying float vEdge;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    float heightRatio = uv.y;
+    float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
+    float pocketCenter = uSide * 2.6;
+    float pocketDistance = (position.x - pocketCenter) / 5.2;
+    float pocket = exp(-pocketDistance * pocketDistance);
+    float lip = smoothstep(.34, 1.0, heightRatio);
+    float curl = uCurl * (.28 + pocket * .72);
+    float edge = smoothstep(0.0, .09, uv.x) * smoothstep(0.0, .09, 1.0 - uv.x);
+    vec3 p = position;
+    p.x += uSide * curl * lip * .58;
+    p.y = heightRatio * faceHeight;
+    p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
+    p.z = 2.7 - heightRatio * .62;
+    p.z -= curl * lip * lip * (1.45 + faceHeight * .38);
+    p.z += sin(position.x * .24 + uTime * 1.35) * .12 * (1.0 - heightRatio);
+
+    vUv = uv;
+    vPocket = pocket;
+    vFoam = smoothstep(.68, 1.0, heightRatio) * (.5 + curl * .5);
+    vEdge = edge;
+    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+
+const BREAKING_WAVE_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uOpacity;
+  varying vec2 vUv;
+  varying float vPocket;
+  varying float vFoam;
+  varying float vEdge;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  void main() {
+    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    if (dot(normal, viewDirection) < 0.0) normal *= -1.0;
+    float fresnel = .035 + .965 * pow(1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0), 4.0);
+    float faceNoise = noise(vUv * vec2(18.0, 8.0) + vec2(uTime * .24, -uTime * .42));
+    float veinNoise = noise(vUv * vec2(42.0, 13.0) + vec2(-uTime * .65, uTime * .18));
+    float verticalDepth = smoothstep(.05, .96, vUv.y);
+    vec3 deep = mix(vec3(.004, .075, .105), vec3(.025, .23, .235), verticalDepth);
+    vec3 transmitted = vec3(.04, .48, .39) * (vPocket * verticalDepth) * (.16 + uLight * .28);
+    vec3 reflection = mix(vec3(.09, .28, .34), vec3(.35, .63, .65), uLight);
+    reflection = mix(reflection, vec3(.08, .11, .15), uCloud * .48);
+    vec3 color = deep + transmitted;
+    color = mix(color, reflection, fresnel * .56);
+    color *= .9 + faceNoise * .13;
+
+    float lipFoam = vFoam * smoothstep(.2, .76, faceNoise) * (.68 + veinNoise * .5);
+    float streaks = smoothstep(.7, .96, veinNoise) * smoothstep(.42, .95, vUv.y) * (.18 + vPocket * .36);
+    float foam = clamp(max(lipFoam, streaks), 0.0, .96);
+    vec3 foamColor = mix(vec3(.62, .88, .84), vec3(.94, 1.0, .98), uLight);
+    color = mix(color, foamColor, foam);
+
+    float lowerFade = smoothstep(.0, .1, vUv.y);
+    float alpha = uOpacity * vEdge * lowerFade * (.32 + fresnel * .38 + vPocket * .14);
+    alpha = max(alpha, foam * uOpacity * .96);
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, .96));
+  }
+`;
+
+const BREAKING_FOAM_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uWaveHeight;
+  uniform float uEnergy;
+  uniform float uCurl;
+  uniform float uSide;
+  uniform float uOpacity;
+  varying float vAlpha;
+
+  void main() {
+    float seed = position.y;
+    float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
+    float pocketCenter = uSide * 2.6;
+    float pocketDistance = (position.x - pocketCenter) / 5.2;
+    float pocket = exp(-pocketDistance * pocketDistance);
+    float curl = uCurl * (.28 + pocket * .72);
+    float age = fract(seed + uTime * (.12 + uEnergy * .1));
+    vec3 p = vec3(position.x, faceHeight, 2.08 - curl * (1.45 + faceHeight * .38));
+    p.x += uSide * curl * .58 + sin(seed * 41.0 + uTime * 2.7) * age * .48;
+    p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
+    p.y += age * (.28 + uEnergy * .8);
+    p.z -= age * (.18 + curl * .32);
+    vec4 viewPosition = modelViewMatrix * vec4(p, 1.0);
+    vAlpha = pow(1.0 - age, 1.7) * uOpacity * (.42 + pocket * .58);
+    gl_PointSize = (2.8 + seed * 5.4) * clamp(68.0 / -viewPosition.z, 1.0, 7.0);
+    gl_Position = projectionMatrix * viewPosition;
+  }
+`;
+
+const BREAKING_FOAM_FRAGMENT = /* glsl */ `
+  precision highp float;
+  varying float vAlpha;
+  void main() {
+    vec2 point = gl_PointCoord - .5;
+    float falloff = smoothstep(.5, .08, length(point));
+    gl_FragColor = vec4(.82, 1.0, .96, falloff * vAlpha);
+  }
+`;
+
+function BreakingWave({
+  motion,
+  settings,
+  light,
+  cloudCover,
+}: {
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  light: number;
+  cloudCover: number;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const faceMaterial = useRef<THREE.ShaderMaterial>(null);
+  const foamMaterial = useRef<THREE.ShaderMaterial>(null);
+  const lineSide = useRef(1);
+  const warmupFrames = useRef(1);
+  const faceUniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uWaveHeight: { value: 1 },
+    uEnergy: { value: 0 },
+    uCurl: { value: 0 },
+    uSide: { value: 1 },
+    uLight: { value: 1 },
+    uCloud: { value: 0 },
+    uOpacity: { value: 0 },
+  }), []);
+  const foamUniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uWaveHeight: { value: 1 },
+    uEnergy: { value: 0 },
+    uCurl: { value: 0 },
+    uSide: { value: 1 },
+    uOpacity: { value: 0 },
+  }), []);
+  const foamPositions = useMemo(() => {
+    const positions = new Float32Array(58 * 3);
+    for (let index = 0; index < 58; index += 1) {
+      positions[index * 3] = -12 + (index / 57) * 24;
+      positions[index * 3 + 1] = ((index * 37) % 59) / 59;
+    }
+    return positions;
+  }, []);
+
+  useFrame(({ clock }, delta) => {
+    if (!group.current || !faceMaterial.current || !foamMaterial.current) return;
+    const state = motion.current;
+    const riding = state.phase === "riding";
+    if (riding && Math.abs(state.steer) > .12) lineSide.current = Math.sign(state.steer);
+    const targetCurl = riding
+      ? THREE.MathUtils.clamp(state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12, .08, 1.16)
+      : 0;
+    const targetOpacity = riding
+      ? THREE.MathUtils.clamp(.32 + state.waveQuality * .25 + state.barrel * .3, .32, .88)
+      : 0;
+    const values = faceMaterial.current.uniforms;
+    values.uTime.value = clock.elapsedTime;
+    values.uWaveHeight.value = THREE.MathUtils.damp(values.uWaveHeight.value, settings.waveHeight, 3.5, delta);
+    values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, state.setEnergy, 4, delta);
+    values.uCurl.value = THREE.MathUtils.damp(values.uCurl.value, targetCurl, 5.5, delta);
+    values.uSide.value = THREE.MathUtils.damp(values.uSide.value, lineSide.current, 3.2, delta);
+    values.uLight.value = light;
+    values.uCloud.value = cloudCover / 100;
+    values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, riding ? 7 : 4, delta);
+    const foam = foamMaterial.current.uniforms;
+    foam.uTime.value = clock.elapsedTime;
+    foam.uWaveHeight.value = values.uWaveHeight.value;
+    foam.uEnergy.value = values.uEnergy.value;
+    foam.uCurl.value = values.uCurl.value;
+    foam.uSide.value = values.uSide.value;
+    foam.uOpacity.value = values.uOpacity.value;
+    if (warmupFrames.current > 0) {
+      warmupFrames.current -= 1;
+      group.current.visible = true;
+    } else {
+      group.current.visible = riding || values.uOpacity.value > .012;
+    }
+  });
+
+  return (
+    <group ref={group} visible={false}>
+      <mesh renderOrder={3}>
+        <planeGeometry args={[24, 1, isMobileRenderer() ? 42 : 64, isMobileRenderer() ? 14 : 22]} />
+        <shaderMaterial
+          ref={faceMaterial}
+          uniforms={faceUniforms}
+          vertexShader={BREAKING_WAVE_VERTEX}
+          fragmentShader={BREAKING_WAVE_FRAGMENT}
+          transparent
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <points frustumCulled={false} renderOrder={4}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[foamPositions, 3]} />
+        </bufferGeometry>
+        <shaderMaterial
+          ref={foamMaterial}
+          uniforms={foamUniforms}
+          vertexShader={BREAKING_FOAM_VERTEX}
+          fragmentShader={BREAKING_FOAM_FRAGMENT}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+    </group>
   );
 }
 
@@ -1202,6 +1447,8 @@ function Simulation({
     balance: 0,
     steer: 0,
     speed: 0,
+    waveQuality: 0,
+    setEnergy: 0,
     wipeout: 0,
     maneuver: 0,
     maneuverSide: 0,
@@ -1477,6 +1724,8 @@ function Simulation({
     motion.current.balance = state.balance;
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
+    motion.current.waveQuality = THREE.MathUtils.damp(motion.current.waveQuality, waveQuality, 5, delta);
+    motion.current.setEnergy = setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
     motion.current.stance = stance.current;
     motion.current.barrel = THREE.MathUtils.damp(motion.current.barrel, barrelIntensity, 6, delta);
@@ -1644,6 +1893,7 @@ function Simulation({
       />
       <BeachLife beach={beach} windSpeed={windSpeed} />
       <group ref={player}>
+        <BreakingWave motion={motion} settings={settings} light={light} cloudCover={cloudCover} />
         <WaterInteraction motion={motion} />
         <SurferModel motion={motion} boardType={settings.board} />
       </group>

@@ -26,7 +26,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `Esc`: pause
 - Mobile: multi-touch D-pad, balance rail, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
 
-Wave sets build and fade on the swell radar. Better-timed catches start with more flow, while stamina management, nose-to-tail stance, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Stay composed high on the face to hold the barrel. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
+Wave sets build and fade on the swell radar. Once caught, a GPU-shaped wave face steepens beside the surfer, pitches its lip, throws animated crest spray, and closes into a translucent barrel as line quality rises. Better-timed catches start with more flow, while stamina management, nose-to-tail stance, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
 
 ## Live data
 
@@ -52,4 +52,4 @@ The build automatically accounts for project-page paths such as `username.github
 
 ## Scope
 
-This version is a high-quality vertical slice: one procedural surfer, thirteen coastlines with urban, tropical, dune, cliff, cold-water, volcanic, and desert environments, selectable zones, live conditions, premium terrain materials, a three-board physics quiver, grouped wave sets, stance/stamina/barrel/maneuver systems, reactive wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
+This version is a high-quality vertical slice: one procedural surfer, thirteen coastlines with urban, tropical, dune, cliff, cold-water, volcanic, and desert environments, selectable zones, live conditions, premium terrain materials, a three-board physics quiver, directional Gerstner swells, a live breaking-wave face, stance/stamina/barrel/maneuver systems, reactive wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
