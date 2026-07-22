@@ -523,6 +523,89 @@ const BREAKING_WAVE_FRAGMENT = /* glsl */ `
   }
 `;
 
+const WAVE_CURTAIN_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uWaveHeight;
+  uniform float uEnergy;
+  uniform float uCurl;
+  uniform float uSide;
+  varying vec2 vUv;
+  varying float vPocket;
+  varying float vEdge;
+  varying float vDrop;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    float drop = uv.y;
+    float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
+    float pocketCenter = uSide * 2.6;
+    float pocketDistance = (position.x - pocketCenter) / 4.9;
+    float pocket = exp(-pocketDistance * pocketDistance);
+    float curl = uCurl * (.24 + pocket * .76);
+    float lipZ = 2.08 - curl * (1.45 + faceHeight * .38);
+    float flutter = sin(position.x * 1.7 - uTime * 4.2 + drop * 9.0) * .055;
+    flutter += sin(position.x * .38 + uTime * 2.1) * .08;
+    vec3 p = vec3(position.x + uSide * curl * .58, faceHeight, lipZ);
+    p.x += flutter * (.35 + drop * .65);
+    p.y -= drop * faceHeight * (.7 + curl * .18);
+    p.z += drop * (.12 + curl * .52) + sin(drop * 12.0 + uTime * 2.8) * .045 * curl;
+
+    vUv = uv;
+    vPocket = pocket;
+    vDrop = drop;
+    vEdge = smoothstep(0.0, .08, uv.x) * smoothstep(0.0, .08, 1.0 - uv.x);
+    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+
+const WAVE_CURTAIN_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uOpacity;
+  varying vec2 vUv;
+  varying float vPocket;
+  varying float vEdge;
+  varying float vDrop;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  void main() {
+    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    if (dot(normal, viewDirection) < 0.0) normal *= -1.0;
+    float fresnel = pow(1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0), 3.0);
+    float longVeins = noise(vec2(vUv.x * 58.0 - uTime * 1.4, vUv.y * 4.0 + uTime * .72));
+    float broadSheet = noise(vec2(vUv.x * 13.0 + uTime * .28, vUv.y * 7.0 - uTime * 1.2));
+    float threads = smoothstep(.56, .94, longVeins) * (.42 + broadSheet * .58);
+    float beading = smoothstep(.72, .96, noise(vec2(vUv.x * 91.0, vUv.y * 24.0 + uTime * 2.6)));
+    float verticalFade = smoothstep(.0, .055, vDrop) * (1.0 - smoothstep(.78, 1.0, vDrop));
+    float body = .07 + threads * .34 + broadSheet * .09 + beading * .18;
+    float alpha = uOpacity * vPocket * vEdge * verticalFade * body;
+    vec3 deep = mix(vec3(.015, .22, .24), vec3(.025, .4, .35), uLight);
+    deep = mix(deep, vec3(.055, .105, .13), uCloud * .38);
+    vec3 highlight = mix(vec3(.45, .86, .8), vec3(.91, 1.0, .97), clamp(threads + fresnel, 0.0, 1.0));
+    vec3 color = mix(deep, highlight, .24 + fresnel * .36 + beading * .2);
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, .7));
+  }
+`;
+
 const BREAKING_FOAM_VERTEX = /* glsl */ `
   uniform float uTime;
   uniform float uWaveHeight;
@@ -540,11 +623,12 @@ const BREAKING_FOAM_VERTEX = /* glsl */ `
     float pocket = exp(-pocketDistance * pocketDistance);
     float curl = uCurl * (.28 + pocket * .72);
     float age = fract(seed + uTime * (.12 + uEnergy * .1));
+    float faller = step(.56, fract(seed * 17.31 + .19));
     vec3 p = vec3(position.x, faceHeight, 2.08 - curl * (1.45 + faceHeight * .38));
-    p.x += uSide * curl * .58 + sin(seed * 41.0 + uTime * 2.7) * age * .48;
+    p.x += uSide * curl * .58 + sin(seed * 41.0 + uTime * 2.7) * age * (.48 + faller * .32);
     p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
-    p.y += age * (.28 + uEnergy * .8);
-    p.z -= age * (.18 + curl * .32);
+    p.y += mix(age * (.28 + uEnergy * .8), -age * (.4 + curl * 1.7), faller * curl);
+    p.z += mix(-age * (.18 + curl * .32), age * (.12 + curl * .72), faller);
     vec4 viewPosition = modelViewMatrix * vec4(p, 1.0);
     vAlpha = pow(1.0 - age, 1.7) * uOpacity * (.42 + pocket * .58);
     gl_PointSize = (2.8 + seed * 5.4) * clamp(68.0 / -viewPosition.z, 1.0, 7.0);
@@ -575,6 +659,7 @@ function BreakingWave({
 }) {
   const group = useRef<THREE.Group>(null);
   const faceMaterial = useRef<THREE.ShaderMaterial>(null);
+  const curtainMaterial = useRef<THREE.ShaderMaterial>(null);
   const foamMaterial = useRef<THREE.ShaderMaterial>(null);
   const lineSide = useRef(1);
   const warmupFrames = useRef(1);
@@ -596,17 +681,28 @@ function BreakingWave({
     uSide: { value: 1 },
     uOpacity: { value: 0 },
   }), []);
+  const curtainUniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uWaveHeight: { value: 1 },
+    uEnergy: { value: 0 },
+    uCurl: { value: 0 },
+    uSide: { value: 1 },
+    uLight: { value: 1 },
+    uCloud: { value: 0 },
+    uOpacity: { value: 0 },
+  }), []);
   const foamPositions = useMemo(() => {
-    const positions = new Float32Array(58 * 3);
-    for (let index = 0; index < 58; index += 1) {
-      positions[index * 3] = -12 + (index / 57) * 24;
-      positions[index * 3 + 1] = ((index * 37) % 59) / 59;
+    const count = isMobileRenderer() ? 58 : 96;
+    const positions = new Float32Array(count * 3);
+    for (let index = 0; index < count; index += 1) {
+      positions[index * 3] = -12 + (index / (count - 1)) * 24;
+      positions[index * 3 + 1] = ((index * 37) % (count + 1)) / (count + 1);
     }
     return positions;
   }, []);
 
   useFrame(({ clock }, delta) => {
-    if (!group.current || !faceMaterial.current || !foamMaterial.current) return;
+    if (!group.current || !faceMaterial.current || !curtainMaterial.current || !foamMaterial.current) return;
     const state = motion.current;
     const riding = state.phase === "riding";
     if (riding && Math.abs(state.steer) > .12) lineSide.current = Math.sign(state.steer);
@@ -615,6 +711,9 @@ function BreakingWave({
       : 0;
     const targetOpacity = riding
       ? THREE.MathUtils.clamp(.32 + state.waveQuality * .25 + state.barrel * .3, .32, .88)
+      : 0;
+    const targetCurtain = riding
+      ? THREE.MathUtils.clamp((state.waveQuality - .42) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .92)
       : 0;
     const values = faceMaterial.current.uniforms;
     values.uTime.value = clock.elapsedTime;
@@ -625,6 +724,15 @@ function BreakingWave({
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, riding ? 7 : 4, delta);
+    const curtain = curtainMaterial.current.uniforms;
+    curtain.uTime.value = clock.elapsedTime;
+    curtain.uWaveHeight.value = values.uWaveHeight.value;
+    curtain.uEnergy.value = values.uEnergy.value;
+    curtain.uCurl.value = values.uCurl.value;
+    curtain.uSide.value = values.uSide.value;
+    curtain.uLight.value = light;
+    curtain.uCloud.value = cloudCover / 100;
+    curtain.uOpacity.value = THREE.MathUtils.damp(curtain.uOpacity.value, targetCurtain, riding ? 6 : 3.5, delta);
     const foam = foamMaterial.current.uniforms;
     foam.uTime.value = clock.elapsedTime;
     foam.uWaveHeight.value = values.uWaveHeight.value;
@@ -649,6 +757,18 @@ function BreakingWave({
           uniforms={faceUniforms}
           vertexShader={BREAKING_WAVE_VERTEX}
           fragmentShader={BREAKING_WAVE_FRAGMENT}
+          transparent
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh renderOrder={3.5}>
+        <planeGeometry args={[24, 1, isMobileRenderer() ? 34 : 54, isMobileRenderer() ? 11 : 18]} />
+        <shaderMaterial
+          ref={curtainMaterial}
+          uniforms={curtainUniforms}
+          vertexShader={WAVE_CURTAIN_VERTEX}
+          fragmentShader={WAVE_CURTAIN_FRAGMENT}
           transparent
           depthWrite={false}
           side={THREE.DoubleSide}

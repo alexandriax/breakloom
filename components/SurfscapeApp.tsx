@@ -551,6 +551,7 @@ export default function SurfscapeApp() {
           : stats.phase === "paddling"
             ? "PADDLE"
             : "MOVE";
+  const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
 
   return (
     <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
@@ -779,6 +780,9 @@ export default function SurfscapeApp() {
             onContextMenu={(event) => event.preventDefault()}
           >
             <span>{stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"}</span>
+          </div>
+          <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
+            {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
           </div>
           <header className="game-topbar">
             <div className="game-brand">
