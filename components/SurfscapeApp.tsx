@@ -9,6 +9,7 @@ import {
   CarFront,
   ChevronDown,
   CircleCheck,
+  CloudSun,
   Crosshair,
   Droplets,
   Gauge,
@@ -799,6 +800,7 @@ export default function SurfscapeApp() {
             <div><Droplets /><span>CURRENT</span><strong>{settings.currentStrength.toFixed(1)} km/h</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div><Crosshair /><span>DISTANCE</span><strong>{stats.rideDistance.toFixed(0)} m</strong></div>
+            <div><CloudSun /><span>SKY</span><strong>{Math.round(conditions.cloudCover)}% cloud</strong></div>
           </div>
 
           <div className="desktop-controls">

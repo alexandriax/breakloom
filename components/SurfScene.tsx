@@ -1119,6 +1119,172 @@ function FootprintTrail({
   );
 }
 
+const ATMOSPHERE_VERTEX = /* glsl */ `
+  varying vec3 vDirection;
+
+  void main() {
+    vDirection = normalize(position);
+    vec4 clipPosition = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_Position = clipPosition.xyww;
+  }
+`;
+
+const ATMOSPHERE_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uCloud;
+  uniform float uWind;
+  uniform float uLight;
+  uniform float uSunHeight;
+  uniform vec3 uSunDirection;
+  uniform vec3 uHazeColor;
+  varying vec3 vDirection;
+
+  const float PI = 3.14159265359;
+
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  float cloudNoise(vec2 p) {
+    float value = noise(p) * .56;
+    value += noise(p * 2.03 + 7.4) * .28;
+    value += noise(p * 4.11 - 3.7) * .16;
+    return value;
+  }
+
+  void main() {
+    vec3 direction = normalize(vDirection);
+    float height = direction.y;
+    float longitude = atan(direction.z, direction.x) / (PI * 2.0);
+    float latitude = asin(clamp(direction.y, -1.0, 1.0)) / PI;
+    float windSpeed = clamp(uWind / 24.0, 0.0, 1.5);
+    vec2 drift = vec2(uTime * (.006 + windSpeed * .012), uTime * .0018);
+    vec2 cloudUv = vec2(longitude * 8.4, latitude * 7.2) + drift;
+    float body = cloudNoise(cloudUv);
+    float billow = noise(cloudUv * vec2(1.52, 1.24) + vec2(-uTime * .002, 11.0));
+    float field = body * .78 + billow * .22;
+
+    float cloudBand = smoothstep(-.015, .12, height) * (1.0 - smoothstep(.76, .96, height));
+    float highWisp = smoothstep(.42, .72, height) * (1.0 - smoothstep(.9, 1.0, height));
+    float threshold = mix(.91, .37, uCloud);
+    float density = smoothstep(threshold, threshold + .13, field) * cloudBand;
+    float wisps = smoothstep(.66, .86, noise(cloudUv * 3.1 + vec2(uTime * .009, -4.0))) * highWisp * uCloud * .32;
+    density = clamp(density * smoothstep(.025, .16, uCloud) + wisps, 0.0, 1.0);
+
+    vec3 sunDirection = normalize(uSunDirection);
+    float sunFacing = max(0.0, dot(direction, sunDirection));
+    float warmFacing = pow(sunFacing, 9.0);
+    float cloudEdge = smoothstep(.03, .28, density) * (1.0 - smoothstep(.48, .92, density));
+    vec3 cloudShadow = mix(vec3(.105, .135, .16), vec3(.22, .27, .28), uLight);
+    vec3 cloudLit = mix(vec3(.53, .58, .59), vec3(.94, .96, .92), uLight);
+    vec3 cloudColor = mix(cloudShadow, cloudLit, smoothstep(.18, .86, field));
+    cloudColor += vec3(1.0, .42, .2) * warmFacing * cloudEdge * (1.0 - smoothstep(.28, .72, uSunHeight)) * .68;
+    cloudColor += vec3(.82, .94, 1.0) * cloudEdge * pow(sunFacing, 22.0) * (.2 + uLight * .5);
+    float cloudAlpha = density * mix(.48, .9, uCloud);
+
+    float upperHorizon = smoothstep(-.045, .035, height);
+    float horizon = exp(-abs(height) * 19.0) * upperHorizon;
+    float hazeAlpha = horizon * (.035 + uCloud * .13 + windSpeed * .035);
+    vec3 color = uHazeColor;
+    float alpha = hazeAlpha;
+
+    float daylight = smoothstep(-.035, .085, uSunHeight);
+    float sunDisc = smoothstep(.9987, .99955, dot(direction, sunDirection)) * daylight;
+    float sunCorona = pow(sunFacing, 88.0) * daylight;
+    vec3 sunColor = mix(vec3(1.0, .34, .13), vec3(1.0, .92, .63), smoothstep(.02, .34, uSunHeight));
+    float sunLayer = max(sunDisc, sunCorona * .34) * (1.0 - cloudAlpha * .82);
+    color = mix(color, sunColor, sunDisc + sunCorona * .44);
+    alpha = max(alpha, sunLayer);
+
+    float night = 1.0 - smoothstep(.015, .16, uSunHeight);
+    vec3 moonDirection = normalize(-sunDirection + vec3(.07, .035, -.025));
+    float moonFacing = max(0.0, dot(direction, moonDirection));
+    float moonDisc = smoothstep(.99905, .99962, moonFacing) * night;
+    float moonHalo = pow(moonFacing, 110.0) * night;
+    float lunarDetail = noise(direction.xz * 170.0 + direction.yy * 48.0);
+    vec3 moonColor = mix(vec3(.42, .53, .61), vec3(.82, .91, .94), .55 + lunarDetail * .45);
+    float moonLayer = max(moonDisc, moonHalo * .19) * (1.0 - cloudAlpha * .7);
+    color = mix(color, moonColor, moonDisc * (.64 + lunarDetail * .3) + moonHalo * .25);
+    alpha = max(alpha, moonLayer);
+
+    color = mix(color, cloudColor, cloudAlpha);
+    alpha = max(alpha, cloudAlpha);
+    alpha *= smoothstep(-.12, .025, height);
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, .94));
+  }
+`;
+
+function CoastalAtmosphere({
+  cloudCover,
+  windSpeed,
+  light,
+  sunHeight,
+  sunPosition,
+  hazeColor,
+}: {
+  cloudCover: number;
+  windSpeed: number;
+  light: number;
+  sunHeight: number;
+  sunPosition: [number, number, number];
+  hazeColor: string;
+}) {
+  const dome = useRef<THREE.Mesh>(null);
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const segments = useMemo(() => (isMobileRenderer() ? [30, 16] : [48, 24]) as [number, number], []);
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uCloud: { value: 0 },
+    uWind: { value: 0 },
+    uLight: { value: 1 },
+    uSunHeight: { value: 1 },
+    uSunDirection: { value: new THREE.Vector3(0, 1, -1).normalize() },
+    uHazeColor: { value: new THREE.Color("#8ba9ac") },
+  }), []);
+
+  useFrame(({ camera, clock }, delta) => {
+    if (dome.current) dome.current.position.copy(camera.position);
+    if (!material.current) return;
+    const values = material.current.uniforms;
+    values.uTime.value = clock.elapsedTime;
+    values.uCloud.value = THREE.MathUtils.damp(values.uCloud.value, cloudCover / 100, 1.7, delta);
+    values.uWind.value = windSpeed;
+    values.uLight.value = light;
+    values.uSunHeight.value = sunHeight;
+    values.uSunDirection.value.set(...sunPosition).normalize();
+    values.uHazeColor.value.set(hazeColor);
+  });
+
+  return (
+    <mesh ref={dome} frustumCulled={false} renderOrder={-1}>
+      <sphereGeometry args={[310, segments[0], segments[1]]} />
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={ATMOSPHERE_VERTEX}
+        fragmentShader={ATMOSPHERE_FRAGMENT}
+        side={THREE.BackSide}
+        transparent
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
 function Bird({ offset, speed }: { offset: number; speed: number }) {
   const group = useRef<THREE.Group>(null);
   const left = useRef<THREE.Mesh>(null);
@@ -2004,9 +2170,14 @@ function Simulation({
   const sunriseHour = timeToHour(sunrise, 6);
   const sunsetHour = timeToHour(sunset, 18);
   const hourAngle = ((settings.timeOfDay - sunriseHour) / Math.max(8, sunsetHour - sunriseHour)) * Math.PI;
-  const sunHeight = Math.max(-0.08, Math.sin(hourAngle));
+  const solarElevation = Math.sin(hourAngle);
+  const sunHeight = Math.max(-0.08, solarElevation);
   const sunX = Math.cos(hourAngle) * 160;
   const light = THREE.MathUtils.clamp(sunHeight * 1.1 + 0.12, 0.08, 1);
+  const cloudFactor = THREE.MathUtils.clamp(cloudCover / 100, 0, 1);
+  const directLight = 1 - cloudFactor * .52;
+  const daylightStrength = THREE.MathUtils.smoothstep(solarElevation, -.04, .14);
+  const moonlightStrength = 1 - THREE.MathUtils.smoothstep(solarElevation, -.02, .16);
   const coastBiome = getCoastBiome(beach.id);
   const daylightSky: Record<CoastBiome, string> = {
     urban: "#7897a0",
@@ -2027,9 +2198,15 @@ function Simulation({
     desert: "#ad9b7e",
   };
   const atmosphereBoost = coastBiome === "desert" ? 2.2 : coastBiome === "urban" ? 0.9 : coastBiome === "cold" ? 1.4 : 0;
-  const backgroundColor = sunHeight < 0.08 ? "#07101e" : sunHeight < 0.3 ? "#c66f5d" : daylightSky[coastBiome];
-  const fogColor = sunHeight < 0.08 ? "#07101e" : daylightFog[coastBiome];
+  const baseBackgroundColor = sunHeight < 0.08 ? "#07101e" : sunHeight < 0.3 ? "#c66f5d" : daylightSky[coastBiome];
+  const baseFogColor = sunHeight < 0.08 ? "#07101e" : daylightFog[coastBiome];
+  const overcastColor = sunHeight < 0.08 ? "#071017" : "#53676c";
+  const backgroundColor = new THREE.Color(baseBackgroundColor).lerp(new THREE.Color(overcastColor), cloudFactor * .34).getStyle();
+  const fogColor = new THREE.Color(baseFogColor).lerp(new THREE.Color(overcastColor), cloudFactor * .42).getStyle();
   const sunLightColor = sunHeight < 0.3 ? "#ff9f72" : "#fff0ca";
+  const celestialSunPosition: [number, number, number] = [sunX, solarElevation * 150, -120];
+  const lightingSunPosition: [number, number, number] = [sunX * .22, Math.max(6, sunHeight * 44), -30];
+  const oceanSunPosition: [number, number, number] = [sunX * .22, solarElevation * 44, -30];
 
   return (
     <>
@@ -2037,7 +2214,7 @@ function Simulation({
       <fog attach="fog" args={[fogColor, 55, 240]} />
       <Sky
         distance={450000}
-        sunPosition={[sunX, Math.max(-8, sunHeight * 150), -120]}
+        sunPosition={[sunX, Math.max(-8, solarElevation * 150), -120]}
         inclination={0.49}
         azimuth={0.24}
         turbidity={5.2 + cloudCover * 0.025 + atmosphereBoost}
@@ -2045,11 +2222,19 @@ function Simulation({
         mieCoefficient={0.008}
         mieDirectionalG={0.85}
       />
-      <ambientLight intensity={0.18 + light * 0.42} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
-      <hemisphereLight args={["#a9d9dc", "#5c4431", 0.38 + light * 0.55]} />
+      <CoastalAtmosphere
+        cloudCover={cloudCover}
+        windSpeed={windSpeed}
+        light={light}
+        sunHeight={solarElevation}
+        sunPosition={celestialSunPosition}
+        hazeColor={fogColor}
+      />
+      <ambientLight intensity={(0.18 + light * 0.42) * (.94 + cloudFactor * .08)} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
+      <hemisphereLight args={["#a9d9dc", "#5c4431", (0.38 + light * 0.55) * (.93 + cloudFactor * .09)]} />
       <directionalLight
-        position={[sunX * 0.22, Math.max(6, sunHeight * 44), -30]}
-        intensity={0.45 + light * 2.2}
+        position={lightingSunPosition}
+        intensity={(0.45 + light * 2.2) * directLight * daylightStrength}
         color={sunLightColor}
         castShadow={!mobileRenderer}
         shadow-mapSize-width={1024}
@@ -2060,12 +2245,17 @@ function Simulation({
         shadow-camera-top={35}
         shadow-camera-bottom={-35}
       />
+      <directionalLight
+        position={[-sunX * .18, 28, 34]}
+        intensity={moonlightStrength * .34 * (1 - cloudFactor * .36)}
+        color="#a9d7e8"
+      />
       <Ocean
         settings={settings}
         light={light}
         cloudCover={cloudCover}
         windSpeed={windSpeed}
-        sunPosition={[sunX * 0.22, Math.max(6, sunHeight * 44), -30]}
+        sunPosition={oceanSunPosition}
         sunColor={sunLightColor}
       />
       <BeachLife beach={beach} windSpeed={windSpeed} />
@@ -2083,7 +2273,7 @@ function Simulation({
       <Bird offset={7} speed={0.82 + windSpeed * 0.006} />
       <Bird offset={15} speed={1.15 + windSpeed * 0.007} />
       {sunHeight < 0.22 && (
-        <Sparkles count={70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={0.45} color="#dcefff" />
+        <Sparkles count={70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={Math.max(.06, .45 * (1 - cloudFactor * .86))} color="#dcefff" />
       )}
     </>
   );
