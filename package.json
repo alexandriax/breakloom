@@ -8,9 +8,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:sites": "next build && node scripts/build-sites.mjs",
     "start": "next dev",
     "test": "npm run build",
-    "lint": "eslint . --ignore-pattern out --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern out --ignore-pattern .next --ignore-pattern dist"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

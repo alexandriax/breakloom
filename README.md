@@ -2,6 +2,8 @@
 
 Surfscape is a browser-based 3D surfing game driven by current marine forecast data. Pick an exact paddle-out on a real OpenStreetMap shoreline, read the local swell, walk into the water, paddle beyond the break, and surf a procedural wave.
 
+You can also walk up to the coast road, enter the Surfscape van, and drive between peaks with three boards on the roof rack.
+
 ## Play locally
 
 ```bash
@@ -16,6 +18,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `WASD` or arrow keys: walk, paddle, and steer
 - Mouse horizontal position: balance while riding
 - `Space`: catch a wave
+- `Space` beside the parked van: enter; stop and press again to exit
 - `Esc`: pause
 - Mobile: on-screen D-pad, balance rail, and Catch button
 
