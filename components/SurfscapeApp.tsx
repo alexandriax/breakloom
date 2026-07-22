@@ -281,7 +281,18 @@ export default function SurfscapeApp() {
       stats.setEnergy,
       stats.barrelIntensity,
     );
-  }, [paused, stats.barrelIntensity, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+    audio.current?.setEnvironment(
+      conditions.windSpeed,
+      settings.waveHeight,
+      conditions.cloudCover,
+      paused ? 0.34 : 1,
+    );
+    audio.current?.setMovement(
+      stats.phase,
+      paused ? 0 : stats.speed,
+      !paused && !stats.vehicleMode,
+    );
+  }, [conditions.cloudCover, conditions.windSpeed, paused, settings.waveHeight, stats.barrelIntensity, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -332,6 +343,8 @@ export default function SurfscapeApp() {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
+    audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover);
+    audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
     setStats(INITIAL_STATS);
     previousManeuverId.current = 0;
@@ -346,6 +359,8 @@ export default function SurfscapeApp() {
   const leaveSession = () => {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
+    audio.current?.setMovement(stats.phase, 0, false);
+    audio.current?.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover, 0.42);
     controls.current = { ...EMPTY_CONTROLS };
     setScreen("launch");
     setPaused(false);
@@ -357,6 +372,9 @@ export default function SurfscapeApp() {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
     audio.current.setEnabled(next);
+    if (next) {
+      audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover, screen === "game" ? 1 : 0.42);
+    }
   };
 
   const setControl = (name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">, value: boolean) => {
