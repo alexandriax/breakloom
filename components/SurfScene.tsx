@@ -29,8 +29,6 @@ type SurfSceneProps = {
   zoneName: string;
   settings: SessionSettings;
   cloudCover: number;
-  windSpeed: number;
-  windDirection: number;
   weatherCode: number;
   sunrise: string;
   sunset: string;
@@ -133,7 +131,10 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uHeight;
   uniform float uPeriod;
   uniform float uCurrent;
-  uniform float uDirection;
+  uniform float uWaveDirection;
+  uniform float uCurrentDirection;
+  uniform float uWindDirection;
+  uniform float uCoastHeading;
   uniform float uTide;
   uniform float uWind;
   uniform float uPeel;
@@ -149,6 +150,11 @@ const OCEAN_VERTEX = /* glsl */ `
   varying vec3 vWorldPosition;
 
   const float PI = 3.14159265359;
+
+  vec2 coastalVector(float bearing) {
+    float angle = radians(bearing - uCoastHeading);
+    return vec2(sin(angle), cos(angle));
+  }
 
   float setEnvelope() {
     float cycle = max(18.0, uPeriod * 3.1);
@@ -183,11 +189,12 @@ const OCEAN_VERTEX = /* glsl */ `
     vec2 surfaceOrigin = vec2(origin.x, -origin.y - 157.0);
     vec3 p = position;
     float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
-    float angle = radians(uDirection);
-    vec2 currentDir = vec2(cos(angle), sin(angle));
+    vec2 waveDir = coastalVector(uWaveDirection);
+    vec2 currentDir = coastalVector(uCurrentDirection);
+    vec2 windDir = coastalVector(uWindDirection);
     float section = sin(surfaceOrigin.x * .07 + uTime * .05) * uVariability * 2.3;
     float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section;
-    float curve = sin(angle) * .0019 * origin.x * origin.x;
+    float curve = waveDir.x * .0019 * origin.x * origin.x;
     vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
     float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
     float shallowCompression = mix(1.0, mix(.82, .69, uSteepness), smoothstep(-32.0, 9.0, breakCoord));
@@ -200,7 +207,7 @@ const OCEAN_VERTEX = /* glsl */ `
     float primary = gerstner(
       p,
       curvedOrigin,
-      normalize(vec2(.095 + uPeel * .075 + currentDir.x * .035, 1.0)),
+      normalize(vec2(.095 + uPeel * .075 + waveDir.x * .42 + currentDir.x * .035, max(.45, waveDir.y))),
       33.0 * shallowCompression,
       amplitude * .64 * shore * setLift,
       clamp(.46 + uSteepness * .32, .58, .88),
@@ -210,7 +217,7 @@ const OCEAN_VERTEX = /* glsl */ `
     float secondary = gerstner(
       p,
       surfaceOrigin,
-      normalize(vec2(-.16, 1.0)),
+      normalize(vec2(waveDir.x * .58 - .16, max(.35, waveDir.y))),
       20.3,
       amplitude * .22,
       .58,
@@ -220,7 +227,7 @@ const OCEAN_VERTEX = /* glsl */ `
     float crossSwell = gerstner(
       p,
       surfaceOrigin,
-      normalize(vec2(1.0, .68) + currentDir * (.12 + currentBend * .12)),
+      normalize(vec2(waveDir.x + waveDir.y * .62, max(.28, waveDir.y - waveDir.x * .62)) + currentDir * (.12 + currentBend * .12)),
       47.5,
       amplitude * .11,
       .42,
@@ -230,14 +237,15 @@ const OCEAN_VERTEX = /* glsl */ `
     float windWave = gerstner(
       p,
       surfaceOrigin,
-      normalize(vec2(-.72, .69)),
+      normalize(windDir + vec2(0.0, .15)),
       mix(8.5, 5.4, windChop / 1.45),
       .035 + windChop * .065,
       .34,
       1.7 + windChop * 1.2,
       2.4
     );
-    float capillary = sin(surfaceOrigin.x * 1.35 + surfaceOrigin.y * .78 + uTime * (2.2 + windChop)) * (.018 + windChop * .018);
+    vec2 windTangent = vec2(-windDir.y, windDir.x);
+    float capillary = sin(dot(surfaceOrigin, windDir) * 1.35 + dot(surfaceOrigin, windTangent) * .78 + uTime * (2.2 + windChop)) * (.018 + windChop * .018);
     p.z += uTide * .3 + capillary;
 
     vHeight = p.z;
@@ -258,6 +266,9 @@ const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uLight;
   uniform float uCloud;
   uniform float uWind;
+  uniform float uWaveDirection;
+  uniform float uWindDirection;
+  uniform float uCoastHeading;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
   varying float vHeight;
@@ -295,9 +306,13 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
     float wind = clamp(uWind / 24.0, .0, 1.45);
+    float windAngle = radians(uWindDirection - uCoastHeading);
+    vec2 windDir = vec2(sin(windAngle), cos(windAngle));
+    vec2 windTangent = vec2(-windDir.y, windDir.x);
+    vec2 windSurface = vec2(dot(vSurface, windDir), dot(vSurface, windTangent));
     vec2 microFlow = vec2(
-      sin(vSurface.x * 1.72 + vSurface.y * .63 + uTime * (1.7 + wind)),
-      cos(vSurface.x * .91 - vSurface.y * 1.38 - uTime * (1.35 + wind * .7))
+      sin(windSurface.x * 1.72 + windSurface.y * .63 + uTime * (1.7 + wind)),
+      cos(windSurface.x * .91 - windSurface.y * 1.38 - uTime * (1.35 + wind * .7))
     );
     surfaceNormal = normalize(surfaceNormal + vec3(microFlow.x, 0.0, microFlow.y) * (.018 + wind * .024));
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
@@ -316,8 +331,12 @@ const OCEAN_FRAGMENT = /* glsl */ `
     color += vec3(.05, .52, .43) * crestLight * forwardScatter * (.18 + uLight * .34);
 
     float crestGate = smoothstep(.66, 1.08, vCrest) * smoothstep(.35, 1.2, uHeight);
-    float foamBase = noise(vSurface * vec2(.35, .12) + vec2(uTime * .48, -uTime * .08));
-    float foamDetail = noise(vSurface * vec2(1.18, .48) + vec2(-uTime * .74, uTime * .12));
+    float waveAngle = radians(uWaveDirection - uCoastHeading);
+    vec2 waveDir = vec2(sin(waveAngle), cos(waveAngle));
+    vec2 waveTangent = vec2(-waveDir.y, waveDir.x);
+    vec2 waveSurface = vec2(dot(vSurface, waveTangent), dot(vSurface, waveDir));
+    float foamBase = noise(waveSurface * vec2(.35, .12) + vec2(uTime * .48, -uTime * .08));
+    float foamDetail = noise(waveSurface * vec2(1.18, .48) + vec2(-uTime * .74, uTime * .12));
     float breakerFoam = vBreaker * smoothstep(.26, .72, foamBase) * (.62 + foamDetail * .55);
     float crestFoam = crestGate * smoothstep(.17, .76, foamDetail);
     float shorePulse = sin(vSurface.x * .2 + uTime * 1.7 + noise(vSurface * .08) * 4.0) * .5 + .5;
@@ -336,7 +355,6 @@ function Ocean({
   character,
   light,
   cloudCover,
-  windSpeed,
   sunPosition,
   sunColor,
 }: {
@@ -344,7 +362,6 @@ function Ocean({
   character: BreakCharacter;
   light: number;
   cloudCover: number;
-  windSpeed: number;
   sunPosition: [number, number, number];
   sunColor: string;
 }) {
@@ -356,7 +373,10 @@ function Ocean({
       uHeight: { value: 1 },
       uPeriod: { value: 8 },
       uCurrent: { value: 0 },
-      uDirection: { value: 0 },
+      uWaveDirection: { value: 0 },
+      uCurrentDirection: { value: 0 },
+      uWindDirection: { value: 0 },
+      uCoastHeading: { value: 0 },
       uTide: { value: 0 },
       uLight: { value: 1 },
       uCloud: { value: 0 },
@@ -379,11 +399,14 @@ function Ocean({
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
     values.uPeriod.value = settings.wavePeriod;
     values.uCurrent.value = settings.currentStrength;
-    values.uDirection.value = settings.currentDirection;
+    values.uWaveDirection.value = settings.waveDirection;
+    values.uCurrentDirection.value = settings.currentDirection;
+    values.uWindDirection.value = settings.windDirection;
+    values.uCoastHeading.value = settings.coastHeading;
     values.uTide.value = settings.tide;
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
-    values.uWind.value = windSpeed;
+    values.uWind.value = settings.windSpeed;
     values.uPeel.value = THREE.MathUtils.lerp(values.uPeel.value, character.peel, .035);
     values.uPower.value = THREE.MathUtils.lerp(values.uPower.value, character.power, .035);
     values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness, .035);
@@ -483,7 +506,7 @@ const SHORELINE_FRAGMENT = /* glsl */ `
   }
 `;
 
-function ShorelineWash({ settings, light, windSpeed }: { settings: SessionSettings; light: number; windSpeed: number }) {
+function ShorelineWash({ settings, light }: { settings: SessionSettings; light: number }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
@@ -497,7 +520,7 @@ function ShorelineWash({ settings, light, windSpeed }: { settings: SessionSettin
     const values = material.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uTide.value = THREE.MathUtils.lerp(values.uTide.value, settings.tide, .025);
-    values.uWind.value = windSpeed;
+    values.uWind.value = settings.windSpeed;
     values.uLight.value = light;
   });
 
@@ -1418,7 +1441,7 @@ const FOOTPRINT_COUNT = 28;
 const CARVE_TRACK_COUNT = 64;
 const IMPACT_RING_COUNT = 10;
 
-function WaterInteraction({ motion, mobile }: { motion: MutableRefObject<MotionState>; mobile: boolean }) {
+function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; mobile: boolean }) {
   const wake = useRef<THREE.Group>(null);
   const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const spray = useRef<THREE.Points>(null);
@@ -1544,13 +1567,17 @@ function WaterInteraction({ motion, mobile }: { motion: MutableRefObject<MotionS
     previousTakeoff.current = state.takeoff;
 
     if (!particlePositions) return;
+    const relativeWind = THREE.MathUtils.degToRad(settings.windDirection - settings.coastHeading);
+    const sprayWind = THREE.MathUtils.clamp(settings.windSpeed / 24, 0, 1.5);
+    const sprayWindX = Math.sin(relativeWind) * sprayWind * .72;
+    const sprayWindZ = Math.cos(relativeWind) * sprayWind * .34;
     for (let index = 0; index < particleCount; index += 1) {
       if (life.current[index] <= 0) continue;
       const offset = index * 3;
       life.current[index] -= delta;
-      particlePositions[offset] += velocities.current[offset] * delta;
+      particlePositions[offset] += (velocities.current[offset] + sprayWindX) * delta;
       particlePositions[offset + 1] += velocities.current[offset + 1] * delta;
-      particlePositions[offset + 2] += velocities.current[offset + 2] * delta;
+      particlePositions[offset + 2] += (velocities.current[offset + 2] + sprayWindZ) * delta;
       velocities.current[offset + 1] -= delta * 3.4;
       velocities.current[offset] *= 1 - delta * 0.55;
       if (life.current[index] <= 0 || particlePositions[offset + 1] < -0.08) particlePositions[offset + 1] = -20;
@@ -1936,6 +1963,7 @@ const ATMOSPHERE_FRAGMENT = /* glsl */ `
   uniform float uTime;
   uniform float uCloud;
   uniform float uWind;
+  uniform vec2 uWindVector;
   uniform float uLight;
   uniform float uSunHeight;
   uniform vec3 uSunDirection;
@@ -1974,7 +2002,7 @@ const ATMOSPHERE_FRAGMENT = /* glsl */ `
     float longitude = atan(direction.z, direction.x) / (PI * 2.0);
     float latitude = asin(clamp(direction.y, -1.0, 1.0)) / PI;
     float windSpeed = clamp(uWind / 24.0, 0.0, 1.5);
-    vec2 drift = vec2(uTime * (.006 + windSpeed * .012), uTime * .0018);
+    vec2 drift = uWindVector * uTime * (.006 + windSpeed * .012) + vec2(0.0, uTime * .0018);
     vec2 cloudUv = vec2(longitude * 8.4, latitude * 7.2) + drift;
     float body = cloudNoise(cloudUv);
     float billow = noise(cloudUv * vec2(1.52, 1.24) + vec2(-uTime * .002, 11.0));
@@ -2033,6 +2061,8 @@ const ATMOSPHERE_FRAGMENT = /* glsl */ `
 function CoastalAtmosphere({
   cloudCover,
   windSpeed,
+  windDirection,
+  coastHeading,
   light,
   sunHeight,
   sunPosition,
@@ -2040,6 +2070,8 @@ function CoastalAtmosphere({
 }: {
   cloudCover: number;
   windSpeed: number;
+  windDirection: number;
+  coastHeading: number;
   light: number;
   sunHeight: number;
   sunPosition: [number, number, number];
@@ -2052,6 +2084,7 @@ function CoastalAtmosphere({
     uTime: { value: 0 },
     uCloud: { value: 0 },
     uWind: { value: 0 },
+    uWindVector: { value: new THREE.Vector2(1, 0) },
     uLight: { value: 1 },
     uSunHeight: { value: 1 },
     uSunDirection: { value: new THREE.Vector3(0, 1, -1).normalize() },
@@ -2065,6 +2098,8 @@ function CoastalAtmosphere({
     values.uTime.value = clock.elapsedTime;
     values.uCloud.value = THREE.MathUtils.damp(values.uCloud.value, cloudCover / 100, 1.7, delta);
     values.uWind.value = windSpeed;
+    const relativeWind = THREE.MathUtils.degToRad(windDirection - coastHeading);
+    values.uWindVector.value.set(Math.sin(relativeWind), Math.cos(relativeWind));
     values.uLight.value = light;
     values.uSunHeight.value = sunHeight;
     values.uSunDirection.value.set(...sunPosition).normalize();
@@ -2136,7 +2171,7 @@ const PRECIPITATION_FRAGMENT = /* glsl */ `
   }
 `;
 
-function WeatherEffects({ weatherCode, windSpeed, windDirection }: { weatherCode: number; windSpeed: number; windDirection: number }) {
+function WeatherEffects({ weatherCode, windSpeed, windDirection, coastHeading }: { weatherCode: number; windSpeed: number; windDirection: number; coastHeading: number }) {
   const precipitation = useRef<THREE.Points>(null);
   const precipitationMaterial = useRef<THREE.ShaderMaterial>(null);
   const lightning = useRef<THREE.DirectionalLight>(null);
@@ -2190,7 +2225,7 @@ function WeatherEffects({ weatherCode, windSpeed, windDirection }: { weatherCode
       const values = precipitationMaterial.current.uniforms;
       values.uTime.value = clock.elapsedTime;
       const wind = THREE.MathUtils.clamp(windSpeed / 24, 0, 1.5);
-      const windAngle = THREE.MathUtils.degToRad(windDirection);
+      const windAngle = THREE.MathUtils.degToRad(windDirection - coastHeading);
       values.uWind.value = THREE.MathUtils.damp(values.uWind.value, wind, 3, delta);
       windVectorTarget.set(-Math.sin(windAngle) * wind, -Math.cos(windAngle) * wind);
       values.uWindVector.value.lerp(windVectorTarget, 1 - Math.exp(-delta * 3));
@@ -3459,8 +3494,6 @@ function Simulation({
   zoneName,
   settings,
   cloudCover,
-  windSpeed,
-  windDirection,
   weatherCode,
   sunrise,
   sunset,
@@ -3558,6 +3591,10 @@ function Simulation({
     const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX, -1, 1);
     const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY, -1, 1);
     const modeDifficulty = settings.mode === "advanced" ? 1.12 : settings.mode === "training" ? 0.62 : 0.86;
+    const relativeWindAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
+    const windExposure = THREE.MathUtils.clamp(settings.windSpeed / 32, 0, 1.4);
+    const onshoreChop = Math.max(0, Math.cos(relativeWindAngle)) * windExposure;
+    const offshoreGroom = Math.max(0, -Math.cos(relativeWindAngle)) * Math.min(1, windExposure);
     const setState = waveSetState(t, settings.wavePeriod);
     let speed = 0;
     let balanceTarget = 0;
@@ -3664,7 +3701,8 @@ function Simulation({
         speed = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + Math.min(0, move) * 1.2;
         position.current.z -= speed * delta;
         position.current.z = Math.max(-52, position.current.z);
-        position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
+        const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
+        position.current.x += (steer * 2.2 + Math.sin(relativeCurrentAngle) * settings.currentStrength * 0.35) * delta;
         inLineup = position.current.z < -18;
         const takeoffPhase = primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character);
         const crestAlignment = THREE.MathUtils.smoothstep(Math.sin(takeoffPhase), -.08, .96);
@@ -3672,7 +3710,11 @@ function Simulation({
         const deepWaterAssist = settings.mode === "training" && position.current.z < -34 ? .08 : 0;
         const touchTimingAssist = mobileRenderer ? .045 : 0;
         takeoffQuality = inLineup
-          ? THREE.MathUtils.clamp(crestAlignment * (.38 + setState.energy * .62) * staminaTiming + deepWaterAssist + touchTimingAssist, 0, 1)
+          ? THREE.MathUtils.clamp(
+              crestAlignment * (.38 + setState.energy * .62) * staminaTiming * (1 - onshoreChop * (settings.mode === "training" ? .035 : settings.mode === "advanced" ? .12 : .075)) + deepWaterAssist + touchTimingAssist,
+              0,
+              1,
+            )
           : 0;
         const breakDemand = Math.max(0, character.power + character.steepness - 1.85) * .055;
         const takeoffThreshold = (settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36) + breakDemand;
@@ -3735,7 +3777,8 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const breakTravel = Math.max(0, position.current.z - rideOriginZ.current);
-        const pocketSweep = rideLineSide.current * breakTravel * (.12 + Math.abs(character.peel) * .24 + character.length * .018);
+        const swellCrossing = Math.sin(((settings.waveDirection - settings.coastHeading) * Math.PI) / 180);
+        const pocketSweep = rideLineSide.current * breakTravel * (.12 + Math.abs(character.peel) * .24 + character.length * .018) + swellCrossing * breakTravel * .07;
         const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginX.current * .07) * character.variability * 1.1;
         const pocketX = rideOriginX.current + pocketSweep + pocketPulse;
         const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * .46 + (1 - character.steepness) * .9, 3.6, 6.7);
@@ -3775,6 +3818,7 @@ function Simulation({
           steer * (0.22 + tailPressure * 0.08) +
           stance.current * 0.07 +
           Math.sin(t * 8.2) * railSlip.current * .16 +
+          Math.sin(t * (4.7 + windExposure * 1.8) + position.current.z * .08) * onshoreChop * .13 / boardSpec.stability +
           Math.sign(steer) * railSlip.current * .1;
         const attempt = activeManeuver.current;
         if (attempt) {
@@ -3796,13 +3840,14 @@ function Simulation({
           ? 1
           : THREE.MathUtils.clamp(.58 + steer * character.peel * .42, .2, 1);
         const sectionQuality = 1 - character.variability * (.12 + Math.abs(Math.sin(position.current.x * .11 + t * .17)) * .18);
+        const windShape = 1 - onshoreChop * .17 + offshoreGroom * .055;
         waveQuality = THREE.MathUtils.clamp(
-          (wavePhase + 1) * .3 + setState.energy * .12 + catchQuality.current * .08 + lineMatch * .1 + sectionQuality * .07 + lineControl * .23,
+          ((wavePhase + 1) * .3 + setState.energy * .12 + catchQuality.current * .08 + lineMatch * .1 + sectionQuality * .07 + lineControl * .23) * windShape,
           0,
           1,
         );
         const controlQuality = Math.max(0, 1 - balanceError / 1.2) * (1 - railSlip.current * .36);
-        const barrelThreshold = .8 - character.hollow * .18;
+        const barrelThreshold = .8 - character.hollow * .18 + onshoreChop * .08 - offshoreGroom * .025;
         const pocketBarrel = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition + .18), .34, .92);
         const inBarrel = waveQuality > barrelThreshold && controlQuality > .72 && pocketBarrel > .42 && Math.abs(steer) < .68 && stance.current > -.58;
         barrelIntensity = inBarrel
@@ -4274,13 +4319,15 @@ function Simulation({
       />
       <CoastalAtmosphere
         cloudCover={cloudCover}
-        windSpeed={windSpeed}
+        windSpeed={settings.windSpeed}
+        windDirection={settings.windDirection}
+        coastHeading={settings.coastHeading}
         light={light}
         sunHeight={solarElevation}
         sunPosition={celestialSunPosition}
         hazeColor={fogColor}
       />
-      <WeatherEffects weatherCode={weatherCode} windSpeed={windSpeed} windDirection={windDirection} />
+      <WeatherEffects weatherCode={weatherCode} windSpeed={settings.windSpeed} windDirection={settings.windDirection} coastHeading={settings.coastHeading} />
       <ambientLight intensity={(0.18 + light * 0.42) * (.94 + cloudFactor * .08)} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
       <hemisphereLight args={["#a9d9dc", "#5c4431", (0.38 + light * 0.55) * (.93 + cloudFactor * .09)]} />
       <directionalLight
@@ -4306,19 +4353,18 @@ function Simulation({
         character={character}
         light={light}
         cloudCover={cloudCover}
-        windSpeed={windSpeed}
         sunPosition={oceanSunPosition}
         sunColor={sunLightColor}
       />
-      <BeachLife beach={beach} windSpeed={windSpeed} weatherCode={weatherCode} light={light} playerPosition={position} />
-      <ShorelineWash settings={settings} light={light} windSpeed={windSpeed} />
+      <BeachLife beach={beach} windSpeed={settings.windSpeed} weatherCode={weatherCode} light={light} playerPosition={position} />
+      <ShorelineWash settings={settings} light={light} />
       <FootprintTrail motion={motion} targetPosition={position} />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <group ref={player}>
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
-        <WaterInteraction motion={motion} mobile={mobileRenderer} />
+        <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
         <SurferModel motion={motion} boardType={settings.board} />
       </group>
       <group ref={van}>
@@ -4326,9 +4372,9 @@ function Simulation({
       </group>
       {weather.kind === "none" && !weather.fog && !weather.storm && (
         <>
-          <Bird offset={0} speed={1 + windSpeed * 0.008} />
-          <Bird offset={7} speed={0.82 + windSpeed * 0.006} />
-          <Bird offset={15} speed={1.15 + windSpeed * 0.007} />
+          <Bird offset={0} speed={1 + settings.windSpeed * 0.008} />
+          <Bird offset={7} speed={0.82 + settings.windSpeed * 0.006} />
+          <Bird offset={15} speed={1.15 + settings.windSpeed * 0.007} />
         </>
       )}
       {sunHeight < 0.22 && (

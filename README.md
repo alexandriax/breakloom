@@ -32,7 +32,7 @@ Wave sets build and fade on the swell radar. Once caught, a GPU-shaped wave face
 
 ## Live data
 
-Surfscape reads current wave height, direction, period, swell, ocean current, sea level/tide, sea temperature, wind, cloud cover, sunrise, and sunset from [Open-Meteo](https://open-meteo.com/). Coastal model output is for gameplay and is not suitable for navigation. Shoreline maps use [OpenStreetMap](https://www.openstreetmap.org/) with visible attribution.
+Surfscape reads current and hourly forecast wave height, direction, period, swell, ocean current, sea level/tide, sea temperature, wind, cloud cover, sunrise, and sunset from [Open-Meteo](https://open-meteo.com/). Wave, current, and wind bearings remain separate all the way into the simulation: the incoming wave vector aims the primary wave field, currents create longshore drift, and wind shapes chop, spray, precipitation, cloud travel, balance, and barrel quality. Wave Lab exposes each vector independently. Coastal model output is for gameplay and is not suitable for navigation. Shoreline maps use [OpenStreetMap](https://www.openstreetmap.org/) with visible attribution.
 
 If the APIs are temporarily unavailable, each break has a modeled fallback so the game stays playable offline after its code has loaded.
 
@@ -64,4 +64,4 @@ The build automatically accounts for project-page paths such as `username.github
 
 ## Scope
 
-This version is a high-quality vertical slice: one detailed surfer, thirteen coastlines with urban, tropical, dune, cliff, cold-water, volcanic, and desert environments, selectable zones, live conditions, premium terrain materials, a fiberglass three-board quiver with distinct silhouettes and hardware, directional Gerstner swells, a live breaking-wave face, stance/stamina/barrel/maneuver systems, reactive wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
+This version is a high-quality vertical slice: one detailed surfer, thirteen coastlines with urban, tropical, dune, cliff, cold-water, volcanic, and desert environments, selectable zones, synchronized hourly conditions, premium terrain materials, a fiberglass three-board quiver with distinct silhouettes and hardware, coast-relative multi-vector Gerstner swells, a live breaking-wave face, stance/stamina/pocket/barrel/maneuver systems, wind-deflected wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.

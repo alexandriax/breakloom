@@ -680,7 +680,7 @@ input:focus-visible {
   bottom: 92px;
   width: min(1180px, calc(100vw - 80px));
   display: grid;
-  grid-template-columns: 1.1fr repeat(6, 1fr);
+  grid-template-columns: 1.1fr repeat(5, 1fr);
   gap: 1px;
   transform: translateX(-50%);
   border: 1px solid var(--line);
@@ -692,12 +692,12 @@ input:focus-visible {
 .lab-title,
 .lab-slider,
 .lab-weather { min-height: 76px; padding: 13px; border: 0; border-right: 1px solid var(--line); background: transparent; color: white; text-align: left; }
-.lab-title { display: flex; align-items: center; gap: 10px; }
+.lab-title { display: flex; grid-row: span 2; align-items: center; gap: 10px; }
 .lab-title svg { width: 17px; color: var(--spot-accent); }
 .lab-title span, .lab-slider span, .lab-weather span { display: block; color: var(--muted); font-size: 7px; letter-spacing: 0.13em; text-transform: uppercase; }
 .lab-title strong { display: block; margin-top: 5px; font-size: 12px; }
 .lab-slider strong { display: block; margin: 6px 0 5px; font-size: 11px; }
-.lab-slider input { width: 100%; height: 3px; accent-color: var(--spot-accent); }
+.lab-slider input { width: 100%; height: 18px; margin: -4px 0; accent-color: var(--spot-accent); cursor: pointer; touch-action: pan-y; }
 .lab-weather { position: relative; display: grid; grid-template-columns: 18px 1fr; align-content: center; gap: 1px 7px; cursor: pointer; }
 .lab-weather svg { grid-row: 1 / 4; width: 16px; align-self: center; color: var(--spot-accent); }
 .lab-weather strong { font-size: 11px; }
@@ -1291,7 +1291,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .readout-location { display: none; }
   .current-readout { grid-template-columns: repeat(3, 1fr); }
   .planner-inner { padding-left: 24px; padding-right: 24px; }
-  .wave-lab-panel { width: calc(100vw - 48px); grid-template-columns: repeat(3, 1fr); }
+  .wave-lab-panel { width: calc(100vw - 48px); grid-template-columns: 1.1fr repeat(5, 1fr); }
   .lab-title { grid-row: span 2; }
   .game-conditions > div { min-width: 82px; }
   .desktop-controls { flex-direction: column; align-items: flex-end; gap: 4px; }

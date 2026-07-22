@@ -147,13 +147,24 @@ const EMPTY_CONTROLS: ControlState = {
   lookPitch: 0,
 };
 
-function qualityLabel(conditions: MarineConditions) {
+function qualityLabel(conditions: Pick<SessionSettings, "waveHeight" | "wavePeriod" | "windSpeed" | "windDirection" | "coastHeading">) {
   const energy = conditions.waveHeight * Math.max(conditions.wavePeriod - 4, 1);
+  const windAlignment = Math.cos(((conditions.windDirection - conditions.coastHeading) * Math.PI) / 180);
   if (energy > 28) return "Heavy water";
+  if (windAlignment < -.35 && conditions.windSpeed < 24) return "Offshore groomed";
   if (conditions.wavePeriod >= 13 && conditions.windSpeed < 16) return "Glassy lines";
   if (conditions.waveHeight < 0.45) return "Small & clean";
+  if (conditions.windSpeed > 25 && windAlignment > -.15) return "Onshore chop";
   if (conditions.windSpeed > 25) return "Wind affected";
   return "Rideable peaks";
+}
+
+function formatHourValue(value: number) {
+  const wrapped = ((value % 24) + 24) % 24;
+  const hour = Math.floor(wrapped);
+  const minute = Math.round((wrapped - hour) * 60);
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 function degrees(value: number) {
@@ -246,7 +257,7 @@ export default function SurfscapeApp() {
   const [conditions, setConditions] = useState<MarineConditions>(() => INITIAL_MODELED_CONDITIONS);
   const [conditionsLoading, setConditionsLoading] = useState(true);
   const [selectedForecastTime, setSelectedForecastTime] = useState<string | null>(null);
-  const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(INITIAL_MODELED_CONDITIONS));
+  const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(INITIAL_MODELED_CONDITIONS, DEFAULT_BEACH.heading));
   const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
   const [paused, setPaused] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
@@ -331,15 +342,17 @@ export default function SurfscapeApp() {
         .then((live) => {
           setConditions(live);
           setSettings((previous) => {
-            if (previous.mode === "playground") return previous;
-            return { ...settingsFromConditions(live), mode: previous.mode, board: previous.board };
+            if (previous.mode === "playground") return { ...previous, coastHeading: beach.heading };
+            return { ...settingsFromConditions(live, beach.heading), mode: previous.mode, board: previous.board };
           });
         })
         .catch((error: unknown) => {
           if (error instanceof DOMException && error.name === "AbortError") return;
           const modeled = fallbackConditions(beach);
           setConditions(modeled);
-          setSettings((previous) => ({ ...settingsFromConditions(modeled), mode: previous.mode, board: previous.board }));
+          setSettings((previous) => previous.mode === "playground"
+            ? { ...previous, coastHeading: beach.heading }
+            : { ...settingsFromConditions(modeled, beach.heading), mode: previous.mode, board: previous.board });
         })
         .finally(() => setConditionsLoading(false));
     }, 260);
@@ -448,7 +461,7 @@ export default function SurfscapeApp() {
       screen === "game" && !paused,
     );
     audio.current?.setEnvironment(
-      sessionConditions.windSpeed,
+      settings.windSpeed,
       settings.waveHeight,
       sessionCloudCover,
       paused ? 0.34 : 1,
@@ -459,7 +472,7 @@ export default function SurfscapeApp() {
       paused ? 0 : stats.speed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionConditions.windSpeed, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverActive && !previousManeuverActive.current) haptic(8);
@@ -516,7 +529,11 @@ export default function SurfscapeApp() {
     setLatitude(startingZone.lat);
     setLongitude(startingZone.lon);
     setZoneLabel(startingZone.name);
-    setConditions(fallbackConditions(next));
+    const modeled = fallbackConditions(next);
+    setConditions(modeled);
+    setSettings((current) => current.mode === "playground"
+      ? { ...current, coastHeading: next.heading }
+      : { ...settingsFromConditions(modeled, next.heading), mode: current.mode, board: current.board });
     setSelectedForecastTime(null);
   };
 
@@ -524,16 +541,17 @@ export default function SurfscapeApp() {
     if (mode === "playground") {
       setSettings((current) => ({ ...current, mode }));
     } else {
-      setSettings((current) => ({ ...settingsFromConditions(sessionConditions), mode, board: current.board }));
+      setSettings((current) => ({ ...settingsFromConditions(sessionConditions, beach.heading), mode, board: current.board }));
     }
   };
 
   const selectSessionWindow = (point: MarineForecastPoint | null) => {
     const nextConditions = conditionsAtForecast(conditions, point);
+    const nextSettings = settingsFromConditions(nextConditions, beach.heading);
     setSelectedForecastTime(point?.time ?? null);
     setSettings((current) => current.mode === "playground"
-      ? { ...current, timeOfDay: settingsFromConditions(nextConditions).timeOfDay, weatherCode: nextConditions.weatherCode }
-      : { ...settingsFromConditions(nextConditions), mode: current.mode, board: current.board });
+      ? { ...current, timeOfDay: nextSettings.timeOfDay, weatherCode: nextConditions.weatherCode }
+      : { ...nextSettings, mode: current.mode, board: current.board });
     haptic(7);
   };
 
@@ -549,7 +567,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
     audio.current.setMusicEnabled(musicEnabled);
-    audio.current.setEnvironment(sessionConditions.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
+    audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -571,7 +589,7 @@ export default function SurfscapeApp() {
     audio.current?.setSurf(0, false, 0, 0);
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
-    audio.current?.setEnvironment(sessionConditions.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
+    audio.current?.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     setScreen("launch");
@@ -585,7 +603,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(next);
     if (next) {
-      audio.current.setEnvironment(sessionConditions.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
+      audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
     }
   };
 
@@ -712,9 +730,9 @@ export default function SurfscapeApp() {
     haptic(7);
   };
 
-  const localTime = formatClock(sessionConditions.observedAt);
+  const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
-  const conditionQuality = qualityLabel(sessionConditions);
+  const conditionQuality = qualityLabel(settings);
   const breakCharacter = getBreakCharacter(beach.id, zoneLabel);
   const trainingComplete = trainingStep >= TRAINING_STEPS.length;
   const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
@@ -791,8 +809,6 @@ export default function SurfscapeApp() {
           zoneName={zoneLabel}
           settings={settings}
           cloudCover={sessionCloudCover}
-          windSpeed={sessionConditions.windSpeed}
-          windDirection={sessionConditions.windDirection}
           weatherCode={sessionWeatherCode}
           sunrise={sessionConditions.sunrise}
           sunset={sessionConditions.sunset}
@@ -850,18 +866,18 @@ export default function SurfscapeApp() {
                 </div>
                 <div className="readout-metric primary">
                   <span>Wave</span>
-                  <strong>{sessionConditions.waveHeight.toFixed(1)}<small>m</small></strong>
-                  <em>{degrees(sessionConditions.waveDirection)}</em>
+                  <strong>{settings.waveHeight.toFixed(1)}<small>m</small></strong>
+                  <em>{degrees(settings.waveDirection)}</em>
                 </div>
                 <div className="readout-metric">
                   <span>Period</span>
-                  <strong>{sessionConditions.wavePeriod.toFixed(1)}<small>s</small></strong>
+                  <strong>{settings.wavePeriod.toFixed(1)}<small>s</small></strong>
                   <em>{conditionQuality}</em>
                 </div>
                 <div className="readout-metric tide-readout">
-                  <span>Tide · {sessionConditions.tideTrend}</span>
-                  <strong>{sessionConditions.seaLevel >= 0 ? "+" : ""}{sessionConditions.seaLevel.toFixed(2)}<small>m</small></strong>
-                  <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />
+                  <span>Tide · {settings.mode === "playground" ? "custom" : sessionConditions.tideTrend}</span>
+                  <strong>{settings.tide >= 0 ? "+" : ""}{settings.tide.toFixed(2)}<small>m</small></strong>
+                  {settings.mode !== "playground" && <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />}
                 </div>
               </div>
 
@@ -1006,7 +1022,11 @@ export default function SurfscapeApp() {
               <div className="lab-title"><Settings2 /><div><span>WAVE LAB</span><strong>Shape the session</strong></div></div>
               <PlaygroundSlider label="Face height" value={settings.waveHeight} min={0.3} max={6} step={0.1} unit="m" onChange={(waveHeight) => setSettings((value) => ({ ...value, waveHeight }))} />
               <PlaygroundSlider label="Period" value={settings.wavePeriod} min={5} max={22} step={0.5} unit="s" onChange={(wavePeriod) => setSettings((value) => ({ ...value, wavePeriod }))} />
+              <PlaygroundSlider label="Wave bearing" value={settings.waveDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(waveDirection) => setSettings((value) => ({ ...value, waveDirection }))} />
               <PlaygroundSlider label="Current" value={settings.currentStrength} min={0} max={4} step={0.1} unit="km/h" onChange={(currentStrength) => setSettings((value) => ({ ...value, currentStrength }))} />
+              <PlaygroundSlider label="Current bearing" value={settings.currentDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(currentDirection) => setSettings((value) => ({ ...value, currentDirection }))} />
+              <PlaygroundSlider label="Wind" value={settings.windSpeed} min={0} max={45} step={1} unit="km/h" onChange={(windSpeed) => setSettings((value) => ({ ...value, windSpeed }))} />
+              <PlaygroundSlider label="Wind bearing" value={settings.windDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(windDirection) => setSettings((value) => ({ ...value, windDirection }))} />
               <PlaygroundSlider label="Tide" value={settings.tide} min={-1.5} max={1.8} step={0.05} unit="m" onChange={(tide) => setSettings((value) => ({ ...value, tide }))} />
               <PlaygroundSlider label="Local hour" value={settings.timeOfDay} min={0} max={23.5} step={0.5} unit=":00" onChange={(timeOfDay) => setSettings((value) => ({ ...value, timeOfDay }))} />
               <button className="lab-weather" type="button" onClick={() => setSettings((value) => ({ ...value, weatherCode: nextWeatherPreset(value.weatherCode) }))} aria-label={`Weather preset: ${weatherLabel(settings.weatherCode)}. Tap to change.`}>
@@ -1291,6 +1311,7 @@ function PlaygroundSlider({
   max,
   step,
   unit,
+  formatter,
   onChange,
 }: {
   label: string;
@@ -1299,12 +1320,13 @@ function PlaygroundSlider({
   max: number;
   step: number;
   unit: string;
+  formatter?: (value: number) => string;
   onChange: (value: number) => void;
 }) {
   return (
     <label className="lab-slider">
       <span>{label}</span>
-      <strong>{value.toFixed(step < 0.1 ? 2 : 1)} {unit}</strong>
+      <strong>{formatter ? formatter(value) : `${value.toFixed(step < 0.1 ? 2 : 1)} ${unit}`}</strong>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );

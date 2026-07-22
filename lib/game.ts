@@ -69,8 +69,12 @@ export type SessionSettings = {
   board: BoardType;
   waveHeight: number;
   wavePeriod: number;
+  waveDirection: number;
   currentStrength: number;
   currentDirection: number;
+  windSpeed: number;
+  windDirection: number;
+  coastHeading: number;
   tide: number;
   timeOfDay: number;
   weatherCode: number;
@@ -191,15 +195,19 @@ export function sessionGrade(score: number, rideDistance: number, maneuverCount:
   return "C";
 }
 
-export function settingsFromConditions(conditions: MarineConditions): SessionSettings {
+export function settingsFromConditions(conditions: MarineConditions, coastHeading: number): SessionSettings {
   const localHour = Number(conditions.observedAt.slice(11, 13));
   return {
     mode: "training",
     board: "performance",
     waveHeight: conditions.waveHeight,
     wavePeriod: conditions.wavePeriod,
+    waveDirection: conditions.waveDirection,
     currentStrength: conditions.currentVelocity,
     currentDirection: conditions.currentDirection,
+    windSpeed: conditions.windSpeed,
+    windDirection: conditions.windDirection,
+    coastHeading,
     tide: conditions.seaLevel,
     timeOfDay: Number.isFinite(localHour) ? localHour + 0.5 : 16,
     weatherCode: conditions.weatherCode,
@@ -226,8 +234,11 @@ export function waveHeightAt(
   const breakZ = z + x * peel * .16 + section;
   const shoreBoost = 0.72 + Math.max(0, Math.min(1, (breakZ + 90) / 98)) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
-  const p2 = z * 0.31 - x * 0.05 + elapsed * speed * 7.1 + 1.7;
-  const p3 = z * 0.09 + x * 0.13 - elapsed * speed * 2.7;
+  const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
+  const waveAlong = x * Math.sin(relativeWaveAngle) + z * Math.max(.35, Math.cos(relativeWaveAngle));
+  const waveCross = x * Math.cos(relativeWaveAngle) - z * Math.sin(relativeWaveAngle);
+  const p2 = waveAlong * 0.31 - waveCross * 0.05 + elapsed * speed * 7.1 + 1.7;
+  const p3 = waveAlong * 0.09 + waveCross * 0.13 - elapsed * speed * 2.7;
   return (
     settings.tide * 0.3 +
     amplitude * setLift * shoreBoost * Math.sin(p1) * 0.64 +
@@ -251,18 +262,20 @@ export function primaryWavePhaseAt(
   const steepness = character?.steepness ?? .7;
   const peel = character?.peel ?? 0;
   const variability = character?.variability ?? .4;
-  const angle = (settings.currentDirection * Math.PI) / 180;
+  const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
+  const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = z + x * peel * .16 + section;
   const shoaling = smoothstep(-32, 9, breakZ);
   const shallowScale = .82 + (.69 - .82) * steepness;
   const compression = 1 + (shallowScale - 1) * shoaling;
-  const directionX = .095 + peel * .075 + Math.cos(angle) * .035;
-  const directionLength = Math.hypot(directionX, 1);
-  const curvedZ = breakZ + Math.sin(angle) * .0019 * x * x;
+  const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
+  const directionZ = Math.max(.45, Math.cos(waveAngle));
+  const directionLength = Math.hypot(directionX, directionZ);
+  const curvedZ = breakZ + Math.sin(waveAngle) * .0019 * x * x;
   const waveNumber = (Math.PI * 2) / (33 * compression);
   const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
-  return (x * directionX / directionLength + curvedZ / directionLength) * waveNumber + elapsed * angularSpeed * 5.4;
+  return (x * directionX / directionLength + curvedZ * directionZ / directionLength) * waveNumber + elapsed * angularSpeed * 5.4;
 }
 
 export function compassDirection(degrees: number) {
