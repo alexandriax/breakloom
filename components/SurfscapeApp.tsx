@@ -107,6 +107,30 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
   },
 ];
 
+const TRAINING_STEPS = [
+  { title: "Enter the shallows", detail: "Move from the sand into the water." },
+  { title: "Reach the lineup", detail: "Paddle beyond the breaking waves." },
+  { title: "Read the crest", detail: "Wait for the takeoff window to open." },
+  { title: "Commit to the drop", detail: "Catch the wave when the shoulder appears." },
+  { title: "Find your balance", detail: "Hold the line for at least 15 metres." },
+  { title: "Set the rail", detail: "Load a turn and land your first maneuver." },
+  { title: "Finish clean", detail: "Stay composed through the inside section." },
+] as const;
+
+function reachedTrainingStep(stats: GameStats) {
+  const waterPhase = stats.phase === "wading" || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout";
+  const hasRidden = stats.phase === "riding" || stats.rideDistance > 0 || stats.rideResult !== "";
+  let reached = 0;
+  if (waterPhase) reached = 1;
+  if (stats.inLineup || hasRidden) reached = 2;
+  if (stats.catchReady || hasRidden) reached = 3;
+  if (hasRidden) reached = 4;
+  if (stats.rideDistance >= 15) reached = 5;
+  if (stats.rideDistance >= 15 && stats.maneuverCount > 0) reached = 6;
+  if (stats.rideDistance >= 15 && stats.maneuverCount > 0 && stats.rideResult === "clean") reached = 7;
+  return reached;
+}
+
 const EMPTY_CONTROLS: ControlState = {
   forward: false,
   back: false,
@@ -172,6 +196,8 @@ export default function SurfscapeApp() {
   const [sceneReady, setSceneReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
+  const [trainingStep, setTrainingStep] = useState(0);
+  const trainingStepValue = useRef(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [showPlanner, setShowPlanner] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
@@ -449,6 +475,8 @@ export default function SurfscapeApp() {
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     setStats(INITIAL_STATS);
+    trainingStepValue.current = 0;
+    setTrainingStep(0);
     previousManeuverId.current = 0;
     previousRideResultId.current = 0;
     setManeuverToast(null);
@@ -608,9 +636,20 @@ export default function SurfscapeApp() {
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
   const conditionQuality = qualityLabel(conditions);
   const breakCharacter = getBreakCharacter(beach.id, zoneLabel);
+  const trainingComplete = trainingStep >= TRAINING_STEPS.length;
+  const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
   const accentStyle = { "--spot-accent": beach.palette[0], "--sand-accent": beach.palette[1] } as CSSProperties;
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
   const handleStats = useCallback((next: GameStats) => {
+    if (settings.mode === "training") {
+      const reached = reachedTrainingStep(next);
+      if (reached > trainingStepValue.current) {
+        trainingStepValue.current = reached;
+        setTrainingStep(reached);
+        audio.current?.effect("coach");
+        haptic(reached === TRAINING_STEPS.length ? [12, 28, 12, 36, 24] : [8, 20, 12]);
+      }
+    }
     setStats(next);
     setPersonalBest((current) => {
       const updated = {
@@ -620,7 +659,7 @@ export default function SurfscapeApp() {
       };
       return updated.score === current.score && updated.distance === current.distance && updated.combo === current.combo ? current : updated;
     });
-  }, []);
+  }, [settings.mode]);
   const objectives = [
     { label: "Ride 40 m", done: stats.rideDistance >= 40 },
     { label: "Land 2 moves", done: stats.maneuverCount >= 2 },
@@ -886,7 +925,22 @@ export default function SurfscapeApp() {
               <Waves />
               <div><strong>SURFSCAPE</strong><span>{zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
             </div>
-            <div className="game-objective"><span>{stats.phase}</span><strong>{stats.prompt}</strong></div>
+            <div className={`game-objective ${settings.mode === "training" ? "is-training" : ""} ${settings.mode === "training" && trainingComplete ? "is-complete" : ""}`}>
+              <span>
+                {settings.mode === "training"
+                  ? trainingComplete
+                    ? "TRAINING COMPLETE"
+                    : `LESSON ${String(trainingStep + 1).padStart(2, "0")} / ${String(TRAINING_STEPS.length).padStart(2, "0")} · ${trainingLesson.title}`
+                  : stats.phase}
+              </span>
+              <strong>{settings.mode === "training" && trainingComplete ? "First clean line complete — the ocean is open" : stats.prompt}</strong>
+              {settings.mode === "training" && (
+                <div className="coach-progress" role="progressbar" aria-label="Training progress" aria-valuemin={0} aria-valuemax={TRAINING_STEPS.length} aria-valuenow={trainingStep}>
+                  {TRAINING_STEPS.map((step, index) => <i key={step.title} className={index < trainingStep ? "is-done" : index === trainingStep ? "is-current" : ""} />)}
+                  <small>{trainingComplete ? "You are ready for Raw Ocean mode." : trainingLesson.detail}</small>
+                </div>
+              )}
+            </div>
             <div className="game-actions">
               <button onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
               <button className="camera-button" onClick={cycleCamera} aria-label={`Camera: ${CAMERA_LABELS[cameraMode]}. Switch camera.`} title={`Camera: ${CAMERA_LABELS[cameraMode]}`}><Camera /></button>
@@ -1059,7 +1113,7 @@ export default function SurfscapeApp() {
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}

@@ -3383,6 +3383,7 @@ function Simulation({
     let railLoad = 0;
     let compression = 0;
     let catchReady = false;
+    let inLineup = false;
     let takeoffQuality = 0;
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
@@ -3474,7 +3475,7 @@ function Simulation({
         position.current.z -= speed * delta;
         position.current.z = Math.max(-52, position.current.z);
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
-        const inLineup = position.current.z < -18;
+        inLineup = position.current.z < -18;
         const takeoffPhase = primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character);
         const crestAlignment = THREE.MathUtils.smoothstep(Math.sin(takeoffPhase), -.08, .96);
         const staminaTiming = .82 + stamina.current * .0018;
@@ -3879,6 +3880,7 @@ function Simulation({
         rideResultId: rideResultId.current,
         vehicleMode: phase.current === "driving",
         nearVan,
+        inLineup,
         catchReady,
         takeoffQuality,
         prompt,

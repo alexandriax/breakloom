@@ -866,6 +866,18 @@ input:focus-visible {
 .game-objective { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .game-objective span { color: var(--spot-accent); font-size: 7px; font-weight: 800; letter-spacing: 0.17em; text-transform: uppercase; }
 .game-objective strong { font-size: 11px; font-weight: 600; text-shadow: 0 2px 12px black; }
+.game-objective.is-training { min-width: 310px; }
+.coach-progress { width: min(250px, 100%); display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; gap: 3px; }
+.coach-progress i { height: 2px; background: rgba(255, 255, 255, .16); box-shadow: 0 0 0 rgba(113, 225, 211, 0); transition: background .28s ease, box-shadow .28s ease; }
+.coach-progress i.is-done { background: #71e1d3; }
+.coach-progress i.is-current { background: var(--coral); box-shadow: 0 0 8px rgba(240, 109, 80, .72); animation: coach-pulse 1.4s ease-in-out infinite; }
+.coach-progress small { grid-column: 1 / -1; color: rgba(226, 246, 243, .62); font-size: 6px; letter-spacing: .06em; text-align: center; }
+.game-objective.is-complete span { color: #8ef3c7; }
+.game-objective.is-complete .coach-progress i { background: #8ef3c7; box-shadow: 0 0 7px rgba(142, 243, 199, .36); animation: none; }
+
+@keyframes coach-pulse {
+  50% { opacity: .5; box-shadow: 0 0 13px rgba(240, 109, 80, .9); }
+}
 
 .game-actions { display: flex; justify-content: flex-end; gap: 7px; }
 .game-actions button {
@@ -1216,7 +1228,10 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .game-topbar { height: calc(62px + env(safe-area-inset-top)); grid-template-columns: 1fr auto; padding: env(safe-area-inset-top) 14px 0; }
   .game-brand span { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .game-objective { position: absolute; top: calc(66px + env(safe-area-inset-top)); left: 50%; width: calc(100vw - 54px); transform: translateX(-50%); }
+  .game-objective.is-training { min-width: 0; }
   .game-objective strong { padding: 6px 11px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(3, 12, 17, 0.58); backdrop-filter: blur(10px); text-align: center; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); }
+  .coach-progress { width: min(180px, 72vw); }
+  .coach-progress small { display: none; }
   .game-actions button:first-child { display: none; }
   .game-actions button { width: 42px; height: 42px; border-radius: 50%; }
   .score-panel { top: calc(112px + env(safe-area-inset-top)); right: 11px; width: 124px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.12); border-right: 2px solid var(--spot-accent); border-left: 0; background: linear-gradient(100deg, rgba(3, 13, 18, 0.3), rgba(3, 13, 18, 0.78)); border-radius: 3px; }

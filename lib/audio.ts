@@ -1,6 +1,6 @@
 import type { GamePhase } from "./game";
 
-type EffectKind = "catch" | "turn" | "wipeout" | "finish";
+type EffectKind = "catch" | "turn" | "wipeout" | "finish" | "coach";
 
 const CHORDS = [
   [0, 7, 12, 19],
@@ -325,11 +325,14 @@ export class SurfscapeAudio {
       this.noiseBurst(now, 1.25, 470, .62, .3, "bandpass", 0, .16);
       this.noiseBurst(now + .04, .72, 2100, .5, .13, "highpass", -.2, .09);
       this.tone(now, 78, 38, .78, .12, "sine", 0, .14);
-    } else {
+    } else if (kind === "finish") {
       [0, 7, 12].forEach((semitone, index) => {
         const frequency = 164.81 * Math.pow(2, semitone / 12);
         this.tone(now + index * .075, frequency, frequency * 1.005, .85, .047, index ? "sine" : "triangle", (index - 1) * .22, .28);
       });
+    } else {
+      this.tone(now, 392, 523.25, .34, .022, "sine", -.16, .26);
+      this.tone(now + .09, 523.25, 659.25, .42, .018, "triangle", .18, .3);
     }
   }
 
