@@ -1244,25 +1244,60 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
   );
 }
 
-const SPRAY_PARTICLES = 48;
 const FOOTPRINT_COUNT = 28;
+const CARVE_TRACK_COUNT = 64;
+const IMPACT_RING_COUNT = 10;
 
-function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> }) {
+function WaterInteraction({ motion, mobile }: { motion: MutableRefObject<MotionState>; mobile: boolean }) {
   const wake = useRef<THREE.Group>(null);
   const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const spray = useRef<THREE.Points>(null);
   const sprayMaterial = useRef<THREE.PointsMaterial>(null);
+  const particleCount = mobile ? 44 : 88;
   const positions = useMemo(() => {
-    const values = new Float32Array(SPRAY_PARTICLES * 3);
-    for (let index = 0; index < SPRAY_PARTICLES; index += 1) values[index * 3 + 1] = -20;
+    const values = new Float32Array(particleCount * 3);
+    for (let index = 0; index < particleCount; index += 1) values[index * 3 + 1] = -20;
     return values;
-  }, []);
-  const velocities = useRef(new Float32Array(SPRAY_PARTICLES * 3));
-  const life = useRef(new Float32Array(SPRAY_PARTICLES));
+  }, [particleCount]);
+  const velocities = useRef(new Float32Array(particleCount * 3));
+  const life = useRef(new Float32Array(particleCount));
   const cursor = useRef(0);
   const emission = useRef(0);
   const previousManeuver = useRef(0);
   const previousTakeoff = useRef(0);
+  const wakeTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 96;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const fade = context.createLinearGradient(0, 0, 0, 256);
+      fade.addColorStop(0, "rgba(255,255,255,0)");
+      fade.addColorStop(.12, "rgba(230,255,250,.9)");
+      fade.addColorStop(.62, "rgba(205,250,243,.42)");
+      fade.addColorStop(1, "rgba(195,245,238,0)");
+      context.fillStyle = fade;
+      context.beginPath();
+      context.moveTo(43, 0);
+      context.bezierCurveTo(40, 64, 18, 167, 6, 256);
+      context.lineTo(90, 256);
+      context.bezierCurveTo(78, 167, 56, 64, 53, 0);
+      context.closePath();
+      context.fill();
+      context.globalCompositeOperation = "destination-out";
+      for (let index = 0; index < 34; index += 1) {
+        const y = 28 + seededRandom(index, 41) * 215;
+        const spread = 8 + (y / 256) * 31;
+        const x = 48 + (seededRandom(index, 42) - .5) * spread * 1.6;
+        context.beginPath();
+        context.arc(x, y, 1.4 + seededRandom(index, 43) * 3.6, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
   const particleTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
@@ -1281,7 +1316,10 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
     return texture;
   }, []);
 
-  useEffect(() => () => particleTexture.dispose(), [particleTexture]);
+  useEffect(() => () => {
+    particleTexture.dispose();
+    wakeTexture.dispose();
+  }, [particleTexture, wakeTexture]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
@@ -1309,13 +1347,13 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
     const emit = (count: number, impact: boolean) => {
       if (!particlePositions) return;
       for (let particle = 0; particle < count; particle += 1) {
-        const index = cursor.current++ % SPRAY_PARTICLES;
+        const index = cursor.current++ % particleCount;
         const offset = index * 3;
         const railSide = Math.abs(state.rail) > 0.1 ? -Math.sign(state.rail) : Math.random() > 0.5 ? 1 : -1;
         particlePositions[offset] = railSide * (0.22 + Math.random() * (impact ? 0.5 : 0.22));
         particlePositions[offset + 1] = 0.08 + Math.random() * 0.18;
         particlePositions[offset + 2] = impact ? Math.random() * 0.7 - 0.15 : -0.32 - Math.random() * 0.8;
-        velocities.current[offset] = railSide * (0.75 + state.slip * 1.4 + Math.random() * (impact ? 2.7 : 1.25));
+        velocities.current[offset] = railSide * (0.75 + state.slip * 1.4 + Math.abs(state.rail) * state.speed * .055 + Math.random() * (impact ? 2.7 : 1.25));
         velocities.current[offset + 1] = 0.65 + state.compression * .42 + state.slip * .5 + Math.random() * (impact ? 2.6 : 1.35) + state.barrel * 0.5;
         velocities.current[offset + 2] = -(1.4 + Math.random() * (impact ? 3.6 : 2.2));
         life.current[index] = impact ? 0.9 + Math.random() * 0.35 : 0.46 + Math.random() * 0.38;
@@ -1329,14 +1367,14 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
         emit(count, false);
         emission.current -= count;
       }
-      if (state.maneuver > 0.82 && previousManeuver.current <= 0.82) emit(18, true);
-      if (state.takeoff > .82 && previousTakeoff.current <= .82) emit(11, true);
+      if (state.maneuver > 0.82 && previousManeuver.current <= 0.82) emit(mobile ? 12 : 24, true);
+      if (state.takeoff > .82 && previousTakeoff.current <= .82) emit(mobile ? 8 : 15, true);
     }
     previousManeuver.current = state.maneuver;
     previousTakeoff.current = state.takeoff;
 
     if (!particlePositions) return;
-    for (let index = 0; index < SPRAY_PARTICLES; index += 1) {
+    for (let index = 0; index < particleCount; index += 1) {
       if (life.current[index] <= 0) continue;
       const offset = index * 3;
       life.current[index] -= delta;
@@ -1361,11 +1399,14 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
           <planeGeometry args={[0.2, 5.8]} />
           <meshBasicMaterial
             ref={(material) => { wakeMaterials.current[index] = material; }}
+            map={wakeTexture}
             color={index ? "#d9fff7" : "#9eece2"}
             transparent
             opacity={0}
             depthWrite={false}
+            alphaTest={.02}
             blending={THREE.AdditiveBlending}
+            toneMapped={false}
           />
         </mesh>
       ))}
@@ -1378,6 +1419,7 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
             transparent
             opacity={0}
             depthWrite={false}
+            toneMapped={false}
           />
         </mesh>
       ))}
@@ -1396,8 +1438,204 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
           alphaTest={0.03}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
+          toneMapped={false}
         />
       </points>
+    </group>
+  );
+}
+
+function BoardTrack({
+  motion,
+  target,
+  settings,
+  character,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  target: MutableRefObject<THREE.Group | null>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+  mobile: boolean;
+}) {
+  const markCount = mobile ? 30 : CARVE_TRACK_COUNT;
+  const trackMesh = useRef<THREE.InstancedMesh>(null);
+  const rippleMesh = useRef<THREE.InstancedMesh>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const previousPosition = useRef(new THREE.Vector3());
+  const traveled = useRef(0);
+  const cursor = useRef(0);
+  const rippleCursor = useRef(0);
+  const wasRiding = useRef(false);
+  const previousImpact = useRef(0);
+  const marks = useRef(Array.from({ length: CARVE_TRACK_COUNT }, () => ({ x: 0, z: 0, heading: 0, width: 0, length: 0, age: 0, maxAge: 1, intensity: 0 })));
+  const ripples = useRef(Array.from({ length: IMPACT_RING_COUNT }, () => ({ x: 0, z: 0, age: 0, maxAge: 1, offset: 0 })));
+  const foamColor = useMemo(() => new THREE.Color("#bffcf1"), []);
+  const fadedColor = useMemo(() => new THREE.Color(), []);
+  const trackTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const fade = context.createLinearGradient(0, 0, 0, 256);
+      fade.addColorStop(0, "rgba(255,255,255,0)");
+      fade.addColorStop(.14, "rgba(255,255,255,.94)");
+      fade.addColorStop(.58, "rgba(225,255,249,.58)");
+      fade.addColorStop(1, "rgba(212,255,247,0)");
+      context.strokeStyle = fade;
+      context.lineWidth = 16;
+      context.lineCap = "round";
+      context.beginPath();
+      context.moveTo(64, 4);
+      context.bezierCurveTo(55, 72, 80, 142, 62, 252);
+      context.stroke();
+      context.lineWidth = 5;
+      context.globalAlpha = .7;
+      context.beginPath();
+      context.moveTo(42, 38);
+      context.bezierCurveTo(60, 92, 34, 177, 49, 244);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(84, 32);
+      context.bezierCurveTo(68, 102, 94, 170, 77, 239);
+      context.stroke();
+      context.globalAlpha = 1;
+      for (let index = 0; index < 48; index += 1) {
+        const y = 24 + seededRandom(index, 51) * 220;
+        const x = 64 + (seededRandom(index, 52) - .5) * (28 + y * .15);
+        context.fillStyle = `rgba(235,255,251,${(.18 + seededRandom(index, 53) * .48).toFixed(2)})`;
+        context.beginPath();
+        context.arc(x, y, 1 + seededRandom(index, 54) * 2.8, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    const current = target.current?.position;
+    if (current) previousPosition.current.copy(current);
+    [trackMesh.current, rippleMesh.current].forEach((mesh) => {
+      if (!mesh) return;
+      for (let index = 0; index < mesh.count; index += 1) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(index, dummy.matrix);
+        mesh.setColorAt(index, fadedColor.setRGB(0, 0, 0));
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      const material = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      material.forEach((item) => { item.needsUpdate = true; });
+    });
+    return () => trackTexture.dispose();
+  }, [dummy, fadedColor, target, trackTexture]);
+
+  useFrame(({ clock }, delta) => {
+    const current = target.current?.position;
+    if (!current || !trackMesh.current || !rippleMesh.current) return;
+    const state = motion.current;
+    const riding = state.phase === "riding";
+    if (riding && !wasRiding.current) {
+      previousPosition.current.copy(current);
+      traveled.current = 0;
+    }
+    const deltaX = current.x - previousPosition.current.x;
+    const deltaZ = current.z - previousPosition.current.z;
+    const distance = Math.hypot(deltaX, deltaZ);
+    if (riding && distance < 3) {
+      traveled.current += distance;
+      const spacing = mobile ? .82 : .58;
+      if (traveled.current >= spacing) {
+        traveled.current %= spacing;
+        const mark = marks.current[cursor.current++ % markCount];
+        mark.x = current.x;
+        mark.z = current.z;
+        mark.heading = Math.atan2(deltaX, deltaZ);
+        mark.width = .52 + Math.abs(state.rail) * .74 + state.slip * .38;
+        mark.length = 1.05 + state.speed * .075;
+        mark.maxAge = mobile ? 3.5 : 5.1;
+        mark.age = mark.maxAge;
+        mark.intensity = THREE.MathUtils.clamp(.48 + state.speed * .025 + Math.abs(state.rail) * .3 + state.slip * .18, .48, 1.08);
+      }
+    } else if (!riding) {
+      traveled.current = 0;
+    }
+
+    if (riding && state.impact > .78 && previousImpact.current <= .78) {
+      for (let ring = 0; ring < 2; ring += 1) {
+        const ripple = ripples.current[rippleCursor.current++ % IMPACT_RING_COUNT];
+        ripple.x = current.x;
+        ripple.z = current.z;
+        ripple.maxAge = 1.35 + ring * .28;
+        ripple.age = ripple.maxAge;
+        ripple.offset = ring * .42;
+      }
+    }
+    previousImpact.current = state.impact;
+    wasRiding.current = riding;
+    previousPosition.current.copy(current);
+
+    for (let index = 0; index < markCount; index += 1) {
+      const mark = marks.current[index];
+      mark.age = Math.max(0, mark.age - delta);
+      if (mark.age <= 0) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+        fadedColor.setRGB(0, 0, 0);
+      } else {
+        const fade = THREE.MathUtils.smoothstep(mark.age, 0, .72);
+        const surface = waveHeightAt(mark.x, mark.z, clock.elapsedTime, settings, character);
+        dummy.position.set(mark.x, surface + .055, mark.z);
+        dummy.rotation.set(-Math.PI / 2, 0, -mark.heading);
+        dummy.scale.set(mark.width * fade, mark.length * fade, 1);
+        fadedColor.copy(foamColor).multiplyScalar(fade * mark.intensity);
+      }
+      dummy.updateMatrix();
+      trackMesh.current?.setMatrixAt(index, dummy.matrix);
+      trackMesh.current?.setColorAt(index, fadedColor);
+    }
+    trackMesh.current.instanceMatrix.needsUpdate = true;
+    if (trackMesh.current.instanceColor) trackMesh.current.instanceColor.needsUpdate = true;
+
+    ripples.current.forEach((ripple, index) => {
+      ripple.age = Math.max(0, ripple.age - delta);
+      if (ripple.age <= 0) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+        fadedColor.setRGB(0, 0, 0);
+      } else {
+        const elapsed = ripple.maxAge - ripple.age + ripple.offset;
+        const fade = THREE.MathUtils.smoothstep(ripple.age, 0, .48);
+        const surface = waveHeightAt(ripple.x, ripple.z, clock.elapsedTime, settings, character);
+        const scale = .74 + elapsed * 3.2;
+        dummy.position.set(ripple.x, surface + .07, ripple.z);
+        dummy.rotation.set(-Math.PI / 2, 0, 0);
+        dummy.scale.setScalar(scale);
+        fadedColor.copy(foamColor).multiplyScalar(fade * .9);
+      }
+      dummy.updateMatrix();
+      rippleMesh.current?.setMatrixAt(index, dummy.matrix);
+      rippleMesh.current?.setColorAt(index, fadedColor);
+    });
+    rippleMesh.current.instanceMatrix.needsUpdate = true;
+    if (rippleMesh.current.instanceColor) rippleMesh.current.instanceColor.needsUpdate = true;
+  });
+
+  return (
+    <group>
+      <instancedMesh ref={trackMesh} args={[undefined, undefined, markCount]} frustumCulled={false} renderOrder={4}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial map={trackTexture} transparent opacity={.58} alphaTest={.025} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={rippleMesh} args={[undefined, undefined, IMPACT_RING_COUNT]} frustumCulled={false} renderOrder={4}>
+        <ringGeometry args={[.68, 1, mobile ? 20 : 36]} />
+        <meshBasicMaterial transparent opacity={.48} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} side={THREE.DoubleSide} />
+      </instancedMesh>
     </group>
   );
 }
@@ -3755,10 +3993,11 @@ function Simulation({
       <BeachLife beach={beach} windSpeed={windSpeed} weatherCode={weatherCode} light={light} playerPosition={position} />
       <ShorelineWash settings={settings} light={light} windSpeed={windSpeed} />
       <FootprintTrail motion={motion} targetPosition={position} />
+      <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <group ref={player}>
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
-        <WaterInteraction motion={motion} />
+        <WaterInteraction motion={motion} mobile={mobileRenderer} />
         <SurferModel motion={motion} boardType={settings.board} />
       </group>
       <group ref={van}>
