@@ -22,6 +22,8 @@ export type ControlState = {
   lookPitch: number;
 };
 
+export type CameraMode = "follow" | "immersive" | "cinematic";
+
 type SurfSceneProps = {
   beach: Beach;
   settings: SessionSettings;
@@ -29,6 +31,7 @@ type SurfSceneProps = {
   windSpeed: number;
   sunrise: string;
   sunset: string;
+  cameraMode: CameraMode;
   controls: MutableRefObject<ControlState>;
   active: boolean;
   onStats: (stats: GameStats) => void;
@@ -2027,6 +2030,7 @@ function Simulation({
   windSpeed,
   sunrise,
   sunset,
+  cameraMode,
   controls,
   active,
   onStats,
@@ -2081,6 +2085,7 @@ function Simulation({
   });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false });
   const cameraTarget = useRef(new THREE.Vector3());
+  const cameraLookTarget = useRef(new THREE.Vector3(0, 1, 32));
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
   const cameraOffset = useRef(new THREE.Vector3());
   const cameraOrbit = useRef(new THREE.Spherical());
@@ -2368,26 +2373,77 @@ function Simulation({
     if (driving) {
       const forwardX = -Math.sin(vanHeading.current);
       const forwardZ = -Math.cos(vanHeading.current);
-      cameraPosition.current.set(
-        vanPosition.current.x - forwardX * 10.5,
-        6.4,
-        vanPosition.current.z - forwardZ * 10.5,
-      );
-      cameraTarget.current.set(
-        vanPosition.current.x + forwardX * 6.2,
-        1.55,
-        vanPosition.current.z + forwardZ * 6.2,
-      );
+      const rightX = Math.cos(vanHeading.current);
+      const rightZ = -Math.sin(vanHeading.current);
+      if (cameraMode === "immersive") {
+        cameraPosition.current.set(
+          vanPosition.current.x + forwardX * 1.5 + rightX * .34,
+          2.36,
+          vanPosition.current.z + forwardZ * 1.5 + rightZ * .34,
+        );
+        cameraTarget.current.set(
+          vanPosition.current.x + forwardX * 10,
+          1.62,
+          vanPosition.current.z + forwardZ * 10,
+        );
+      } else if (cameraMode === "cinematic") {
+        cameraPosition.current.set(
+          vanPosition.current.x - forwardX * 6.4 + rightX * 7.2,
+          4.25,
+          vanPosition.current.z - forwardZ * 6.4 + rightZ * 7.2,
+        );
+        cameraTarget.current.set(
+          vanPosition.current.x + forwardX * 4.4,
+          1.48,
+          vanPosition.current.z + forwardZ * 4.4,
+        );
+      } else {
+        cameraPosition.current.set(
+          vanPosition.current.x - forwardX * 10.5,
+          6.4,
+          vanPosition.current.z - forwardZ * 10.5,
+        );
+        cameraTarget.current.set(
+          vanPosition.current.x + forwardX * 6.2,
+          1.55,
+          vanPosition.current.z + forwardZ * 6.2,
+        );
+      }
     } else {
       const barrelCamera = riding ? motion.current.barrel : 0;
-      cameraPosition.current.set(
-        position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 : 0),
-        playerY + (riding ? 3.2 - barrelCamera * 0.72 : 4.9),
-        position.current.z + (riding ? -8.4 + barrelCamera * 1.45 : paddling ? 9.5 : 10.5),
-      );
-      cameraTarget.current.set(position.current.x, playerY + 0.9 - barrelCamera * 0.2, position.current.z + (riding ? 5.4 : -3));
+      if (cameraMode === "immersive") {
+        cameraPosition.current.set(
+          position.current.x + (riding ? steer * -1.1 - barrelCamera * .8 : .68),
+          playerY + (riding ? 1.82 - barrelCamera * .26 : paddling ? 2.2 : 3.05),
+          position.current.z + (riding ? -4.15 + barrelCamera * .82 : paddling ? 4.8 : 5.8),
+        );
+        cameraTarget.current.set(
+          position.current.x + (riding ? steer * .28 : 0),
+          playerY + (riding ? .72 : paddling ? .42 : 1.18),
+          position.current.z + (riding ? 4.65 : paddling ? -3.8 : -3.2),
+        );
+      } else if (cameraMode === "cinematic") {
+        const side = motion.current.maneuverSide || 1;
+        cameraPosition.current.set(
+          position.current.x + side * (riding ? 7.2 : paddling ? 6 : 5.8),
+          playerY + (riding ? 2.45 : paddling ? 3.6 : 3.1),
+          position.current.z + (riding ? -1.6 : paddling ? 3.4 : 4.5),
+        );
+        cameraTarget.current.set(
+          position.current.x - side * (riding ? .5 : .16),
+          playerY + (riding ? .82 : paddling ? .52 : 1.02),
+          position.current.z + (riding ? 2.6 : paddling ? -2.2 : -1.8),
+        );
+      } else {
+        cameraPosition.current.set(
+          position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 : 0),
+          playerY + (riding ? 3.2 - barrelCamera * .72 : 4.9),
+          position.current.z + (riding ? -8.4 + barrelCamera * 1.45 : paddling ? 9.5 : 10.5),
+        );
+        cameraTarget.current.set(position.current.x, playerY + .9 - barrelCamera * .2, position.current.z + (riding ? 5.4 : -3));
+      }
     }
-    const lookScale = riding ? .34 : driving ? .76 : 1;
+    const lookScale = cameraMode === "cinematic" ? .18 : cameraMode === "immersive" ? (riding ? .24 : .58) : riding ? .34 : driving ? .76 : 1;
     cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
     cameraOrbit.current.setFromVector3(cameraOffset.current);
     cameraOrbit.current.theta += state.lookYaw * 1.68 * lookScale;
@@ -2398,20 +2454,32 @@ function Simulation({
     );
     cameraOffset.current.setFromSpherical(cameraOrbit.current);
     cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
-    const cameraShake = riding
+    const cameraShakeBase = riding
       ? motion.current.maneuver * 0.1 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
       : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * 0.55) * 0.16 : 0;
+    const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
     cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
     cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
-    camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * (driving ? 3.8 : riding ? 3.1 : 2.4)));
-    camera.lookAt(cameraTarget.current);
-    camera.rotateZ(riding ? -steer * 0.018 - motion.current.maneuverSide * motion.current.maneuver * 0.025 : driving ? vanMotion.current.steer * -0.012 : 0);
+    const cameraResponse = cameraMode === "cinematic" ? 2.15 : cameraMode === "immersive" ? 4.35 : driving ? 3.8 : riding ? 3.1 : 2.4;
+    camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
+    cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (cameraMode === "cinematic" ? 2.45 : 4.8)));
+    camera.lookAt(cameraLookTarget.current);
+    const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
+    camera.rotateZ((riding ? -steer * .018 - motion.current.maneuverSide * motion.current.maneuver * .025 : driving ? vanMotion.current.steer * -.012 : 0) * rollScale);
     if (camera instanceof THREE.PerspectiveCamera) {
-      const targetFov = driving
-        ? 59 + Math.min(5, Math.abs(vanSpeed.current) * 0.2)
-        : riding
-          ? 58 + Math.min(8, Math.max(0, speed - 7) * 0.72) + motion.current.maneuver * 2.4
-          : paddling ? 56 : 58;
+      const targetFov = cameraMode === "cinematic"
+        ? riding ? 52 + motion.current.maneuver * 1.4 : driving ? 54 : 51
+        : cameraMode === "immersive"
+          ? driving
+            ? 70 + Math.min(7, Math.abs(vanSpeed.current) * .28)
+            : riding
+              ? 68 + Math.min(10, Math.max(0, speed - 7) * .82) + motion.current.maneuver * 2.8
+              : paddling ? 62 : 64
+          : driving
+            ? 59 + Math.min(5, Math.abs(vanSpeed.current) * .2)
+            : riding
+              ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 2.4
+              : paddling ? 56 : 58;
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {
         const focalLength = 0.5 * camera.getFilmHeight() / Math.tan(THREE.MathUtils.degToRad(nextFov * 0.5));

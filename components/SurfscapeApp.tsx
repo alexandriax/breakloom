@@ -5,6 +5,7 @@ import {
   ArrowRight,
   AudioLines,
   BatteryMedium,
+  Camera,
   CarFront,
   ChevronDown,
   CircleCheck,
@@ -45,7 +46,7 @@ import {
   type SessionSettings,
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
-import type { ControlState } from "./SurfScene";
+import type { CameraMode, ControlState } from "./SurfScene";
 import TideSparkline from "./TideSparkline";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
@@ -70,6 +71,16 @@ const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
 const RECORD_KEY = "surfscape-personal-best-v1";
+const CAMERA_MODES: CameraMode[] = ["follow", "immersive", "cinematic"];
+const CAMERA_LABELS: Record<CameraMode, string> = {
+  follow: "Follow",
+  immersive: "Immersive",
+  cinematic: "Cinematic",
+};
+
+function nextCameraMode(current: CameraMode) {
+  return CAMERA_MODES[(CAMERA_MODES.indexOf(current) + 1) % CAMERA_MODES.length];
+}
 
 function haptic(pattern: number | number[]) {
   if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern);
@@ -135,6 +146,7 @@ export default function SurfscapeApp() {
   const [paused, setPaused] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [showPlanner, setShowPlanner] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
@@ -237,6 +249,12 @@ export default function SurfscapeApp() {
       if (key === "a" || key === "arrowleft") controls.current.left = true;
       if (key === "d" || key === "arrowright") controls.current.right = true;
       if (key === " ") controls.current.action = true;
+      if (key === "c" && !event.repeat) {
+        controls.current.lookYaw = 0;
+        controls.current.lookPitch = 0;
+        setCameraMode((current) => nextCameraMode(current));
+        haptic(7);
+      }
       if (key === "escape") setPaused((value) => !value);
     };
     const onKeyUp = (event: KeyboardEvent) => {
@@ -516,6 +534,12 @@ export default function SurfscapeApp() {
     controls.current.lookPitch = 0;
   };
 
+  const cycleCamera = () => {
+    centerCameraLook();
+    setCameraMode((current) => nextCameraMode(current));
+    haptic(7);
+  };
+
   const localTime = formatClock(conditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
   const conditionQuality = qualityLabel(conditions);
@@ -564,6 +588,7 @@ export default function SurfscapeApp() {
           windSpeed={conditions.windSpeed}
           sunrise={conditions.sunrise}
           sunset={conditions.sunset}
+          cameraMode={cameraMode}
           controls={controls}
           active={screen === "game" && !paused}
           onStats={handleStats}
@@ -779,7 +804,7 @@ export default function SurfscapeApp() {
             onDoubleClick={centerCameraLook}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <span>{stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"}</span>
+            <span>{stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
           </div>
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
@@ -792,6 +817,7 @@ export default function SurfscapeApp() {
             <div className="game-objective"><span>{stats.phase}</span><strong>{stats.prompt}</strong></div>
             <div className="game-actions">
               <button onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
+              <button className="camera-button" onClick={cycleCamera} aria-label={`Camera: ${CAMERA_LABELS[cameraMode]}. Switch camera.`} title={`Camera: ${CAMERA_LABELS[cameraMode]}`}><Camera /></button>
               <button onClick={() => { clearAnalogMovement(); setPaused(true); }} aria-label="Pause"><Pause /></button>
             </div>
           </header>
@@ -887,6 +913,7 @@ export default function SurfscapeApp() {
                 <span><kbd>W</kbd><kbd>S</kbd> throttle / brake</span>
                 <span><kbd>A</kbd><kbd>D</kbd> steer</span>
                 <span><kbd>SPACE</kbd> exit when stopped</span>
+                <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
                 <span><span className="mouse-icon" /> drag view to look</span>
               </>
             ) : (
@@ -894,6 +921,7 @@ export default function SurfscapeApp() {
                 <span><kbd>A</kbd><kbd>D</kbd> steer / rail</span>
                 <span><kbd>W</kbd><kbd>S</kbd> {stats.phase === "riding" ? "nose / tail stance" : "move / paddle"}</span>
                 <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "land maneuver" : stats.nearVan ? "drive van" : "catch wave"}</span>
+                <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
                 <span><span className="mouse-icon" /> mouse to balance</span>
               </>
             )}
@@ -953,7 +981,7 @@ export default function SurfscapeApp() {
             <span className="overline">FIELD GUIDE 01</span>
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
-              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board from the roof-rack quiver, walk through the shallows, and drag the open view to look around.</p></article>
+              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the analog stick, shift nose-to-tail with W/S, balance with mouse or thumb, then trigger a context-aware maneuver.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
