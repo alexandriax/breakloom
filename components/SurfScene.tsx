@@ -56,6 +56,7 @@ type MotionState = {
   compression: number;
   slip: number;
   impact: number;
+  takeoff: number;
 };
 
 type VehicleMotionState = {
@@ -908,7 +909,7 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
       joint.rotation.z = THREE.MathUtils.damp(joint.rotation.z, z, responsiveness, delta);
     };
 
-    const rideLean = state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * .08;
+    const rideLean = (state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * .08) * (1 - state.takeoff * .72);
     pose("Pelvis", riding ? -0.08 - state.compression * .12 + state.stance * 0.045 : walking ? step * 0.025 : 0, riding ? state.rail * -0.1 : 0, riding ? rideLean * 0.35 : 0, 7);
     pose("Torso", paddle ? -0.1 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 : walking ? -step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 : 0, riding ? rideLean : 0, 7);
     pose("Head", paddle ? -0.24 : riding ? -0.12 - state.compression * .08 + state.barrel * 0.08 : 0, riding ? state.rail * 0.14 : 0, riding ? -rideLean * 0.4 : 0, 8);
@@ -1151,7 +1152,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
     const wipeout = state.phase === "wipeout";
     const rebound = Math.sin((1 - state.impact) * Math.PI) * state.impact;
 
-    const bodyRotationX = paddle ? Math.PI / 2 - 0.1 : riding ? -0.18 : 0;
+    const bodyRotationX = paddle ? Math.PI / 2 - 0.1 : riding ? -0.18 + state.takeoff * 1.32 : 0;
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
     body.current.rotation.z = THREE.MathUtils.damp(
       body.current.rotation.z,
@@ -1165,7 +1166,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 : riding ? 0.84 - state.compression * .15 + rebound * .08 : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 : riding ? 0.84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : 0, 9, delta);
     rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 : 0, 8, delta);
@@ -1191,7 +1192,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
     );
     board.current.rotation.x = THREE.MathUtils.damp(
       board.current.rotation.x,
-      shore ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 : 0,
+      shore ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 + state.takeoff * .09 : 0,
       7,
       delta,
     );
@@ -1229,6 +1230,7 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
   const cursor = useRef(0);
   const emission = useRef(0);
   const previousManeuver = useRef(0);
+  const previousTakeoff = useRef(0);
   const particleTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
@@ -1296,8 +1298,10 @@ function WaterInteraction({ motion }: { motion: MutableRefObject<MotionState> })
         emission.current -= count;
       }
       if (state.maneuver > 0.82 && previousManeuver.current <= 0.82) emit(18, true);
+      if (state.takeoff > .82 && previousTakeoff.current <= .82) emit(11, true);
     }
     previousManeuver.current = state.maneuver;
+    previousTakeoff.current = state.takeoff;
 
     if (!particlePositions) return;
     for (let index = 0; index < SPRAY_PARTICLES; index += 1) {
@@ -2833,6 +2837,7 @@ function Simulation({
   const catchQuality = useRef(0.5);
   const unstableFor = useRef(0);
   const railSlip = useRef(0);
+  const missedWaveUntil = useRef(0);
   const wipeoutAt = useRef(0);
   const actionLatch = useRef(false);
   const lastStatsAt = useRef(0);
@@ -2853,6 +2858,7 @@ function Simulation({
     compression: 0,
     slip: 0,
     impact: 0,
+    takeoff: 0,
   });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false, wetness: 0, offRoad: 0 });
   const cameraTarget = useRef(new THREE.Vector3());
@@ -2882,6 +2888,7 @@ function Simulation({
     let railLoad = 0;
     let compression = 0;
     let catchReady = false;
+    let takeoffQuality = 0;
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
@@ -2970,29 +2977,58 @@ function Simulation({
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
         speed = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + Math.min(0, move) * 1.2;
         position.current.z -= speed * delta;
+        position.current.z = Math.max(-52, position.current.z);
         position.current.x += (steer * 2.2 + Math.sin((settings.currentDirection * Math.PI) / 180) * settings.currentStrength * 0.35) * delta;
-        const ready = position.current.z < -18;
-        catchReady = ready;
+        const inLineup = position.current.z < -18;
+        const currentCurve = Math.sin((settings.currentDirection * Math.PI) / 180) * .0022;
+        const primarySpeed = (Math.PI * 2 / Math.max(4, settings.wavePeriod)) * 5.4;
+        const takeoffPhase = position.current.z * .19 + position.current.x * .018 + position.current.x * position.current.x * currentCurve + t * primarySpeed;
+        const crestAlignment = THREE.MathUtils.smoothstep(Math.sin(takeoffPhase), -.08, .96);
+        const staminaTiming = .82 + stamina.current * .0018;
+        const deepWaterAssist = settings.mode === "training" && position.current.z < -34 ? .08 : 0;
+        const touchTimingAssist = mobileRenderer ? .045 : 0;
+        takeoffQuality = inLineup
+          ? THREE.MathUtils.clamp(crestAlignment * (.38 + setState.energy * .62) * staminaTiming + deepWaterAssist + touchTimingAssist, 0, 1)
+          : 0;
+        const takeoffThreshold = settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36;
+        catchReady = inLineup && t >= missedWaveUntil.current && takeoffQuality >= takeoffThreshold;
         const setCopy = setState.secondsToPeak === 0 ? "Set is here" : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
-        prompt = ready ? `${setCopy} · CATCH / SPACE` : "Paddle beyond the break";
-        if (settings.mode === "training" && position.current.z < -34) prompt = `${setCopy} · timing assist active`;
-        if (actionPressed && ready) {
-          phase.current = "riding";
-          rideDistance.current = 0;
-          barrelTime.current = 0;
-          stance.current = 0;
-          unstableFor.current = 0;
-          railSlip.current = 0;
-          catchQuality.current = setState.energy;
-          combo.current = 0.9 + setState.energy * 0.8;
-          maxCombo.current = Math.max(maxCombo.current, combo.current);
-          rideStartScore.current = score.current;
-          rideManeuverStart.current = maneuverCount.current;
-          score.current += Math.round(90 + setState.energy * 360);
-          rideResult.current = "";
-          cleanFinish.current = false;
+        prompt = !inLineup
+          ? "Paddle beyond the break"
+          : t < missedWaveUntil.current
+            ? "Wave rolled under — reset and read the next crest"
+            : catchReady
+              ? `${takeoffQuality > .76 ? "Clean shoulder" : "Takeoff window"} · CATCH NOW`
+              : setState.energy < .3
+                ? `Hold the lineup · ${setCopy}`
+                : `Crest approaching · ${Math.round(takeoffQuality * 100)}%`;
+        if (actionPressed && inLineup) {
+          if (catchReady) {
+            phase.current = "riding";
+            rideDistance.current = 0;
+            barrelTime.current = 0;
+            stance.current = 0;
+            unstableFor.current = (1 - takeoffQuality) * .14;
+            railSlip.current = (1 - takeoffQuality) * .18;
+            catchQuality.current = takeoffQuality;
+            combo.current = .85 + takeoffQuality * .95;
+            maxCombo.current = Math.max(maxCombo.current, combo.current);
+            rideStartScore.current = score.current;
+            rideManeuverStart.current = maneuverCount.current;
+            score.current += Math.round(70 + takeoffQuality * 420 + setState.energy * 80);
+            rideResult.current = "";
+            cleanFinish.current = false;
+            motion.current.takeoff = 1;
+            motion.current.impact = .58 + takeoffQuality * .42;
+          } else if (t >= missedWaveUntil.current) {
+            stamina.current = Math.max(0, stamina.current - 6);
+            missedWaveUntil.current = t + 1.2;
+            catchReady = false;
+          }
         }
+        if (position.current.z > 1) phase.current = "wading";
       } else if (currentPhase === "riding") {
+        takeoffQuality = catchQuality.current;
         const waveSpeed = 8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1;
         const pumping = move > 0.08 && stamina.current > 1;
         if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
@@ -3176,6 +3212,7 @@ function Simulation({
     motion.current.compression = THREE.MathUtils.damp(motion.current.compression, compression, 7, delta);
     motion.current.slip = THREE.MathUtils.damp(motion.current.slip, railSlip.current, 8, delta);
     motion.current.impact = Math.max(0, motion.current.impact - delta * 1.9);
+    motion.current.takeoff = Math.max(0, motion.current.takeoff - delta * 1.55);
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
@@ -3273,7 +3310,7 @@ function Simulation({
     cameraOffset.current.setFromSpherical(cameraOrbit.current);
     cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
     const cameraShakeBase = riding
-      ? motion.current.maneuver * 0.1 + motion.current.impact * .075 + motion.current.slip * .045 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
+      ? motion.current.maneuver * 0.1 + motion.current.takeoff * .04 + motion.current.impact * .075 + motion.current.slip * .045 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
       : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * 0.55) * 0.16 : 0;
     const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
     cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
@@ -3338,6 +3375,7 @@ function Simulation({
         vehicleMode: phase.current === "driving",
         nearVan,
         catchReady,
+        takeoffQuality,
         prompt,
       });
     }

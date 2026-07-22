@@ -915,6 +915,13 @@ input:focus-visible {
 .set-heading strong { color: #a6fff2; font-family: Impact, sans-serif; font-size: 15px; letter-spacing: 0.08em; }
 .set-meter { height: 3px; margin: 9px 0 11px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .set-meter i { display: block; height: 100%; background: linear-gradient(90deg, #368f9b, #8dfff0); box-shadow: 0 0 10px #71e1d3; transition: width 0.25s ease; }
+.takeoff-window { display: grid; grid-template-columns: auto 1fr 24px; align-items: center; gap: 7px; margin: -2px 0 10px; }
+.takeoff-window > span, .takeoff-window > strong { color: rgba(255, 255, 255, .48); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
+.takeoff-window > strong { text-align: right; }
+.takeoff-window > i { height: 3px; overflow: hidden; background: rgba(255, 255, 255, .11); }
+.takeoff-window > i b { display: block; height: 100%; background: linear-gradient(90deg, #527d86, #91e7d8); transition: width .06s linear; }
+.takeoff-window.is-open > span, .takeoff-window.is-open > strong { color: #c4fff7; text-shadow: 0 0 8px rgba(113, 225, 211, .7); }
+.takeoff-window.is-open > i b { background: #a9fff3; box-shadow: 0 0 9px #71e1d3; }
 .stamina-row { display: grid; grid-template-columns: auto 1fr 24px; align-items: center; gap: 7px; }
 .stamina-row > span { display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 5px; letter-spacing: 0.1em; }
 .stamina-row svg { width: 10px; color: var(--spot-accent); }
@@ -951,6 +958,16 @@ input:focus-visible {
 .maneuver-toast span { color: #71e1d3; font-size: 5px; font-weight: 900; letter-spacing: 0.18em; }
 .maneuver-toast strong { font-size: 12px; letter-spacing: 0.03em; }
 .maneuver-toast b { grid-row: 1 / 3; grid-column: 3; color: var(--spot-accent); font-family: Impact, sans-serif; font-size: 18px; letter-spacing: 0.06em; }
+
+.takeoff-toast { position: absolute; top: 105px; left: 50%; min-width: 218px; display: grid; grid-template-columns: 28px 1fr auto; grid-template-rows: auto auto; align-items: center; gap: 1px 9px; padding: 11px 15px 11px 11px; transform: translateX(-50%); border: 1px solid rgba(255, 196, 129, .36); background: rgba(3, 15, 21, .8); backdrop-filter: blur(11px); box-shadow: 0 14px 40px rgba(0, 0, 0, .28), inset 0 -2px #e9a968; animation: maneuver-pop 1.7s ease both; }
+.takeoff-toast.is-clean { border-color: rgba(157, 255, 238, .38); box-shadow: 0 14px 40px rgba(0, 0, 0, .28), inset 0 -2px #71e1d3; }
+.takeoff-toast > svg { grid-row: 1 / 3; width: 21px; color: #f0bb7d; filter: drop-shadow(0 0 7px rgba(233, 169, 104, .72)); }
+.takeoff-toast.is-clean > svg { color: #a6fff2; filter: drop-shadow(0 0 7px #71e1d3); }
+.takeoff-toast span { color: #efb575; font-size: 5px; font-weight: 900; letter-spacing: .18em; }
+.takeoff-toast.is-clean span { color: #71e1d3; }
+.takeoff-toast strong { font-size: 12px; letter-spacing: .03em; }
+.takeoff-toast b { grid-row: 1 / 3; grid-column: 3; color: #f0b774; font-family: Impact, sans-serif; font-size: 18px; letter-spacing: .06em; }
+.takeoff-toast.is-clean b { color: var(--spot-accent); }
 
 .ride-recap {
   position: absolute;
@@ -1205,9 +1222,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .set-heading > div { font-size: 5px; }
   .set-heading strong { font-size: 12px; }
   .session-goals { display: none; }
-  .maneuver-toast { top: 198px; min-width: 194px; padding: 9px 12px 9px 9px; }
-  .maneuver-toast strong { font-size: 10px; }
-  .maneuver-toast b { font-size: 15px; }
+  .maneuver-toast, .takeoff-toast { top: 198px; min-width: 194px; padding: 9px 12px 9px 9px; }
+  .maneuver-toast strong, .takeoff-toast strong { font-size: 10px; }
+  .maneuver-toast b, .takeoff-toast b { font-size: 15px; }
   .ride-recap { top: 194px; min-width: min(330px, calc(100vw - 30px)); grid-template-columns: 62px 1fr; }
   .ride-grade { min-height: 66px; }
   .ride-grade strong { font-size: 28px; }
@@ -1270,7 +1287,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .score-panel > span { display: block; }
   .score-panel > small, .set-panel .stamina-row { display: none; }
   .set-meter { margin: 6px 0 3px; }
-  .maneuver-toast, .ride-recap { top: 126px; }
+  .maneuver-toast, .takeoff-toast, .ride-recap { top: 126px; }
   .game-conditions { display: none; }
   .balance-instrument, .vehicle-instrument { bottom: calc(104px + env(safe-area-inset-bottom)); width: min(430px, calc(100vw - 270px)); }
   .balance-instrument small, .vehicle-copy small, .grip-track { display: none; }

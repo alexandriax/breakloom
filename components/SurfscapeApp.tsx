@@ -179,12 +179,15 @@ export default function SurfscapeApp() {
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
   const [recordsReady, setRecordsReady] = useState(false);
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number } | null>(null);
+  const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
   const previousRideResultId = useRef(0);
+  const previousCatchReady = useRef(false);
+  const previousTakeoffPhase = useRef(stats.phase);
   const joystickKnob = useRef<HTMLSpanElement>(null);
   const joystickPointer = useRef<number | null>(null);
   const lookGesture = useRef<{
@@ -341,6 +344,8 @@ export default function SurfscapeApp() {
       }
       previousPhase.current = stats.phase;
     }
+    if (stats.catchReady && !previousCatchReady.current) haptic([7, 24, 13]);
+    previousCatchReady.current = stats.catchReady;
     audio.current?.setVehicle(paused ? 0 : stats.speed, !paused && stats.vehicleMode);
     audio.current?.setSurf(
       paused ? 0 : stats.speed,
@@ -360,7 +365,7 @@ export default function SurfscapeApp() {
       paused ? 0 : stats.speed,
       !paused && !stats.vehicleMode,
     );
-  }, [conditions.windSpeed, paused, sessionCloudCover, sessionWeatherCode, settings.waveHeight, stats.barrelIntensity, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [conditions.windSpeed, paused, sessionCloudCover, sessionWeatherCode, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -372,6 +377,16 @@ export default function SurfscapeApp() {
       return () => window.clearTimeout(timer);
     }
   }, [stats.maneuver, stats.maneuverId, stats.maneuverScore]);
+
+  useEffect(() => {
+    const from = previousTakeoffPhase.current;
+    previousTakeoffPhase.current = stats.phase;
+    if (from === stats.phase || stats.phase !== "riding") return;
+    const label = stats.takeoffQuality >= .8 ? "Clean entry" : stats.takeoffQuality >= .55 ? "Committed drop" : "Late takeoff";
+    setTakeoffToast({ label, quality: stats.takeoffQuality });
+    const timer = window.setTimeout(() => setTakeoffToast(null), 1700);
+    return () => window.clearTimeout(timer);
+  }, [stats.phase, stats.takeoffQuality]);
 
   useEffect(() => {
     if (stats.rideResultId > 0 && stats.rideResultId !== previousRideResultId.current && stats.rideResult) {
@@ -869,6 +884,13 @@ export default function SurfscapeApp() {
               <strong>{stats.nextSetSeconds === 0 ? "SET HERE" : `${Math.ceil(stats.nextSetSeconds)}s`}</strong>
             </div>
             <div className="set-meter"><i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></div>
+            {stats.phase === "paddling" && (
+              <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""}`}>
+                <span>TAKEOFF</span>
+                <i><b style={{ width: `${Math.round(stats.takeoffQuality * 100)}%` }} /></i>
+                <strong>{stats.catchReady ? "GO" : `${Math.round(stats.takeoffQuality * 100)}%`}</strong>
+              </div>
+            )}
             <div className="stamina-row">
               <span><BatteryMedium /> STAMINA</span>
               <div><i style={{ width: `${stats.stamina}%` }} /></div>
@@ -890,6 +912,15 @@ export default function SurfscapeApp() {
               <span>LANDED</span>
               <strong>{maneuverToast.name}</strong>
               <b>+{maneuverToast.points.toLocaleString()}</b>
+            </div>
+          )}
+
+          {takeoffToast && !maneuverToast && !rideToast && (
+            <div className={`takeoff-toast ${takeoffToast.quality >= .8 ? "is-clean" : ""}`}>
+              <Waves />
+              <span>TAKEOFF</span>
+              <strong>{takeoffToast.label}</strong>
+              <b>{Math.round(takeoffToast.quality * 100)}%</b>
             </div>
           )}
 

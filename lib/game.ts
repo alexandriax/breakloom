@@ -106,6 +106,7 @@ export type GameStats = {
   vehicleMode: boolean;
   nearVan: boolean;
   catchReady: boolean;
+  takeoffQuality: number;
   prompt: string;
 };
 
@@ -140,6 +141,7 @@ export const INITIAL_STATS: GameStats = {
   vehicleMode: false,
   nearVan: false,
   catchReady: false,
+  takeoffQuality: 0,
   prompt: "Walk toward the water · or find the van",
 };
 
