@@ -67,6 +67,7 @@ type RideToast = {
 };
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
+const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
 const RECORD_KEY = "surfscape-personal-best-v1";
 
@@ -119,9 +120,9 @@ export default function SurfscapeApp() {
   const [latitude, setLatitude] = useState(DEFAULT_BEACH.zones[1].lat);
   const [longitude, setLongitude] = useState(DEFAULT_BEACH.zones[1].lon);
   const [zoneLabel, setZoneLabel] = useState(DEFAULT_BEACH.zones[1].name);
-  const [conditions, setConditions] = useState<MarineConditions>(() => fallbackConditions(DEFAULT_BEACH));
+  const [conditions, setConditions] = useState<MarineConditions>(() => INITIAL_MODELED_CONDITIONS);
   const [conditionsLoading, setConditionsLoading] = useState(true);
-  const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(fallbackConditions(DEFAULT_BEACH)));
+  const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(INITIAL_MODELED_CONDITIONS));
   const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
   const [paused, setPaused] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);

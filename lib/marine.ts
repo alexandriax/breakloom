@@ -147,8 +147,8 @@ export async function fetchMarineConditions(
   };
 }
 
-export function fallbackConditions(beach: Beach): MarineConditions {
-  const now = new Date();
+export function fallbackConditions(beach: Beach, referenceTime?: string | Date): MarineConditions {
+  const now = referenceTime ? new Date(referenceTime) : new Date();
   const tide = Array.from({ length: 24 }, (_, index) => ({
     time: new Date(now.getTime() + (index - 8) * 3_600_000).toISOString(),
     value: Math.sin((index / 12) * Math.PI * 2) * 0.72,
@@ -180,4 +180,3 @@ export function fallbackConditions(beach: Beach): MarineConditions {
     sunset: "19:30",
   };
 }
-
