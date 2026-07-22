@@ -58,6 +58,7 @@ type MotionState = {
   slip: number;
   impact: number;
   takeoff: number;
+  finish: number;
 };
 
 type VehicleMotionState = {
@@ -3334,6 +3335,7 @@ function Simulation({
   const railSlip = useRef(0);
   const missedWaveUntil = useRef(0);
   const wipeoutAt = useRef(0);
+  const finishAt = useRef(-1);
   const actionLatch = useRef(false);
   const lastStatsAt = useRef(0);
   const cleanFinish = useRef(false);
@@ -3354,6 +3356,7 @@ function Simulation({
     slip: 0,
     impact: 0,
     takeoff: 0,
+    finish: 0,
   });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false, wetness: 0, offRoad: 0 });
   const cameraTarget = useRef(new THREE.Vector3());
@@ -3513,6 +3516,7 @@ function Simulation({
             score.current += Math.round(70 + takeoffQuality * 420 + setState.energy * 80);
             rideResult.current = "";
             cleanFinish.current = false;
+            finishAt.current = -1;
             motion.current.takeoff = 1;
             motion.current.impact = .58 + takeoffQuality * .42;
           } else if (t >= missedWaveUntil.current) {
@@ -3524,8 +3528,9 @@ function Simulation({
         if (position.current.z > 1) phase.current = "wading";
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
+        const finishing = finishAt.current >= 0;
         const waveSpeed = (8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1) * (.88 + character.power * .12);
-        const pumping = move > 0.08 && stamina.current > 1;
+        const pumping = !finishing && move > 0.08 && stamina.current > 1;
         if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
         else if (move < -0.08) stance.current = Math.max(-1, stance.current + delta * 0.86 * move);
         else stance.current = THREE.MathUtils.damp(stance.current, 0, 1.05, delta);
@@ -3579,16 +3584,18 @@ function Simulation({
         barrelIntensity = inBarrel
           ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + character.hollow) + controlQuality * .16, 0, 1)
           : 0;
-        if (inBarrel) {
+        if (inBarrel && !finishing) {
           barrelTime.current += delta;
           combo.current = Math.min(8, combo.current + delta * 0.23);
           score.current += (26 + barrelTime.current * 4) * controlQuality * combo.current * delta;
         }
         const turnBonus = Math.abs(railLoad) * (12 + compression * 5) * (1 - railSlip.current * .42);
-        combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(railLoad) * (1 - railSlip.current) * delta * 0.15 + (pumping ? delta * 0.04 : 0));
-        maxCombo.current = Math.max(maxCombo.current, combo.current);
-        score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * delta;
-        if (actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94 && railSlip.current < .78) {
+        if (!finishing) {
+          combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(railLoad) * (1 - railSlip.current) * delta * 0.15 + (pumping ? delta * 0.04 : 0));
+          maxCombo.current = Math.max(maxCombo.current, combo.current);
+          score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * delta;
+        }
+        if (!finishing && actionPressed && t - lastManeuverAt.current > 0.85 && stamina.current > 7 && balanceError < failThreshold * 0.94 && railSlip.current < .78) {
           const rail = Math.abs(steer);
           let name = "High Line";
           let base = 150;
@@ -3628,7 +3635,9 @@ function Simulation({
           motion.current.maneuverSide = steer || (state.balance >= 0 ? 1 : -1);
           motion.current.impact = 1;
         }
-        prompt = actionPressed && railSlip.current >= .78
+        prompt = finishing
+          ? "Hold the exit — clean line"
+          : actionPressed && railSlip.current >= .78
           ? "Fins released — reconnect the rail before the next move"
           : balanceError > failThreshold * 0.76
           ? "Shift your weight toward the marker"
@@ -3643,7 +3652,7 @@ function Simulation({
               : move < -0.08
                 ? "Tail pressure · tighter turning response"
                 : "W nose / pump · S tail / control · SPACE maneuver";
-        if (unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
+        if (!finishing && unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
           phase.current = "wipeout";
           wipeoutAt.current = t;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
@@ -3653,15 +3662,27 @@ function Simulation({
           combo.current = 1;
           railSlip.current = 1;
           motion.current.impact = .45;
-        } else if (position.current.z > 11 + (character.length - 1) * 11) {
+        } else if (!finishing && position.current.z > 11 + (character.length - 1) * 11) {
           score.current += 750 + rideDistance.current * 11;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
           rideResult.current = "clean";
           rideResultId.current += 1;
           cleanFinish.current = true;
-          phase.current = "shore";
-          position.current.z = 17;
+          finishAt.current = t;
+          motion.current.finish = 1;
+        }
+        if (finishAt.current >= 0) {
+          const finishElapsed = t - finishAt.current;
+          unstableFor.current = 0;
+          balanceTarget = state.balance;
+          railSlip.current = THREE.MathUtils.damp(railSlip.current, 0, 7, delta);
+          prompt = finishElapsed < .55 ? "Hold the exit — clean line" : "Line complete — returning to shore";
+          if (finishElapsed > 1.08) {
+            phase.current = "shore";
+            position.current.z = 17;
+            finishAt.current = -1;
+          }
         }
       } else if (currentPhase === "wipeout") {
         stamina.current = Math.min(100, stamina.current + delta * 14);
@@ -3719,6 +3740,7 @@ function Simulation({
     motion.current.slip = THREE.MathUtils.damp(motion.current.slip, railSlip.current, 8, delta);
     motion.current.impact = Math.max(0, motion.current.impact - delta * 1.9);
     motion.current.takeoff = Math.max(0, motion.current.takeoff - delta * 1.55);
+    motion.current.finish = Math.max(0, motion.current.finish - delta * .7);
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
@@ -3772,36 +3794,45 @@ function Simulation({
       }
     } else {
       const barrelCamera = riding ? motion.current.barrel : 0;
+      const takeoffBeat = riding ? motion.current.takeoff : 0;
+      const maneuverBeat = riding ? motion.current.maneuver : 0;
+      const finishBeat = riding ? motion.current.finish : 0;
+      const directorSide = motion.current.maneuverSide || (character.peel < 0 ? -1 : 1);
+      const speedLead = riding ? THREE.MathUtils.smoothstep(speed, 9.5, 17.5) : 0;
       if (cameraMode === "immersive") {
         cameraPosition.current.set(
-          position.current.x + (riding ? steer * -1.1 - barrelCamera * .8 : .68),
-          playerY + (riding ? 1.82 - barrelCamera * .26 : paddling ? 2.2 : 3.05),
-          position.current.z + (riding ? -4.15 + barrelCamera * .82 : paddling ? 4.8 : 5.8),
+          position.current.x + (riding ? steer * -1.1 - barrelCamera * .8 + directorSide * maneuverBeat * .28 : .68),
+          playerY + (riding ? 1.82 - barrelCamera * .26 - takeoffBeat * .28 + maneuverBeat * .2 + finishBeat * .28 : paddling ? 2.2 : 3.05),
+          position.current.z + (riding ? -4.15 + barrelCamera * .82 + takeoffBeat * 1.12 - maneuverBeat * .42 - finishBeat * .75 : paddling ? 4.8 : 5.8),
         );
         cameraTarget.current.set(
-          position.current.x + (riding ? steer * .28 : 0),
+          position.current.x + (riding ? steer * .28 + directorSide * maneuverBeat * .16 : 0),
           playerY + (riding ? .72 : paddling ? .42 : 1.18),
-          position.current.z + (riding ? 4.65 : paddling ? -3.8 : -3.2),
+          position.current.z + (riding ? 4.65 + speedLead * 1.45 + finishBeat * 2.1 : paddling ? -3.8 : -3.2),
         );
       } else if (cameraMode === "cinematic") {
-        const side = motion.current.maneuverSide || 1;
+        const side = directorSide;
         cameraPosition.current.set(
-          position.current.x + side * (riding ? 7.2 : paddling ? 6 : 5.8),
-          playerY + (riding ? 2.45 : paddling ? 3.6 : 3.1),
-          position.current.z + (riding ? -1.6 : paddling ? 3.4 : 4.5),
+          position.current.x + side * (riding ? 7.2 - maneuverBeat * 2.8 - takeoffBeat * 1.45 : paddling ? 6 : 5.8),
+          playerY + (riding ? 2.45 - takeoffBeat * .48 + maneuverBeat * .68 + finishBeat * 1.08 : paddling ? 3.6 : 3.1),
+          position.current.z + (riding ? -1.6 - takeoffBeat * 2.9 + maneuverBeat * .62 - finishBeat * 3.2 : paddling ? 3.4 : 4.5),
         );
         cameraTarget.current.set(
-          position.current.x - side * (riding ? .5 : .16),
+          position.current.x - side * (riding ? .5 + maneuverBeat * .58 : .16),
           playerY + (riding ? .82 : paddling ? .52 : 1.02),
-          position.current.z + (riding ? 2.6 : paddling ? -2.2 : -1.8),
+          position.current.z + (riding ? 2.6 + speedLead * 1.8 + finishBeat * 3.4 : paddling ? -2.2 : -1.8),
         );
       } else {
         cameraPosition.current.set(
-          position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 : 0),
-          playerY + (riding ? 3.2 - barrelCamera * .72 : 4.9),
-          position.current.z + (riding ? -8.4 + barrelCamera * 1.45 : paddling ? 9.5 : 10.5),
+          position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 + directorSide * maneuverBeat * .7 : 0),
+          playerY + (riding ? 3.2 - barrelCamera * .72 - takeoffBeat * .38 + maneuverBeat * .38 + finishBeat * .66 : 4.9),
+          position.current.z + (riding ? -8.4 + barrelCamera * 1.45 + takeoffBeat * 2.15 - maneuverBeat * .72 - finishBeat * 1.9 : paddling ? 9.5 : 10.5),
         );
-        cameraTarget.current.set(position.current.x, playerY + .9 - barrelCamera * .2, position.current.z + (riding ? 5.4 : -3));
+        cameraTarget.current.set(
+          position.current.x + (riding ? directorSide * maneuverBeat * .18 : 0),
+          playerY + .9 - barrelCamera * .2,
+          position.current.z + (riding ? 5.4 + speedLead * 1.9 + finishBeat * 3.7 : -3),
+        );
       }
     }
     const lookScale = cameraMode === "cinematic" ? .18 : cameraMode === "immersive" ? (riding ? .24 : .58) : riding ? .34 : driving ? .76 : 1;
@@ -3821,7 +3852,11 @@ function Simulation({
     const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
     cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
     cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
-    const cameraResponse = cameraMode === "cinematic" ? 2.15 : cameraMode === "immersive" ? 4.35 : driving ? 3.8 : riding ? 3.1 : 2.4;
+    const cameraResponse = cameraMode === "cinematic"
+      ? 2.15 + motion.current.maneuver * 1.9 + motion.current.takeoff * .8
+      : cameraMode === "immersive"
+        ? 4.35 + motion.current.maneuver * 1.35
+        : driving ? 3.8 : riding ? 3.1 + motion.current.maneuver * 1.2 : 2.4;
     camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
     cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (cameraMode === "cinematic" ? 2.45 : 4.8)));
     camera.lookAt(cameraLookTarget.current);
@@ -3829,17 +3864,17 @@ function Simulation({
     camera.rotateZ((riding ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012 : driving ? vanMotion.current.steer * -.012 : 0) * rollScale);
     if (camera instanceof THREE.PerspectiveCamera) {
       const targetFov = cameraMode === "cinematic"
-        ? riding ? 52 + motion.current.maneuver * 1.4 : driving ? 54 : 51
+        ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : 51
         : cameraMode === "immersive"
           ? driving
             ? 70 + Math.min(7, Math.abs(vanSpeed.current) * .28)
             : riding
-              ? 68 + Math.min(10, Math.max(0, speed - 7) * .82) + motion.current.maneuver * 2.8
+              ? 68 + Math.min(10, Math.max(0, speed - 7) * .82) + motion.current.maneuver * 3.4 + motion.current.takeoff * 1.4 - motion.current.finish * 2.8
               : paddling ? 62 : 64
           : driving
             ? 59 + Math.min(5, Math.abs(vanSpeed.current) * .2)
             : riding
-              ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 2.4
+              ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 3.1 + motion.current.takeoff * 1.2 - motion.current.finish * 2.5
               : paddling ? 56 : 58;
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {

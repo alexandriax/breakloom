@@ -823,6 +823,58 @@ input:focus-visible {
 .barrel-lens i:nth-child(8) { top: 84%; left: 7%; transform: scale(0.94) rotate(-9deg); animation-delay: -3s; }
 .barrel-lens.is-wipeout::before { background: radial-gradient(circle at 50% 48%, rgba(220, 255, 249, 0.03) 0 18%, rgba(82, 204, 198, 0.24) 68%, rgba(4, 54, 67, 0.4) 100%); }
 
+.velocity-veil {
+  position: absolute;
+  z-index: 2;
+  inset: -8%;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 0 43%, rgba(154, 244, 232, .025) 60%, rgba(44, 159, 162, .16) 87%, rgba(5, 28, 35, .28) 100%),
+    linear-gradient(105deg, rgba(195, 255, 247, .045), transparent 24% 78%, rgba(157, 247, 236, .05));
+  filter: blur(.4px) saturate(1.12);
+  transform: scale(1.035);
+  transition: opacity .18s linear;
+}
+.velocity-veil::after {
+  content: "";
+  position: absolute;
+  inset: 2%;
+  border: 1px solid rgba(205, 255, 248, .08);
+  border-radius: 46%;
+  filter: blur(6px);
+  animation: velocity-breathe .56s ease-in-out infinite alternate;
+}
+.velocity-veil.is-barrel { filter: blur(.5px) saturate(1.3); }
+
+.cinema-impact {
+  --impact-rgb: 160, 246, 234;
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(var(--impact-rgb), .18), transparent 23%),
+    radial-gradient(ellipse at center, transparent 38%, rgba(var(--impact-rgb), .07) 69%, rgba(1, 12, 18, .22));
+  opacity: 0;
+  animation: cinema-impact 1.05s cubic-bezier(.16, .78, .24, 1) both;
+}
+.cinema-impact::before {
+  content: "";
+  position: absolute;
+  top: 49%;
+  left: 14%;
+  right: 14%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--impact-rgb), .55), transparent);
+  filter: blur(.4px);
+  transform: scaleX(.15);
+  animation: cinema-slit .72s ease-out both;
+}
+.cinema-impact.is-takeoff { --impact-rgb: 240, 185, 117; }
+.cinema-impact.is-clean { --impact-rgb: 142, 243, 199; animation-duration: 1.45s; }
+.cinema-impact.is-wipeout { --impact-rgb: 91, 206, 202; background: radial-gradient(circle at 50% 48%, rgba(190, 255, 248, .11), transparent 19%), radial-gradient(ellipse at center, transparent 24%, rgba(20, 116, 128, .2) 70%, rgba(1, 12, 18, .36)); }
+
 .score-panel,
 .set-panel,
 .maneuver-toast,
@@ -841,6 +893,31 @@ input:focus-visible {
   0%, 22% { margin-top: -3px; opacity: 0.24; }
   62% { opacity: 0.72; }
   100% { margin-top: 22px; opacity: 0.08; }
+}
+
+@keyframes velocity-breathe {
+  from { transform: scale(.99); opacity: .38; }
+  to { transform: scale(1.025); opacity: .82; }
+}
+
+@keyframes cinema-impact {
+  0% { opacity: 0; transform: scale(1.04); }
+  9% { opacity: .92; }
+  34% { opacity: .28; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@keyframes cinema-slit {
+  0% { opacity: 0; transform: scaleX(.12); }
+  14% { opacity: 1; }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+@keyframes cinema-impact-mobile {
+  0% { opacity: 0; transform: scale(1.025); }
+  10% { opacity: .58; }
+  32% { opacity: .18; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
 }
 
 .game-topbar {
@@ -1226,6 +1303,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .launch-button { width: 100%; max-width: none; padding-left: 23px; }
 
   .game-topbar { height: calc(62px + env(safe-area-inset-top)); grid-template-columns: 1fr auto; padding: env(safe-area-inset-top) 14px 0; }
+  .velocity-veil { filter: none; }
+  .cinema-impact { animation-name: cinema-impact-mobile; }
   .game-brand span { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .game-objective { position: absolute; top: calc(66px + env(safe-area-inset-top)); left: 50%; width: calc(100vw - 54px); transform: translateX(-50%); }
   .game-objective.is-training { min-width: 0; }
@@ -1339,4 +1418,6 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .cinema-impact { display: none; }
+  .velocity-veil::after { display: none; }
 }

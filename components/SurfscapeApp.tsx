@@ -364,10 +364,6 @@ export default function SurfscapeApp() {
         audio.current?.effect("wipeout");
         haptic([34, 36, 58]);
       }
-      if (from === "riding" && stats.phase === "shore") {
-        audio.current?.effect("finish");
-        haptic([10, 22, 10]);
-      }
       previousPhase.current = stats.phase;
     }
     if (stats.catchReady && !previousCatchReady.current) haptic([7, 24, 13]);
@@ -426,6 +422,10 @@ export default function SurfscapeApp() {
     if (stats.rideResultId > 0 && stats.rideResultId !== previousRideResultId.current && stats.rideResult) {
       previousRideResultId.current = stats.rideResultId;
       setManeuverToast(null);
+      if (stats.rideResult === "clean") {
+        audio.current?.effect("finish");
+        haptic([10, 22, 10, 28, 16]);
+      }
       setRideToast({
         id: stats.rideResultId,
         result: stats.rideResult,
@@ -680,6 +680,11 @@ export default function SurfscapeApp() {
             ? "PADDLE"
             : "MOVE";
   const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
+  const velocityIntensity = stats.phase === "riding"
+    ? Math.min(.34, Math.max(0, stats.speed - 8.5) * .026 + stats.barrelIntensity * .11)
+    : 0;
+  const cinemaBeat = rideToast?.result ?? (maneuverToast ? "maneuver" : takeoffToast ? "takeoff" : null);
+  const cinemaBeatKey = rideToast?.id ?? maneuverToast?.id ?? (takeoffToast ? Math.round(takeoffToast.quality * 100) : 0);
 
   return (
     <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
@@ -920,6 +925,8 @@ export default function SurfscapeApp() {
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
           </div>
+          <div className={`velocity-veil ${stats.barrelIntensity > .2 ? "is-barrel" : ""}`} style={{ opacity: velocityIntensity }} aria-hidden="true" />
+          {cinemaBeat && <div className={`cinema-impact is-${cinemaBeat}`} key={`${cinemaBeat}-${cinemaBeatKey}`} aria-hidden="true" />}
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
