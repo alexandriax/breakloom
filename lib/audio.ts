@@ -3,6 +3,8 @@ export class SurfscapeAudio {
   private master: GainNode | null = null;
   private ocean: AudioBufferSourceNode | null = null;
   private pad: OscillatorNode[] = [];
+  private engine: OscillatorNode[] = [];
+  private engineGain: GainNode | null = null;
   private enabled = true;
 
   async start() {
@@ -41,6 +43,23 @@ export class SurfscapeAudio {
     ocean.start();
     this.ocean = ocean;
 
+    const engineGain = this.context.createGain();
+    const engineFilter = this.context.createBiquadFilter();
+    engineGain.gain.value = 0;
+    engineFilter.type = "lowpass";
+    engineFilter.frequency.value = 360;
+    engineFilter.Q.value = 2.2;
+    engineGain.connect(engineFilter).connect(this.master);
+    [42, 84].forEach((frequency, index) => {
+      const oscillator = this.context!.createOscillator();
+      oscillator.type = index ? "triangle" : "sawtooth";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(engineGain);
+      oscillator.start();
+      this.engine.push(oscillator);
+    });
+    this.engineGain = engineGain;
+
     const padGain = this.context.createGain();
     const padFilter = this.context.createBiquadFilter();
     padGain.gain.value = 0.025;
@@ -65,6 +84,18 @@ export class SurfscapeAudio {
       this.master.gain.cancelScheduledValues(this.context.currentTime);
       this.master.gain.linearRampToValueAtTime(enabled ? 0.36 : 0, this.context.currentTime + 0.15);
     }
+  }
+
+  setVehicle(speed: number, active: boolean) {
+    if (!this.context || !this.engineGain) return;
+    const now = this.context.currentTime;
+    const revs = Math.min(1, Math.abs(speed) / 22);
+    this.engineGain.gain.cancelScheduledValues(now);
+    this.engineGain.gain.linearRampToValueAtTime(active && this.enabled ? 0.025 + revs * 0.055 : 0, now + 0.09);
+    this.engine.forEach((oscillator, index) => {
+      oscillator.frequency.cancelScheduledValues(now);
+      oscillator.frequency.linearRampToValueAtTime((index ? 86 : 43) + revs * (index ? 92 : 46), now + 0.1);
+    });
   }
 
   effect(kind: "catch" | "turn" | "wipeout" | "finish") {
@@ -105,4 +136,3 @@ export class SurfscapeAudio {
     source.start();
   }
 }
-

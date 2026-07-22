@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   AudioLines,
+  CarFront,
   ChevronDown,
   Crosshair,
   Droplets,
@@ -177,7 +178,8 @@ export default function SurfscapeApp() {
       if (from === "riding" && stats.phase === "shore") audio.current?.effect("finish");
       previousPhase.current = stats.phase;
     }
-  }, [stats.phase]);
+    audio.current?.setVehicle(paused ? 0 : stats.speed, !paused && stats.vehicleMode);
+  }, [paused, stats.phase, stats.speed, stats.vehicleMode]);
 
   const chooseBeach = (next: Beach) => {
     const startingZone = next.zones[Math.min(1, next.zones.length - 1)];
@@ -208,6 +210,7 @@ export default function SurfscapeApp() {
   };
 
   const leaveSession = () => {
+    audio.current?.setVehicle(0, false);
     controls.current = { ...EMPTY_CONTROLS };
     setScreen("launch");
     setPaused(false);
@@ -296,7 +299,7 @@ export default function SurfscapeApp() {
                 THE <em>OCEAN.</em>
               </h1>
               <p className="hero-copy">
-                Choose a real break. Walk the sand. Read a living swell. Find the line that only exists right now.
+                Choose a real break. Drive the coast. Walk the sand. Read a living swell. Find the line that only exists right now.
               </p>
 
               <div className="current-readout">
@@ -455,6 +458,19 @@ export default function SurfscapeApp() {
             <small>Move the mouse or drag the balance pad toward the light</small>
           </div>
 
+          <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""}`}>
+            <div className="vehicle-dial">
+              <span>{stats.speed < 0.4 ? "P" : "D"}</span>
+              <strong>{Math.round(stats.speed * 3.6)}</strong>
+              <small>KM/H</small>
+            </div>
+            <div className="vehicle-copy">
+              <span>COAST RUNNER / SURF RACK 03</span>
+              <strong>{stats.speed < 0.8 ? "Ready to roam" : "Cruising the shoreline"}</strong>
+              <small>W/S throttle · A/D steer · SPACE exits when stopped</small>
+            </div>
+          </div>
+
           <div className="game-conditions">
             <div><Waves /><span>FACE</span><strong>{settings.waveHeight.toFixed(1)} m</strong></div>
             <div><Wind /><span>PERIOD</span><strong>{settings.wavePeriod.toFixed(1)} s</strong></div>
@@ -464,9 +480,19 @@ export default function SurfscapeApp() {
           </div>
 
           <div className="desktop-controls">
-            <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move / steer</span>
-            <span><kbd>SPACE</kbd> catch wave</span>
-            <span><span className="mouse-icon" /> mouse to balance</span>
+            {stats.vehicleMode ? (
+              <>
+                <span><kbd>W</kbd><kbd>S</kbd> throttle / brake</span>
+                <span><kbd>A</kbd><kbd>D</kbd> steer</span>
+                <span><kbd>SPACE</kbd> exit when stopped</span>
+              </>
+            ) : (
+              <>
+                <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move / steer</span>
+                <span><kbd>SPACE</kbd> {stats.nearVan ? "drive van" : "catch wave"}</span>
+                <span><span className="mouse-icon" /> mouse to balance</span>
+              </>
+            )}
           </div>
 
           <div className="mobile-controls">
@@ -480,7 +506,8 @@ export default function SurfscapeApp() {
               <span>BALANCE</span><i style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
             <button className="action-button" onPointerDown={() => setControl("action", true)} onPointerUp={() => setControl("action", false)} onPointerCancel={() => setControl("action", false)}>
-              <span>CATCH</span><Waves />
+              <span>{stats.vehicleMode ? "EXIT" : stats.nearVan ? "DRIVE" : "CATCH"}</span>
+              {stats.vehicleMode || stats.nearVan ? <CarFront /> : <Waves />}
             </button>
           </div>
 
@@ -509,6 +536,7 @@ export default function SurfscapeApp() {
               <article><span>01</span><Waves /><strong>Enter</strong><p>Use W or the D-pad to walk through the shallows until your board begins to float.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D. Move your mouse or thumb toward the balance marker to stay on rail.</p></article>
+              <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Sky, Sparkles } from "@react-three/drei";
+import { RoundedBox, Sky, Sparkles } from "@react-three/drei";
 import { MutableRefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Beach } from "@/lib/beaches";
@@ -35,6 +35,13 @@ type MotionState = {
   steer: number;
   speed: number;
   wipeout: number;
+};
+
+type VehicleMotionState = {
+  speed: number;
+  steer: number;
+  driving: boolean;
+  brake: boolean;
 };
 
 const OCEAN_VERTEX = /* glsl */ `
@@ -325,7 +332,53 @@ function BeachLife({ tropical }: { tropical: boolean }) {
         <planeGeometry args={[250, 18]} />
         <meshStandardMaterial color="#8f7659" roughness={1} />
       </mesh>
-      {dunes.map((dune, index) => (
+      <group position={[0, 0, 78]}>
+        <mesh position={[0, -0.35, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[250, 14]} />
+          <meshStandardMaterial color="#252a2b" roughness={0.94} metalness={0.02} />
+        </mesh>
+        <mesh position={[0, -0.31, -6.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[250, 0.18]} />
+          <meshStandardMaterial color="#dfd6b5" roughness={0.78} />
+        </mesh>
+        <mesh position={[0, -0.31, 6.5]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[250, 0.18]} />
+          <meshStandardMaterial color="#dfd6b5" roughness={0.78} />
+        </mesh>
+        {Array.from({ length: 24 }, (_, index) => (
+          <mesh key={index} position={[-115 + index * 10, -0.29, 0]} receiveShadow>
+            <boxGeometry args={[5.5, 0.04, 0.16]} />
+            <meshStandardMaterial color="#d8c86c" roughness={0.82} emissive="#5b4d13" emissiveIntensity={0.08} />
+          </mesh>
+        ))}
+        {Array.from({ length: 18 }, (_, index) => (
+          <group key={index} position={[-110 + index * 13, 0, -8.3]}>
+            <mesh position={[0, 0.35, 0]}>
+              <cylinderGeometry args={[0.045, 0.06, 1.3, 6]} />
+              <meshStandardMaterial color="#7c6a4d" roughness={1} />
+            </mesh>
+            <mesh position={[0, 0.7, 0]}>
+              <boxGeometry args={[0.9, 0.035, 0.08]} />
+              <meshStandardMaterial color="#ad9670" roughness={1} />
+            </mesh>
+          </group>
+        ))}
+        <group position={[-24, 0, -8.2]}>
+          <mesh position={[0, 1.4, 0]}>
+            <cylinderGeometry args={[0.06, 0.08, 2.8, 8]} />
+            <meshStandardMaterial color="#a1a9a4" metalness={0.65} roughness={0.38} />
+          </mesh>
+          <mesh position={[0, 2.5, 0]} rotation={[0, 0, Math.PI / 4]}>
+            <boxGeometry args={[1.25, 1.25, 0.08]} />
+            <meshStandardMaterial color="#e8e0c8" roughness={0.7} />
+          </mesh>
+          <mesh position={[0, 2.5, -0.06]} rotation={[0, 0, Math.PI / 4]}>
+            <boxGeometry args={[0.82, 0.82, 0.035]} />
+            <meshStandardMaterial color="#e56b4f" roughness={0.66} />
+          </mesh>
+        </group>
+      </group>
+      {dunes.filter((dune) => dune.z > 88).map((dune, index) => (
         <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, 0.8 + (index % 3) * 0.28, dune.s * 0.72]} receiveShadow>
           <sphereGeometry args={[1, 12, 8]} />
           <meshStandardMaterial color={index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
@@ -368,7 +421,7 @@ function BeachLife({ tropical }: { tropical: boolean }) {
         </group>
       ))}
       {tropical && (
-        <group position={[-38, 0, 76]} rotation={[0, 0, -0.08]}>
+        <group position={[-38, 0, 101]} rotation={[0, 0, -0.08]}>
           <mesh position={[0, 4.5, 0]}>
             <cylinderGeometry args={[0.3, 0.55, 9, 9]} />
             <meshStandardMaterial color="#6d4c31" roughness={1} />
@@ -381,6 +434,136 @@ function BeachLife({ tropical }: { tropical: boolean }) {
           ))}
         </group>
       )}
+    </group>
+  );
+}
+
+function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
+  const body = useRef<THREE.Group>(null);
+  const frontLeft = useRef<THREE.Group>(null);
+  const frontRight = useRef<THREE.Group>(null);
+  const rearLeft = useRef<THREE.Group>(null);
+  const rearRight = useRef<THREE.Group>(null);
+
+  useFrame(({ clock }, delta) => {
+    const state = motion.current;
+    const rotationDelta = state.speed * delta / 0.55;
+    [frontLeft.current, frontRight.current, rearLeft.current, rearRight.current].forEach((wheel) => {
+      if (wheel) wheel.rotation.x -= rotationDelta;
+    });
+    if (frontLeft.current) frontLeft.current.rotation.y = THREE.MathUtils.damp(frontLeft.current.rotation.y, state.steer * 0.42, 9, delta);
+    if (frontRight.current) frontRight.current.rotation.y = THREE.MathUtils.damp(frontRight.current.rotation.y, state.steer * 0.42, 9, delta);
+    if (body.current) {
+      const roadPulse = state.driving ? Math.sin(clock.elapsedTime * (5 + Math.abs(state.speed))) * Math.min(0.035, Math.abs(state.speed) * 0.002) : 0;
+      body.current.position.y = THREE.MathUtils.damp(body.current.position.y, 1.45 + roadPulse, 8, delta);
+      body.current.rotation.z = THREE.MathUtils.damp(body.current.rotation.z, -state.steer * Math.min(0.07, Math.abs(state.speed) * 0.004), 7, delta);
+      body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, state.brake ? -0.035 : Math.min(0.025, state.speed * 0.002), 7, delta);
+    }
+  });
+
+  const wheels = [
+    { ref: frontLeft, position: [-1.72, 0.62, -2.05] as [number, number, number] },
+    { ref: frontRight, position: [1.72, 0.62, -2.05] as [number, number, number] },
+    { ref: rearLeft, position: [-1.72, 0.62, 2.08] as [number, number, number] },
+    { ref: rearRight, position: [1.72, 0.62, 2.08] as [number, number, number] },
+  ];
+
+  return (
+    <group>
+      {wheels.map((wheel, index) => (
+        <group key={index} ref={wheel.ref} position={wheel.position}>
+          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
+            <cylinderGeometry args={[0.57, 0.57, 0.38, 22]} />
+            <meshStandardMaterial color="#101416" roughness={0.86} metalness={0.06} />
+          </mesh>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.26, 0.26, 0.41, 14]} />
+            <meshStandardMaterial color="#c3b38b" roughness={0.38} metalness={0.62} />
+          </mesh>
+        </group>
+      ))}
+
+      <group ref={body} position={[0, 1.45, 0]}>
+        <mesh position={[0, -0.67, 0]} castShadow>
+          <boxGeometry args={[3.1, 0.38, 5.75]} />
+          <meshStandardMaterial color="#171d20" roughness={0.68} metalness={0.38} />
+        </mesh>
+        <RoundedBox args={[3.22, 1.75, 5.8]} radius={0.32} smoothness={5} position={[0, 0, 0.12]} castShadow receiveShadow>
+          <meshPhysicalMaterial color="#e86f50" roughness={0.34} metalness={0.18} clearcoat={0.72} clearcoatRoughness={0.2} />
+        </RoundedBox>
+        <RoundedBox args={[3.06, 1.65, 3.1]} radius={0.38} smoothness={5} position={[0, 1.45, 0.88]} castShadow>
+          <meshPhysicalMaterial color="#f0dec0" roughness={0.43} clearcoat={0.52} clearcoatRoughness={0.28} />
+        </RoundedBox>
+
+        <mesh position={[0, 1.55, -0.72]} rotation={[-0.34, 0, 0]}>
+          <planeGeometry args={[2.55, 1.08]} />
+          <meshPhysicalMaterial color="#183846" roughness={0.16} metalness={0.12} transmission={0.18} transparent opacity={0.88} />
+        </mesh>
+        <mesh position={[-1.54, 1.5, 0.85]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[1.95, 0.93]} />
+          <meshPhysicalMaterial color="#1f4652" roughness={0.2} metalness={0.18} transmission={0.14} transparent opacity={0.86} />
+        </mesh>
+        <mesh position={[1.54, 1.5, 0.85]} rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[1.95, 0.93]} />
+          <meshPhysicalMaterial color="#1f4652" roughness={0.2} metalness={0.18} transmission={0.14} transparent opacity={0.86} />
+        </mesh>
+
+        <mesh position={[0, -0.12, -2.94]}>
+          <boxGeometry args={[2.45, 0.68, 0.08]} />
+          <meshStandardMaterial color="#183c43" roughness={0.38} metalness={0.42} />
+        </mesh>
+        <mesh position={[0, -0.48, -3.12]}>
+          <boxGeometry args={[3.3, 0.26, 0.28]} />
+          <meshStandardMaterial color="#d2c5a4" roughness={0.28} metalness={0.75} />
+        </mesh>
+        {[-1.05, 1.05].map((x) => (
+          <group key={x} position={[x, 0.18, -3.02]}>
+            <mesh>
+              <cylinderGeometry args={[0.32, 0.32, 0.08, 20]} />
+              <meshStandardMaterial color="#eef6de" emissive="#ffe7aa" emissiveIntensity={1.6} />
+            </mesh>
+            <pointLight position={[0, 0, -0.4]} color="#ffe8b5" intensity={0.75} distance={14} decay={1.7} />
+          </group>
+        ))}
+
+        <mesh position={[-1.61, 1.18, -0.7]} rotation={[0, 0, -0.16]}>
+          <boxGeometry args={[0.32, 0.2, 0.48]} />
+          <meshStandardMaterial color="#142126" roughness={0.42} metalness={0.5} />
+        </mesh>
+        <mesh position={[1.61, 1.18, -0.7]} rotation={[0, 0, 0.16]}>
+          <boxGeometry args={[0.32, 0.2, 0.48]} />
+          <meshStandardMaterial color="#142126" roughness={0.42} metalness={0.5} />
+        </mesh>
+
+        <mesh position={[0, 2.43, -0.05]}>
+          <boxGeometry args={[3.45, 0.1, 0.14]} />
+          <meshStandardMaterial color="#1b2528" metalness={0.68} roughness={0.34} />
+        </mesh>
+        <mesh position={[0, 2.43, 1.72]}>
+          <boxGeometry args={[3.45, 0.1, 0.14]} />
+          <meshStandardMaterial color="#1b2528" metalness={0.68} roughness={0.34} />
+        </mesh>
+        {[
+          { x: -0.72, color: "#f0e5cf", z: 0.65 },
+          { x: 0, color: "#3babb2", z: 0.8 },
+          { x: 0.72, color: "#f3b85e", z: 0.58 },
+        ].map((board, index) => (
+          <mesh key={index} position={[board.x, 2.66 + index * 0.06, board.z]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 0.1, 0.95]} castShadow>
+            <capsuleGeometry args={[0.31, 3.05, 6, 18]} />
+            <meshPhysicalMaterial color={board.color} roughness={0.31} clearcoat={0.7} clearcoatRoughness={0.19} />
+          </mesh>
+        ))}
+        <mesh position={[0, 0.12, 3.04]}>
+          <boxGeometry args={[1.4, 0.5, 0.06]} />
+          <meshStandardMaterial color="#dcd2b5" roughness={0.64} />
+        </mesh>
+        {[-1.04, 1.04].map((x) => (
+          <mesh key={x} position={[x, 0.24, 3.04]}>
+            <boxGeometry args={[0.48, 0.28, 0.07]} />
+            <meshStandardMaterial color="#be493e" emissive="#9b241e" emissiveIntensity={0.55} />
+          </mesh>
+        ))}
+      </group>
     </group>
   );
 }
@@ -398,7 +581,11 @@ function Simulation({
 }: SurfSceneProps) {
   const { camera } = useThree();
   const player = useRef<THREE.Group>(null);
+  const van = useRef<THREE.Group>(null);
   const position = useRef(new THREE.Vector3(0, 0, 35));
+  const vanPosition = useRef(new THREE.Vector3(0, 0, 78));
+  const vanHeading = useRef(-Math.PI / 2);
+  const vanSpeed = useRef(0);
   const phase = useRef<GamePhase>("shore");
   const score = useRef(0);
   const combo = useRef(1);
@@ -409,6 +596,7 @@ function Simulation({
   const lastStatsAt = useRef(0);
   const cleanFinish = useRef(false);
   const motion = useRef<MotionState>({ phase: "shore", balance: 0, steer: 0, speed: 0, wipeout: 0 });
+  const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false });
   const cameraTarget = useRef(new THREE.Vector3());
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
 
@@ -417,7 +605,7 @@ function Simulation({
   }, [onReady]);
 
   useFrame(({ clock }, delta) => {
-    if (!player.current) return;
+    if (!player.current || !van.current) return;
     const t = clock.elapsedTime;
     const state = controls.current;
     const currentPhase = phase.current;
@@ -428,6 +616,8 @@ function Simulation({
     let balanceTarget = 0;
     let prompt = "Read the water";
     let waveQuality = 0;
+    const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
+    const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
     const actionPressed = state.action && !actionLatch.current;
     actionLatch.current = state.action;
@@ -437,8 +627,64 @@ function Simulation({
         speed = move * 4.4;
         position.current.z -= speed * delta;
         position.current.x += steer * 3.7 * delta;
-        prompt = cleanFinish.current ? "Clean finish — head back out" : "Walk toward the water";
+        prompt = nearVan
+          ? "Press SPACE to drive the Surfscape van"
+          : position.current.z > 54
+            ? "The van is parked beside the coast road"
+            : cleanFinish.current
+              ? "Clean finish — head back out"
+              : "Walk toward the water · or head up-road to the van";
+        if (actionPressed && nearVan) {
+          phase.current = "driving";
+          vanSpeed.current = 0;
+        }
         if (position.current.z < 8) phase.current = "wading";
+      } else if (currentPhase === "driving") {
+        const throttle = move;
+        const movingForward = vanSpeed.current > 0.4;
+        const braking = throttle < 0 && movingForward;
+        const acceleration = braking ? 17 : throttle < 0 ? 7 : 10.5;
+        if (Math.abs(throttle) > 0.01) {
+          vanSpeed.current += throttle * acceleration * delta;
+        } else {
+          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 1.25, delta);
+        }
+        vanSpeed.current = THREE.MathUtils.clamp(vanSpeed.current, -6.5, 18.5);
+        const steeringAuthority = THREE.MathUtils.clamp(Math.abs(vanSpeed.current) / 3.2, 0.15, 1);
+        vanHeading.current -= steer * Math.sign(vanSpeed.current || 1) * steeringAuthority * 0.72 * delta;
+        vanPosition.current.x -= Math.sin(vanHeading.current) * vanSpeed.current * delta;
+        vanPosition.current.z -= Math.cos(vanHeading.current) * vanSpeed.current * delta;
+        const roadEdge = Math.abs(vanPosition.current.z - 78);
+        if (roadEdge > 5.25) {
+          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 5.5, delta);
+          vanPosition.current.z = THREE.MathUtils.clamp(vanPosition.current.z, 71.8, 84.2);
+        }
+        if (Math.abs(vanPosition.current.x) > 116) {
+          vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -116, 116);
+          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 8, delta);
+          prompt = "Road end — steer around for another pass";
+        } else if (roadEdge > 4.3) {
+          prompt = "Ease back onto the coast road";
+        } else if (Math.abs(vanSpeed.current) < 0.8) {
+          prompt = "W to drive · A/D to steer · SPACE to exit";
+        } else {
+          prompt = "Cruise the shoreline · stop before exiting";
+        }
+        speed = Math.abs(vanSpeed.current);
+        score.current += Math.abs(vanSpeed.current) * delta * 0.35;
+        if (actionPressed) {
+          if (Math.abs(vanSpeed.current) < 0.9) {
+            phase.current = "shore";
+            vanSpeed.current = 0;
+            position.current.set(
+              vanPosition.current.x - Math.cos(vanHeading.current) * 3.2,
+              0,
+              vanPosition.current.z + Math.sin(vanHeading.current) * 3.2,
+            );
+          } else {
+            prompt = "Slow to a stop before you step out";
+          }
+        }
       } else if (currentPhase === "wading") {
         speed = move * 2.5;
         position.current.z -= speed * delta;
@@ -503,11 +749,13 @@ function Simulation({
       }
     }
 
-    position.current.x = THREE.MathUtils.clamp(position.current.x, -52, 52);
+    const landRange = phase.current === "shore" || phase.current === "driving";
+    position.current.x = THREE.MathUtils.clamp(position.current.x, landRange ? -118 : -52, landRange ? 118 : 52);
     const waterY = waveHeightAt(position.current.x, position.current.z, t, settings);
     const isWater = phase.current !== "shore";
     const playerY = isWater ? waterY + (phase.current === "riding" ? 0.16 : 0.04) : 0;
     player.current.position.set(position.current.x, playerY, position.current.z);
+    player.current.visible = phase.current !== "driving";
     player.current.rotation.y = THREE.MathUtils.damp(player.current.rotation.y, steer * -0.2, 7, delta);
     player.current.rotation.z = THREE.MathUtils.damp(
       player.current.rotation.z,
@@ -520,16 +768,38 @@ function Simulation({
     motion.current.balance = state.balance;
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
+    van.current.position.copy(vanPosition.current);
+    van.current.rotation.y = vanHeading.current;
+    vanMotion.current.speed = vanSpeed.current;
+    vanMotion.current.steer = steer;
+    vanMotion.current.driving = phase.current === "driving";
+    vanMotion.current.brake = phase.current === "driving" && state.back && vanSpeed.current > 0.3;
 
     const riding = phase.current === "riding";
     const paddling = phase.current === "paddling" || phase.current === "wading";
-    cameraPosition.current.set(
-      position.current.x + (riding ? steer * -1.7 : 0),
-      playerY + (riding ? 3.2 : 4.9),
-      position.current.z + (riding ? -8.4 : paddling ? 9.5 : 10.5),
-    );
-    camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * (riding ? 3.1 : 2.4)));
-    cameraTarget.current.set(position.current.x, playerY + 0.9, position.current.z + (riding ? 5.4 : -3));
+    const driving = phase.current === "driving";
+    if (driving) {
+      const forwardX = -Math.sin(vanHeading.current);
+      const forwardZ = -Math.cos(vanHeading.current);
+      cameraPosition.current.set(
+        vanPosition.current.x - forwardX * 10.5,
+        6.4,
+        vanPosition.current.z - forwardZ * 10.5,
+      );
+      cameraTarget.current.set(
+        vanPosition.current.x + forwardX * 6.2,
+        1.55,
+        vanPosition.current.z + forwardZ * 6.2,
+      );
+    } else {
+      cameraPosition.current.set(
+        position.current.x + (riding ? steer * -1.7 : 0),
+        playerY + (riding ? 3.2 : 4.9),
+        position.current.z + (riding ? -8.4 : paddling ? 9.5 : 10.5),
+      );
+      cameraTarget.current.set(position.current.x, playerY + 0.9, position.current.z + (riding ? 5.4 : -3));
+    }
+    camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * (driving ? 3.8 : riding ? 3.1 : 2.4)));
     camera.lookAt(cameraTarget.current);
 
     if (active && t - lastStatsAt.current > 0.11) {
@@ -543,6 +813,8 @@ function Simulation({
         balance: state.balance,
         balanceTarget,
         waveQuality,
+        vehicleMode: phase.current === "driving",
+        nearVan,
         prompt,
       });
     }
@@ -595,6 +867,9 @@ function Simulation({
       <BeachLife tropical={tropical} />
       <group ref={player}>
         <SurferModel motion={motion} />
+      </group>
+      <group ref={van}>
+        <SurfVan motion={vanMotion} />
       </group>
       <Bird offset={0} speed={1} />
       <Bird offset={7} speed={0.82} />

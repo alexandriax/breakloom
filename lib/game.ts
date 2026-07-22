@@ -1,7 +1,7 @@
 import type { MarineConditions } from "./marine";
 
 export type GameMode = "training" | "advanced" | "playground";
-export type GamePhase = "shore" | "wading" | "paddling" | "riding" | "wipeout";
+export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
 
 export type SessionSettings = {
   mode: GameMode;
@@ -22,6 +22,8 @@ export type GameStats = {
   balance: number;
   balanceTarget: number;
   waveQuality: number;
+  vehicleMode: boolean;
+  nearVan: boolean;
   prompt: string;
 };
 
@@ -34,7 +36,9 @@ export const INITIAL_STATS: GameStats = {
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
-  prompt: "Walk toward the water",
+  vehicleMode: false,
+  nearVan: false,
+  prompt: "Walk toward the water · or find the van",
 };
 
 export function settingsFromConditions(conditions: MarineConditions): SessionSettings {
@@ -84,4 +88,3 @@ export function formatClock(iso: string) {
   const suffix = hour >= 12 ? "PM" : "AM";
   return `${hour % 12 || 12}:${minute} ${suffix}`;
 }
-
