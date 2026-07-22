@@ -37,7 +37,7 @@ If the APIs are temporarily unavailable, each break has a modeled fallback so th
 
 ## Character asset
 
-The in-game surfer is an articulated Blender-authored GLB with named joints for the live walk, paddle, stance, maneuver, barrel, and wipeout poses. The checked-in model can be regenerated on macOS with Blender installed:
+The in-game surfer is an articulated Blender-authored GLB with named joints for the live walk, paddle, stance, maneuver, barrel, and wipeout poses. The current character uses athletic human proportions, tapered anatomy, a detailed face, five-finger hands, articulated bare feet, layered wet hair, and a PBR limestone-neoprene suit with stretch panels, reinforced knees, sealed seams, and restrained Surfscape branding. The checked-in model can be regenerated on macOS with Blender installed:
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-surfer-model.py

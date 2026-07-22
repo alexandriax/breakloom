@@ -768,7 +768,7 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
     pose("Foot.R", riding ? 0.18 : 0, riding ? -0.08 : 0, riding ? 0.08 : 0, 9);
   });
 
-  return <primitive object={model} scale={0.78} />;
+  return <primitive object={model} scale={0.74} />;
 }
 
 useGLTF.preload(SURFER_MODEL_URL);
