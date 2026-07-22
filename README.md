@@ -34,6 +34,16 @@ Surfscape reads current wave height, direction, period, swell, ocean current, se
 
 If the APIs are temporarily unavailable, each break has a modeled fallback so the game stays playable offline after its code has loaded.
 
+## Character asset
+
+The in-game surfer is an articulated Blender-authored GLB with named joints for the live walk, paddle, stance, maneuver, barrel, and wipeout poses. The checked-in model can be regenerated on macOS with Blender installed:
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-surfer-model.py
+```
+
+The script exports `public/models/surfer-premium.glb` and renders a local QA preview before the application build.
+
 ## Deploy to GitHub Pages
 
 The workflow in `.github/workflows/deploy-pages.yml` builds and publishes the static `out` directory on every push to `main`. In the repository settings, set **Pages → Source** to **GitHub Actions**.

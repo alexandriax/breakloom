@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { RoundedBox, Sky, Sparkles, useTexture } from "@react-three/drei";
+import { RoundedBox, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
 import { MutableRefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Beach, CoastBiome } from "@/lib/beaches";
@@ -179,19 +179,116 @@ function Ocean({ settings, light, cloudCover }: { settings: SessionSettings; lig
   );
 }
 
+const SURFER_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surfer-premium.glb`;
+const SURFER_JOINT_NAMES = [
+  "Pelvis",
+  "Torso",
+  "Head",
+  "UpperArm.L",
+  "LowerArm.L",
+  "Hand.L",
+  "UpperArm.R",
+  "LowerArm.R",
+  "Hand.R",
+  "UpperLeg.L",
+  "LowerLeg.L",
+  "Foot.L",
+  "UpperLeg.R",
+  "LowerLeg.R",
+  "Foot.R",
+] as const;
+
+type SurferJointName = (typeof SURFER_JOINT_NAMES)[number];
+
+function prepareSurferScene(source: THREE.Group) {
+  const model = source.clone(true);
+  model.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+      object.frustumCulled = true;
+    }
+  });
+  return model;
+}
+
+function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }) {
+  const { scene } = useGLTF(SURFER_MODEL_URL);
+  const model = useMemo(() => prepareSurferScene(scene), [scene]);
+  const joints = useRef<Partial<Record<SurferJointName, THREE.Object3D>>>({});
+
+  useEffect(() => {
+    const next: Partial<Record<SurferJointName, THREE.Object3D>> = {};
+    SURFER_JOINT_NAMES.forEach((name) => {
+      const joint = model.getObjectByName(name);
+      if (joint) next[name] = joint;
+    });
+    joints.current = next;
+  }, [model]);
+
+  useFrame(({ clock }, delta) => {
+    const state = motion.current;
+    const t = clock.elapsedTime;
+    const paddle = state.phase === "paddling" || state.phase === "wading";
+    const riding = state.phase === "riding";
+    const walking = state.phase === "shore";
+    const wipeout = state.phase === "wipeout";
+    const stroke = paddle ? Math.sin(t * 5.8) : 0;
+    const step = walking ? Math.sin(t * Math.max(2.4, state.speed * 2.15)) : 0;
+
+    const pose = (name: SurferJointName, x: number, y: number, z: number, responsiveness = 8) => {
+      const joint = joints.current[name];
+      if (!joint) return;
+      joint.rotation.x = THREE.MathUtils.damp(joint.rotation.x, x, responsiveness, delta);
+      joint.rotation.y = THREE.MathUtils.damp(joint.rotation.y, y, responsiveness, delta);
+      joint.rotation.z = THREE.MathUtils.damp(joint.rotation.z, z, responsiveness, delta);
+    };
+
+    const rideLean = state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12;
+    pose("Pelvis", riding ? -0.08 + state.stance * 0.045 : walking ? step * 0.025 : 0, riding ? state.steer * -0.08 : 0, riding ? rideLean * 0.35 : 0, 7);
+    pose("Torso", paddle ? -0.1 : riding ? 0.18 - state.barrel * 0.13 : walking ? -step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 : 0, riding ? rideLean : 0, 7);
+    pose("Head", paddle ? -0.24 : riding ? -0.12 + state.barrel * 0.08 : 0, riding ? state.steer * 0.12 : 0, riding ? -rideLean * 0.4 : 0, 8);
+
+    pose(
+      "UpperArm.L",
+      wipeout ? 1.2 : paddle ? stroke * 1.18 : riding ? -0.48 - state.maneuver * 0.22 : step * 0.56,
+      riding ? -0.12 + state.steer * 0.12 : 0,
+      riding ? 1.03 + state.maneuver * 0.32 : paddle ? 0.14 : 0.08,
+      9,
+    );
+    pose(
+      "UpperArm.R",
+      wipeout ? -1.1 : paddle ? -stroke * 1.18 : riding ? 0.48 + state.maneuver * 0.22 : -step * 0.56,
+      riding ? 0.12 + state.steer * 0.12 : 0,
+      riding ? -1.03 - state.maneuver * 0.32 : paddle ? -0.14 : -0.08,
+      9,
+    );
+    pose("LowerArm.L", paddle ? Math.max(0, -stroke) * -0.72 : riding ? -0.42 : wipeout ? 0.8 : 0, 0, riding ? 0.12 : 0, 10);
+    pose("LowerArm.R", paddle ? Math.max(0, stroke) * 0.72 : riding ? 0.42 : wipeout ? -0.8 : 0, 0, riding ? -0.12 : 0, 10);
+    pose("Hand.L", 0, riding ? -0.16 : 0, riding ? 0.08 : 0, 10);
+    pose("Hand.R", 0, riding ? 0.16 : 0, riding ? -0.08 : 0, 10);
+
+    pose("UpperLeg.L", riding ? -0.74 - state.stance * 0.12 : walking ? step * 0.62 : paddle ? -0.08 : 0, 0, riding ? 0.17 : 0, 8);
+    pose("UpperLeg.R", riding ? 0.6 - state.stance * 0.12 : walking ? -step * 0.62 : paddle ? 0.08 : 0, 0, riding ? -0.17 : 0, 8);
+    pose("LowerLeg.L", riding ? 1.02 : walking ? Math.max(0, -step) * 0.56 : paddle ? 0.08 : 0, 0, 0, 9);
+    pose("LowerLeg.R", riding ? -0.92 : walking ? Math.max(0, step) * -0.56 : paddle ? -0.08 : 0, 0, 0, 9);
+    pose("Foot.L", riding ? -0.18 : 0, riding ? 0.08 : 0, riding ? -0.08 : 0, 9);
+    pose("Foot.R", riding ? 0.18 : 0, riding ? -0.08 : 0, riding ? 0.08 : 0, 9);
+  });
+
+  return <primitive object={model} scale={0.78} />;
+}
+
+useGLTF.preload(SURFER_MODEL_URL);
+
 function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionState>; boardType: BoardType }) {
   const rig = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const board = useRef<THREE.Group>(null);
-  const leftArm = useRef<THREE.Group>(null);
-  const rightArm = useRef<THREE.Group>(null);
-  const leftLeg = useRef<THREE.Group>(null);
-  const rightLeg = useRef<THREE.Group>(null);
 
-  useFrame(({ clock }, delta) => {
+  useFrame((_, delta) => {
     if (!rig.current || !body.current || !board.current) return;
     const state = motion.current;
-    const t = clock.elapsedTime;
     const paddle = state.phase === "paddling" || state.phase === "wading";
     const riding = state.phase === "riding";
     const shore = state.phase === "shore";
@@ -211,7 +308,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.42 : riding ? 0.54 : 0.95, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 : riding ? 0.84 : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = wipeout ? state.wipeout * 2.1 : 0;
 
@@ -236,23 +333,8 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       delta,
     );
 
-    if (leftArm.current && rightArm.current) {
-      const stroke = paddle ? Math.sin(t * 5.6) : shore ? Math.sin(t * state.speed * 1.8) * 0.5 : 0;
-      leftArm.current.rotation.x = paddle ? stroke * 1.05 : riding ? -0.55 : stroke;
-      rightArm.current.rotation.x = paddle ? -stroke * 1.05 : riding ? 0.55 : -stroke;
-      leftArm.current.rotation.z = riding ? 1.1 + state.maneuver * 0.34 : 0.22;
-      rightArm.current.rotation.z = riding ? -1.1 - state.maneuver * 0.34 : -0.22;
-    }
-    if (leftLeg.current && rightLeg.current) {
-      const step = shore ? Math.sin(t * state.speed * 2.2) * 0.5 : 0;
-      leftLeg.current.rotation.x = riding ? -0.72 : step;
-      rightLeg.current.rotation.x = riding ? 0.62 : -step;
-    }
   });
 
-  const skin = "#a96343";
-  const suit = "#071c27";
-  const suitPanel = "#123d49";
   const boardSpec = BOARD_SPECS[boardType];
   const finXs = boardType === "performance" ? [-0.16, 0, 0.16] : boardType === "fish" ? [-0.19, 0.19] : [0];
   return (
@@ -278,56 +360,8 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
         ))}
       </group>
 
-      <group ref={body} position={[0, 0.95, 0]}>
-        <mesh castShadow>
-          <capsuleGeometry args={[0.26, 0.58, 6, 14]} />
-          <meshStandardMaterial color={suit} roughness={0.72} />
-        </mesh>
-        <mesh position={[0, 0.1, 0.235]} scale={[0.72, 0.78, 0.12]}>
-          <sphereGeometry args={[0.27, 16, 12]} />
-          <meshStandardMaterial color={suitPanel} roughness={0.65} />
-        </mesh>
-        <mesh position={[0, 0.67, 0]} castShadow>
-          <sphereGeometry args={[0.19, 18, 14]} />
-          <meshStandardMaterial color={skin} roughness={0.8} />
-        </mesh>
-        <mesh position={[0, 0.72, -0.07]} rotation={[-0.35, 0, 0]}>
-          <sphereGeometry args={[0.195, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.58]} />
-          <meshStandardMaterial color="#15110f" roughness={0.9} />
-        </mesh>
-
-        <group ref={leftArm} position={[-0.31, 0.3, 0]}>
-          <mesh position={[0, -0.32, 0]} castShadow>
-            <capsuleGeometry args={[0.085, 0.5, 5, 10]} />
-            <meshStandardMaterial color={suit} />
-          </mesh>
-          <mesh position={[0, -0.66, 0]}>
-            <sphereGeometry args={[0.09, 12, 10]} />
-            <meshStandardMaterial color={skin} />
-          </mesh>
-        </group>
-        <group ref={rightArm} position={[0.31, 0.3, 0]}>
-          <mesh position={[0, -0.32, 0]} castShadow>
-            <capsuleGeometry args={[0.085, 0.5, 5, 10]} />
-            <meshStandardMaterial color={suit} />
-          </mesh>
-          <mesh position={[0, -0.66, 0]}>
-            <sphereGeometry args={[0.09, 12, 10]} />
-            <meshStandardMaterial color={skin} />
-          </mesh>
-        </group>
-        <group ref={leftLeg} position={[-0.15, -0.43, 0]}>
-          <mesh position={[0, -0.43, 0]} castShadow>
-            <capsuleGeometry args={[0.105, 0.62, 5, 10]} />
-            <meshStandardMaterial color={suit} />
-          </mesh>
-        </group>
-        <group ref={rightLeg} position={[0.15, -0.43, 0]}>
-          <mesh position={[0, -0.43, 0]} castShadow>
-            <capsuleGeometry args={[0.105, 0.62, 5, 10]} />
-            <meshStandardMaterial color={suit} />
-          </mesh>
-        </group>
+      <group ref={body} position={[0, 1.02, 0]}>
+        <PremiumSurferBody motion={motion} />
       </group>
     </group>
   );
