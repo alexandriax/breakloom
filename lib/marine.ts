@@ -2,6 +2,29 @@ import type { Beach } from "./beaches";
 
 export type TidePoint = { time: string; value: number };
 
+export type MarineForecastPoint = {
+  time: string;
+  waveHeight: number;
+  waveDirection: number;
+  wavePeriod: number;
+  swellHeight: number;
+  swellDirection: number;
+  swellPeriod: number;
+  waterTemperature: number;
+  currentVelocity: number;
+  currentDirection: number;
+  seaLevel: number;
+  tideTrend: "rising" | "falling" | "slack";
+  airTemperature: number;
+  cloudCover: number;
+  windSpeed: number;
+  windDirection: number;
+  weatherCode: number;
+  isDay: boolean;
+  sunrise: string;
+  sunset: string;
+};
+
 export type MarineConditions = {
   source: "live" | "modeled";
   observedAt: string;
@@ -27,18 +50,39 @@ export type MarineConditions = {
   isDay: boolean;
   sunrise: string;
   sunset: string;
+  forecast: MarineForecastPoint[];
 };
 
 type MarineResponse = {
   timezone?: string;
   timezone_abbreviation?: string;
   current?: Record<string, number | string | null>;
-  hourly?: { time?: string[]; sea_level_height_msl?: Array<number | null> };
+  hourly?: {
+    time?: string[];
+    wave_height?: Array<number | null>;
+    wave_direction?: Array<number | null>;
+    wave_period?: Array<number | null>;
+    swell_wave_height?: Array<number | null>;
+    swell_wave_direction?: Array<number | null>;
+    swell_wave_period?: Array<number | null>;
+    sea_surface_temperature?: Array<number | null>;
+    ocean_current_velocity?: Array<number | null>;
+    ocean_current_direction?: Array<number | null>;
+    sea_level_height_msl?: Array<number | null>;
+  };
 };
 
 type WeatherResponse = {
   current?: Record<string, number | string | null>;
-  daily?: { sunrise?: string[]; sunset?: string[] };
+  hourly?: {
+    time?: string[];
+    temperature_2m?: Array<number | null>;
+    cloud_cover?: Array<number | null>;
+    wind_speed_10m?: Array<number | null>;
+    wind_direction_10m?: Array<number | null>;
+    weather_code?: Array<number | null>;
+  };
+  daily?: { time?: string[]; sunrise?: string[]; sunset?: string[] };
 };
 
 const numberOr = (value: unknown, fallback: number) =>
@@ -69,22 +113,23 @@ export async function fetchMarineConditions(
   lon: number,
   signal?: AbortSignal,
 ): Promise<MarineConditions> {
+  const marineVariables = [
+    "wave_height",
+    "wave_direction",
+    "wave_period",
+    "swell_wave_height",
+    "swell_wave_direction",
+    "swell_wave_period",
+    "sea_surface_temperature",
+    "ocean_current_velocity",
+    "ocean_current_direction",
+    "sea_level_height_msl",
+  ];
   const marineParams = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
-    current: [
-      "wave_height",
-      "wave_direction",
-      "wave_period",
-      "swell_wave_height",
-      "swell_wave_direction",
-      "swell_wave_period",
-      "sea_surface_temperature",
-      "ocean_current_velocity",
-      "ocean_current_direction",
-      "sea_level_height_msl",
-    ].join(","),
-    hourly: "sea_level_height_msl",
+    current: marineVariables.join(","),
+    hourly: marineVariables.join(","),
     timezone: "auto",
     forecast_days: "2",
     cell_selection: "sea",
@@ -93,6 +138,7 @@ export async function fetchMarineConditions(
     latitude: String(lat),
     longitude: String(lon),
     current: "temperature_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code,is_day",
+    hourly: "temperature_2m,cloud_cover,wind_speed_10m,wind_direction_10m,weather_code",
     daily: "sunrise,sunset",
     timezone: "auto",
     forecast_days: "2",
@@ -118,6 +164,37 @@ export async function fetchMarineConditions(
       value: numberOr(marine.hourly?.sea_level_height_msl?.[index], Number.NaN),
     }))
     .filter((point) => Number.isFinite(point.value));
+  const weatherTimes = weather.hourly?.time ?? [];
+  const weatherByTime = new Map(weatherTimes.map((time, index) => [time, index]));
+  const dailyTimes = weather.daily?.time ?? [];
+  const forecast: MarineForecastPoint[] = (marine.hourly?.time ?? []).map((time, index) => {
+    const weatherIndex = weatherByTime.get(time) ?? Math.min(index, Math.max(0, weatherTimes.length - 1));
+    const dayIndex = Math.max(0, dailyTimes.indexOf(time.slice(0, 10)));
+    const sunrise = weather.daily?.sunrise?.[dayIndex] ?? `${time.slice(0, 10)}T06:00`;
+    const sunset = weather.daily?.sunset?.[dayIndex] ?? `${time.slice(0, 10)}T19:30`;
+    return {
+      time,
+      waveHeight: numberOr(marine.hourly?.wave_height?.[index], numberOr(current.wave_height, beach.fallback.waveHeight)),
+      waveDirection: numberOr(marine.hourly?.wave_direction?.[index], numberOr(current.wave_direction, beach.fallback.waveDirection)),
+      wavePeriod: numberOr(marine.hourly?.wave_period?.[index], numberOr(current.wave_period, beach.fallback.wavePeriod)),
+      swellHeight: numberOr(marine.hourly?.swell_wave_height?.[index], numberOr(current.swell_wave_height, beach.fallback.waveHeight * .8)),
+      swellDirection: numberOr(marine.hourly?.swell_wave_direction?.[index], numberOr(current.swell_wave_direction, beach.fallback.waveDirection)),
+      swellPeriod: numberOr(marine.hourly?.swell_wave_period?.[index], numberOr(current.swell_wave_period, beach.fallback.wavePeriod)),
+      waterTemperature: numberOr(marine.hourly?.sea_surface_temperature?.[index], numberOr(current.sea_surface_temperature, beach.fallback.waterTemperature)),
+      currentVelocity: numberOr(marine.hourly?.ocean_current_velocity?.[index], numberOr(current.ocean_current_velocity, .4)),
+      currentDirection: numberOr(marine.hourly?.ocean_current_direction?.[index], numberOr(current.ocean_current_direction, beach.heading)),
+      seaLevel: numberOr(marine.hourly?.sea_level_height_msl?.[index], numberOr(current.sea_level_height_msl, 0)),
+      tideTrend: tideTrend(tide, time),
+      airTemperature: numberOr(weather.hourly?.temperature_2m?.[weatherIndex], numberOr(atmosphere.temperature_2m, beach.fallback.waterTemperature + 2)),
+      cloudCover: numberOr(weather.hourly?.cloud_cover?.[weatherIndex], numberOr(atmosphere.cloud_cover, 25)),
+      windSpeed: numberOr(weather.hourly?.wind_speed_10m?.[weatherIndex], numberOr(atmosphere.wind_speed_10m, beach.fallback.windSpeed)),
+      windDirection: numberOr(weather.hourly?.wind_direction_10m?.[weatherIndex], numberOr(atmosphere.wind_direction_10m, beach.heading)),
+      weatherCode: numberOr(weather.hourly?.weather_code?.[weatherIndex], numberOr(atmosphere.weather_code, 0)),
+      isDay: time >= sunrise && time < sunset,
+      sunrise,
+      sunset,
+    };
+  });
 
   return {
     source: "live",
@@ -144,15 +221,43 @@ export async function fetchMarineConditions(
     isDay: numberOr(atmosphere.is_day, 1) === 1,
     sunrise: weather.daily?.sunrise?.[0] ?? "06:00",
     sunset: weather.daily?.sunset?.[0] ?? "19:30",
+    forecast,
   };
 }
 
 export function fallbackConditions(beach: Beach, referenceTime?: string | Date): MarineConditions {
   const now = referenceTime ? new Date(referenceTime) : new Date();
-  const tide = Array.from({ length: 24 }, (_, index) => ({
+  const tide = Array.from({ length: 57 }, (_, index) => ({
     time: new Date(now.getTime() + (index - 8) * 3_600_000).toISOString(),
-    value: Math.sin((index / 12) * Math.PI * 2) * 0.72,
+    value: Math.sin((index / 12.4) * Math.PI * 2) * 0.72,
   }));
+  const forecast: MarineForecastPoint[] = Array.from({ length: 49 }, (_, index) => {
+    const time = new Date(now.getTime() + index * 3_600_000).toISOString();
+    const localHour = Number(time.slice(11, 13));
+    const seaLevel = Math.sin(((index + 8) / 12.4) * Math.PI * 2) * .72;
+    return {
+      time,
+      waveHeight: Math.max(.25, beach.fallback.waveHeight * (1 + Math.sin(index * .31) * .08)),
+      waveDirection: beach.fallback.waveDirection,
+      wavePeriod: Math.max(5, beach.fallback.wavePeriod + Math.sin(index * .17) * .6),
+      swellHeight: beach.fallback.waveHeight * .8,
+      swellDirection: beach.fallback.waveDirection,
+      swellPeriod: beach.fallback.wavePeriod,
+      waterTemperature: beach.fallback.waterTemperature,
+      currentVelocity: .4 + Math.sin(index * .24) * .08,
+      currentDirection: beach.heading,
+      seaLevel,
+      tideTrend: tideTrend(tide, time),
+      airTemperature: beach.fallback.waterTemperature + 2 + Math.sin(((localHour - 7) / 24) * Math.PI * 2) * 3,
+      cloudCover: 18,
+      windSpeed: beach.fallback.windSpeed * (1 + Math.sin(index * .21) * .12),
+      windDirection: beach.heading,
+      weatherCode: 0,
+      isDay: localHour >= 6 && localHour < 19,
+      sunrise: `${time.slice(0, 10)}T06:00`,
+      sunset: `${time.slice(0, 10)}T19:30`,
+    };
+  });
   return {
     source: "modeled",
     observedAt: now.toISOString(),
@@ -178,5 +283,6 @@ export function fallbackConditions(beach: Beach, referenceTime?: string | Date):
     isDay: true,
     sunrise: "06:00",
     sunset: "19:30",
+    forecast,
   };
 }

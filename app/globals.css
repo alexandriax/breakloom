@@ -647,6 +647,25 @@ input:focus-visible {
 .zone-strip strong { font-size: 9px; }
 .zone-strip small { color: var(--muted); font-size: 7px; line-height: 1.25; }
 
+.forecast-planner { margin-top: 16px; }
+.forecast-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.forecast-head span { color: var(--spot-accent); font-size: 6px; font-weight: 800; letter-spacing: .16em; }
+.forecast-head strong { color: rgba(237, 248, 244, .72); font-size: 7px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.forecast-strip { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(116px, 1fr); overflow-x: auto; border: 1px solid var(--line); scrollbar-width: none; }
+.forecast-strip::-webkit-scrollbar { display: none; }
+.forecast-strip button { min-height: 82px; position: relative; display: flex; flex-direction: column; gap: 4px; padding: 10px 10px 12px; overflow: hidden; border: 0; border-right: 1px solid var(--line); background: rgba(4, 16, 22, .58); color: white; text-align: left; cursor: pointer; transition: background .18s ease, box-shadow .18s ease; }
+.forecast-strip button:last-child { border-right: 0; }
+.forecast-strip button:hover { background: rgba(113, 225, 211, .07); }
+.forecast-strip button.is-active { background: color-mix(in srgb, var(--spot-accent) 12%, rgba(5, 18, 24, .88)); box-shadow: inset 0 -2px var(--spot-accent); }
+.forecast-strip button:disabled { cursor: progress; opacity: .46; }
+.forecast-strip button > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: rgba(226, 242, 238, .48); font-size: 5px; letter-spacing: .1em; }
+.forecast-strip button > span b { color: var(--spot-accent); font-size: 5px; letter-spacing: .13em; }
+.forecast-strip button > span em { font-style: normal; }
+.forecast-strip button > strong { margin-top: 2px; font-size: 9px; }
+.forecast-strip button > small { overflow: hidden; color: rgba(226, 242, 238, .48); font-size: 6px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.forecast-strip button > i { position: absolute; left: 10px; right: 10px; bottom: 7px; height: 2px; overflow: hidden; background: rgba(255, 255, 255, .09); }
+.forecast-strip button > i b { display: block; height: 100%; background: linear-gradient(90deg, #367f89, var(--spot-accent)); box-shadow: 0 0 8px color-mix(in srgb, var(--spot-accent) 65%, transparent); }
+
 .break-description { margin: 20px 0 14px; color: rgba(236, 243, 239, 0.66); font-size: 11px; line-height: 1.6; }
 .break-meta { display: flex; flex-wrap: wrap; gap: 8px 17px; }
 .break-meta span { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 7px; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -1307,6 +1326,13 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .planner.is-open .planner-inner { display: block; }
   .planner-head h2 { font-size: 29px; }
   .map-shell { height: 245px; }
+  .forecast-planner { margin-top: 13px; }
+  .forecast-head strong { max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .forecast-strip { grid-auto-columns: minmax(132px, 42vw); scroll-snap-type: x proximity; }
+  .forecast-strip button { min-height: 88px; padding: 12px 11px 14px; scroll-snap-align: start; }
+  .forecast-strip button > span, .forecast-strip button > span b { font-size: 6px; }
+  .forecast-strip button > strong { font-size: 10px; }
+  .forecast-strip button > small { font-size: 7px; }
   .break-description { font-size: 10px; }
   .wave-lab-panel { position: relative; left: auto; bottom: auto; width: 100%; grid-template-columns: repeat(2, 1fr); margin: 0 0 12px; transform: none; }
   .lab-title { grid-row: auto; grid-column: 1 / 3; }

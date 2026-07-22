@@ -26,12 +26,13 @@ import {
   Wind,
   X,
 } from "lucide-react";
-import { CSSProperties, PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
+import { CSSProperties, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BEACHES, DEFAULT_BEACH, getBreakCharacter, type Beach } from "@/lib/beaches";
 import {
   fallbackConditions,
   fetchMarineConditions,
   type MarineConditions,
+  type MarineForecastPoint,
 } from "@/lib/marine";
 import {
   BOARD_SPECS,
@@ -169,6 +170,58 @@ function weatherLabel(code: number) {
   return "Clear sky";
 }
 
+function conditionsAtForecast(base: MarineConditions, point: MarineForecastPoint | null): MarineConditions {
+  if (!point) return base;
+  return {
+    ...base,
+    observedAt: point.time,
+    waveHeight: point.waveHeight,
+    waveDirection: point.waveDirection,
+    wavePeriod: point.wavePeriod,
+    swellHeight: point.swellHeight,
+    swellDirection: point.swellDirection,
+    swellPeriod: point.swellPeriod,
+    waterTemperature: point.waterTemperature,
+    currentVelocity: point.currentVelocity,
+    currentDirection: point.currentDirection,
+    seaLevel: point.seaLevel,
+    tideTrend: point.tideTrend,
+    airTemperature: point.airTemperature,
+    cloudCover: point.cloudCover,
+    windSpeed: point.windSpeed,
+    windDirection: point.windDirection,
+    weatherCode: point.weatherCode,
+    isDay: point.isDay,
+    sunrise: point.sunrise,
+    sunset: point.sunset,
+  };
+}
+
+function forecastWindows(conditions: MarineConditions) {
+  const start = new Date(conditions.observedAt).getTime();
+  const offsets = [3, 6, 9, 12, 18, 24];
+  const seen = new Set<string>();
+  return offsets.flatMap((offset) => {
+    const target = start + offset * 3_600_000;
+    const point = conditions.forecast.reduce<MarineForecastPoint | null>((nearest, candidate) => {
+      if (!nearest) return candidate;
+      return Math.abs(new Date(candidate.time).getTime() - target) < Math.abs(new Date(nearest.time).getTime() - target) ? candidate : nearest;
+    }, null);
+    if (!point || seen.has(point.time)) return [];
+    seen.add(point.time);
+    return [point];
+  });
+}
+
+function forecastDayLabel(time: string, observedAt: string) {
+  const day = time.slice(0, 10);
+  const currentDay = observedAt.slice(0, 10);
+  const delta = Math.round((Date.parse(`${day}T12:00:00Z`) - Date.parse(`${currentDay}T12:00:00Z`)) / 86_400_000);
+  if (delta === 0) return "Today";
+  if (delta === 1) return "Tomorrow";
+  return day.slice(5).replace("-", "/");
+}
+
 function nextWeatherPreset(code: number) {
   const index = WEATHER_PRESETS.findIndex((preset) => preset === code);
   return WEATHER_PRESETS[(index + 1 + WEATHER_PRESETS.length) % WEATHER_PRESETS.length];
@@ -190,6 +243,7 @@ export default function SurfscapeApp() {
   const [zoneLabel, setZoneLabel] = useState(DEFAULT_BEACH.zones[1].name);
   const [conditions, setConditions] = useState<MarineConditions>(() => INITIAL_MODELED_CONDITIONS);
   const [conditionsLoading, setConditionsLoading] = useState(true);
+  const [selectedForecastTime, setSelectedForecastTime] = useState<string | null>(null);
   const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(INITIAL_MODELED_CONDITIONS));
   const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
   const [paused, setPaused] = useState(false);
@@ -224,8 +278,14 @@ export default function SurfscapeApp() {
     yaw: number;
     pitch: number;
   } | null>(null);
+  const selectedForecast = useMemo(
+    () => conditions.forecast.find((point) => point.time === selectedForecastTime) ?? null,
+    [conditions.forecast, selectedForecastTime],
+  );
+  const sessionConditions = useMemo(() => conditionsAtForecast(conditions, selectedForecast), [conditions, selectedForecast]);
+  const availableForecastWindows = useMemo(() => forecastWindows(conditions), [conditions]);
   const sessionWeatherCode = settings.weatherCode;
-  const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : conditions.cloudCover;
+  const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : sessionConditions.cloudCover;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -264,6 +324,7 @@ export default function SurfscapeApp() {
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setConditionsLoading(true);
+      setSelectedForecastTime(null);
       fetchMarineConditions(beach, latitude, longitude, controller.signal)
         .then((live) => {
           setConditions(live);
@@ -385,7 +446,7 @@ export default function SurfscapeApp() {
       screen === "game" && !paused,
     );
     audio.current?.setEnvironment(
-      conditions.windSpeed,
+      sessionConditions.windSpeed,
       settings.waveHeight,
       sessionCloudCover,
       paused ? 0.34 : 1,
@@ -396,7 +457,7 @@ export default function SurfscapeApp() {
       paused ? 0 : stats.speed,
       !paused && !stats.vehicleMode,
     );
-  }, [conditions.windSpeed, paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [paused, screen, sessionCloudCover, sessionConditions.windSpeed, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverActive && !previousManeuverActive.current) haptic(8);
@@ -453,14 +514,24 @@ export default function SurfscapeApp() {
     setLongitude(startingZone.lon);
     setZoneLabel(startingZone.name);
     setConditions(fallbackConditions(next));
+    setSelectedForecastTime(null);
   };
 
   const chooseMode = (mode: GameMode) => {
     if (mode === "playground") {
       setSettings((current) => ({ ...current, mode }));
     } else {
-      setSettings((current) => ({ ...settingsFromConditions(conditions), mode, board: current.board }));
+      setSettings((current) => ({ ...settingsFromConditions(sessionConditions), mode, board: current.board }));
     }
+  };
+
+  const selectSessionWindow = (point: MarineForecastPoint | null) => {
+    const nextConditions = conditionsAtForecast(conditions, point);
+    setSelectedForecastTime(point?.time ?? null);
+    setSettings((current) => current.mode === "playground"
+      ? { ...current, timeOfDay: settingsFromConditions(nextConditions).timeOfDay, weatherCode: nextConditions.weatherCode }
+      : { ...settingsFromConditions(nextConditions), mode: current.mode, board: current.board });
+    haptic(7);
   };
 
   function clearAnalogMovement() {
@@ -475,7 +546,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
     audio.current.setMusicEnabled(musicEnabled);
-    audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
+    audio.current.setEnvironment(sessionConditions.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -497,7 +568,7 @@ export default function SurfscapeApp() {
     audio.current?.setSurf(0, false, 0, 0);
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
-    audio.current?.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
+    audio.current?.setEnvironment(sessionConditions.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     setScreen("launch");
@@ -511,7 +582,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(next);
     if (next) {
-      audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
+      audio.current.setEnvironment(sessionConditions.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
     }
   };
 
@@ -638,9 +709,9 @@ export default function SurfscapeApp() {
     haptic(7);
   };
 
-  const localTime = formatClock(conditions.observedAt);
+  const localTime = formatClock(sessionConditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
-  const conditionQuality = qualityLabel(conditions);
+  const conditionQuality = qualityLabel(sessionConditions);
   const breakCharacter = getBreakCharacter(beach.id, zoneLabel);
   const trainingComplete = trainingStep >= TRAINING_STEPS.length;
   const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
@@ -706,11 +777,11 @@ export default function SurfscapeApp() {
           zoneName={zoneLabel}
           settings={settings}
           cloudCover={sessionCloudCover}
-          windSpeed={conditions.windSpeed}
-          windDirection={conditions.windDirection}
+          windSpeed={sessionConditions.windSpeed}
+          windDirection={sessionConditions.windDirection}
           weatherCode={sessionWeatherCode}
-          sunrise={conditions.sunrise}
-          sunset={conditions.sunset}
+          sunrise={sessionConditions.sunrise}
+          sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
           active={screen === "game" && !paused}
@@ -737,7 +808,7 @@ export default function SurfscapeApp() {
             </button>
             <div className="launch-nav">
               <span className={`live-chip ${conditions.source === "live" ? "is-live" : ""}`}>
-                <i /> {conditionsLoading ? "Reading buoy models" : conditions.source === "live" ? "Live ocean model" : "Modeled offline"}
+                <i /> {conditionsLoading ? "Reading buoy models" : selectedForecast ? "Forecast session" : conditions.source === "live" ? "Live ocean model" : "Modeled offline"}
               </span>
               <button className="icon-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute sound" : "Enable sound"}>
                 {soundEnabled ? <Volume2 /> : <VolumeX />}
@@ -765,18 +836,18 @@ export default function SurfscapeApp() {
                 </div>
                 <div className="readout-metric primary">
                   <span>Wave</span>
-                  <strong>{conditions.waveHeight.toFixed(1)}<small>m</small></strong>
-                  <em>{degrees(conditions.waveDirection)}</em>
+                  <strong>{sessionConditions.waveHeight.toFixed(1)}<small>m</small></strong>
+                  <em>{degrees(sessionConditions.waveDirection)}</em>
                 </div>
                 <div className="readout-metric">
                   <span>Period</span>
-                  <strong>{conditions.wavePeriod.toFixed(1)}<small>s</small></strong>
+                  <strong>{sessionConditions.wavePeriod.toFixed(1)}<small>s</small></strong>
                   <em>{conditionQuality}</em>
                 </div>
                 <div className="readout-metric tide-readout">
-                  <span>Tide · {conditions.tideTrend}</span>
-                  <strong>{conditions.seaLevel >= 0 ? "+" : ""}{conditions.seaLevel.toFixed(2)}<small>m</small></strong>
-                  <TideSparkline points={conditions.tide} observedAt={conditions.observedAt} />
+                  <span>Tide · {sessionConditions.tideTrend}</span>
+                  <strong>{sessionConditions.seaLevel >= 0 ? "+" : ""}{sessionConditions.seaLevel.toFixed(2)}<small>m</small></strong>
+                  <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />
                 </div>
               </div>
 
@@ -848,6 +919,7 @@ export default function SurfscapeApp() {
                     setLatitude(lat);
                     setLongitude(lon);
                     setZoneLabel(label);
+                    setSelectedForecastTime(null);
                   }}
                 />
                 <div className="zone-strip" role="list" aria-label={`${beach.name} surf zones`}>
@@ -859,6 +931,7 @@ export default function SurfscapeApp() {
                         setLatitude(zone.lat);
                         setLongitude(zone.lon);
                         setZoneLabel(zone.name);
+                        setSelectedForecastTime(null);
                       }}
                     >
                       <span />
@@ -866,6 +939,41 @@ export default function SurfscapeApp() {
                       <small>{zone.note}</small>
                     </button>
                   ))}
+                </div>
+                <div className="forecast-planner">
+                  <div className="forecast-head">
+                    <span>03 / SESSION WINDOW</span>
+                    <strong>{selectedForecast ? `${forecastDayLabel(selectedForecast.time, conditions.observedAt)} · ${formatClock(selectedForecast.time)}` : "Now · live model"}</strong>
+                  </div>
+                  <div className="forecast-strip" role="list" aria-label="Choose a forecast session time">
+                    <button
+                      type="button"
+                      className={selectedForecastTime === null ? "is-active" : ""}
+                      onClick={() => selectSessionWindow(null)}
+                      aria-pressed={selectedForecastTime === null}
+                      disabled={conditionsLoading}
+                    >
+                      <span><b>NOW</b><em>{formatClock(conditions.observedAt)}</em></span>
+                      <strong>{conditions.waveHeight.toFixed(1)} m · {conditions.wavePeriod.toFixed(0)} s</strong>
+                      <small>{weatherLabel(conditions.weatherCode)} · wind {conditions.windSpeed.toFixed(0)} km/h</small>
+                      <i><b style={{ width: `${Math.min(100, conditions.waveHeight * Math.max(5, conditions.wavePeriod) * 3)}%` }} /></i>
+                    </button>
+                    {availableForecastWindows.map((point) => (
+                      <button
+                        type="button"
+                        key={point.time}
+                        className={selectedForecastTime === point.time ? "is-active" : ""}
+                        onClick={() => selectSessionWindow(point)}
+                        aria-pressed={selectedForecastTime === point.time}
+                        disabled={conditionsLoading}
+                      >
+                        <span><b>{forecastDayLabel(point.time, conditions.observedAt).toUpperCase()}</b><em>{formatClock(point.time)}</em></span>
+                        <strong>{point.waveHeight.toFixed(1)} m · {point.wavePeriod.toFixed(0)} s</strong>
+                        <small>{weatherLabel(point.weatherCode)} · wind {point.windSpeed.toFixed(0)} km/h</small>
+                        <i><b style={{ width: `${Math.min(100, point.waveHeight * Math.max(5, point.wavePeriod) * 3)}%` }} /></i>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <p className="break-description">{beach.description}</p>
                 <div className="break-meta">
@@ -899,7 +1007,7 @@ export default function SurfscapeApp() {
               <strong>{selectedMode.name}</strong>
               <i />
               <span>{zoneLabel}</span>
-              <strong>{localTime} {conditions.timezoneAbbreviation}</strong>
+              <strong>{localTime} {sessionConditions.timezoneAbbreviation}</strong>
               <i />
               <span>Personal best</span>
               <strong>{personalBest.score.toLocaleString()}</strong>
