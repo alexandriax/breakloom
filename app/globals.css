@@ -1155,6 +1155,16 @@ input:focus-visible {
 .stance-track > span { color: rgba(255, 255, 255, 0.42); font-size: 5px; letter-spacing: 0.09em; }
 .stance-track > i { position: relative; height: 2px; background: linear-gradient(90deg, var(--coral), rgba(255, 255, 255, 0.22) 50%, #71e1d3); }
 .stance-track > i b { position: absolute; top: -4px; width: 3px; height: 10px; transform: translateX(-50%); background: white; box-shadow: 0 0 8px white; transition: left 0.08s linear; }
+.line-track { display: grid; grid-template-columns: auto 1fr auto 66px; align-items: center; gap: 7px; margin-top: 8px; }
+.line-track > span, .line-track > strong { color: rgba(255, 255, 255, .46); font-size: 5px; font-weight: 700; letter-spacing: .09em; }
+.line-track > strong { color: #bceee7; text-align: right; white-space: nowrap; transition: color .16s ease, text-shadow .16s ease; }
+.line-track > i { position: relative; height: 3px; background: linear-gradient(90deg, rgba(235, 104, 76, .7), rgba(35, 105, 111, .54) 34%, rgba(96, 231, 210, .42) 50%, rgba(67, 143, 159, .48) 72%, rgba(115, 166, 178, .32)); }
+.line-track > i em { position: absolute; top: -3px; bottom: -3px; left: 39%; width: 22%; border: 1px solid rgba(133, 255, 235, .52); background: rgba(113, 225, 211, .17); box-shadow: 0 0 10px rgba(113, 225, 211, .2); }
+.line-track > i b { position: absolute; z-index: 1; top: -5px; width: 3px; height: 13px; background: white; box-shadow: 0 0 7px white; transform: translateX(-50%); transition: left .08s linear; }
+.line-track.is-locked > strong { color: #aaffef; text-shadow: 0 0 9px rgba(113, 225, 211, .72); }
+.line-track.is-locked > i em { background: rgba(113, 225, 211, .3); box-shadow: 0 0 13px rgba(113, 225, 211, .38); }
+.line-track.is-risk > strong { color: #ff9e81; text-shadow: 0 0 8px rgba(242, 100, 78, .55); }
+.line-track.is-risk > i b { background: #ffc0af; box-shadow: 0 0 8px #f2644e; }
 .grip-track { display: grid; grid-template-columns: auto 1fr 27px; align-items: center; gap: 7px; margin-top: 8px; }
 .grip-track > span, .grip-track > strong { color: rgba(255, 255, 255, 0.48); font-size: 5px; font-weight: 700; letter-spacing: 0.09em; }
 .grip-track > strong { text-align: right; }

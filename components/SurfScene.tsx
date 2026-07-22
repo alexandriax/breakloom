@@ -47,6 +47,10 @@ type MotionState = {
   steer: number;
   speed: number;
   waveQuality: number;
+  linePosition: number;
+  lineControl: number;
+  lineSide: number;
+  sectionPressure: number;
   setEnergy: number;
   wipeout: number;
   maneuver: number;
@@ -795,7 +799,7 @@ function BreakingWave({
     if (!group.current || !faceMaterial.current || !curtainMaterial.current || !foamMaterial.current) return;
     const state = motion.current;
     const riding = state.phase === "riding";
-    if (riding && Math.abs(state.steer) > .12) lineSide.current = Math.sign(state.steer);
+    if (riding) lineSide.current = state.lineSide || lineSide.current;
     const targetCurl = riding
       ? THREE.MathUtils.clamp(
           (state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12) * (.72 + character.hollow * .3 + character.steepness * .08),
@@ -1334,7 +1338,7 @@ function WaveReadingGuide({
     const state = motion.current;
     const assist = settings.mode === "training" ? 1 : settings.mode === "advanced" ? .28 : .54;
     const mobileBoost = mobile ? 1.12 : 1;
-    if (Math.abs(character.peel) < .18 && Math.abs(state.steer) > .12 && state.phase === "riding") lineSide.current = Math.sign(state.steer);
+    if (state.phase === "riding") lineSide.current = state.lineSide || lineSide.current;
 
     if (crest.current && crestMaterial.current) {
       const paddling = state.phase === "paddling";
@@ -1352,18 +1356,19 @@ function WaveReadingGuide({
     if (shoulder.current && shoulderMaterial.current) {
       const riding = state.phase === "riding";
       const targetOpacity = riding
-        ? assist * mobileBoost * (.08 + state.waveQuality * .46 + Math.abs(state.rail) * .08) * (1 - state.barrel * .42)
+        ? assist * mobileBoost * (.08 + state.waveQuality * .4 + Math.abs(state.rail) * .07 + state.sectionPressure * .22) * (1 - state.barrel * .42)
         : 0;
       shoulderMaterial.current.opacity = THREE.MathUtils.damp(shoulderMaterial.current.opacity, targetOpacity, riding ? 7 : 4, delta);
       shoulderMaterial.current.size = THREE.MathUtils.damp(shoulderMaterial.current.size, mobile ? .26 : .22 + state.waveQuality * .07, 5, delta);
       const attribute = shoulder.current.geometry.getAttribute("position") as THREE.BufferAttribute;
       const points = attribute.array as Float32Array;
       const faceHeight = THREE.MathUtils.clamp(settings.waveHeight * 1.55, 1.45, 5.8) * (.82 + state.setEnergy * .3);
+      const guideSide = state.linePosition > .24 ? -lineSide.current : lineSide.current;
       for (let index = 0; index < particleCount; index += 1) {
         const progress = index / Math.max(1, particleCount - 1);
         const stream = (progress + clock.elapsedTime * (.055 + state.waveQuality * .045)) % 1;
         const offset = index * 3;
-        points[offset] = lineSide.current * (2.1 + stream * 8.5) + Math.sin(index * 2.17 + clock.elapsedTime * 1.8) * .11;
+        points[offset] = guideSide * (1.45 + stream * 7.4) + Math.sin(index * 2.17 + clock.elapsedTime * 1.8) * .11;
         points[offset + 1] = faceHeight * (.31 + stream * .24) + Math.sin(index * 1.31 + clock.elapsedTime * 2.2) * .045;
         points[offset + 2] = 2.28 - stream * .4 - state.barrel * .22;
       }
@@ -3482,6 +3487,10 @@ function Simulation({
   const stance = useRef(0);
   const barrelTime = useRef(0);
   const rideStartScore = useRef(0);
+  const rideOriginX = useRef(0);
+  const rideOriginZ = useRef(0);
+  const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
+  const pocketDistance = useRef(0);
   const rideScore = useRef(0);
   const rideManeuverStart = useRef(0);
   const rideGrade = useRef<GameStats["rideGrade"]>("C");
@@ -3511,6 +3520,10 @@ function Simulation({
     steer: 0,
     speed: 0,
     waveQuality: 0,
+    linePosition: 0,
+    lineControl: 1,
+    lineSide: character.peel === 0 ? 1 : Math.sign(character.peel),
+    sectionPressure: 0,
     setEnergy: 0,
     wipeout: 0,
     maneuver: 0,
@@ -3550,6 +3563,9 @@ function Simulation({
     let balanceTarget = 0;
     let prompt = "Read the water";
     let waveQuality = 0;
+    let linePosition = 0;
+    let lineControl = 1;
+    let sectionPressure = 0;
     let barrelIntensity = 0;
     let railLoad = 0;
     let compression = 0;
@@ -3675,6 +3691,14 @@ function Simulation({
           if (catchReady) {
             phase.current = "riding";
             rideDistance.current = 0;
+            pocketDistance.current = 0;
+            rideOriginX.current = position.current.x;
+            rideOriginZ.current = position.current.z;
+            rideLineSide.current = Math.abs(character.peel) >= .18
+              ? Math.sign(character.peel)
+              : Math.abs(steer) > .16
+                ? Math.sign(steer)
+                : position.current.x < 0 ? -1 : 1;
             barrelTime.current = 0;
             stance.current = 0;
             unstableFor.current = (1 - takeoffQuality) * .14;
@@ -3710,8 +3734,21 @@ function Simulation({
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
+        const breakTravel = Math.max(0, position.current.z - rideOriginZ.current);
+        const pocketSweep = rideLineSide.current * breakTravel * (.12 + Math.abs(character.peel) * .24 + character.length * .018);
+        const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginX.current * .07) * character.variability * 1.1;
+        const pocketX = rideOriginX.current + pocketSweep + pocketPulse;
+        const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * .46 + (1 - character.steepness) * .9, 3.6, 6.7);
+        const signedPocketDistance = (position.current.x - pocketX) * rideLineSide.current;
+        linePosition = THREE.MathUtils.clamp(signedPocketDistance / pocketWidth, -1.5, 1.5);
+        const lineTolerance = settings.mode === "training" ? 1.3 : settings.mode === "advanced" ? .88 : 1.06;
+        lineControl = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition), .38 * lineTolerance, 1.16 * lineTolerance);
+        const deepRisk = THREE.MathUtils.smoothstep(-linePosition, .64 * lineTolerance, 1.34 * lineTolerance);
+        const shoulderStall = THREE.MathUtils.smoothstep(linePosition, .76 * lineTolerance, 1.42 * lineTolerance);
+        sectionPressure = Math.max(deepRisk, shoulderStall * .78) * (.66 + character.variability * .34);
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
         speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
+        speed *= .82 + lineControl * .24 - shoulderStall * .1 + Math.max(0, -linePosition) * .025;
         const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
         const railDemand = Math.abs(steer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + character.steepness * .1);
@@ -3731,6 +3768,7 @@ function Simulation({
         const drift = Math.sign(steer) * railSlip.current * (1.15 + speed * .045);
         position.current.x += (railLoad * boardSpec.turn * (4.4 + speed * 0.18) * (1 + tailPressure * 0.38 - nosePressure * 0.12) * turnGrip + drift) * delta;
         rideDistance.current += speed * delta;
+        if (lineControl > .5) pocketDistance.current += speed * delta;
         balanceTarget =
           Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) * (.88 + character.power * .08 + character.variability * .1) / boardSpec.stability +
           Math.sin(t * 3.1) * settings.currentStrength * 0.045 -
@@ -3752,19 +3790,21 @@ function Simulation({
         const balanceError = Math.abs(state.balance - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82) * Math.sqrt(boardSpec.stability);
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
+        unstableFor.current += sectionPressure * delta * (settings.mode === "training" ? .12 : settings.mode === "advanced" ? .5 : .3);
         const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
         const lineMatch = Math.abs(character.peel) < .18
-          ? 1 - Math.abs(steer) * .08
+          ? 1
           : THREE.MathUtils.clamp(.58 + steer * character.peel * .42, .2, 1);
         const sectionQuality = 1 - character.variability * (.12 + Math.abs(Math.sin(position.current.x * .11 + t * .17)) * .18);
         waveQuality = THREE.MathUtils.clamp(
-          (wavePhase + 1) * .36 + setState.energy * .14 + catchQuality.current * .08 + lineMatch * .16 + sectionQuality * .08,
+          (wavePhase + 1) * .3 + setState.energy * .12 + catchQuality.current * .08 + lineMatch * .1 + sectionQuality * .07 + lineControl * .23,
           0,
           1,
         );
         const controlQuality = Math.max(0, 1 - balanceError / 1.2) * (1 - railSlip.current * .36);
         const barrelThreshold = .8 - character.hollow * .18;
-        const inBarrel = waveQuality > barrelThreshold && controlQuality > .72 && Math.abs(steer) < .68 && stance.current > -.58;
+        const pocketBarrel = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition + .18), .34, .92);
+        const inBarrel = waveQuality > barrelThreshold && controlQuality > .72 && pocketBarrel > .42 && Math.abs(steer) < .68 && stance.current > -.58;
         barrelIntensity = inBarrel
           ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + character.hollow) + controlQuality * .16, 0, 1)
           : 0;
@@ -3775,9 +3815,9 @@ function Simulation({
         }
         const turnBonus = Math.abs(railLoad) * (12 + compression * 5) * (1 - railSlip.current * .42);
         if (!finishing) {
-          combo.current = Math.min(8, combo.current + controlQuality * delta * 0.11 + Math.abs(railLoad) * (1 - railSlip.current) * delta * 0.15 + (pumping ? delta * 0.04 : 0));
+          combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15 + (pumping && lineControl > .48 ? delta * 0.04 : 0));
           maxCombo.current = Math.max(maxCombo.current, combo.current);
-          score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * delta;
+          score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
         }
         if (attempt && maneuverProgress >= 1) {
           const landingError = Math.abs(state.balance - landingTarget);
@@ -3786,7 +3826,7 @@ function Simulation({
           if (landed) {
             const landingControl = THREE.MathUtils.clamp(1 - landingError / landingWindow, 0, 1);
             const quality = THREE.MathUtils.clamp(.18 + landingControl * .72 + controlQuality * .1, 0, 1);
-            const points = Math.round(attempt.base * boardSpec.score * (.58 + controlQuality * .34 + quality * .48) * (0.88 + setState.energy * .28) * combo.current * (1 + barrelIntensity * .12));
+            const points = Math.round(attempt.base * boardSpec.score * (.58 + controlQuality * .34 + quality * .48) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
             maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -3863,6 +3903,12 @@ function Simulation({
             ? "Rail releasing — soften the turn or load the tail"
           : inBarrel
             ? `Locked in the barrel · ${barrelTime.current.toFixed(1)}s`
+          : linePosition < -.72
+            ? `Pocket closing · drive ${rideLineSide.current > 0 ? "right" : "left"} toward the open face`
+          : linePosition > .72
+            ? `Shoulder fading · cut back ${rideLineSide.current > 0 ? "left" : "right"} toward the pocket`
+          : lineControl > .76 && Math.abs(steer) < .18
+            ? "Power pocket locked · build speed or release a move"
           : steer
             ? "Hold the rail · TRICK / SPACE to release a turn"
             : pumping
@@ -3952,6 +3998,10 @@ function Simulation({
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
     motion.current.waveQuality = THREE.MathUtils.damp(motion.current.waveQuality, waveQuality, 5, delta);
+    motion.current.linePosition = THREE.MathUtils.damp(motion.current.linePosition, linePosition, 6.5, delta);
+    motion.current.lineControl = THREE.MathUtils.damp(motion.current.lineControl, lineControl, 6.5, delta);
+    motion.current.lineSide = rideLineSide.current;
+    motion.current.sectionPressure = THREE.MathUtils.damp(motion.current.sectionPressure, sectionPressure, 6, delta);
     motion.current.setEnergy = setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
     motion.current.stance = stance.current;
@@ -4113,10 +4163,15 @@ function Simulation({
         score: Math.round(score.current),
         combo: Number(combo.current.toFixed(1)),
         rideDistance: Number(rideDistance.current.toFixed(1)),
+        pocketDistance: Number(pocketDistance.current.toFixed(1)),
         speed: Math.max(0, speed),
         balance: state.balance,
         balanceTarget,
         waveQuality,
+        linePosition: motion.current.linePosition,
+        lineControl: motion.current.lineControl,
+        lineSide: motion.current.lineSide,
+        sectionPressure: motion.current.sectionPressure,
         railLoad: motion.current.rail,
         railGrip: 1 - motion.current.slip,
         stance: stance.current,

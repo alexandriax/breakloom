@@ -81,10 +81,15 @@ export type GameStats = {
   score: number;
   combo: number;
   rideDistance: number;
+  pocketDistance: number;
   speed: number;
   balance: number;
   balanceTarget: number;
   waveQuality: number;
+  linePosition: number;
+  lineControl: number;
+  lineSide: number;
+  sectionPressure: number;
   railLoad: number;
   railGrip: number;
   stance: number;
@@ -122,10 +127,15 @@ export const INITIAL_STATS: GameStats = {
   score: 0,
   combo: 1,
   rideDistance: 0,
+  pocketDistance: 0,
   speed: 0,
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
+  linePosition: 0,
+  lineControl: 1,
+  lineSide: 1,
+  sectionPressure: 0,
   railLoad: 0,
   railGrip: 1,
   stance: 0,

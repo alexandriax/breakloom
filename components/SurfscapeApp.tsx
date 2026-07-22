@@ -62,6 +62,7 @@ type RideToast = {
   result: "clean" | "wipeout";
   score: number;
   distance: number;
+  pocketDistance: number;
   maneuvers: number;
   barrelTime: number;
   grade: GameStats["grade"];
@@ -113,7 +114,7 @@ const TRAINING_STEPS = [
   { title: "Reach the lineup", detail: "Paddle beyond the breaking waves." },
   { title: "Read the crest", detail: "Wait for the takeoff window to open." },
   { title: "Commit to the drop", detail: "Catch the wave when the shoulder appears." },
-  { title: "Find your balance", detail: "Hold the line for at least 15 metres." },
+  { title: "Track the pocket", detail: "Steer into the power zone and hold it for 15 metres." },
   { title: "Set the rail", detail: "Load a turn and land your first maneuver." },
   { title: "Finish clean", detail: "Stay composed through the inside section." },
 ] as const;
@@ -126,9 +127,10 @@ function reachedTrainingStep(stats: GameStats) {
   if (stats.inLineup || hasRidden) reached = 2;
   if (stats.catchReady || hasRidden) reached = 3;
   if (hasRidden) reached = 4;
-  if (stats.rideDistance >= 15) reached = 5;
-  if (stats.rideDistance >= 15 && stats.maneuverCount > 0) reached = 6;
-  if (stats.rideDistance >= 15 && stats.maneuverCount > 0 && stats.rideResult === "clean") reached = 7;
+  const hasTrackedPocket = stats.pocketDistance >= 15;
+  if (hasTrackedPocket) reached = 5;
+  if (hasTrackedPocket && stats.maneuverCount > 0) reached = 6;
+  if (hasTrackedPocket && stats.maneuverCount > 0 && stats.rideResult === "clean") reached = 7;
   return reached;
 }
 
@@ -498,6 +500,7 @@ export default function SurfscapeApp() {
         result: stats.rideResult,
         score: stats.rideScore,
         distance: stats.rideDistance,
+        pocketDistance: stats.pocketDistance,
         maneuvers: stats.rideManeuvers,
         barrelTime: stats.barrelTime,
         grade: stats.rideGrade,
@@ -505,7 +508,7 @@ export default function SurfscapeApp() {
       const timer = window.setTimeout(() => setRideToast(null), 3600);
       return () => window.clearTimeout(timer);
     }
-  }, [stats.barrelTime, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
+  }, [stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
 
   const chooseBeach = (next: Beach) => {
     const startingZone = next.zones[Math.min(1, next.zones.length - 1)];
@@ -741,9 +744,20 @@ export default function SurfscapeApp() {
     { label: "Ride 40 m", done: stats.rideDistance >= 40 },
     { label: "Land 2 moves", done: stats.maneuverCount >= 2 },
     { label: "Barrel for 2s", done: stats.barrelTime >= 2 },
-    { label: "Reach 3× flow", done: stats.maxCombo >= 3 },
+    { label: "Hold pocket 20 m", done: stats.pocketDistance >= 20 },
   ];
   const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
+  const lineLabel = stats.linePosition < -.72
+    ? "TOO DEEP"
+    : stats.linePosition > .72
+      ? "OPEN SHOULDER"
+      : stats.lineControl > .76
+        ? "POWER POCKET"
+        : "TRIM LINE";
+  const lineIndicator = ((Math.max(-1.4, Math.min(1.4, stats.linePosition)) + 1.4) / 2.8) * 100;
+  const activeLine = stats.phase === "riding" && breakCharacter.line === "A-FRAME"
+    ? stats.lineSide > 0 ? "RIGHT" : "LEFT"
+    : breakCharacter.line;
   const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady;
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
@@ -1133,7 +1147,7 @@ export default function SurfscapeApp() {
               <div className="ride-recap-copy">
                 <span>{rideToast.result === "clean" ? "WAVE COMPLETE" : "WIPEOUT / RESET"}</span>
                 <strong>{rideToast.score.toLocaleString()} PTS</strong>
-                <small>{rideToast.distance.toFixed(0)} m · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel</small>
+                <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel</small>
               </div>
             </div>
           )}
@@ -1151,10 +1165,13 @@ export default function SurfscapeApp() {
             <div className="stance-track">
               <span>TAIL / CONTROL</span><i><b style={{ left: `${(stats.stance + 1) * 50}%` }} /></i><span>NOSE / SPEED</span>
             </div>
+            <div className={`line-track ${stats.sectionPressure > .42 ? "is-risk" : stats.lineControl > .76 ? "is-locked" : ""}`}>
+              <span>DEEP</span><i><em /><b style={{ left: `${lineIndicator}%` }} /></i><span>SHOULDER</span><strong>{lineLabel}</strong>
+            </div>
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{stats.maneuverActive ? "Reconnect inside the illuminated landing zone" : "Balance with mouse or thumb · shift tailward to recover rail grip"}</small>
+            <small>{stats.maneuverActive ? "Reconnect inside the illuminated landing zone" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : "Track the pocket · balance with mouse or thumb · shift stance with W/S"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""}`}>
@@ -1173,7 +1190,7 @@ export default function SurfscapeApp() {
           <div className="game-conditions">
             <div><Waves /><span>FACE</span><strong>{settings.waveHeight.toFixed(1)} m</strong></div>
             <div><Wind /><span>PERIOD</span><strong>{settings.wavePeriod.toFixed(1)} s</strong></div>
-            <div><ArrowRight /><span>BREAK LINE</span><strong>{breakCharacter.line}</strong></div>
+            <div><ArrowRight /><span>BREAK LINE</span><strong>{activeLine}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div><Crosshair /><span>DISTANCE</span><strong>{stats.rideDistance.toFixed(0)} m</strong></div>
             <div><CloudSun /><span>SKY</span><strong>{weatherLabel(sessionWeatherCode)}</strong></div>
