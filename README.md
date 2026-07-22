@@ -44,6 +44,16 @@ The in-game surfer is an articulated Blender-authored GLB with named joints for 
 
 The script exports `public/models/surfer-premium.glb` and renders a local QA preview before the application build.
 
+## Vehicle asset
+
+The drivable two-tone surf expedition van is also Blender-authored. Its compact PBR GLB includes a modeled cabin and dash, all-terrain tires, detailed wheels, mirrors, lights, bumpers, awning, rear ladder and spare, plus a strapped three-board roof quiver. Named steering, wheel, body, headlight, and brake-light joints keep those details live in the driving simulation. Regenerate it with:
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-van-model.py
+```
+
+The script exports `public/models/surf-van-premium.glb` and renders a local QA preview before the application build.
+
 ## Deploy to GitHub Pages
 
 The workflow in `.github/workflows/deploy-pages.yml` builds and publishes the static `out` directory on every push to `main`. In the repository settings, set **Pages → Source** to **GitHub Actions**.

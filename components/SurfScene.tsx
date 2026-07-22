@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { RoundedBox, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
+import { Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
 import { MutableRefObject, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Beach, CoastBiome } from "@/lib/beaches";
@@ -557,6 +557,7 @@ function BreakingWave({
 }
 
 const SURFER_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surfer-premium.glb`;
+const VAN_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surf-van-premium.glb`;
 const SURFER_JOINT_NAMES = [
   "Pelvis",
   "Torso",
@@ -657,6 +658,7 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
 }
 
 useGLTF.preload(SURFER_MODEL_URL);
+useGLTF.preload(VAN_MODEL_URL);
 
 function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionState>; boardType: BoardType }) {
   const rig = useRef<THREE.Group>(null);
@@ -1261,137 +1263,73 @@ function BeachLife({ beach, windSpeed }: { beach: Beach; windSpeed: number }) {
   );
 }
 
+function prepareVanScene(source: THREE.Group) {
+  const model = source.clone(true);
+  model.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.castShadow = true;
+    object.receiveShadow = true;
+    object.frustumCulled = true;
+    object.material = Array.isArray(object.material)
+      ? object.material.map((material) => material.clone())
+      : object.material.clone();
+  });
+  return model;
+}
+
 function SurfVan({ motion }: { motion: MutableRefObject<VehicleMotionState> }) {
-  const body = useRef<THREE.Group>(null);
-  const frontLeft = useRef<THREE.Group>(null);
-  const frontRight = useRef<THREE.Group>(null);
-  const rearLeft = useRef<THREE.Group>(null);
-  const rearRight = useRef<THREE.Group>(null);
+  const { scene } = useGLTF(VAN_MODEL_URL);
+  const model = useMemo(() => prepareVanScene(scene), [scene]);
+  const body = useRef<THREE.Object3D | null>(null);
+  const steerLeft = useRef<THREE.Object3D | null>(null);
+  const steerRight = useRef<THREE.Object3D | null>(null);
+  const wheels = useRef<THREE.Object3D[]>([]);
+  const brakeMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
+
+  useEffect(() => {
+    body.current = model.getObjectByName("VanBody") ?? null;
+    steerLeft.current = model.getObjectByName("Steer.FL") ?? null;
+    steerRight.current = model.getObjectByName("Steer.FR") ?? null;
+    wheels.current = ["Wheel.FL", "Wheel.FR", "Wheel.RL", "Wheel.RR"]
+      .map((name) => model.getObjectByName(name))
+      .filter((wheel): wheel is THREE.Object3D => Boolean(wheel));
+
+    const nextBrakeMaterials: THREE.MeshStandardMaterial[] = [];
+    model.getObjectByName("BrakeLights")?.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material) => {
+        if (material instanceof THREE.MeshStandardMaterial) nextBrakeMaterials.push(material);
+      });
+    });
+    brakeMaterials.current = nextBrakeMaterials;
+  }, [model]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
     const rotationDelta = state.speed * delta / 0.55;
-    [frontLeft.current, frontRight.current, rearLeft.current, rearRight.current].forEach((wheel) => {
-      if (wheel) wheel.rotation.x -= rotationDelta;
+    wheels.current.forEach((wheel) => {
+      wheel.rotation.x -= rotationDelta;
     });
-    if (frontLeft.current) frontLeft.current.rotation.y = THREE.MathUtils.damp(frontLeft.current.rotation.y, state.steer * 0.42, 9, delta);
-    if (frontRight.current) frontRight.current.rotation.y = THREE.MathUtils.damp(frontRight.current.rotation.y, state.steer * 0.42, 9, delta);
+    if (steerLeft.current) steerLeft.current.rotation.y = THREE.MathUtils.damp(steerLeft.current.rotation.y, state.steer * 0.42, 9, delta);
+    if (steerRight.current) steerRight.current.rotation.y = THREE.MathUtils.damp(steerRight.current.rotation.y, state.steer * 0.42, 9, delta);
     if (body.current) {
       const roadPulse = state.driving ? Math.sin(clock.elapsedTime * (5 + Math.abs(state.speed))) * Math.min(0.035, Math.abs(state.speed) * 0.002) : 0;
-      body.current.position.y = THREE.MathUtils.damp(body.current.position.y, 1.45 + roadPulse, 8, delta);
+      body.current.position.y = THREE.MathUtils.damp(body.current.position.y, roadPulse, 8, delta);
       body.current.rotation.z = THREE.MathUtils.damp(body.current.rotation.z, -state.steer * Math.min(0.07, Math.abs(state.speed) * 0.004), 7, delta);
       body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, state.brake ? -0.035 : Math.min(0.025, state.speed * 0.002), 7, delta);
     }
+    const targetBrakeIntensity = state.brake ? 3.8 : 0.42;
+    brakeMaterials.current.forEach((material) => {
+      material.emissiveIntensity = THREE.MathUtils.damp(material.emissiveIntensity, targetBrakeIntensity, 12, delta);
+    });
   });
-
-  const wheels = [
-    { ref: frontLeft, position: [-1.72, 0.62, -2.05] as [number, number, number] },
-    { ref: frontRight, position: [1.72, 0.62, -2.05] as [number, number, number] },
-    { ref: rearLeft, position: [-1.72, 0.62, 2.08] as [number, number, number] },
-    { ref: rearRight, position: [1.72, 0.62, 2.08] as [number, number, number] },
-  ];
 
   return (
     <group>
-      {wheels.map((wheel, index) => (
-        <group key={index} ref={wheel.ref} position={wheel.position}>
-          <mesh rotation={[0, 0, Math.PI / 2]} castShadow>
-            <cylinderGeometry args={[0.57, 0.57, 0.38, 22]} />
-            <meshStandardMaterial color="#101416" roughness={0.86} metalness={0.06} />
-          </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[0.26, 0.26, 0.41, 14]} />
-            <meshStandardMaterial color="#c3b38b" roughness={0.38} metalness={0.62} />
-          </mesh>
-        </group>
-      ))}
-
-      <group ref={body} position={[0, 1.45, 0]}>
-        <mesh position={[0, -0.67, 0]} castShadow>
-          <boxGeometry args={[3.1, 0.38, 5.75]} />
-          <meshStandardMaterial color="#171d20" roughness={0.68} metalness={0.38} />
-        </mesh>
-        <RoundedBox args={[3.22, 1.75, 5.8]} radius={0.32} smoothness={5} position={[0, 0, 0.12]} castShadow receiveShadow>
-          <meshPhysicalMaterial color="#e86f50" roughness={0.34} metalness={0.18} clearcoat={0.72} clearcoatRoughness={0.2} />
-        </RoundedBox>
-        <RoundedBox args={[3.06, 1.65, 3.1]} radius={0.38} smoothness={5} position={[0, 1.45, 0.88]} castShadow>
-          <meshPhysicalMaterial color="#f0dec0" roughness={0.43} clearcoat={0.52} clearcoatRoughness={0.28} />
-        </RoundedBox>
-
-        <mesh position={[0, 1.55, -0.72]} rotation={[-0.34, 0, 0]}>
-          <planeGeometry args={[2.55, 1.08]} />
-          <meshPhysicalMaterial color="#183846" roughness={0.16} metalness={0.12} transmission={0.18} transparent opacity={0.88} />
-        </mesh>
-        <mesh position={[-1.54, 1.5, 0.85]} rotation={[0, -Math.PI / 2, 0]}>
-          <planeGeometry args={[1.95, 0.93]} />
-          <meshPhysicalMaterial color="#1f4652" roughness={0.2} metalness={0.18} transmission={0.14} transparent opacity={0.86} />
-        </mesh>
-        <mesh position={[1.54, 1.5, 0.85]} rotation={[0, Math.PI / 2, 0]}>
-          <planeGeometry args={[1.95, 0.93]} />
-          <meshPhysicalMaterial color="#1f4652" roughness={0.2} metalness={0.18} transmission={0.14} transparent opacity={0.86} />
-        </mesh>
-
-        <mesh position={[0, -0.12, -2.94]}>
-          <boxGeometry args={[2.45, 0.68, 0.08]} />
-          <meshStandardMaterial color="#183c43" roughness={0.38} metalness={0.42} />
-        </mesh>
-        <mesh position={[0, -0.48, -3.12]}>
-          <boxGeometry args={[3.3, 0.26, 0.28]} />
-          <meshStandardMaterial color="#d2c5a4" roughness={0.28} metalness={0.75} />
-        </mesh>
-        {[-1.05, 1.05].map((x) => (
-          <group key={x} position={[x, 0.18, -3.02]}>
-            <mesh>
-              <cylinderGeometry args={[0.32, 0.32, 0.08, 20]} />
-              <meshStandardMaterial color="#eef6de" emissive="#ffe7aa" emissiveIntensity={1.6} />
-            </mesh>
-            <pointLight position={[0, 0, -0.4]} color="#ffe8b5" intensity={0.75} distance={14} decay={1.7} />
-          </group>
-        ))}
-
-        <mesh position={[-1.61, 1.18, -0.7]} rotation={[0, 0, -0.16]}>
-          <boxGeometry args={[0.32, 0.2, 0.48]} />
-          <meshStandardMaterial color="#142126" roughness={0.42} metalness={0.5} />
-        </mesh>
-        <mesh position={[1.61, 1.18, -0.7]} rotation={[0, 0, 0.16]}>
-          <boxGeometry args={[0.32, 0.2, 0.48]} />
-          <meshStandardMaterial color="#142126" roughness={0.42} metalness={0.5} />
-        </mesh>
-
-        <mesh position={[0, 2.43, -0.05]}>
-          <boxGeometry args={[3.45, 0.1, 0.14]} />
-          <meshStandardMaterial color="#1b2528" metalness={0.68} roughness={0.34} />
-        </mesh>
-        <mesh position={[0, 2.43, 1.72]}>
-          <boxGeometry args={[3.45, 0.1, 0.14]} />
-          <meshStandardMaterial color="#1b2528" metalness={0.68} roughness={0.34} />
-        </mesh>
-        {(["performance", "fish", "longboard"] as BoardType[]).map((boardType, index) => {
-          const rackBoard = BOARD_SPECS[boardType];
-          return (
-            <group key={boardType} position={[-0.72 + index * 0.72, 2.66 + index * 0.055, 0.74 - index * 0.08]} rotation={[Math.PI / 2, 0, 0]} scale={[0.82, 0.92, 0.1]}>
-              <mesh castShadow>
-                <capsuleGeometry args={[rackBoard.width, rackBoard.length, 6, 20]} />
-                <meshPhysicalMaterial color={rackBoard.color} roughness={0.29} clearcoat={0.76} clearcoatRoughness={0.16} />
-              </mesh>
-              <mesh position={[0, 0.06, -0.08]} scale={[0.7, 1, 0.72]}>
-                <capsuleGeometry args={[rackBoard.width * 0.82, rackBoard.length * 0.82, 4, 16]} />
-                <meshStandardMaterial color={rackBoard.accent} roughness={0.58} />
-              </mesh>
-            </group>
-          );
-        })}
-        <mesh position={[0, 0.12, 3.04]}>
-          <boxGeometry args={[1.4, 0.5, 0.06]} />
-          <meshStandardMaterial color="#dcd2b5" roughness={0.64} />
-        </mesh>
-        {[-1.04, 1.04].map((x) => (
-          <mesh key={x} position={[x, 0.24, 3.04]}>
-            <boxGeometry args={[0.48, 0.28, 0.07]} />
-            <meshStandardMaterial color="#be493e" emissive="#9b241e" emissiveIntensity={0.55} />
-          </mesh>
-        ))}
-      </group>
+      <primitive object={model} />
+      <pointLight position={[-1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.5} distance={13} decay={1.8} />
+      <pointLight position={[1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.5} distance={13} decay={1.8} />
     </group>
   );
 }
