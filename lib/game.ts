@@ -72,6 +72,7 @@ export type SessionSettings = {
   currentDirection: number;
   tide: number;
   timeOfDay: number;
+  weatherCode: number;
 };
 
 export type GameStats = {
@@ -172,6 +173,7 @@ export function settingsFromConditions(conditions: MarineConditions): SessionSet
     currentDirection: conditions.currentDirection,
     tide: conditions.seaLevel,
     timeOfDay: Number.isFinite(localHour) ? localHour + 0.5 : 16,
+    weatherCode: conditions.weatherCode,
   };
 }
 

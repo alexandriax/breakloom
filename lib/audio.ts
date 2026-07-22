@@ -8,6 +8,13 @@ const CHORDS = [
   [0, 3, 10, 15],
 ] as const;
 
+function precipitationLevel(weatherCode: number) {
+  if ([51, 56, 61, 66, 80].includes(weatherCode)) return .42;
+  if ([53, 63, 81].includes(weatherCode)) return .68;
+  if ([55, 57, 65, 67, 82, 95, 96, 99].includes(weatherCode)) return 1;
+  return 0;
+}
+
 function ramp(parameter: AudioParam, value: number, now: number, duration = .12) {
   parameter.cancelScheduledValues(now);
   parameter.setValueAtTime(parameter.value, now);
@@ -27,6 +34,8 @@ export class SurfscapeAudio {
   private foamGain: GainNode | null = null;
   private windGain: GainNode | null = null;
   private windFilter: BiquadFilterNode | null = null;
+  private rainGain: GainNode | null = null;
+  private rainFilter: BiquadFilterNode | null = null;
 
   private surf: AudioBufferSourceNode | null = null;
   private surfGain: GainNode | null = null;
@@ -121,6 +130,18 @@ export class SurfscapeAudio {
     this.windFilter = windFilter;
     this.windGain = windGain;
 
+    const rain = this.loopNoise(1.72, 5.74);
+    const rainFilter = context.createBiquadFilter();
+    const rainGain = context.createGain();
+    rainFilter.type = "bandpass";
+    rainFilter.frequency.value = 2850;
+    rainFilter.Q.value = .42;
+    rainGain.gain.value = 0;
+    rain.connect(rainFilter).connect(rainGain).connect(master);
+    this.sendToReverb(rainFilter, .035);
+    this.rainFilter = rainFilter;
+    this.rainGain = rainGain;
+
     const surf = this.loopNoise(1.16, 3.12);
     const surfFilter = context.createBiquadFilter();
     const surfGain = context.createGain();
@@ -145,12 +166,13 @@ export class SurfscapeAudio {
     ramp(this.master.gain, enabled ? .42 : 0, this.context.currentTime, .18);
   }
 
-  setEnvironment(windSpeed: number, waveHeight: number, cloudCover: number, intensity = 1) {
+  setEnvironment(windSpeed: number, waveHeight: number, cloudCover: number, intensity = 1, weatherCode = 0) {
     if (!this.context) return;
     const now = this.context.currentTime;
     const wind = Math.min(1.4, Math.max(0, windSpeed) / 24);
     const sea = Math.min(1.5, Math.max(.1, waveHeight) / 2.4);
     const clouds = Math.min(1, Math.max(0, cloudCover) / 100);
+    const rain = precipitationLevel(weatherCode);
     const sceneIntensity = Math.min(1, Math.max(.2, intensity));
 
     if (this.oceanGain) ramp(this.oceanGain.gain, (.18 + sea * .16) * sceneIntensity, now, .7);
@@ -159,8 +181,10 @@ export class SurfscapeAudio {
     if (this.foamGain) ramp(this.foamGain.gain, (.012 + sea * .032 + wind * .012) * sceneIntensity, now, .55);
     if (this.windGain) ramp(this.windGain.gain, (.004 + Math.pow(wind, 1.55) * .105 + clouds * .009) * sceneIntensity, now, .7);
     if (this.windFilter) ramp(this.windFilter.frequency, 850 + wind * 1550 + clouds * 180, now, .8);
+    if (this.rainGain) ramp(this.rainGain.gain, rain * .09 * sceneIntensity, now, .65);
+    if (this.rainFilter) ramp(this.rainFilter.frequency, 2250 + rain * 1450 + wind * 260, now, .7);
 
-    if (this.enabled && sceneIntensity > .55 && now >= this.nextGullAt && wind < 1.05) {
+    if (this.enabled && sceneIntensity > .55 && now >= this.nextGullAt && wind < 1.05 && rain === 0) {
       this.gull(now);
       this.nextGullAt = now + 8 + Math.random() * 11;
     }

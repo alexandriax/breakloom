@@ -29,6 +29,8 @@ type SurfSceneProps = {
   settings: SessionSettings;
   cloudCover: number;
   windSpeed: number;
+  windDirection: number;
+  weatherCode: number;
   sunrise: string;
   sunset: string;
   cameraMode: CameraMode;
@@ -62,6 +64,37 @@ type VehicleMotionState = {
 function isMobileRenderer() {
   if (typeof window === "undefined") return false;
   return window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0 || window.innerWidth <= 820;
+}
+
+type WeatherProfile = {
+  kind: "none" | "rain" | "snow";
+  intensity: number;
+  fog: boolean;
+  storm: boolean;
+};
+
+function weatherProfile(code: number): WeatherProfile {
+  if (code === 45 || code === 48) return { kind: "none", intensity: 0, fog: true, storm: false };
+  if ([51, 53, 55, 56, 57].includes(code)) {
+    return { kind: "rain", intensity: code === 51 ? .34 : code === 53 || code === 56 ? .52 : .7, fog: false, storm: false };
+  }
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) {
+    const heavy = code === 65 || code === 67 || code === 82;
+    const moderate = code === 63 || code === 66 || code === 81;
+    return { kind: "rain", intensity: heavy ? 1 : moderate ? .72 : .48, fog: false, storm: false };
+  }
+  if ([71, 73, 75, 77, 85, 86].includes(code)) {
+    const heavy = code === 75 || code === 86;
+    const moderate = code === 73 || code === 85;
+    return { kind: "snow", intensity: heavy ? 1 : moderate ? .72 : .48, fog: false, storm: false };
+  }
+  if ([95, 96, 99].includes(code)) return { kind: "rain", intensity: 1, fog: false, storm: true };
+  return { kind: "none", intensity: 0, fog: false, storm: false };
+}
+
+function seededRandom(index: number, salt = 0) {
+  const value = Math.sin((index + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
 }
 
 const OCEAN_VERTEX = /* glsl */ `
@@ -1582,6 +1615,165 @@ function CoastalAtmosphere({
   );
 }
 
+const PRECIPITATION_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uWind;
+  uniform vec2 uWindVector;
+  uniform float uSnow;
+  uniform float uOpacity;
+  attribute float aSeed;
+  varying float vSnow;
+  varying float vAlpha;
+
+  void main() {
+    float fallSpeed = mix(.66, .085, uSnow) * (.72 + aSeed * .56);
+    float cycle = fract(position.y * .5 + .5 - uTime * fallSpeed + aSeed);
+    vec3 worldPosition;
+    worldPosition.x = cameraPosition.x + position.x * 38.0;
+    worldPosition.y = cameraPosition.y - 5.0 + cycle * 25.0;
+    worldPosition.z = cameraPosition.z + position.z * 42.0;
+    worldPosition.xz += (1.0 - cycle) * uWindVector * 8.5;
+    worldPosition.x += sin(uTime * .8 + aSeed * 31.0 + cycle * 6.0) * uSnow * 1.45;
+    worldPosition.z += cos(uTime * .52 + aSeed * 19.0) * uSnow * .72;
+    vec4 viewPosition = viewMatrix * vec4(worldPosition, 1.0);
+    float depthScale = clamp(24.0 / -viewPosition.z, .58, 1.7);
+    gl_PointSize = mix(8.5, 5.8, uSnow) * depthScale * (.72 + aSeed * .5);
+    gl_Position = projectionMatrix * viewPosition;
+    vSnow = uSnow;
+    vAlpha = uOpacity * smoothstep(0.0, .08, cycle) * (1.0 - smoothstep(.92, 1.0, cycle));
+  }
+`;
+
+const PRECIPITATION_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uWind;
+  uniform vec3 uColor;
+  varying float vSnow;
+  varying float vAlpha;
+
+  void main() {
+    vec2 point = gl_PointCoord - .5;
+    vec2 rainPoint = point;
+    rainPoint.x += rainPoint.y * uWind * .42;
+    float rain = smoothstep(.115, .018, abs(rainPoint.x)) * smoothstep(.51, .07, abs(rainPoint.y));
+    float snow = smoothstep(.5, .11, length(point));
+    snow *= .72 + smoothstep(.42, .08, length(point + vec2(.12, -.1))) * .28;
+    float alpha = mix(rain, snow, vSnow) * vAlpha;
+    if (alpha < .012) discard;
+    gl_FragColor = vec4(uColor, alpha);
+  }
+`;
+
+function WeatherEffects({ weatherCode, windSpeed, windDirection }: { weatherCode: number; windSpeed: number; windDirection: number }) {
+  const precipitation = useRef<THREE.Points>(null);
+  const precipitationMaterial = useRef<THREE.ShaderMaterial>(null);
+  const lightning = useRef<THREE.DirectionalLight>(null);
+  const bolt = useRef<THREE.LineSegments>(null);
+  const boltMaterial = useRef<THREE.LineBasicMaterial>(null);
+  const profile = useMemo(() => weatherProfile(weatherCode), [weatherCode]);
+  const flash = useRef(0);
+  const flashIndex = useRef(0);
+  const nextFlash = useRef(5.2);
+  const particleCount = useMemo(() => (isMobileRenderer() ? 150 : 320), []);
+  const particlePositions = useMemo(() => {
+    const values = new Float32Array(particleCount * 3);
+    for (let index = 0; index < particleCount; index += 1) {
+      values[index * 3] = seededRandom(index, 1) * 2 - 1;
+      values[index * 3 + 1] = seededRandom(index, 2) * 2 - 1;
+      values[index * 3 + 2] = seededRandom(index, 3) * 2 - 1;
+    }
+    return values;
+  }, [particleCount]);
+  const seeds = useMemo(() => {
+    const values = new Float32Array(particleCount);
+    for (let index = 0; index < particleCount; index += 1) values[index] = seededRandom(index, 4);
+    return values;
+  }, [particleCount]);
+  const boltPositions = useMemo(() => {
+    const values: number[] = [];
+    let x = 0;
+    let y = 42;
+    for (let segment = 0; segment < 12; segment += 1) {
+      const nextX = x + (seededRandom(segment, 5) - .5) * (segment < 4 ? 2.2 : 4.5);
+      const nextY = y - 3.2 - seededRandom(segment, 6) * 1.4;
+      values.push(x, y, 0, nextX, Math.max(0, nextY), 0);
+      x = nextX;
+      y = nextY;
+    }
+    return new Float32Array(values);
+  }, []);
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uWind: { value: 0 },
+    uWindVector: { value: new THREE.Vector2() },
+    uSnow: { value: 0 },
+    uOpacity: { value: 0 },
+    uColor: { value: new THREE.Color("#cceff1") },
+  }), []);
+  const windVectorTarget = useMemo(() => new THREE.Vector2(), []);
+
+  useFrame(({ camera, clock }, delta) => {
+    if (precipitation.current) precipitation.current.visible = profile.kind !== "none" && profile.intensity > .02;
+    if (precipitationMaterial.current) {
+      const values = precipitationMaterial.current.uniforms;
+      values.uTime.value = clock.elapsedTime;
+      const wind = THREE.MathUtils.clamp(windSpeed / 24, 0, 1.5);
+      const windAngle = THREE.MathUtils.degToRad(windDirection);
+      values.uWind.value = THREE.MathUtils.damp(values.uWind.value, wind, 3, delta);
+      windVectorTarget.set(-Math.sin(windAngle) * wind, -Math.cos(windAngle) * wind);
+      values.uWindVector.value.lerp(windVectorTarget, 1 - Math.exp(-delta * 3));
+      values.uSnow.value = THREE.MathUtils.damp(values.uSnow.value, profile.kind === "snow" ? 1 : 0, 4, delta);
+      values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, profile.intensity * (profile.kind === "snow" ? .72 : .82), 4, delta);
+      values.uColor.value.set(profile.kind === "snow" ? "#f1f7f4" : "#c6e8eb");
+    }
+
+    if (profile.storm && clock.elapsedTime >= nextFlash.current) {
+      const sequence = flashIndex.current;
+      flashIndex.current += 1;
+      flash.current = 1;
+      nextFlash.current = clock.elapsedTime + 4.8 + seededRandom(sequence, weatherCode + 7) * 8.2;
+      if (bolt.current) {
+        bolt.current.position.set(
+          camera.position.x + (seededRandom(sequence, weatherCode + 8) - .5) * 70,
+          0,
+          camera.position.z - 68 - seededRandom(sequence, weatherCode + 9) * 28,
+        );
+      }
+    }
+    flash.current = Math.max(0, flash.current - delta * 2.3);
+    const flicker = flash.current > 0 ? Math.pow(flash.current, 2.4) * (.62 + Math.sin(clock.elapsedTime * 78) * .38) : 0;
+    if (lightning.current) lightning.current.intensity = profile.storm ? Math.max(0, flicker) * 7.5 : 0;
+    if (boltMaterial.current) boltMaterial.current.opacity = profile.storm ? Math.max(0, flicker) * .82 : 0;
+  });
+
+  return (
+    <>
+      <points ref={precipitation} frustumCulled={false} renderOrder={5}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[particlePositions, 3]} />
+          <bufferAttribute attach="attributes-aSeed" args={[seeds, 1]} />
+        </bufferGeometry>
+        <shaderMaterial
+          ref={precipitationMaterial}
+          uniforms={uniforms}
+          vertexShader={PRECIPITATION_VERTEX}
+          fragmentShader={PRECIPITATION_FRAGMENT}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      <directionalLight ref={lightning} position={[-24, 48, -35]} color="#dcecff" intensity={0} />
+      <lineSegments ref={bolt} frustumCulled={false} renderOrder={6}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[boltPositions, 3]} />
+        </bufferGeometry>
+        <lineBasicMaterial ref={boltMaterial} color="#e7f2ff" transparent opacity={0} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </lineSegments>
+    </>
+  );
+}
+
 function Bird({ offset, speed }: { offset: number; speed: number }) {
   const group = useRef<THREE.Group>(null);
   const left = useRef<THREE.Mesh>(null);
@@ -2028,6 +2220,8 @@ function Simulation({
   settings,
   cloudCover,
   windSpeed,
+  windDirection,
+  weatherCode,
   sunrise,
   sunset,
   cameraMode,
@@ -2536,7 +2730,9 @@ function Simulation({
   const sunHeight = Math.max(-0.08, solarElevation);
   const sunX = Math.cos(hourAngle) * 160;
   const light = THREE.MathUtils.clamp(sunHeight * 1.1 + 0.12, 0.08, 1);
-  const cloudFactor = THREE.MathUtils.clamp(cloudCover / 100, 0, 1);
+  const weather = weatherProfile(weatherCode);
+  const weatherCloudFloor = weather.storm ? .88 : weather.kind !== "none" ? .64 : weather.fog ? .8 : 0;
+  const cloudFactor = THREE.MathUtils.clamp(Math.max(cloudCover / 100, weatherCloudFloor), 0, 1);
   const directLight = 1 - cloudFactor * .52;
   const daylightStrength = THREE.MathUtils.smoothstep(solarElevation, -.04, .14);
   const moonlightStrength = 1 - THREE.MathUtils.smoothstep(solarElevation, -.02, .16);
@@ -2565,6 +2761,8 @@ function Simulation({
   const overcastColor = sunHeight < 0.08 ? "#071017" : "#53676c";
   const backgroundColor = new THREE.Color(baseBackgroundColor).lerp(new THREE.Color(overcastColor), cloudFactor * .34).getStyle();
   const fogColor = new THREE.Color(baseFogColor).lerp(new THREE.Color(overcastColor), cloudFactor * .42).getStyle();
+  const fogNear = weather.fog ? 18 : weather.storm ? 34 : weather.kind !== "none" ? 42 : 55;
+  const fogFar = weather.fog ? 112 : weather.storm ? 148 : weather.intensity > .7 ? 172 : weather.kind !== "none" ? 205 : 240;
   const sunLightColor = sunHeight < 0.3 ? "#ff9f72" : "#fff0ca";
   const celestialSunPosition: [number, number, number] = [sunX, solarElevation * 150, -120];
   const lightingSunPosition: [number, number, number] = [sunX * .22, Math.max(6, sunHeight * 44), -30];
@@ -2573,7 +2771,7 @@ function Simulation({
   return (
     <>
       <color attach="background" args={[backgroundColor]} />
-      <fog attach="fog" args={[fogColor, 55, 240]} />
+      <fog attach="fog" args={[fogColor, fogNear, fogFar]} />
       <Sky
         distance={450000}
         sunPosition={[sunX, Math.max(-8, solarElevation * 150), -120]}
@@ -2592,6 +2790,7 @@ function Simulation({
         sunPosition={celestialSunPosition}
         hazeColor={fogColor}
       />
+      <WeatherEffects weatherCode={weatherCode} windSpeed={windSpeed} windDirection={windDirection} />
       <ambientLight intensity={(0.18 + light * 0.42) * (.94 + cloudFactor * .08)} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
       <hemisphereLight args={["#a9d9dc", "#5c4431", (0.38 + light * 0.55) * (.93 + cloudFactor * .09)]} />
       <directionalLight
@@ -2631,9 +2830,13 @@ function Simulation({
       <group ref={van}>
         <SurfVan motion={vanMotion} />
       </group>
-      <Bird offset={0} speed={1 + windSpeed * 0.008} />
-      <Bird offset={7} speed={0.82 + windSpeed * 0.006} />
-      <Bird offset={15} speed={1.15 + windSpeed * 0.007} />
+      {weather.kind === "none" && !weather.fog && !weather.storm && (
+        <>
+          <Bird offset={0} speed={1 + windSpeed * 0.008} />
+          <Bird offset={7} speed={0.82 + windSpeed * 0.006} />
+          <Bird offset={15} speed={1.15 + windSpeed * 0.007} />
+        </>
+      )}
       {sunHeight < 0.22 && (
         <Sparkles count={70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={Math.max(.06, .45 * (1 - cloudFactor * .86))} color="#dcefff" />
       )}

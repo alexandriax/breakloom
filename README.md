@@ -28,7 +28,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `Esc`: pause
 - Mobile: analog movement stick, precision balance rail, camera switcher, phase haptics, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
 
-Wave sets build and fade on the swell radar. Once caught, a GPU-shaped wave face steepens beside the surfer, pitches a translucent falling-water curtain, throws directional crest spray, and closes into a misty barrel as line quality rises. Live cloud cover and wind shape a moving marine sky with haze, sun corona, moonlight, and night-star visibility. Better-timed catches start with more flow, while stamina management, nose-to-tail stance, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
+Wave sets build and fade on the swell radar. Once caught, a GPU-shaped wave face steepens beside the surfer, pitches a translucent falling-water curtain, throws directional crest spray, and closes into a misty barrel as line quality rises. Live cloud cover, wind, and WMO weather conditions shape a moving marine sky with haze, sun corona, moonlight, rain, snow, sea fog, lightning, and night-star visibility; Wave Lab can override the weather for custom sessions. Better-timed catches start with more flow, while stamina management, nose-to-tail stance, line choice, balance, and rail pressure determine whether a Lip Snap, Foam Floater, Pocket Cutback, Rail Carve, Power Pump, High Line, Nose Ride, or Tail Release lands cleanly. Session objectives, per-wave recaps, grades, and personal bests are saved in the browser.
 
 ## Live data
 

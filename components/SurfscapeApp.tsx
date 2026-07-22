@@ -71,6 +71,7 @@ const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
 const RECORD_KEY = "surfscape-personal-best-v1";
+const WEATHER_PRESETS = [0, 3, 63, 73, 95] as const;
 const CAMERA_MODES: CameraMode[] = ["follow", "immersive", "cinematic"];
 const CAMERA_LABELS: Record<CameraMode, string> = {
   follow: "Follow",
@@ -133,6 +134,31 @@ function degrees(value: number) {
   return `${Math.round(value)}° ${compassDirection(value)}`;
 }
 
+function weatherLabel(code: number) {
+  if (code === 45 || code === 48) return "Sea fog";
+  if ([51, 53, 55, 56, 57].includes(code)) return "Drizzle";
+  if ([61, 63, 65, 66, 67].includes(code)) return "Rain";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "Snow";
+  if ([80, 81, 82].includes(code)) return "Showers";
+  if ([95, 96, 99].includes(code)) return "Thunder";
+  if (code === 1 || code === 2) return "Partly cloudy";
+  if (code === 3) return "Overcast";
+  return "Clear sky";
+}
+
+function nextWeatherPreset(code: number) {
+  const index = WEATHER_PRESETS.findIndex((preset) => preset === code);
+  return WEATHER_PRESETS[(index + 1 + WEATHER_PRESETS.length) % WEATHER_PRESETS.length];
+}
+
+function playgroundCloudCover(code: number) {
+  if (code === 0) return 8;
+  if (code === 3) return 92;
+  if ([95, 96, 99].includes(code)) return 98;
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return 88;
+  return 82;
+}
+
 export default function SurfscapeApp() {
   const [screen, setScreen] = useState<Screen>("launch");
   const [beach, setBeach] = useState<Beach>(DEFAULT_BEACH);
@@ -168,6 +194,8 @@ export default function SurfscapeApp() {
     yaw: number;
     pitch: number;
   } | null>(null);
+  const sessionWeatherCode = settings.weatherCode;
+  const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : conditions.cloudCover;
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -323,15 +351,16 @@ export default function SurfscapeApp() {
     audio.current?.setEnvironment(
       conditions.windSpeed,
       settings.waveHeight,
-      conditions.cloudCover,
+      sessionCloudCover,
       paused ? 0.34 : 1,
+      sessionWeatherCode,
     );
     audio.current?.setMovement(
       stats.phase,
       paused ? 0 : stats.speed,
       !paused && !stats.vehicleMode,
     );
-  }, [conditions.cloudCover, conditions.windSpeed, paused, settings.waveHeight, stats.barrelIntensity, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [conditions.windSpeed, paused, sessionCloudCover, sessionWeatherCode, settings.waveHeight, stats.barrelIntensity, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -390,7 +419,7 @@ export default function SurfscapeApp() {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
-    audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover);
+    audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
@@ -408,7 +437,7 @@ export default function SurfscapeApp() {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
     audio.current?.setMovement(stats.phase, 0, false);
-    audio.current?.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover, 0.42);
+    audio.current?.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     setScreen("launch");
@@ -422,7 +451,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(next);
     if (next) {
-      audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, conditions.cloudCover, screen === "game" ? 1 : 0.42);
+      audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
     }
   };
 
@@ -584,8 +613,10 @@ export default function SurfscapeApp() {
           key={`${beach.id}-${sessionKey}`}
           beach={beach}
           settings={settings}
-          cloudCover={conditions.cloudCover}
+          cloudCover={sessionCloudCover}
           windSpeed={conditions.windSpeed}
+          windDirection={conditions.windDirection}
+          weatherCode={sessionWeatherCode}
           sunrise={conditions.sunrise}
           sunset={conditions.sunset}
           cameraMode={cameraMode}
@@ -763,6 +794,9 @@ export default function SurfscapeApp() {
               <PlaygroundSlider label="Current" value={settings.currentStrength} min={0} max={4} step={0.1} unit="km/h" onChange={(currentStrength) => setSettings((value) => ({ ...value, currentStrength }))} />
               <PlaygroundSlider label="Tide" value={settings.tide} min={-1.5} max={1.8} step={0.05} unit="m" onChange={(tide) => setSettings((value) => ({ ...value, tide }))} />
               <PlaygroundSlider label="Local hour" value={settings.timeOfDay} min={0} max={23.5} step={0.5} unit=":00" onChange={(timeOfDay) => setSettings((value) => ({ ...value, timeOfDay }))} />
+              <button className="lab-weather" type="button" onClick={() => setSettings((value) => ({ ...value, weatherCode: nextWeatherPreset(value.weatherCode) }))} aria-label={`Weather preset: ${weatherLabel(settings.weatherCode)}. Tap to change.`}>
+                <CloudSun /><span>Weather</span><strong>{weatherLabel(settings.weatherCode)}</strong><small>Tap to cycle</small>
+              </button>
             </section>
           )}
 
@@ -904,7 +938,7 @@ export default function SurfscapeApp() {
             <div><Droplets /><span>CURRENT</span><strong>{settings.currentStrength.toFixed(1)} km/h</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div><Crosshair /><span>DISTANCE</span><strong>{stats.rideDistance.toFixed(0)} m</strong></div>
-            <div><CloudSun /><span>SKY</span><strong>{Math.round(conditions.cloudCover)}% cloud</strong></div>
+            <div><CloudSun /><span>SKY</span><strong>{weatherLabel(sessionWeatherCode)}</strong></div>
           </div>
 
           <div className="desktop-controls">
