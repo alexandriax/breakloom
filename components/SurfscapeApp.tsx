@@ -171,6 +171,7 @@ export default function SurfscapeApp() {
   const [paused, setPaused] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [musicEnabled, setMusicEnabled] = useState(true);
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [showPlanner, setShowPlanner] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
@@ -352,6 +353,14 @@ export default function SurfscapeApp() {
       stats.setEnergy,
       stats.barrelIntensity,
     );
+    audio.current?.setScore(
+      stats.phase,
+      stats.setEnergy,
+      stats.barrelIntensity,
+      settings.timeOfDay,
+      sessionWeatherCode,
+      screen === "game" && !paused,
+    );
     audio.current?.setEnvironment(
       conditions.windSpeed,
       settings.waveHeight,
@@ -364,7 +373,7 @@ export default function SurfscapeApp() {
       paused ? 0 : stats.speed,
       !paused && !stats.vehicleMode,
     );
-  }, [conditions.windSpeed, paused, sessionCloudCover, sessionWeatherCode, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [conditions.windSpeed, paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, stats.barrelIntensity, stats.catchReady, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -433,7 +442,9 @@ export default function SurfscapeApp() {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
+    audio.current.setMusicEnabled(musicEnabled);
     audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
+    audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
@@ -450,6 +461,7 @@ export default function SurfscapeApp() {
   const leaveSession = () => {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
+    audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
     audio.current?.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
@@ -467,6 +479,15 @@ export default function SurfscapeApp() {
     if (next) {
       audio.current.setEnvironment(conditions.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
     }
+  };
+
+  const toggleMusic = async () => {
+    const next = !musicEnabled;
+    setMusicEnabled(next);
+    if (!audio.current) audio.current = new SurfscapeAudio();
+    await audio.current.start();
+    audio.current.setMusicEnabled(next);
+    audio.current.setScore(stats.phase, stats.setEnergy, stats.barrelIntensity, settings.timeOfDay, sessionWeatherCode, screen === "game" && !paused);
   };
 
   const setControl = (name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">, value: boolean) => {
@@ -1036,6 +1057,7 @@ export default function SurfscapeApp() {
                 <h2>Listen to the break.</h2>
                 <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
+                <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
                 <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
