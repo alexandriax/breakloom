@@ -1147,7 +1147,7 @@ export default function SurfscapeApp() {
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
-              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. Watch the sets, then press Space or Catch as a wall approaches.</p></article>
+              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break. The foam pulse tightens as a catchable crest arrives; after the drop, follow the moving caustic seam toward the open shoulder.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Steer with A/D or the stick, then press Trick to commit a move. Follow the shifting balance marker and reconnect inside the gold landing zone to bank the score.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>

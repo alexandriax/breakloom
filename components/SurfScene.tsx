@@ -59,6 +59,8 @@ type MotionState = {
   impact: number;
   takeoff: number;
   finish: number;
+  takeoffRead: number;
+  catchReady: number;
 };
 
 type ManeuverAttempt = {
@@ -1249,6 +1251,160 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       <group ref={body} position={[0, 1.02, 0]}>
         <PremiumSurferBody motion={motion} />
       </group>
+    </group>
+  );
+}
+
+function WaveReadingGuide({
+  motion,
+  settings,
+  character,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+  mobile: boolean;
+}) {
+  const crest = useRef<THREE.Mesh>(null);
+  const crestMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const shoulder = useRef<THREE.Points>(null);
+  const shoulderMaterial = useRef<THREE.PointsMaterial>(null);
+  const lineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
+  const particleCount = mobile ? 18 : 34;
+  const positions = useMemo(() => new Float32Array(particleCount * 3), [particleCount]);
+  const coolColor = useMemo(() => new THREE.Color("#7fded5"), []);
+  const readyColor = useMemo(() => new THREE.Color("#e7ffd5"), []);
+  const crestTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.translate(64, 64);
+      context.lineCap = "round";
+      for (let arc = 0; arc < 18; arc += 1) {
+        const angle = seededRandom(arc, 171) * Math.PI * 2;
+        const length = .12 + seededRandom(arc, 172) * .28;
+        const radius = 35 + seededRandom(arc, 173) * 15;
+        context.beginPath();
+        context.strokeStyle = `rgba(224,255,248,${.2 + seededRandom(arc, 174) * .55})`;
+        context.lineWidth = 1.1 + seededRandom(arc, 175) * 2.4;
+        context.arc(0, 0, radius, angle, angle + length);
+        context.stroke();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+  const glintTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(32, 32, 1, 32, 32, 28);
+      gradient.addColorStop(0, "rgba(240,255,249,1)");
+      gradient.addColorStop(.18, "rgba(179,249,237,.82)");
+      gradient.addColorStop(1, "rgba(110,225,211,0)");
+      context.fillStyle = gradient;
+      context.save();
+      context.translate(32, 32);
+      context.rotate(-.28);
+      context.scale(1, .24);
+      context.fillRect(-30, -30, 60, 60);
+      context.restore();
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    lineSide.current = character.peel === 0 ? 1 : Math.sign(character.peel);
+  }, [character.peel]);
+
+  useEffect(() => () => {
+    crestTexture.dispose();
+    glintTexture.dispose();
+  }, [crestTexture, glintTexture]);
+
+  useFrame(({ clock }, delta) => {
+    const state = motion.current;
+    const assist = settings.mode === "training" ? 1 : settings.mode === "advanced" ? .28 : .54;
+    const mobileBoost = mobile ? 1.12 : 1;
+    if (Math.abs(character.peel) < .18 && Math.abs(state.steer) > .12 && state.phase === "riding") lineSide.current = Math.sign(state.steer);
+
+    if (crest.current && crestMaterial.current) {
+      const paddling = state.phase === "paddling";
+      const read = THREE.MathUtils.smoothstep(state.takeoffRead, .18, .86);
+      const targetOpacity = paddling ? read * (.12 + state.catchReady * .58) * assist * mobileBoost : 0;
+      crestMaterial.current.opacity = THREE.MathUtils.damp(crestMaterial.current.opacity, targetOpacity, state.catchReady > .4 ? 12 : 5, delta);
+      crestMaterial.current.color.lerp(state.catchReady > .42 ? readyColor : coolColor, 1 - Math.exp(-delta * 6));
+      const pulse = 1 + Math.sin(clock.elapsedTime * (3.2 + state.catchReady * 2.8)) * (.025 + state.catchReady * .055);
+      const crestScale = (.72 + read * .42) * pulse;
+      crest.current.scale.setScalar(crestScale);
+      crest.current.rotation.z = clock.elapsedTime * (.045 + state.catchReady * .04);
+      crest.current.visible = crestMaterial.current.opacity > .006;
+    }
+
+    if (shoulder.current && shoulderMaterial.current) {
+      const riding = state.phase === "riding";
+      const targetOpacity = riding
+        ? assist * mobileBoost * (.08 + state.waveQuality * .46 + Math.abs(state.rail) * .08) * (1 - state.barrel * .42)
+        : 0;
+      shoulderMaterial.current.opacity = THREE.MathUtils.damp(shoulderMaterial.current.opacity, targetOpacity, riding ? 7 : 4, delta);
+      shoulderMaterial.current.size = THREE.MathUtils.damp(shoulderMaterial.current.size, mobile ? .26 : .22 + state.waveQuality * .07, 5, delta);
+      const attribute = shoulder.current.geometry.getAttribute("position") as THREE.BufferAttribute;
+      const points = attribute.array as Float32Array;
+      const faceHeight = THREE.MathUtils.clamp(settings.waveHeight * 1.55, 1.45, 5.8) * (.82 + state.setEnergy * .3);
+      for (let index = 0; index < particleCount; index += 1) {
+        const progress = index / Math.max(1, particleCount - 1);
+        const stream = (progress + clock.elapsedTime * (.055 + state.waveQuality * .045)) % 1;
+        const offset = index * 3;
+        points[offset] = lineSide.current * (2.1 + stream * 8.5) + Math.sin(index * 2.17 + clock.elapsedTime * 1.8) * .11;
+        points[offset + 1] = faceHeight * (.31 + stream * .24) + Math.sin(index * 1.31 + clock.elapsedTime * 2.2) * .045;
+        points[offset + 2] = 2.28 - stream * .4 - state.barrel * .22;
+      }
+      attribute.needsUpdate = true;
+      shoulder.current.visible = shoulderMaterial.current.opacity > .006;
+    }
+  });
+
+  return (
+    <group>
+      <mesh ref={crest} position={[0, .065, -.2]} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={4.4}>
+        <planeGeometry args={[4.2, 4.2]} />
+        <meshBasicMaterial
+          ref={crestMaterial}
+          map={crestTexture}
+          color="#7fded5"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+      <points ref={shoulder} visible={false} frustumCulled={false} renderOrder={4.5}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={shoulderMaterial}
+          map={glintTexture}
+          color="#baf8eb"
+          size={.22}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={.02}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
     </group>
   );
 }
@@ -3367,6 +3523,8 @@ function Simulation({
     impact: 0,
     takeoff: 0,
     finish: 0,
+    takeoffRead: 0,
+    catchReady: 0,
   });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false, wetness: 0, offRoad: 0 });
   const cameraTarget = useRef(new THREE.Vector3());
@@ -3711,7 +3869,9 @@ function Simulation({
               ? "Move toward the nose · pumping for speed"
               : move < -0.08
                 ? "Tail pressure · tighter turning response"
-                : "W nose / pump · S tail / control · SPACE maneuver";
+                : Math.abs(character.peel) > .18
+                  ? `${character.peel > 0 ? "Right" : "Left"} shoulder opening · set the rail toward the caustic seam`
+                  : "W nose / pump · S tail / control · SPACE maneuver";
         if (!finishing && unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
           phase.current = "wipeout";
           wipeoutAt.current = t;
@@ -3802,6 +3962,8 @@ function Simulation({
     motion.current.impact = Math.max(0, motion.current.impact - delta * 1.9);
     motion.current.takeoff = Math.max(0, motion.current.takeoff - delta * 1.55);
     motion.current.finish = Math.max(0, motion.current.finish - delta * .7);
+    motion.current.takeoffRead = THREE.MathUtils.damp(motion.current.takeoffRead, takeoffQuality, 8, delta);
+    motion.current.catchReady = THREE.MathUtils.damp(motion.current.catchReady, catchReady ? 1 : 0, catchReady ? 12 : 5, delta);
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
@@ -4100,6 +4262,7 @@ function Simulation({
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <group ref={player}>
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
+        <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} mobile={mobileRenderer} />
         <SurferModel motion={motion} boardType={settings.board} />
       </group>
