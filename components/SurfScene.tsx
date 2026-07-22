@@ -1926,6 +1926,228 @@ function PineTree({ position, scale = 1 }: { position: [number, number, number];
   );
 }
 
+function createCoastalRidgeGeometry(
+  seed: number,
+  width: number,
+  height: number,
+  depth: number,
+  segments: number,
+  color: string,
+) {
+  const rows = 5;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const baseColor = new THREE.Color(color);
+  const shadowColor = baseColor.clone().offsetHSL(-.01, .02, -.12);
+  const crownColor = baseColor.clone().offsetHSL(.025, .035, .1);
+  for (let segment = 0; segment <= segments; segment += 1) {
+    const progress = segment / segments;
+    const x = (progress - .5) * width;
+    const broadNoise = seededRandom(segment, seed) * .28 + seededRandom(segment * 3, seed + 9) * .14;
+    const taper = .2 + Math.pow(Math.sin(progress * Math.PI), .34) * .8;
+    const ridgeHeight = height * taper * (.68 + broadNoise);
+    const shift = (seededRandom(segment, seed + 3) - .5) * depth * .12;
+    const crossSection = [
+      { y: -.8, z: -depth * .5, shade: 0 },
+      { y: ridgeHeight * .52, z: -depth * .42 + shift, shade: .46 },
+      { y: ridgeHeight, z: -depth * .05 + shift, shade: 1 },
+      { y: ridgeHeight * .68, z: depth * .4 + shift, shade: .62 },
+      { y: -.8, z: depth * .5, shade: .08 },
+    ];
+    crossSection.forEach((point) => {
+      positions.push(x, point.y, point.z);
+      const tone = shadowColor.clone().lerp(crownColor, point.shade);
+      colors.push(tone.r, tone.g, tone.b);
+    });
+  }
+  for (let segment = 0; segment < segments; segment += 1) {
+    for (let row = 0; row < rows - 1; row += 1) {
+      const a = segment * rows + row;
+      const b = (segment + 1) * rows + row;
+      const c = b + 1;
+      const d = a + 1;
+      indices.push(a, b, d, b, c, d);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function CoastalRidge({
+  seed,
+  position,
+  rotation = [0, 0, 0],
+  width,
+  height,
+  depth,
+  color,
+  mobile,
+}: {
+  seed: number;
+  position: [number, number, number];
+  rotation?: [number, number, number];
+  width: number;
+  height: number;
+  depth: number;
+  color: string;
+  mobile: boolean;
+}) {
+  const geometry = useMemo(
+    () => createCoastalRidgeGeometry(seed, width, height, depth, mobile ? 9 : 20, color),
+    [seed, width, height, depth, mobile, color],
+  );
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <mesh geometry={geometry} position={position} rotation={rotation} castShadow={!mobile} receiveShadow>
+      <meshStandardMaterial vertexColors roughness={.96} metalness={.015} flatShading={mobile} />
+    </mesh>
+  );
+}
+
+function CoastBeacon({ position, light, scale = 1 }: { position: [number, number, number]; light: number; scale?: number }) {
+  const glow = .08 + (1 - light) * 2.25;
+  return (
+    <group position={position} scale={scale}>
+      <mesh position={[0, .65, 0]} castShadow>
+        <cylinderGeometry args={[.42, .64, 1.3, 10]} />
+        <meshStandardMaterial color="#d7d0c2" roughness={.82} />
+      </mesh>
+      <mesh position={[0, 2.2, 0]} castShadow>
+        <cylinderGeometry args={[.085, .12, 2.1, 8]} />
+        <meshStandardMaterial color="#ac4f3e" roughness={.64} metalness={.16} />
+      </mesh>
+      <mesh position={[0, 3.3, 0]}>
+        <sphereGeometry args={[.19, 10, 8]} />
+        <meshStandardMaterial color="#fff0b6" emissive="#ffcf72" emissiveIntensity={glow} roughness={.22} />
+      </mesh>
+      <pointLight position={[0, 3.3, 0]} intensity={glow * .62} distance={22} color="#ffd991" />
+    </group>
+  );
+}
+
+function RockJetty({ x, z, length, light, mobile }: { x: number; z: number; length: number; light: number; mobile: boolean }) {
+  const rocks = useRef<THREE.InstancedMesh>(null);
+  const count = mobile ? 12 : 23;
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  useEffect(() => {
+    if (!rocks.current) return;
+    for (let index = 0; index < count; index += 1) {
+      const progress = index / Math.max(1, count - 1);
+      const scale = 1.15 + seededRandom(index, x + 17) * 1.35;
+      dummy.position.set(
+        (seededRandom(index, x + 4) - .5) * 3.5,
+        -.22 + seededRandom(index, z + 5) * .2,
+        -progress * length,
+      );
+      dummy.rotation.set(index * .23, index * .79, index * .11);
+      dummy.scale.set(scale * 1.08, scale * .64, scale);
+      dummy.updateMatrix();
+      rocks.current.setMatrixAt(index, dummy.matrix);
+    }
+    rocks.current.instanceMatrix.needsUpdate = true;
+  }, [count, dummy, length, x, z]);
+  return (
+    <group position={[x, 0, z]}>
+      <instancedMesh ref={rocks} args={[undefined, undefined, count]} castShadow={!mobile} receiveShadow>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial color="#3f4845" roughness={.94} />
+      </instancedMesh>
+      <CoastBeacon position={[0, .05, -length]} light={light} scale={.9} />
+    </group>
+  );
+}
+
+function RailTrestle({ mobile }: { mobile: boolean }) {
+  const piers = mobile ? [-58, -28, 0, 28, 58] : [-72, -54, -36, -18, 0, 18, 36, 54, 72];
+  return (
+    <group position={[0, 0, 108]}>
+      {piers.map((x) => (
+        <group key={x} position={[x, 0, 0]}>
+          <mesh position={[-1.2, 2.25, 0]} rotation={[0, 0, -.08]} castShadow><boxGeometry args={[.38, 4.5, .5]} /><meshStandardMaterial color="#6a5946" roughness={.94} /></mesh>
+          <mesh position={[1.2, 2.25, 0]} rotation={[0, 0, .08]} castShadow><boxGeometry args={[.38, 4.5, .5]} /><meshStandardMaterial color="#6a5946" roughness={.94} /></mesh>
+          <mesh position={[0, 2.2, 0]} rotation={[0, 0, Math.PI / 4]}><boxGeometry args={[.25, 3.25, .38]} /><meshStandardMaterial color="#594a3b" roughness={.96} /></mesh>
+        </group>
+      ))}
+      <mesh position={[0, 4.35, 0]} castShadow receiveShadow><boxGeometry args={[170, .6, 1.8]} /><meshStandardMaterial color="#4f473d" roughness={.9} /></mesh>
+      {[-.58, .58].map((z) => <mesh key={z} position={[0, 4.78, z]}><boxGeometry args={[170, .1, .08]} /><meshStandardMaterial color="#87918f" metalness={.72} roughness={.38} /></mesh>)}
+    </group>
+  );
+}
+
+function ClifftopTemple({ position, scale = 1 }: { position: [number, number, number]; scale?: number }) {
+  return (
+    <group position={position} scale={scale}>
+      {[0, 1.15, 2.05].map((height, index) => (
+        <group key={height} position={[0, height, 0]}>
+          <mesh position={[0, .45, 0]} castShadow><boxGeometry args={[2.6 - index * .42, .9, 2.3 - index * .36]} /><meshStandardMaterial color="#37332d" roughness={.92} /></mesh>
+          <mesh position={[0, 1, 0]} rotation={[0, Math.PI / 4, 0]} castShadow><coneGeometry args={[2.05 - index * .3, .7, 4]} /><meshStandardMaterial color="#2a2926" roughness={.88} /></mesh>
+        </group>
+      ))}
+      <mesh position={[0, 3.35, 0]}><cylinderGeometry args={[.08, .1, 1.25, 6]} /><meshStandardMaterial color="#292724" roughness={.86} /></mesh>
+    </group>
+  );
+}
+
+function HeadlandStation({ position, light }: { position: [number, number, number]; light: number }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 1.2, 0]} castShadow><cylinderGeometry args={[2.4, 2.8, 2.4, 14]} /><meshStandardMaterial color="#c8c3b6" roughness={.84} /></mesh>
+      <mesh position={[0, 3.05, 0]} castShadow><sphereGeometry args={[2.15, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2]} /><meshStandardMaterial color="#e4e0d4" roughness={.72} /></mesh>
+      <mesh position={[0, 4.1, 0]}><cylinderGeometry args={[.08, .1, 2.2, 7]} /><meshStandardMaterial color="#8b938f" metalness={.62} roughness={.42} /></mesh>
+      <pointLight position={[0, 4.9, 0]} intensity={(1 - light) * .7} distance={18} color="#f25f4b" />
+    </group>
+  );
+}
+
+function DestinationLandmarks({
+  beach,
+  mobile,
+  light,
+}: {
+  beach: Beach;
+  mobile: boolean;
+  light: number;
+}) {
+  switch (beach.id) {
+    case "rockaway":
+      return <group><RockJetty x={-52} z={31} length={47} light={light} mobile={mobile} /><RockJetty x={48} z={32} length={38} light={light} mobile={mobile} /></group>;
+    case "pipeline":
+      return <CoastalRidge seed={12} position={[0, 1, 132]} width={238} height={24} depth={32} color="#405c47" mobile={mobile} />;
+    case "teahupoo":
+      return <group><CoastalRidge seed={21} position={[0, 0, 134]} width={246} height={46} depth={38} color="#31533f" mobile={mobile} /><CoastalRidge seed={22} position={[-28, 1, 151]} width={210} height={31} depth={28} color="#263f34" mobile={mobile} /></group>;
+    case "jeffreys-bay":
+      return <CoastalRidge seed={31} position={[-89, -.2, 66]} rotation={[0, -.48, 0]} width={102} height={12} depth={34} color="#8a785c" mobile={mobile} />;
+    case "snapper-rocks":
+      return <group><CoastalRidge seed={41} position={[96, -.2, 48]} rotation={[0, .44, 0]} width={78} height={15} depth={39} color="#6c6a59" mobile={mobile} /><CoastBeacon position={[76, 8.7, 36]} light={light} scale={.82} /></group>;
+    case "uluwatu":
+      return <group><CoastalRidge seed={51} position={[-94, 0, 46]} rotation={[0, -.42, 0]} width={88} height={28} depth={47} color="#8b8068" mobile={mobile} /><ClifftopTemple position={[-87, 22, 54]} scale={1.08} /></group>;
+    case "trestles":
+      return <RailTrestle mobile={mobile} />;
+    case "hossegor": {
+      const trees = mobile ? [-72, -18, 36, 82] : [-92, -68, -42, -16, 12, 38, 64, 91];
+      return <group><CoastalRidge seed={71} position={[0, -.4, 111]} width={244} height={8} depth={30} color="#9b815e" mobile={mobile} />{trees.map((x, index) => <PineTree key={x} position={[x, 5.5, 106 + (index % 2) * 7]} scale={.74 + (index % 3) * .12} />)}</group>;
+    }
+    case "nazare":
+      return <CoastalRidge seed={81} position={[-92, 0, 47]} rotation={[0, -.52, 0]} width={92} height={31} depth={48} color="#807461" mobile={mobile} />;
+    case "cloudbreak":
+      return <group><CoastalRidge seed={91} position={[-94, -.5, -202]} rotation={[0, .18, 0]} width={92} height={12} depth={24} color="#365648" mobile={mobile} /><CoastalRidge seed={92} position={[108, -.5, -226]} rotation={[0, -.32, 0]} width={78} height={9} depth={20} color="#304b40" mobile={mobile} /></group>;
+    case "mavericks":
+      return <group><CoastalRidge seed={101} position={[-96, 0, 48]} rotation={[0, -.46, 0]} width={94} height={25} depth={44} color="#56605b" mobile={mobile} /><HeadlandStation position={[-92, 20, 53]} light={light} /></group>;
+    case "raglan":
+      return <group><CoastalRidge seed={111} position={[91, -.2, 45]} rotation={[0, .47, 0]} width={98} height={19} depth={42} color="#313d37" mobile={mobile} />{!mobile && [-91, -78, 72].map((x, index) => <PineTree key={x} position={[x, 0, 101 + index * 5]} scale={.7 + index * .12} />)}</group>;
+    case "chicama":
+      return <group><CoastalRidge seed={121} position={[-92, -.1, 42]} rotation={[0, -.48, 0]} width={118} height={22} depth={46} color="#9b6745" mobile={mobile} /><CoastalRidge seed={122} position={[66, 0, 123]} rotation={[0, .16, 0]} width={148} height={15} depth={34} color="#8a5d42" mobile={mobile} /></group>;
+    default:
+      return null;
+  }
+}
+
 function CoastBackdrop({ biome, wind }: { biome: CoastBiome; wind: number }) {
   if (biome === "urban") {
     const buildings = Array.from({ length: 12 }, (_, index) => ({
@@ -2548,6 +2770,7 @@ function BeachLife({ beach, windSpeed, weatherCode, light, playerPosition }: { b
       <LifeguardStation wind={wind} light={light} />
       <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
       <CoastBackdrop biome={biome} wind={wind} />
+      <DestinationLandmarks beach={beach} mobile={mobileRenderer} light={light} />
     </group>
   );
 }
