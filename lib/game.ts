@@ -301,6 +301,34 @@ export function waveHeightAt(
   );
 }
 
+export function waveSurfaceFrameAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+) {
+  const sampleRadius = Math.max(.42, Math.min(.9, .42 + settings.waveHeight * .13));
+  const height = waveHeightAt(x, z, elapsed, settings, character);
+  const slopeX = (
+    waveHeightAt(x + sampleRadius, z, elapsed, settings, character)
+    - waveHeightAt(x - sampleRadius, z, elapsed, settings, character)
+  ) / (sampleRadius * 2);
+  const slopeZ = (
+    waveHeightAt(x, z + sampleRadius, elapsed, settings, character)
+    - waveHeightAt(x, z - sampleRadius, elapsed, settings, character)
+  ) / (sampleRadius * 2);
+  const normalLength = Math.hypot(slopeX, 1, slopeZ);
+  return {
+    height,
+    slopeX,
+    slopeZ,
+    normalX: -slopeX / normalLength,
+    normalY: 1 / normalLength,
+    normalZ: -slopeZ / normalLength,
+  };
+}
+
 function smoothstep(edge0: number, edge1: number, value: number) {
   const normalized = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
   return normalized * normalized * (3 - 2 * normalized);

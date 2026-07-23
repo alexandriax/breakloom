@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, waveHeightAt, waveSetState } from "@/lib/game";
+import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
 
 export type ControlState = {
   forward: boolean;
@@ -7481,6 +7481,7 @@ function Simulation({
   const position = useRef(new THREE.Vector3(0, 0, 35));
   const vanPosition = useRef(new THREE.Vector3(0, 0, 78));
   const worldFocus = useRef(new THREE.Vector3(0, 0, 35));
+  const waterRide = useRef({ elevation: 0, velocity: 0, engaged: false });
   const vanHeading = useRef(-Math.PI / 2);
   const vanSpeed = useRef(0);
   const vanSteer = useRef(0);
@@ -8425,17 +8426,54 @@ function Simulation({
       landRange ? -COAST_PLAYABLE_HALF_WIDTH : -WATER_SIDE_LIMIT,
       landRange ? COAST_PLAYABLE_HALF_WIDTH : WATER_SIDE_LIMIT,
     );
-    const waterY = waveHeightAt(position.current.x, position.current.z, t, settings, character);
-    const isWater = phase.current !== "shore";
+    const isWater = phase.current === "wading"
+      || phase.current === "paddling"
+      || phase.current === "riding"
+      || phase.current === "wipeout";
+    const surfaceFrame = isWater
+      ? waveSurfaceFrameAt(position.current.x, position.current.z, t, settings, character)
+      : null;
+    const waterY = surfaceFrame?.height ?? 0;
     if (phase.current !== "riding") {
       railSlip.current = THREE.MathUtils.damp(railSlip.current, 0, 4.2, delta);
       railLoad = 0;
       compression = 0;
     }
     const rebound = Math.sin((1 - motion.current.impact) * Math.PI) * motion.current.impact;
-    const playerY = isWater
-      ? waterY + (phase.current === "riding" ? 0.16 - compression * .032 + rebound * .075 : 0.04)
-      : 0;
+    const targetWaterElevation = waterY
+      + (phase.current === "riding" ? 0.16 - compression * .032 + rebound * .075 : 0.04);
+    const buoyancy = waterRide.current;
+    let playerY = 0;
+    if (isWater) {
+      const suspensionStep = Math.min(delta, .04);
+      const displacement = targetWaterElevation - buoyancy.elevation;
+      if (!buoyancy.engaged || Math.abs(displacement) > 1.8 || delta > .12) {
+        buoyancy.elevation = targetWaterElevation;
+        buoyancy.velocity = 0;
+        buoyancy.engaged = true;
+      } else {
+        const stiffness = phase.current === "riding"
+          ? 92
+          : phase.current === "paddling"
+            ? 58
+            : phase.current === "wipeout"
+              ? 74
+              : 82;
+        const damping = Math.sqrt(stiffness) * (phase.current === "riding" ? 1.68 : 1.9);
+        const acceleration = displacement * stiffness - buoyancy.velocity * damping;
+        buoyancy.velocity = THREE.MathUtils.clamp(
+          buoyancy.velocity + acceleration * suspensionStep,
+          -7,
+          7,
+        );
+        buoyancy.elevation += buoyancy.velocity * suspensionStep;
+      }
+      playerY = buoyancy.elevation;
+    } else {
+      buoyancy.engaged = false;
+      buoyancy.elevation = 0;
+      buoyancy.velocity = 0;
+    }
     if (phase.current !== "riding") {
       waveCrestOffset.current = THREE.MathUtils.damp(waveCrestOffset.current, 0, 9, delta);
     }
@@ -8449,10 +8487,41 @@ function Simulation({
           ? paddleHeading.current
           : steer * -.2;
     player.current.rotation.y = dampAngle(player.current.rotation.y, targetPlayerHeading, 7, delta);
+    const surfaceContact = phase.current === "riding"
+      ? (1 - THREE.MathUtils.smoothstep(motion.current.maneuverLift, .08, .56)) * .88
+      : phase.current === "paddling"
+        ? .62 * (1 - motion.current.duckDive * .52)
+        : 0;
+    const headingForwardX = Math.sin(targetPlayerHeading);
+    const headingForwardZ = Math.cos(targetPlayerHeading);
+    const headingRightX = Math.cos(targetPlayerHeading);
+    const headingRightZ = -Math.sin(targetPlayerHeading);
+    const forwardSlope = surfaceFrame
+      ? surfaceFrame.slopeX * headingForwardX + surfaceFrame.slopeZ * headingForwardZ
+      : 0;
+    const lateralSlope = surfaceFrame
+      ? surfaceFrame.slopeX * headingRightX + surfaceFrame.slopeZ * headingRightZ
+      : 0;
+    const surfacePitch = THREE.MathUtils.clamp(
+      -Math.atan(forwardSlope) * surfaceContact,
+      -.34,
+      .34,
+    );
+    const surfaceRoll = THREE.MathUtils.clamp(
+      Math.atan(lateralSlope) * surfaceContact,
+      -.24,
+      .24,
+    );
+    player.current.rotation.x = THREE.MathUtils.damp(
+      player.current.rotation.x,
+      surfacePitch,
+      phase.current === "riding" ? 8 : 5.8,
+      delta,
+    );
     player.current.rotation.z = THREE.MathUtils.damp(
       player.current.rotation.z,
-      phase.current === "riding" ? -balanceInput * 0.17 : 0,
-      7,
+      surfaceRoll + (phase.current === "riding" ? -balanceInput * 0.17 : 0),
+      phase.current === "riding" ? 8 : 5.8,
       delta,
     );
     if (waveStage.current) {
