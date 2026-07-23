@@ -62,7 +62,7 @@ import {
   type SessionSettings,
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
-import type { CameraMode, ControlState, ReplayState, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
+import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 import TideSparkline from "./TideSparkline";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
@@ -108,6 +108,17 @@ type RideToast = {
   grade: GameStats["grade"];
 };
 type HeatWave = RideToast & { judgeScore: number };
+const EMPTY_REPLAY_TELEMETRY: ReplayTelemetry = {
+  speed: 0,
+  lineControl: 0,
+  linePosition: 0,
+  railGrip: 1,
+  railLoad: 0,
+  stance: 0,
+  power: 0,
+  barrel: 0,
+  maneuver: 0,
+};
 type RideAnalysisKey = "entry" | "line" | "control" | "power" | "variety";
 type RideAnalysisCategory = {
   key: RideAnalysisKey;
@@ -806,6 +817,8 @@ export default function SurfscapeApp() {
   const [replaySeekProgress, setReplaySeekProgress] = useState(0);
   const [replaySeekRequest, setReplaySeekRequest] = useState(0);
   const [replayAutoDirector, setReplayAutoDirector] = useState(true);
+  const [replayTelemetry, setReplayTelemetry] = useState<ReplayTelemetry>(EMPTY_REPLAY_TELEMETRY);
+  const [replayMoments, setReplayMoments] = useState<ReplayMoment[]>([]);
   const [sceneReady, setSceneReady] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -978,6 +991,8 @@ export default function SurfscapeApp() {
     replayProgressValue.current = state.progress;
     setReplayProgress(state.progress);
     setReplayDuration(state.duration);
+    setReplayTelemetry(state.telemetry);
+    setReplayMoments(state.moments);
     if (state.active) {
       setReplayActive(true);
       if (replayCameraCut.current !== state.cameraMode) {
@@ -994,6 +1009,8 @@ export default function SurfscapeApp() {
     setReplaySpeed(1);
     setReplaySeekProgress(0);
     setReplayAutoDirector(true);
+    setReplayTelemetry(EMPTY_REPLAY_TELEMETRY);
+    setReplayMoments([]);
     replayResumeAfterScrub.current = false;
     replayCameraCut.current = null;
     controls.current.lookYaw = 0;
@@ -1007,6 +1024,8 @@ export default function SurfscapeApp() {
     setReplaySpeed(1);
     setReplaySeekProgress(0);
     setReplayAutoDirector(true);
+    setReplayTelemetry(EMPTY_REPLAY_TELEMETRY);
+    setReplayMoments([]);
     replayResumeAfterScrub.current = false;
     replayCameraCut.current = null;
     controls.current.lookYaw = 0;
@@ -2108,6 +2127,8 @@ export default function SurfscapeApp() {
     setReplaySeekProgress(0);
     setReplaySeekRequest((request) => request + 1);
     setReplayAutoDirector(true);
+    setReplayTelemetry(EMPTY_REPLAY_TELEMETRY);
+    setReplayMoments([]);
     replayResumeAfterScrub.current = false;
     replayCameraCut.current = null;
   }
@@ -2618,6 +2639,24 @@ export default function SurfscapeApp() {
     ? heatWaves.find((wave) => wave.id === rideToast.id) ?? { ...rideToast, judgeScore: judgeHeatWave(rideToast) }
     : null;
   const rideAnalysis = rideToast ? rideAnalysisFor(rideToast, settings.board) : null;
+  const replayLineLabel = replayTelemetry.linePosition < -.34
+    ? "DEEP"
+    : replayTelemetry.linePosition > .38
+      ? "SHOULDER"
+      : replayTelemetry.lineControl >= .8
+        ? "POCKET LOCK"
+        : "POWER LINE";
+  const replayStanceLabel = replayTelemetry.stance > .42
+    ? "NOSE DRIVE"
+    : replayTelemetry.stance < -.42
+      ? "TAIL LOAD"
+      : "CENTERED";
+  const replayActiveMoment = replayMoments.reduce<ReplayMoment | null>((nearest, moment) => {
+    const window = moment.kind === "takeoff" || moment.kind === "exit" ? .052 : .038;
+    const distance = Math.abs(moment.progress - replayProgress);
+    if (distance > window) return nearest;
+    return !nearest || distance < Math.abs(nearest.progress - replayProgress) ? moment : nearest;
+  }, null);
   const heatWaveNumber = rideToast
     ? Math.max(1, heatWaves.findIndex((wave) => wave.id === rideToast.id) + 1 || heatWaves.length + 1)
     : heatWaves.length;
@@ -3192,6 +3231,18 @@ export default function SurfscapeApp() {
                 <small>SPACE / A PAUSES · ← → / LB RB SCRUB · C / Y CHANGES CAMERA · ESC / START EXITS</small>
                 <button type="button" onClick={stopReplay} aria-label="Exit instant replay"><X /></button>
               </div>
+              {replayActiveMoment && (
+                <div
+                  className={`replay-moment-callout is-${replayActiveMoment.kind}`}
+                  key={replayActiveMoment.id}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span>RIDE MOMENT</span>
+                  <strong>{replayActiveMoment.label}</strong>
+                  <small>{Math.round(replayActiveMoment.quality * 100)}% SIGNAL</small>
+                </div>
+              )}
               <div className="replay-mode-bottom">
                 <div className="replay-score">
                   <span>{replayRide.result === "clean" ? "CLEAN LINE" : "WIPEOUT LINE"} · GRADE {replayRide.grade}</span>
@@ -3223,7 +3274,15 @@ export default function SurfscapeApp() {
                   <label className="replay-scrubber">
                     <i aria-hidden="true">
                       <b style={{ width: `${Math.round(replayProgress * 100)}%` }} />
-                      <span>{Array.from({ length: 5 }, (_, index) => <em key={index} style={{ left: `${index * 25}%` }} />)}</span>
+                      <span>
+                        {replayMoments.map((moment) => (
+                          <em
+                            key={moment.id}
+                            className={`is-${moment.kind} ${replayActiveMoment?.id === moment.id ? "is-active" : ""}`}
+                            style={{ left: `${moment.progress * 100}%`, opacity: .46 + moment.quality * .54 }}
+                          />
+                        ))}
+                      </span>
                     </i>
                     <input
                       type="range"
@@ -3239,12 +3298,20 @@ export default function SurfscapeApp() {
                       aria-valuetext={`${Math.round(replayProgress * 100)} percent`}
                     />
                   </label>
-                  <small>TAKEOFF · LINE · POWER SECTION · EXIT</small>
+                  <small>{replayActiveMoment ? `${replayActiveMoment.label} · ${Math.round(replayActiveMoment.quality * 100)}% PHYSICS SIGNAL` : `${replayMoments.length} PHYSICS-DETECTED MOMENTS · ${replayLineLabel}`}</small>
+                  <div className="replay-mobile-telemetry" aria-label={`Replay speed ${replayTelemetry.speed.toFixed(1)} metres per second. Line control ${Math.round(replayTelemetry.lineControl * 100)} percent. Rail grip ${Math.round(replayTelemetry.railGrip * 100)} percent.`}>
+                    <span><small>SPEED</small><strong>{replayTelemetry.speed.toFixed(1)}<i>M/S</i></strong></span>
+                    <span><small>LINE</small><strong>{Math.round(replayTelemetry.lineControl * 100)}<i>%</i></strong></span>
+                    <span><small>RAIL</small><strong>{Math.round(replayTelemetry.railGrip * 100)}<i>%</i></strong></span>
+                  </div>
                 </div>
-                <div className="replay-metrics">
-                  <span><small>LINE</small><strong>{replayRide.distance.toFixed(0)} M</strong></span>
-                  <span><small>MOVES</small><strong>{replayRide.maneuvers}</strong></span>
-                  <span><small>BARREL</small><strong>{replayRide.barrelTime.toFixed(1)} S</strong></span>
+                <div className="replay-metrics" aria-label="Live replay telemetry">
+                  <span><small>SPEED</small><strong>{replayTelemetry.speed.toFixed(1)}<i>M/S</i></strong></span>
+                  <span><small>LINE</small><strong>{Math.round(replayTelemetry.lineControl * 100)}<i>%</i></strong></span>
+                  <span><small>RAIL GRIP</small><strong>{Math.round(replayTelemetry.railGrip * 100)}<i>%</i></strong></span>
+                  <span><small>STANCE</small><strong className="is-text">{replayStanceLabel}</strong></span>
+                  <span><small>POWER</small><strong>{Math.round(replayTelemetry.power * 100)}<i>%</i></strong></span>
+                  <span><small>{replayTelemetry.barrel > .2 ? "BARREL" : replayTelemetry.maneuver > .18 ? "MANEUVER" : "POSITION"}</small><strong className="is-text">{replayTelemetry.barrel > .2 ? `${Math.round(replayTelemetry.barrel * 100)}%` : replayTelemetry.maneuver > .18 ? `${Math.round(replayTelemetry.maneuver * 100)}%` : replayLineLabel}</strong></span>
                 </div>
               </div>
             </div>

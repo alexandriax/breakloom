@@ -47,11 +47,31 @@ export type RideCaptureRequest = {
 export type RideFrameCapture = RideCaptureRequest & {
   blob: Blob;
 };
+export type ReplayMoment = {
+  id: string;
+  kind: "takeoff" | "power" | "maneuver" | "barrel" | "exit";
+  label: string;
+  progress: number;
+  quality: number;
+};
+export type ReplayTelemetry = {
+  speed: number;
+  lineControl: number;
+  linePosition: number;
+  railGrip: number;
+  railLoad: number;
+  stance: number;
+  power: number;
+  barrel: number;
+  maneuver: number;
+};
 export type ReplayState = {
   active: boolean;
   progress: number;
   duration: number;
   cameraMode: CameraMode;
+  telemetry: ReplayTelemetry;
+  moments: ReplayMoment[];
 };
 export type ReplayControl = {
   paused: boolean;
@@ -271,6 +291,7 @@ type ReplayFrame = {
   heading: number;
   lineSide: number;
   crestOffset: number;
+  maneuverName: string;
   motion: MotionState;
 };
 
@@ -315,6 +336,7 @@ type ReplayPlayback = {
   cursor: number;
   lastReportAt: number;
   cameraCut: number;
+  moments: ReplayMoment[];
   restore: ReplayRestoreState | null;
 };
 
@@ -340,6 +362,168 @@ function interpolateReplayMotion(from: MotionState, to: MotionState, alpha: numb
     }
   }
   return next;
+}
+
+function replayTelemetryFromMotion(motion: MotionState): ReplayTelemetry {
+  return {
+    speed: Math.max(0, motion.speed),
+    lineControl: THREE.MathUtils.clamp(motion.lineControl, 0, 1),
+    linePosition: THREE.MathUtils.clamp(motion.linePosition, -1, 1),
+    railGrip: THREE.MathUtils.clamp(1 - motion.slip, 0, 1),
+    railLoad: THREE.MathUtils.clamp(motion.rail, -1, 1),
+    stance: THREE.MathUtils.clamp(motion.stance, -1, 1),
+    power: THREE.MathUtils.clamp(
+      motion.setEnergy * .2
+        + motion.waveQuality * .3
+        + Math.min(1, Math.max(0, motion.speed) / 18) * .24
+        + Math.abs(motion.rail) * .13
+        + motion.barrel * .13,
+      0,
+      1,
+    ),
+    barrel: THREE.MathUtils.clamp(motion.barrel, 0, 1),
+    maneuver: THREE.MathUtils.clamp(Math.max(motion.maneuver, motion.maneuverProgress), 0, 1),
+  };
+}
+
+function replayMomentsForFrames(frames: ReplayFrame[]): ReplayMoment[] {
+  if (frames.length < 2) return [];
+  const firstAt = frames[0].at;
+  const duration = Math.max(.001, frames[frames.length - 1].at - firstAt);
+  const progressAt = (index: number) => THREE.MathUtils.clamp((frames[index].at - firstAt) / duration, 0, 1);
+  const candidates: Omit<ReplayMoment, "id">[] = [];
+  const add = (
+    kind: ReplayMoment["kind"],
+    label: string,
+    index: number,
+    quality: number,
+  ) => {
+    candidates.push({
+      kind,
+      label,
+      progress: progressAt(THREE.MathUtils.clamp(index, 0, frames.length - 1)),
+      quality: THREE.MathUtils.clamp(quality, 0, 1),
+    });
+  };
+
+  let takeoffIndex = 0;
+  let takeoffQuality = 0;
+  const takeoffLimit = Math.max(1, Math.floor(frames.length * .2));
+  for (let index = 0; index <= takeoffLimit; index += 1) {
+    const state = frames[index].motion;
+    const quality = state.takeoff * .34
+      + state.takeoffCommit * .27
+      + state.takeoffRead * .2
+      + state.waveQuality * .19;
+    if (quality > takeoffQuality) {
+      takeoffQuality = quality;
+      takeoffIndex = index;
+    }
+  }
+  add("takeoff", "TAKEOFF", takeoffIndex, Math.max(.3, takeoffQuality));
+
+  let maneuverStart = -1;
+  let maneuverPeakIndex = -1;
+  let maneuverPeak = 0;
+  let maneuverPeakLabel = "MANEUVER";
+  const finishManeuver = () => {
+    if (maneuverStart < 0 || maneuverPeakIndex < 0) return;
+    add("maneuver", maneuverPeakLabel, maneuverPeakIndex, maneuverPeak);
+    maneuverStart = -1;
+    maneuverPeakIndex = -1;
+    maneuverPeak = 0;
+    maneuverPeakLabel = "MANEUVER";
+  };
+  frames.forEach((frame, index) => {
+    const state = frame.motion;
+    const active = state.maneuver > .12
+      || (state.maneuverProgress > .035 && state.maneuverProgress < .985);
+    if (!active) {
+      finishManeuver();
+      return;
+    }
+    if (maneuverStart < 0) maneuverStart = index;
+    const quality = Math.max(
+      state.maneuver,
+      state.impact * .78,
+      state.landingCue * .7,
+      state.maneuverLift * .58,
+    );
+    if (quality > maneuverPeak) {
+      maneuverPeak = quality;
+      maneuverPeakIndex = index;
+      maneuverPeakLabel = frame.maneuverName ? frame.maneuverName.toUpperCase() : "MANEUVER";
+    }
+  });
+  finishManeuver();
+
+  let powerIndex = 0;
+  let powerQuality = 0;
+  let barrelIndex = 0;
+  let barrelQuality = 0;
+  frames.forEach((frame, index) => {
+    const progress = progressAt(index);
+    if (progress > .12 && progress < .88) {
+      const state = frame.motion;
+      const power = state.lineControl * .46
+        + state.sectionPressure * .25
+        + state.waveQuality * .19
+        + Math.min(1, state.speed / 18) * .1;
+      if (power > powerQuality) {
+        powerQuality = power;
+        powerIndex = index;
+      }
+    }
+    if (frame.motion.barrel > barrelQuality) {
+      barrelQuality = frame.motion.barrel;
+      barrelIndex = index;
+    }
+  });
+  if (powerQuality >= .58) add("power", "POWER POCKET", powerIndex, powerQuality);
+  if (barrelQuality >= .28) add("barrel", "BARREL", barrelIndex, barrelQuality);
+
+  const exitIndex = frames.length - 1;
+  const exitState = frames[exitIndex].motion;
+  add(
+    "exit",
+    exitState.finish > .2 ? "CLEAN EXIT" : "LINE END",
+    exitIndex,
+    Math.max(exitState.finish, exitState.lineControl * .72),
+  );
+
+  const priority: Record<ReplayMoment["kind"], number> = {
+    takeoff: 5,
+    barrel: 4,
+    maneuver: 3,
+    power: 2,
+    exit: 5,
+  };
+  const sorted = candidates.sort((a, b) => a.progress - b.progress);
+  const moments: Omit<ReplayMoment, "id">[] = [];
+  sorted.forEach((candidate) => {
+    const previous = moments[moments.length - 1];
+    const endpoint = candidate.kind === "takeoff" || candidate.kind === "exit";
+    if (
+      previous
+      && !endpoint
+      && previous.kind !== "takeoff"
+      && previous.kind !== "exit"
+      && candidate.progress - previous.progress < .045
+    ) {
+      if (
+        priority[candidate.kind] > priority[previous.kind]
+        || (priority[candidate.kind] === priority[previous.kind] && candidate.quality > previous.quality)
+      ) {
+        moments[moments.length - 1] = candidate;
+      }
+      return;
+    }
+    moments.push(candidate);
+  });
+  return moments.map((moment, index) => ({
+    ...moment,
+    id: `${moment.kind}-${Math.round(moment.progress * 1000)}-${index}`,
+  }));
 }
 
 function replayCameraForProgress(progress: number): CameraMode {
@@ -8204,6 +8388,7 @@ function Simulation({
     cursor: 0,
     lastReportAt: -1,
     cameraCut: -1,
+    moments: [],
     restore: null,
   });
   const setLeashTension = useCallback((tension: number) => {
@@ -8324,12 +8509,15 @@ function Simulation({
       playback.cursor = 0;
       playback.progress = 0;
       playback.cameraCut = -1;
+      playback.moments = [];
       playback.restore = null;
       replayStateCallback.current({
         active: false,
         progress: 1,
         duration: completedDuration,
         cameraMode: "cinematic",
+        telemetry: replayTelemetryFromMotion(motion.current),
+        moments: [],
       });
     };
     if (playback.active && !replayMode) restoreReplay();
@@ -8343,12 +8531,16 @@ function Simulation({
           progress: 0,
           duration: 0,
           cameraMode: "cinematic",
+          telemetry: replayTelemetryFromMotion(motion.current),
+          moments: [],
         });
       } else {
         const duration = THREE.MathUtils.clamp(trackDuration / .82, 4.8, 13);
+        const moments = replayMomentsForFrames(frames);
         playback.active = true;
         playback.duration = duration;
         playback.progress = 0;
+        playback.moments = moments;
         playback.timeCycleOffset = Math.round((t - frames[0].at) / Math.max(4, settings.wavePeriod)) * Math.max(4, settings.wavePeriod);
         playback.cursor = 0;
         playback.handledSeekRequest = replayControl.seekRequest;
@@ -8389,6 +8581,8 @@ function Simulation({
           progress: 0,
           duration,
           cameraMode: "cinematic",
+          telemetry: replayTelemetryFromMotion(frames[0].motion),
+          moments,
         });
       }
     }
@@ -9468,6 +9662,8 @@ function Simulation({
             progress: replayProgress,
             duration: playback.duration,
             cameraMode: cameraModeForCut,
+            telemetry: replayTelemetryFromMotion(replayMotion),
+            moments: playback.moments,
           });
         }
       }
@@ -9730,6 +9926,7 @@ function Simulation({
             heading: rideHeading.current,
             lineSide: rideLineSide.current,
             crestOffset: waveCrestOffset.current,
+            maneuverName: maneuver.current,
             motion: { ...motion.current },
           });
         }
