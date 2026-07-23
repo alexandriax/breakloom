@@ -10646,6 +10646,10 @@ function Simulation({
     }
     const tideShift = shorelineShiftForTide(settings.tide);
     let steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
+    // The follow camera crosses the board's heading as the surfer pivots from
+    // paddling seaward to riding shoreward. Preserve screen-relative left/right
+    // through that 180-degree handoff instead of making the rail feel reversed.
+    if (currentPhase === "riding") steer *= -1;
     const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY + state.gamepadMoveY, -1, 1);
     let balanceInput = state.gamepadActive ? state.gamepadBalance : state.balance;
     const inputLength = Math.min(1, Math.hypot(steer, move));
