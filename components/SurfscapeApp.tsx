@@ -26,6 +26,7 @@ import {
   Sparkles,
   Target,
   Thermometer,
+  Trophy,
   Volume2,
   VolumeX,
   Waves,
@@ -66,6 +67,20 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 
 type Screen = "launch" | "game";
 type PersonalBest = { score: number; distance: number; combo: number };
+type CoastPassportRecord = {
+  rides: number;
+  cleanRides: number;
+  bestScore: number;
+  longestLine: number;
+  longestPocket: number;
+  mostManeuvers: number;
+  longestBarrel: number;
+  bestGrade: GameStats["grade"];
+  mastery: number;
+  lastZone: string;
+  lastSurfedAt: number;
+};
+type SurfPassport = Record<string, CoastPassportRecord>;
 type RideToast = {
   id: number;
   result: "clean" | "wipeout";
@@ -76,6 +91,7 @@ type RideToast = {
   barrelTime: number;
   grade: GameStats["grade"];
 };
+type PassportAward = { level: number; label: string };
 type WetLensEvent = {
   id: number;
   intensity: number;
@@ -100,6 +116,21 @@ const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
 const RECORD_KEY = "surfscape-personal-best-v1";
+const PASSPORT_KEY = "surfscape-world-tour-v1";
+const GRADE_ORDER: GameStats["grade"][] = ["C", "B", "A", "S"];
+const EMPTY_COAST_RECORD: CoastPassportRecord = {
+  rides: 0,
+  cleanRides: 0,
+  bestScore: 0,
+  longestLine: 0,
+  longestPocket: 0,
+  mostManeuvers: 0,
+  longestBarrel: 0,
+  bestGrade: "C",
+  mastery: 0,
+  lastZone: "",
+  lastSurfedAt: 0,
+};
 const WEATHER_PRESETS = [0, 3, 63, 73, 95] as const;
 const CAMERA_MODES: CameraMode[] = ["follow", "pov", "immersive", "cinematic"];
 const CAMERA_LABELS: Record<CameraMode, string> = {
@@ -111,6 +142,67 @@ const CAMERA_LABELS: Record<CameraMode, string> = {
 
 function nextCameraMode(current: CameraMode) {
   return CAMERA_MODES[(CAMERA_MODES.indexOf(current) + 1) % CAMERA_MODES.length];
+}
+
+function gradeRank(grade: GameStats["grade"]) {
+  return Math.max(0, GRADE_ORDER.indexOf(grade));
+}
+
+function coastMasteryLabel(mastery: number) {
+  if (mastery >= 3) return "COAST MASTERED";
+  if (mastery >= 2) return "CLEAN LINE";
+  if (mastery >= 1) return "COAST LOGGED";
+  return "UNSURFED";
+}
+
+function masteryForRide(ride: RideToast) {
+  let mastery = 1;
+  if (ride.result === "clean") mastery = 2;
+  if (
+    ride.result === "clean"
+    && gradeRank(ride.grade) >= gradeRank("A")
+    && ride.pocketDistance >= 25
+    && (ride.maneuvers >= 2 || ride.barrelTime >= 2)
+  ) mastery = 3;
+  return mastery;
+}
+
+function normalizePassport(value: unknown): SurfPassport {
+  if (!value || typeof value !== "object") return {};
+  const source = value as Record<string, unknown>;
+  const passport: SurfPassport = {};
+  for (const coast of BEACHES) {
+    const candidate = source[coast.id];
+    if (!candidate || typeof candidate !== "object") continue;
+    const record = candidate as Partial<CoastPassportRecord>;
+    const numberValue = (next: unknown) => typeof next === "number" && Number.isFinite(next) ? Math.max(0, next) : 0;
+    const rides = Math.floor(numberValue(record.rides));
+    const cleanRides = Math.floor(numberValue(record.cleanRides));
+    const bestGrade = GRADE_ORDER.includes(record.bestGrade ?? "C") ? record.bestGrade ?? "C" : "C";
+    const inferredMastery = rides > 0
+      ? cleanRides > 0
+        ? gradeRank(bestGrade) >= gradeRank("A")
+          && numberValue(record.longestPocket) >= 25
+          && (numberValue(record.mostManeuvers) >= 2 || numberValue(record.longestBarrel) >= 2)
+          ? 3
+          : 2
+        : 1
+      : 0;
+    passport[coast.id] = {
+      rides,
+      cleanRides,
+      bestScore: Math.floor(numberValue(record.bestScore)),
+      longestLine: numberValue(record.longestLine),
+      longestPocket: numberValue(record.longestPocket),
+      mostManeuvers: Math.floor(numberValue(record.mostManeuvers)),
+      longestBarrel: numberValue(record.longestBarrel),
+      bestGrade,
+      mastery: Math.floor(THREEClamp(Math.max(inferredMastery, numberValue(record.mastery)), 0, 3)),
+      lastZone: typeof record.lastZone === "string" ? record.lastZone.slice(0, 80) : "",
+      lastSurfedAt: numberValue(record.lastSurfedAt),
+    };
+  }
+  return passport;
 }
 
 function haptic(pattern: number | number[]) {
@@ -324,6 +416,7 @@ async function rideCardFile({
   board,
   waveHeight,
   wavePeriod,
+  tourMastery,
   sceneFrame,
 }: {
   ride: RideToast;
@@ -332,6 +425,7 @@ async function rideCardFile({
   board: string;
   waveHeight: number;
   wavePeriod: number;
+  tourMastery: number;
   sceneFrame?: Blob | null;
 }) {
   const canvas = document.createElement("canvas");
@@ -439,6 +533,9 @@ async function rideCardFile({
   context.font = "800 14px Arial, sans-serif";
   context.fillStyle = accent;
   context.fillText("S E S S I O N   G R A D E", 900, 94);
+  context.font = "800 10px Arial, sans-serif";
+  context.fillStyle = "rgba(211,243,238,.56)";
+  context.fillText(`W O R L D  T O U R   ${tourMastery} / 3`, 900, 113);
   context.font = "900 132px Impact, Haettenschweiler, Arial Narrow, sans-serif";
   context.fillStyle = ride.result === "clean" ? "#d9fff3" : "#ffb39f";
   context.fillText(ride.grade, 944, 230);
@@ -524,6 +621,9 @@ export default function SurfscapeApp() {
   const [sessionKey, setSessionKey] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
   const [recordsReady, setRecordsReady] = useState(false);
+  const [passport, setPassport] = useState<SurfPassport>({});
+  const [passportReady, setPassportReady] = useState(false);
+  const [passportAward, setPassportAward] = useState<PassportAward | null>(null);
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
   const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
@@ -547,6 +647,7 @@ export default function SurfscapeApp() {
   const previousManeuverActive = useRef(false);
   const previousChargeBand = useRef(0);
   const previousRideResultId = useRef(0);
+  const previousPassportRideResultId = useRef(0);
   const previousCatchReady = useRef(false);
   const previousTakeoffCommit = useRef(false);
   const previousDuckDiveReady = useRef(false);
@@ -600,6 +701,16 @@ export default function SurfscapeApp() {
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
   );
+  const currentCoastRecord = passport[beach.id] ?? EMPTY_COAST_RECORD;
+  const passportSummary = useMemo(() => BEACHES.reduce(
+    (summary, coast) => {
+      const record = passport[coast.id];
+      if (record?.rides) summary.explored += 1;
+      summary.stamps += record?.mastery ?? 0;
+      return summary;
+    },
+    { explored: 0, stamps: 0 },
+  ), [passport]);
 
   const splashLens = useCallback((intensity: number, duration: number) => {
     wetLensSequence.current += 1;
@@ -688,6 +799,32 @@ export default function SurfscapeApp() {
     }, 500);
     return () => window.clearTimeout(timer);
   }, [personalBest, recordsReady]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.localStorage.getItem(PASSPORT_KEY);
+        if (saved) setPassport(normalizePassport(JSON.parse(saved)));
+      } catch {
+        // Tour progress remains available for the current tab when storage is unavailable.
+      } finally {
+        setPassportReady(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!passportReady) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(PASSPORT_KEY, JSON.stringify(passport));
+      } catch {
+        // Tour progress remains available for the current tab when storage is unavailable.
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [passport, passportReady]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -1236,11 +1373,12 @@ export default function SurfscapeApp() {
     if (stats.rideResultId > 0 && stats.rideResultId !== previousRideResultId.current && stats.rideResult) {
       previousRideResultId.current = stats.rideResultId;
       setManeuverToast(null);
+      setPassportAward(null);
       if (stats.rideResult === "clean") {
         audio.current?.effect("finish");
         haptic([10, 22, 10, 28, 16]);
       }
-      setRideToast({
+      const completedRide: RideToast = {
         id: stats.rideResultId,
         result: stats.rideResult,
         score: stats.rideScore,
@@ -1249,12 +1387,62 @@ export default function SurfscapeApp() {
         maneuvers: stats.rideManeuvers,
         barrelTime: stats.barrelTime,
         grade: stats.rideGrade,
-      });
+      };
+      setRideToast(completedRide);
       setShareStatus("idle");
       const timer = window.setTimeout(() => setRideToast(null), 8200);
       return () => window.clearTimeout(timer);
     }
   }, [stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
+
+  useEffect(() => {
+    if (
+      settings.mode === "playground"
+      || !stats.rideResult
+      || stats.rideResultId <= 0
+      || stats.rideResultId === previousPassportRideResultId.current
+    ) return;
+    previousPassportRideResultId.current = stats.rideResultId;
+    const completedRide: RideToast = {
+      id: stats.rideResultId,
+      result: stats.rideResult,
+      score: stats.rideScore,
+      distance: stats.rideDistance,
+      pocketDistance: stats.pocketDistance,
+      maneuvers: stats.rideManeuvers,
+      barrelTime: stats.barrelTime,
+      grade: stats.rideGrade,
+    };
+    const previousRecord = passport[beach.id] ?? EMPTY_COAST_RECORD;
+    const earnedMastery = masteryForRide(completedRide);
+    const nextMastery = Math.max(previousRecord.mastery, earnedMastery);
+    const bestGrade = gradeRank(completedRide.grade) > gradeRank(previousRecord.bestGrade)
+      ? completedRide.grade
+      : previousRecord.bestGrade;
+    setPassport((current) => ({
+      ...current,
+      [beach.id]: {
+        rides: previousRecord.rides + 1,
+        cleanRides: previousRecord.cleanRides + (completedRide.result === "clean" ? 1 : 0),
+        bestScore: Math.max(previousRecord.bestScore, completedRide.score),
+        longestLine: Math.max(previousRecord.longestLine, completedRide.distance),
+        longestPocket: Math.max(previousRecord.longestPocket, completedRide.pocketDistance),
+        mostManeuvers: Math.max(previousRecord.mostManeuvers, completedRide.maneuvers),
+        longestBarrel: Math.max(previousRecord.longestBarrel, completedRide.barrelTime),
+        bestGrade,
+        mastery: nextMastery,
+        lastZone: zoneLabel,
+        lastSurfedAt: Date.now(),
+      },
+    }));
+    if (nextMastery > previousRecord.mastery) {
+      window.setTimeout(() => {
+        setPassportAward({ level: nextMastery, label: coastMasteryLabel(nextMastery) });
+        audio.current?.effect("coach");
+        haptic(nextMastery >= 3 ? [14, 24, 14, 32, 24, 42] : [10, 20, 14, 26]);
+      }, 0);
+    }
+  }, [beach.id, passport, settings.mode, stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore, zoneLabel]);
 
   useEffect(() => {
     let disposed = false;
@@ -1267,6 +1455,9 @@ export default function SurfscapeApp() {
       board: BOARD_SPECS[settings.board].name,
       waveHeight: effectiveFaceHeight,
       wavePeriod: settings.wavePeriod,
+      tourMastery: settings.mode === "playground"
+        ? currentCoastRecord.mastery
+        : Math.max(currentCoastRecord.mastery, masteryForRide(rideToast)),
       sceneFrame: rideFrame.current?.rideId === activeRideCaptureId.current
         ? rideFrame.current.blob
         : null,
@@ -1274,7 +1465,7 @@ export default function SurfscapeApp() {
       if (!disposed) rideCard.current = file;
     });
     return () => { disposed = true; };
-  }, [beach, effectiveFaceHeight, rideFrameVersion, rideToast, settings.board, settings.wavePeriod, zoneLabel]);
+  }, [beach, currentCoastRecord.mastery, effectiveFaceHeight, rideFrameVersion, rideToast, settings.board, settings.mode, settings.wavePeriod, zoneLabel]);
 
   const chooseBeach = (next: Beach) => {
     const startingZone = next.zones[Math.min(1, next.zones.length - 1)];
@@ -1344,8 +1535,10 @@ export default function SurfscapeApp() {
     setTrainingStep(0);
     previousManeuverId.current = 0;
     previousRideResultId.current = 0;
+    previousPassportRideResultId.current = 0;
     setManeuverToast(null);
     setRideToast(null);
+    setPassportAward(null);
     setWetLens(null);
     setShareStatus("idle");
     setSessionKey((value) => value + 1);
@@ -1570,6 +1763,9 @@ export default function SurfscapeApp() {
           board: BOARD_SPECS[settings.board].name,
           waveHeight: effectiveFaceHeight,
           wavePeriod: settings.wavePeriod,
+          tourMastery: settings.mode === "playground"
+            ? currentCoastRecord.mastery
+            : Math.max(currentCoastRecord.mastery, masteryForRide(ride)),
           sceneFrame: rideFrame.current?.rideId === activeRideCaptureId.current
             ? rideFrame.current.blob
             : null,
@@ -1633,12 +1829,22 @@ export default function SurfscapeApp() {
       return updated.score === current.score && updated.distance === current.distance && updated.combo === current.combo ? current : updated;
     });
   }, [settings.mode]);
-  const objectives = [
-    { label: "Ride 40 m", done: stats.rideDistance >= 40 },
-    { label: "Land 2 moves", done: stats.maneuverCount >= 2 },
-    { label: "Barrel for 2s", done: stats.barrelTime >= 2 },
-    { label: "Hold pocket 20 m", done: stats.pocketDistance >= 20 },
-  ];
+  const liveMasteryThree = stats.rideResult === "clean"
+    && gradeRank(stats.rideGrade) >= gradeRank("A")
+    && stats.pocketDistance >= 25
+    && (stats.rideManeuvers >= 2 || stats.barrelTime >= 2);
+  const objectives = settings.mode === "playground"
+    ? [
+        { label: "Ride 40 m", done: stats.rideDistance >= 40 },
+        { label: "Land 2 moves", done: stats.maneuverCount >= 2 },
+        { label: "Barrel for 2s", done: stats.barrelTime >= 2 },
+        { label: "Hold pocket 20 m", done: stats.pocketDistance >= 20 },
+      ]
+    : [
+        { label: "Log a wave at this coast", done: currentCoastRecord.mastery >= 1 || stats.rideDistance >= 8 || stats.rideResult !== "" },
+        { label: "Finish a clean line", done: currentCoastRecord.mastery >= 2 || stats.rideResult === "clean" },
+        { label: "Earn A · 25 m pocket · 2 moves or 2s tube", done: currentCoastRecord.mastery >= 3 || liveMasteryThree },
+      ];
   const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
   const lineLabel = stats.linePosition < -.72
     ? "TOO DEEP"
@@ -1920,6 +2126,45 @@ export default function SurfscapeApp() {
                     <ChevronDown />
                   </label>
                 </div>
+                <div className={`tour-passport mastery-${currentCoastRecord.mastery}`}>
+                  <div className="passport-heading">
+                    <Trophy />
+                    <span>WORLD TOUR PASSPORT</span>
+                    <strong>{passportSummary.explored} / {BEACHES.length} COASTS · {passportSummary.stamps} / {BEACHES.length * 3} STAMPS</strong>
+                  </div>
+                  <div className="passport-route" aria-label="World Tour coastline progress">
+                    {BEACHES.map((destination, index) => {
+                      const destinationMastery = passport[destination.id]?.mastery ?? 0;
+                      return (
+                        <button
+                          type="button"
+                          key={destination.id}
+                          className={`${destinationMastery ? "is-stamped" : ""} ${destination.id === beach.id ? "is-current" : ""}`}
+                          onClick={() => chooseBeach(destination)}
+                          aria-label={`${destination.name}. ${coastMasteryLabel(destinationMastery)}. Select destination.`}
+                          title={`${destination.name} · ${coastMasteryLabel(destinationMastery)}`}
+                        >
+                          <i>{String(index + 1).padStart(2, "0")}</i>
+                          <span>{Array.from({ length: 3 }, (_, stamp) => <b key={stamp} className={stamp < destinationMastery ? "is-earned" : ""} />)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="passport-coast">
+                    <div>
+                      <span>{zoneLabel} · {beach.country}</span>
+                      <strong>{coastMasteryLabel(currentCoastRecord.mastery)}</strong>
+                      <small>
+                        {currentCoastRecord.rides > 0
+                          ? `${currentCoastRecord.bestGrade} BEST · ${currentCoastRecord.bestScore.toLocaleString()} PTS · ${currentCoastRecord.cleanRides} CLEAN`
+                          : "LOG A WAVE · FINISH CLEAN · MASTER THE COAST"}
+                      </small>
+                    </div>
+                    <span className="passport-stamps" aria-label={`${currentCoastRecord.mastery} of 3 stamps earned`}>
+                      {Array.from({ length: 3 }, (_, stamp) => <i key={stamp} className={stamp < currentCoastRecord.mastery ? "is-earned" : ""}>{stamp + 1}</i>)}
+                    </span>
+                  </div>
+                </div>
                 <WorldMap
                   beach={beach}
                   latitude={latitude}
@@ -2031,6 +2276,9 @@ export default function SurfscapeApp() {
               <i />
               <span>{zoneLabel}</span>
               <strong>{localTime} {sessionConditions.timezoneAbbreviation}</strong>
+              <i />
+              <span>World tour</span>
+              <strong>{passportSummary.explored}/{BEACHES.length} · {passportSummary.stamps} stamps</strong>
               <i />
               <span>Personal best</span>
               <strong>{personalBest.score.toLocaleString()}</strong>
@@ -2230,7 +2478,7 @@ export default function SurfscapeApp() {
               <strong>{stats.stamina}</strong>
             </div>
             <div className="session-goals">
-              <span><Target /> SESSION LINES</span>
+              <span><Target /> {settings.mode === "playground" ? "SESSION LINES" : `WORLD TOUR · ${currentCoastRecord.mastery}/3 STAMPS`}</span>
               {objectives.map((objective) => (
                 <small key={objective.label} className={objective.done ? "is-done" : ""}>
                   {objective.done ? <CircleCheck /> : <i />} {objective.label}
@@ -2273,6 +2521,14 @@ export default function SurfscapeApp() {
                 <span>{rideToast.result === "clean" ? "WAVE COMPLETE" : "WIPEOUT / RESET"}</span>
                 <strong>{rideToast.score.toLocaleString()} PTS</strong>
                 <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel</small>
+                {passportAward && (
+                  <em className={`passport-award level-${passportAward.level}`}>
+                    <Trophy />
+                    <span>WORLD TOUR STAMP</span>
+                    <strong>{passportAward.label}</strong>
+                    <b>{passportAward.level}/3</b>
+                  </em>
+                )}
               </div>
               <button
                 type="button"
@@ -2470,7 +2726,7 @@ export default function SurfscapeApp() {
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); previousPhase.current = "shore"; previousTakeoffPhase.current = "shore"; previousManeuverId.current = 0; previousRideResultId.current = 0; previousPassportRideResultId.current = 0; setManeuverToast(null); setRideToast(null); setPassportAward(null); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}
