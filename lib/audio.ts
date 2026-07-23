@@ -373,6 +373,7 @@ export class SurfscapeAudio {
     railLoad = 0,
     railGrip = 1,
     trickCharge = 0,
+    facePosition = 0,
   ) {
     if (!this.context || !this.surfGain || !this.surfFilter || !this.surf) return;
     const now = this.context.currentTime;
@@ -380,13 +381,15 @@ export class SurfscapeAudio {
     const rail = Math.min(1, Math.abs(railLoad));
     const release = 1 - Math.min(1, Math.max(0, railGrip));
     const loaded = Math.min(1, Math.max(0, trickCharge));
+    const lip = Math.max(0, Math.min(1, facePosition));
+    const bottom = Math.max(0, Math.min(1, -facePosition));
     const targetGain = active && this.enabled
-      ? .016 + velocity * .12 + barrel * .068 + setEnergy * .02 + rail * .032 + release * .052 + loaded * .016
+      ? .016 + velocity * .12 + barrel * .068 + setEnergy * .02 + rail * .032 + release * .052 + loaded * .016 + lip * .018 + bottom * .008
       : 0;
     ramp(this.surfGain.gain, targetGain, now, .12);
-    ramp(this.surfFilter.frequency, 820 + velocity * 1420 + barrel * 520 + rail * 620 + release * 940, now, .1);
-    ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34, now, .12);
-    ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12, now, .1);
+    ramp(this.surfFilter.frequency, 820 + velocity * 1420 + barrel * 520 + rail * 620 + release * 940 + lip * 680 - bottom * 120, now, .1);
+    ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34 + lip * .18, now, .12);
+    ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12 + lip * .06 - bottom * .025, now, .1);
     if (this.surfPanner) ramp(this.surfPanner.pan, Math.max(-.68, Math.min(.68, railLoad * .62)), now, .1);
   }
 

@@ -56,6 +56,7 @@ export type ReplayMoment = {
 };
 export type ReplayTelemetry = {
   speed: number;
+  facePosition: number;
   lineControl: number;
   linePosition: number;
   railGrip: number;
@@ -246,6 +247,7 @@ type MotionState = {
   exertion: number;
   paddleEffort: number;
   waveQuality: number;
+  facePosition: number;
   linePosition: number;
   lineControl: number;
   lineSide: number;
@@ -307,6 +309,7 @@ type ReplayRestoreState = {
   rideHeading: number;
   lineSide: number;
   crestOffset: number;
+  facePosition: number;
   stance: number;
   stamina: number;
   breath: number;
@@ -367,6 +370,7 @@ function interpolateReplayMotion(from: MotionState, to: MotionState, alpha: numb
 function replayTelemetryFromMotion(motion: MotionState): ReplayTelemetry {
   return {
     speed: Math.max(0, motion.speed),
+    facePosition: THREE.MathUtils.clamp(motion.facePosition, -1, 1),
     lineControl: THREE.MathUtils.clamp(motion.lineControl, 0, 1),
     linePosition: THREE.MathUtils.clamp(motion.linePosition, -1, 1),
     railGrip: THREE.MathUtils.clamp(1 - motion.slip, 0, 1),
@@ -3375,7 +3379,11 @@ function SurferModel({
             + Math.sin(clock.elapsedTime * (3.4 + state.wipeoutPower * 2.2)) * (.045 + state.wipeoutPower * .055)
           : 0;
 
-    const bodyRotationX = paddle ? Math.PI / 2 - 0.1 + state.duckDive * .08 - takeoffPlant * .055 : riding ? -0.18 + state.takeoff * 1.32 + rideSettle * .08 : 0;
+    const bodyRotationX = paddle
+      ? Math.PI / 2 - 0.1 + state.duckDive * .08 - takeoffPlant * .055
+      : riding
+        ? -0.18 + state.takeoff * 1.32 + rideSettle * .08 + state.facePosition * .045
+        : 0;
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
     body.current.rotation.z = THREE.MathUtils.damp(
       body.current.rotation.z,
@@ -3406,7 +3414,7 @@ function SurferModel({
     const baseBoardRotationX = carrying
       ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth)
       : riding
-        ? state.stance * -.05 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 + rideSettle * .025
+        ? state.stance * -.05 + state.facePosition * -.085 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 + rideSettle * .025
         : paddle
           ? state.duckDive * .3 - state.shorebreak * .035 + takeoffPlant * .065
           : 0;
@@ -4096,7 +4104,10 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity * stagger, 7, delta);
     });
     const railEnergy = riding
-      ? THREE.MathUtils.smoothstep(state.speed, 6.5, 15.5) * (Math.abs(state.rail) * .72 + state.slip * .35 + state.compression * .12) * waterContact
+      ? THREE.MathUtils.smoothstep(state.speed, 6.5, 15.5)
+        * (Math.abs(state.rail) * .72 + state.slip * .35 + state.compression * .12)
+        * (1 + Math.max(0, state.facePosition) * .16)
+        * waterContact
       : 0;
     const impactEnergy = riding ? Math.max(state.impact * .48, state.maneuver * .18) * waterContact : 0;
     const loadedSide = Math.abs(state.rail) > .06 ? -Math.sign(state.rail) : state.maneuverSide || 1;
@@ -8284,6 +8295,7 @@ function Simulation({
   const rideStartScore = useRef(0);
   const rideOriginAlong = useRef(0);
   const rideWavePhase = useRef(0);
+  const rideFacePosition = useRef(0);
   const ridePocketOffset = useRef(0);
   const waveCrestOffset = useRef(0);
   const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
@@ -8343,6 +8355,7 @@ function Simulation({
     exertion: 0,
     paddleEffort: 0,
     waveQuality: 0,
+    facePosition: 0,
     linePosition: 0,
     lineControl: 1,
     lineSide: character.peel === 0 ? 1 : Math.sign(character.peel),
@@ -8493,6 +8506,7 @@ function Simulation({
         rideHeading.current = restore.rideHeading;
         rideLineSide.current = restore.lineSide;
         waveCrestOffset.current = restore.crestOffset;
+        rideFacePosition.current = restore.facePosition;
         stance.current = restore.stance;
         stamina.current = restore.stamina;
         breath.current = restore.breath;
@@ -8565,6 +8579,7 @@ function Simulation({
           rideHeading: rideHeading.current,
           lineSide: rideLineSide.current,
           crestOffset: waveCrestOffset.current,
+          facePosition: rideFacePosition.current,
           stance: stance.current,
           stamina: stamina.current,
           breath: breath.current,
@@ -8975,6 +8990,7 @@ function Simulation({
           rideOriginAlong.current = position.current.x * catchTangentX + position.current.z * catchTangentZ;
           ridePocketOffset.current = 0;
           waveCrestOffset.current = 0;
+          rideFacePosition.current = 0;
           rideLineSide.current = Math.abs(character.peel) >= .18
             ? Math.sign(character.peel)
             : Math.abs(steer) > .16
@@ -9145,9 +9161,32 @@ function Simulation({
           settings,
           character,
         );
-        const phaseError = Math.atan2(
+        const faceTarget = finishing
+          ? 0
+          : THREE.MathUtils.clamp(
+              stance.current * .86 + (move > .08 ? .08 : move < -.08 ? -.05 : 0),
+              -1,
+              1,
+            );
+        rideFacePosition.current = THREE.MathUtils.damp(
+          rideFacePosition.current,
+          faceTarget,
+          finishing ? 4.6 : 2.55,
+          delta,
+        );
+        const facePhaseRange = THREE.MathUtils.clamp(
+          .4 + settings.waveHeight * tideResponse.faceScale * .045,
+          .42,
+          .62,
+        );
+        const desiredWavePhase = rideWavePhase.current - rideFacePosition.current * facePhaseRange;
+        const crestPhaseError = Math.atan2(
           Math.sin(currentWavePhase - rideWavePhase.current),
           Math.cos(currentWavePhase - rideWavePhase.current),
+        );
+        const phaseError = Math.atan2(
+          Math.sin(currentWavePhase - desiredWavePhase),
+          Math.cos(currentWavePhase - desiredWavePhase),
         );
         const waveNumber = Math.PI * 2 / waveTransport.wavelength;
         const phaseCorrection = THREE.MathUtils.clamp(
@@ -9155,9 +9194,14 @@ function Simulation({
           -3.2,
           3.2,
         );
+        const crestTravelLimit = THREE.MathUtils.clamp(waveTransport.wavelength * .075, 5.4, 15);
         waveCrestOffset.current = THREE.MathUtils.damp(
           waveCrestOffset.current,
-          THREE.MathUtils.clamp(-phaseError / Math.max(.08, waveNumber), -4.2, 4.2),
+          THREE.MathUtils.clamp(
+            -crestPhaseError / Math.max(.08, waveNumber),
+            -crestTravelLimit,
+            crestTravelLimit,
+          ),
           8.5,
           delta,
         );
@@ -9179,6 +9223,8 @@ function Simulation({
         else stance.current = THREE.MathUtils.damp(stance.current, 0, 1.05, delta);
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
+        const highFace = Math.max(0, rideFacePosition.current);
+        const lowFace = Math.max(0, -rideFacePosition.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const breakTravel = rideDistance.current;
         const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * tideVariability * 1.1;
@@ -9194,11 +9240,18 @@ function Simulation({
         sectionPressure = Math.max(deepRisk, shoulderStall * .78) * (.66 + tideVariability * .34);
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
         speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
-        speed *= .82 + lineControl * .24 - shoulderStall * .1 + Math.max(0, -linePosition) * .025;
+        speed *= (
+          .82
+          + lineControl * .24
+          - shoulderStall * .1
+          + Math.max(0, -linePosition) * .025
+          + highFace * .07
+          + lowFace * .035
+        );
         const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const railDemand = Math.abs(rideSteer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + tideSteepness * .1);
-        const railGrip = gripBase + priorWaveQuality * .2 + tailPressure * .08 - nosePressure * .1;
+        const railDemand = Math.abs(rideSteer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + tideSteepness * .1) * (1 + highFace * .08);
+        const railGrip = gripBase + priorWaveQuality * .2 + tailPressure * .08 - nosePressure * .1 - highFace * .045;
         const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
         const assistedSlip = settings.mode === "training" ? rawSlip * .52 : rawSlip;
         railSlip.current = THREE.MathUtils.damp(railSlip.current, assistedSlip, assistedSlip > railSlip.current ? 7.5 : 3.4, delta);
@@ -9233,6 +9286,7 @@ function Simulation({
           rideSteer * (0.22 + tailPressure * 0.08) +
           stance.current * 0.07 +
           Math.sin(t * 8.2) * railSlip.current * .16 +
+          Math.sin(t * (5.8 + tideVariability) + position.current.x * .06) * highFace * .075 / boardSpec.stability +
           Math.sin(t * (4.7 + windExposure * 1.8) + position.current.z * .08) * onshoreChop * .13 / boardSpec.stability +
           Math.sign(rideSteer) * railSlip.current * .1;
         const attempt = activeManeuver.current;
@@ -9283,7 +9337,13 @@ function Simulation({
         const controlQuality = Math.max(0, 1 - balanceError / 1.2) * (1 - railSlip.current * .36);
         const barrelThreshold = .8 - tideHollow * .18 + onshoreChop * .08 - offshoreGroom * .025;
         const pocketBarrel = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition + .18), .34, .92);
-        const inBarrel = !finishing && waveQuality > barrelThreshold && controlQuality > .72 && pocketBarrel > .42 && Math.abs(rideSteer) < .68 && stance.current > -.58;
+        const inBarrel = !finishing
+          && waveQuality > barrelThreshold
+          && controlQuality > .72
+          && pocketBarrel > .42
+          && rideFacePosition.current > -.18
+          && Math.abs(rideSteer) < .68
+          && stance.current > -.58;
         barrelIntensity = inBarrel
           ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + tideHollow) + controlQuality * .16, 0, 1)
           : 0;
@@ -9294,6 +9354,8 @@ function Simulation({
               + waveQuality * .28
               + Math.min(1, speed / 18) * .24
               + Math.abs(railLoad) * .14
+              + highFace * .055
+              + lowFace * .025
               + barrelIntensity * .14,
             0,
             1,
@@ -9309,7 +9371,9 @@ function Simulation({
           combo.current = Math.min(8, combo.current + delta * 0.23);
           score.current += (26 + barrelTime.current * 4) * controlQuality * combo.current * delta;
         }
-        const turnBonus = Math.abs(railLoad) * (12 + compression * 5) * (1 - railSlip.current * .42);
+        const turnBonus = Math.abs(railLoad) * (
+          12 + compression * 5 + Math.abs(rideFacePosition.current) * 3.5
+        ) * (1 - railSlip.current * .42);
         if (!finishing) {
           combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15 + (pumping && lineControl > .48 ? delta * 0.04 : 0));
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -9349,33 +9413,33 @@ function Simulation({
         if (!finishing && wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
           const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
           const rail = Math.abs(steer);
-          let name = "High Line";
-          let family: ManeuverAttempt["family"] = "trim";
-          let base = 150;
+          let name = rideFacePosition.current < -.42 ? "Bottom Turn" : "High Line";
+          let family: ManeuverAttempt["family"] = rideFacePosition.current < -.42 ? "carve" : "trim";
+          let base = rideFacePosition.current < -.42 ? 185 : 150;
           let lift = .04;
-          let rotation = .08;
-          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55) {
+          let rotation = rideFacePosition.current < -.42 ? .34 : .08;
+          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55 && rideFacePosition.current > .08) {
             name = "Nose Ride";
             base = settings.board === "longboard" ? 440 : 340;
-          } else if (charge > .82 && tailPressure > .34 && rail > .38 && waveQuality > .7 && speed > 10.2 && linePosition < .5) {
+          } else if (charge > .82 && tailPressure > .34 && rail > .38 && waveQuality > .7 && speed > 10.2 && linePosition < .5 && rideFacePosition.current > .38) {
             family = "air";
             name = charge > .95 && rail > .62 ? "Alley-Oop" : "Air Reverse";
             base = name === "Alley-Oop" ? 780 : 690;
             lift = .82 + charge * .62 + settings.waveHeight * .08;
             rotation = name === "Alley-Oop" ? 2.35 : 1.72;
-          } else if (tailPressure > .56 && rail > .42 && waveQuality > .54) {
+          } else if (tailPressure > .56 && rail > .42 && waveQuality > .54 && rideFacePosition.current > .2) {
             family = "lip";
             name = charge > .68 ? "Layback Release" : "Tail Release";
             base = charge > .68 ? 470 : 390;
             lift = .22 + charge * .28;
             rotation = .64 + charge * .34;
-          } else if (waveQuality > .72 && rail > .42) {
+          } else if (waveQuality > .72 && rail > .42 && rideFacePosition.current > .3) {
             family = "lip";
             name = "Lip Snap";
             base = 360;
             lift = .18 + charge * .3;
             rotation = .58 + charge * .42;
-          } else if (waveQuality > 0.68) {
+          } else if (waveQuality > 0.68 && rideFacePosition.current > .46) {
             family = "lip";
             name = "Foam Floater";
             base = 305;
@@ -9443,6 +9507,10 @@ function Simulation({
             ? `Shoulder fading · cut back ${rideLineSide.current > 0 ? "left" : "right"} toward the pocket`
           : lineControl > .76 && Math.abs(steer) < .18
             ? "Power pocket locked · build speed or release a move"
+          : rideFacePosition.current > .58
+            ? "Lip line — load the tail and release through the pitching section"
+          : rideFacePosition.current < -.58
+            ? "Bottom turn — set the rail and drive back toward the lip"
           : steer
             ? "Hold the rail · hold TRICK / SPACE to load, then release"
             : pumping
@@ -9649,6 +9717,7 @@ function Simulation({
         waveCrestOffset.current = THREE.MathUtils.lerp(from.crestOffset, to.crestOffset, alpha);
         replayMotion = interpolateReplayMotion(from.motion, to.motion, alpha);
         motion.current = replayMotion;
+        rideFacePosition.current = replayMotion.facePosition;
         stance.current = replayMotion.stance;
         steer = replayMotion.steer;
         balanceInput = replayMotion.balance;
@@ -9738,6 +9807,7 @@ function Simulation({
     }
     if (phase.current !== "riding") {
       waveCrestOffset.current = THREE.MathUtils.damp(waveCrestOffset.current, 0, 9, delta);
+      rideFacePosition.current = THREE.MathUtils.damp(rideFacePosition.current, 0, 7, delta);
     }
     player.current.position.set(position.current.x, playerY, position.current.z);
     player.current.visible = phase.current !== "driving";
@@ -9859,6 +9929,12 @@ function Simulation({
       delta,
     );
     motion.current.waveQuality = THREE.MathUtils.damp(motion.current.waveQuality, waveQuality, 5, delta);
+    motion.current.facePosition = THREE.MathUtils.damp(
+      motion.current.facePosition,
+      phase.current === "riding" ? rideFacePosition.current : 0,
+      phase.current === "riding" ? 7 : 5,
+      delta,
+    );
     motion.current.linePosition = THREE.MathUtils.damp(motion.current.linePosition, linePosition, 6.5, delta);
     motion.current.lineControl = THREE.MathUtils.damp(motion.current.lineControl, lineControl, 6.5, delta);
     motion.current.lineSide = rideLineSide.current;
@@ -10570,6 +10646,7 @@ function Simulation({
         balance: balanceInput,
         balanceTarget,
         waveQuality,
+        facePosition: motion.current.facePosition,
         linePosition: motion.current.linePosition,
         lineControl: motion.current.lineControl,
         lineSide: motion.current.lineSide,

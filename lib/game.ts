@@ -355,6 +355,7 @@ export type GameStats = {
   balance: number;
   balanceTarget: number;
   waveQuality: number;
+  facePosition: number;
   linePosition: number;
   lineControl: number;
   lineSide: number;
@@ -438,6 +439,7 @@ export const INITIAL_STATS: GameStats = {
   balance: 0,
   balanceTarget: 0,
   waveQuality: 0,
+  facePosition: 0,
   linePosition: 0,
   lineControl: 1,
   lineSide: 1,
