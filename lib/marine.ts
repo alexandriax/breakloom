@@ -30,6 +30,7 @@ export type MarineConditions = {
   observedAt: string;
   timezone: string;
   timezoneAbbreviation: string;
+  utcOffsetSeconds: number;
   waveHeight: number;
   waveDirection: number;
   wavePeriod: number;
@@ -56,6 +57,7 @@ export type MarineConditions = {
 type MarineResponse = {
   timezone?: string;
   timezone_abbreviation?: string;
+  utc_offset_seconds?: number;
   current?: Record<string, number | string | null>;
   hourly?: {
     time?: string[];
@@ -73,6 +75,7 @@ type MarineResponse = {
 };
 
 type WeatherResponse = {
+  utc_offset_seconds?: number;
   current?: Record<string, number | string | null>;
   hourly?: {
     time?: string[];
@@ -157,6 +160,10 @@ export async function fetchMarineConditions(
   const weather = (await weatherResponse.json()) as WeatherResponse;
   const current = marine.current ?? {};
   const atmosphere = weather.current ?? {};
+  const utcOffsetSeconds = numberOr(
+    marine.utc_offset_seconds,
+    numberOr(weather.utc_offset_seconds, 0),
+  );
   const observedAt = String(current.time ?? atmosphere.time ?? new Date().toISOString());
   const tide: TidePoint[] = (marine.hourly?.time ?? [])
     .map((time, index) => ({
@@ -201,6 +208,7 @@ export async function fetchMarineConditions(
     observedAt,
     timezone: marine.timezone ?? "Local time",
     timezoneAbbreviation: marine.timezone_abbreviation ?? "",
+    utcOffsetSeconds,
     waveHeight: numberOr(current.wave_height, beach.fallback.waveHeight),
     waveDirection: numberOr(current.wave_direction, beach.fallback.waveDirection),
     wavePeriod: numberOr(current.wave_period, beach.fallback.wavePeriod),
@@ -227,12 +235,17 @@ export async function fetchMarineConditions(
 
 export function fallbackConditions(beach: Beach, referenceTime?: string | Date): MarineConditions {
   const now = referenceTime ? new Date(referenceTime) : new Date();
+  const utcOffsetSeconds = Math.max(-12, Math.min(14, Math.round(beach.lon / 15))) * 3600;
+  const localIso = (date: Date) => new Date(date.getTime() + utcOffsetSeconds * 1000)
+    .toISOString()
+    .slice(0, 19);
+  const observedAt = localIso(now);
   const tide = Array.from({ length: 57 }, (_, index) => ({
-    time: new Date(now.getTime() + (index - 8) * 3_600_000).toISOString(),
+    time: localIso(new Date(now.getTime() + (index - 8) * 3_600_000)),
     value: Math.sin((index / 12.4) * Math.PI * 2) * 0.72,
   }));
   const forecast: MarineForecastPoint[] = Array.from({ length: 49 }, (_, index) => {
-    const time = new Date(now.getTime() + index * 3_600_000).toISOString();
+    const time = localIso(new Date(now.getTime() + index * 3_600_000));
     const localHour = Number(time.slice(11, 13));
     const seaLevel = Math.sin(((index + 8) / 12.4) * Math.PI * 2) * .72;
     return {
@@ -260,9 +273,10 @@ export function fallbackConditions(beach: Beach, referenceTime?: string | Date):
   });
   return {
     source: "modeled",
-    observedAt: now.toISOString(),
-    timezone: "Local time",
-    timezoneAbbreviation: "",
+    observedAt,
+    timezone: "Modeled local time",
+    timezoneAbbreviation: `UTC${utcOffsetSeconds >= 0 ? "+" : ""}${utcOffsetSeconds / 3600}`,
+    utcOffsetSeconds,
     waveHeight: beach.fallback.waveHeight,
     waveDirection: beach.fallback.waveDirection,
     wavePeriod: beach.fallback.wavePeriod,

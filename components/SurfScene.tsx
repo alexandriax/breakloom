@@ -10,6 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
 import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
+import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
   forward: boolean;
@@ -144,9 +145,13 @@ function AdaptiveRenderer({
 type SurfSceneProps = {
   beach: Beach;
   zoneName: string;
+  latitude: number;
+  longitude: number;
   settings: SessionSettings;
   cloudCover: number;
   weatherCode: number;
+  observedAt: string;
+  utcOffsetSeconds: number;
   sunrise: string;
   sunset: string;
   cameraMode: CameraMode;
@@ -7453,9 +7458,13 @@ function KinematicContactShadows({
 function Simulation({
   beach,
   zoneName,
+  latitude,
+  longitude,
   settings,
   cloudCover,
   weatherCode,
+  observedAt,
+  utcOffsetSeconds,
   sunrise,
   sunset,
   cameraMode,
@@ -7629,11 +7638,28 @@ function Simulation({
   };
   const sunriseHour = timeToHour(sunrise, 6);
   const sunsetHour = timeToHour(sunset, 18);
-  const hourAngle = ((settings.timeOfDay - sunriseHour) / Math.max(8, sunsetHour - sunriseHour)) * Math.PI;
-  const solarElevation = Math.sin(hourAngle);
+  const fallbackHourAngle = ((settings.timeOfDay - sunriseHour) / Math.max(8, sunsetHour - sunriseHour)) * Math.PI;
+  const solarPosition = solarPositionAt({
+    latitude,
+    longitude,
+    localDateTime: observedAt,
+    localHour: settings.timeOfDay,
+    utcOffsetSeconds,
+  });
+  const solarElevation = solarPosition?.sinElevation ?? Math.sin(fallbackHourAngle);
+  const solarAzimuth = solarPosition?.azimuth
+    ?? settings.coastHeading + THREE.MathUtils.radToDeg(fallbackHourAngle - Math.PI / 2);
+  const relativeSunAzimuth = THREE.MathUtils.degToRad(solarAzimuth - settings.coastHeading);
+  const solarHorizontal = Math.sqrt(Math.max(0, 1 - solarElevation * solarElevation));
+  const sunDirectionX = Math.sin(relativeSunAzimuth) * solarHorizontal;
+  const sunDirectionY = solarElevation;
+  const sunDirectionZ = Math.cos(relativeSunAzimuth) * solarHorizontal;
   const sunHeight = Math.max(-0.08, solarElevation);
-  const sunX = Math.cos(hourAngle) * 160;
-  const lightingSunPosition: [number, number, number] = [sunX * .22, Math.max(6, sunHeight * 44), -30];
+  const lightingSunPosition: [number, number, number] = [
+    sunDirectionX * 44,
+    Math.max(1.8, sunHeight * 44),
+    sunDirectionZ * 44,
+  ];
 
   useEffect(() => {
     onReady();
@@ -9220,8 +9246,16 @@ function Simulation({
   const fogNear = weather.fog ? 18 : weather.storm ? 34 : weather.kind !== "none" ? 42 : 55;
   const fogFar = weather.fog ? 112 : weather.storm ? 148 : weather.intensity > .7 ? 172 : weather.kind !== "none" ? 205 : 240;
   const sunLightColor = sunHeight < 0.3 ? "#ff9f72" : "#fff0ca";
-  const celestialSunPosition: [number, number, number] = [sunX, solarElevation * 150, -120];
-  const oceanSunPosition: [number, number, number] = [sunX * .22, solarElevation * 44, -30];
+  const celestialSunPosition: [number, number, number] = [
+    sunDirectionX * 180,
+    sunDirectionY * 180,
+    sunDirectionZ * 180,
+  ];
+  const oceanSunPosition: [number, number, number] = [
+    sunDirectionX * 44,
+    sunDirectionY * 44,
+    sunDirectionZ * 44,
+  ];
 
   return (
     <>
@@ -9240,7 +9274,7 @@ function Simulation({
       />
       <Sky
         distance={450000}
-        sunPosition={[sunX, Math.max(-8, solarElevation * 150), -120]}
+        sunPosition={celestialSunPosition}
         inclination={0.49}
         azimuth={0.24}
         turbidity={5.2 + cloudCover * 0.025 + atmosphereBoost}
@@ -9278,7 +9312,7 @@ function Simulation({
       />
       <primitive object={sunTarget} />
       <directionalLight
-        position={[-sunX * .18, 28, 34]}
+        position={[-sunDirectionX * 34, 28, -sunDirectionZ * 34]}
         intensity={moonlightStrength * .34 * (1 - cloudFactor * .36)}
         color="#a9d7e8"
       />

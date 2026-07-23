@@ -1556,9 +1556,13 @@ export default function SurfscapeApp() {
           key={`${beach.id}-${sessionKey}`}
           beach={beach}
           zoneName={zoneLabel}
+          latitude={latitude}
+          longitude={longitude}
           settings={settings}
           cloudCover={sessionCloudCover}
           weatherCode={sessionWeatherCode}
+          observedAt={sessionConditions.observedAt}
+          utcOffsetSeconds={sessionConditions.utcOffsetSeconds}
           sunrise={sessionConditions.sunrise}
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
