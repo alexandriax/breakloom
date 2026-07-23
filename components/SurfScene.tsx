@@ -2400,6 +2400,8 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const railSheets = useRef<Array<THREE.Mesh | null>>([]);
   const railSheetMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
+  const paddleRipples = useRef<Array<THREE.Mesh | null>>([]);
+  const paddleRippleMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const spray = useRef<THREE.Points>(null);
   const sprayMaterial = useRef<THREE.PointsMaterial>(null);
   const bubbles = useRef<THREE.Points>(null);
@@ -2424,6 +2426,13 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const previousTakeoff = useRef(0);
   const previousImpact = useRef(0);
   const previousWipeout = useRef(false);
+  const previousPaddlePull = useRef([0, 0]);
+  const paddleRippleState = useRef(Array.from({ length: 2 }, () => ({
+    age: 10,
+    duration: .8,
+    intensity: 0,
+    speed: 0,
+  })));
   const bubblePositions = useMemo(() => {
     const values = new Float32Array(bubbleCount * 3);
     for (let index = 0; index < bubbleCount; index += 1) values[index * 3 + 1] = -20;
@@ -2542,6 +2551,43 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }, []);
+  const paddleRippleTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.translate(64, 64);
+      context.scale(1, .62);
+      context.lineCap = "round";
+      context.shadowColor = "rgba(203,255,247,.42)";
+      context.shadowBlur = 7;
+      [
+        { radius: 43, width: 3.8, alpha: .86, start: -.78, end: 3.72 },
+        { radius: 34, width: 2.2, alpha: .48, start: -2.76, end: .9 },
+        { radius: 50, width: 1.3, alpha: .28, start: .14, end: 2.98 },
+      ].forEach(({ radius, width, alpha, start, end }) => {
+        context.beginPath();
+        context.arc(0, 0, radius, start, end);
+        context.strokeStyle = `rgba(225,255,250,${alpha})`;
+        context.lineWidth = width;
+        context.stroke();
+      });
+      context.shadowBlur = 0;
+      for (let drop = 0; drop < 17; drop += 1) {
+        const angle = -.7 + seededRandom(drop, 641) * 4.35;
+        const radius = 37 + seededRandom(drop, 642) * 19;
+        const size = .8 + seededRandom(drop, 643) * 2.1;
+        context.beginPath();
+        context.arc(Math.cos(angle) * radius, Math.sin(angle) * radius, size, 0, Math.PI * 2);
+        context.fillStyle = `rgba(224,255,250,${(.16 + seededRandom(drop, 644) * .42).toFixed(2)})`;
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
   const bubbleTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
@@ -2564,10 +2610,11 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
 
   useEffect(() => () => {
     bubbleTexture.dispose();
+    paddleRippleTexture.dispose();
     particleTexture.dispose();
     railSheetTexture.dispose();
     wakeTexture.dispose();
-  }, [bubbleTexture, particleTexture, railSheetTexture, wakeTexture]);
+  }, [bubbleTexture, paddleRippleTexture, particleTexture, railSheetTexture, wakeTexture]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
@@ -2615,6 +2662,29 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       sheet.rotation.y = THREE.MathUtils.damp(sheet.rotation.y, side * (.16 + energy * .2), 9, delta);
       sheet.rotation.z = THREE.MathUtils.damp(sheet.rotation.z, side * (-.26 - energy * .28), 9, delta);
       sheet.visible = material.opacity > .004;
+    });
+    paddleRippleState.current.forEach((ripple, index) => {
+      const mesh = paddleRipples.current[index];
+      const material = paddleRippleMaterials.current[index];
+      if (!mesh || !material) return;
+      ripple.age += delta;
+      const progress = THREE.MathUtils.clamp(ripple.age / Math.max(.01, ripple.duration), 0, 1);
+      const active = progress < 1;
+      const side = index === 0 ? -1 : 1;
+      const bloom = THREE.MathUtils.smootherstep(progress, 0, .42);
+      mesh.visible = active;
+      mesh.position.x = side * (.57 + ripple.intensity * .07);
+      mesh.position.y = .052 - state.duckDive * .2;
+      mesh.position.z = .34 - progress * (.56 + ripple.speed * .26);
+      mesh.scale.set(
+        .48 + bloom * (1.18 + ripple.intensity * .3),
+        .32 + bloom * (.74 + ripple.intensity * .18),
+        1,
+      );
+      mesh.rotation.z = side * (.1 + progress * .05);
+      material.opacity = active
+        ? Math.pow(1 - progress, 1.45) * (.18 + ripple.intensity * .42) * (1 - state.duckDive * .82)
+        : 0;
     });
     const positionAttribute = spray.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     const particlePositions = positionAttribute?.array as Float32Array | undefined;
@@ -2685,6 +2755,39 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
         life.current[index] = impact ? 0.9 + Math.random() * 0.35 : 0.46 + Math.random() * 0.38;
       }
     };
+    const emitPaddle = (count: number, side: number) => {
+      if (!particlePositions) return;
+      for (let particle = 0; particle < count; particle += 1) {
+        const index = cursor.current++ % particleCount;
+        const offset = index * 3;
+        const spread = (Math.random() - .5) * .18;
+        particlePositions[offset] = side * (.52 + Math.random() * .19) + spread;
+        particlePositions[offset + 1] = .035 + Math.random() * .105;
+        particlePositions[offset + 2] = .22 + (Math.random() - .5) * .3;
+        velocities.current[offset] = side * (.32 + Math.random() * .72) + spread;
+        velocities.current[offset + 1] = .28 + Math.random() * (.58 + state.paddleEffort * .34);
+        velocities.current[offset + 2] = -(.32 + Math.random() * .9 + state.speed * .05);
+        life.current[index] = .3 + Math.random() * .34;
+      }
+    };
+
+    const paddlePhase = clock.elapsedTime * (4.2 + state.paddleEffort * 2.4);
+    const paddleWave = Math.sin(paddlePhase);
+    const paddlePulls = [
+      paddling ? Math.max(0, -paddleWave) * state.paddleEffort * (1 - state.duckDive) : 0,
+      paddling ? Math.max(0, paddleWave) * state.paddleEffort * (1 - state.duckDive) : 0,
+    ];
+    paddlePulls.forEach((pull, index) => {
+      if (pull > .38 && previousPaddlePull.current[index] <= .38) {
+        const ripple = paddleRippleState.current[index];
+        ripple.age = 0;
+        ripple.duration = .62 + state.paddleEffort * .26;
+        ripple.intensity = .38 + state.paddleEffort * .62;
+        ripple.speed = state.speed;
+        emitPaddle(mobile ? 4 : 8, index === 0 ? -1 : 1);
+      }
+      previousPaddlePull.current[index] = pull;
+    });
 
     if (riding) {
       emission.current += delta * (Math.abs(state.rail) * 22 + state.slip * 26 + state.compression * 5 + state.barrel * 12 + Math.max(0, state.speed - 9) * 0.8);
@@ -2730,8 +2833,16 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     }
     if (positionAttribute) positionAttribute.needsUpdate = true;
     if (sprayMaterial.current) {
-      sprayMaterial.current.opacity = THREE.MathUtils.damp(sprayMaterial.current.opacity, riding ? Math.min(1, .78 + state.slip * .22) : 0, 7, delta);
-      sprayMaterial.current.size = THREE.MathUtils.damp(sprayMaterial.current.size, .24 + state.slip * .1 + state.impact * .08, 7, delta);
+      const sprayOpacity = riding
+        ? Math.min(1, .78 + state.slip * .22)
+        : paddling
+          ? (.34 + state.paddleEffort * .38 + state.shorebreak * .18) * (1 - state.duckDive * .72)
+          : 0;
+      const spraySize = riding
+        ? .24 + state.slip * .1 + state.impact * .08
+        : paddling ? .115 + state.paddleEffort * .035 + state.shorebreak * .03 : .14;
+      sprayMaterial.current.opacity = THREE.MathUtils.damp(sprayMaterial.current.opacity, sprayOpacity, 7, delta);
+      sprayMaterial.current.size = THREE.MathUtils.damp(sprayMaterial.current.size, spraySize, 7, delta);
     }
   });
 
@@ -2762,6 +2873,30 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
             transparent
             opacity={0}
             depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      {[-1, 1].map((side, index) => (
+        <mesh
+          key={`paddle-ripple-${side}`}
+          ref={(mesh) => { paddleRipples.current[index] = mesh; }}
+          position={[side * .57, .052, .34]}
+          rotation={[-Math.PI / 2, 0, side * .1]}
+          visible={false}
+          frustumCulled={false}
+          renderOrder={4.4}
+        >
+          <planeGeometry args={[1, 1]} />
+          <meshBasicMaterial
+            ref={(material) => { paddleRippleMaterials.current[index] = material; }}
+            map={paddleRippleTexture}
+            color={index ? "#d8fff8" : "#a9f3e8"}
+            transparent
+            opacity={0}
+            alphaTest={.018}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
             toneMapped={false}
           />
         </mesh>
