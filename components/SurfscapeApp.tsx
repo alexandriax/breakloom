@@ -1920,9 +1920,41 @@ export default function SurfscapeApp() {
           <div className="set-panel">
             <div className="set-heading">
               <div><Waves /><span>SWELL RADAR</span></div>
-              <strong>{stats.nextSetSeconds === 0 ? "SET HERE" : `${Math.ceil(stats.nextSetSeconds)}s`}</strong>
+              <strong>
+                {stats.setActive && stats.setWaveIndex > 0
+                  ? `WAVE ${stats.setWaveIndex}/${stats.setWaveCount}`
+                  : stats.nextSetSeconds === 0
+                    ? "SET HERE"
+                    : `${Math.ceil(stats.nextSetSeconds)}s`}
+              </strong>
             </div>
-            <div className="set-meter"><i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></div>
+            <div className={`set-meter ${stats.setActive ? "is-set" : "is-lull"}`}>
+              <i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} />
+              <span aria-hidden="true">
+                {Array.from({ length: stats.setWaveCount }, (_, index) => (
+                  <b
+                    key={index}
+                    className={stats.setActive && index + 1 === stats.setWaveIndex
+                      ? "is-current"
+                      : stats.setActive && index + 1 < stats.setWaveIndex
+                        ? "is-passed"
+                        : ""}
+                  />
+                ))}
+              </span>
+            </div>
+            <div className={`set-readout ${stats.setActive ? "is-set" : "is-lull"}`}>
+              <span>{stats.setActive ? "THREE-WAVE SET" : "LULL"}</span>
+              <small>
+                {stats.setActive
+                  ? stats.setWaveIndex === 1
+                    ? "First wave standing up"
+                    : stats.setWaveIndex === stats.setWaveCount
+                      ? "Last wave of the set"
+                      : "Largest wave building"
+                  : `Next wave in ${Math.max(1, Math.ceil(stats.nextSetSeconds))}s`}
+              </small>
+            </div>
             {stats.phase === "paddling" && (
               <>
                 <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>

@@ -319,10 +319,19 @@ const OCEAN_VERTEX = /* glsl */ `
   }
 
   float setEnvelope() {
-    float cycle = max(18.0, uPeriod * 3.1);
+    float period = max(4.0, uPeriod);
+    float cycle = max(30.0, period * 4.8);
     float phase = mod(uTime, cycle);
-    float angle = ((phase - cycle * .38) / cycle) * PI * 2.0;
-    return .12 + pow(max(0.0, cos(angle) * .5 + .5), 3.2) * .88;
+    float firstPeak = period * .55;
+    float spacing = period * .86;
+    float pulseWidth = period * .66;
+    float firstDistance = clamp(1.0 - abs(phase - firstPeak) / pulseWidth, 0.0, 1.0);
+    float secondDistance = clamp(1.0 - abs(phase - (firstPeak + spacing)) / pulseWidth, 0.0, 1.0);
+    float thirdDistance = clamp(1.0 - abs(phase - (firstPeak + spacing * 2.0)) / pulseWidth, 0.0, 1.0);
+    float firstPulse = firstDistance * firstDistance * (3.0 - 2.0 * firstDistance) * .78;
+    float secondPulse = secondDistance * secondDistance * (3.0 - 2.0 * secondDistance);
+    float thirdPulse = thirdDistance * thirdDistance * (3.0 - 2.0 * thirdDistance) * .88;
+    return .09 + max(firstPulse, max(secondPulse, thirdPulse)) * .91;
   }
 
   float gerstner(
@@ -8002,7 +8011,11 @@ function Simulation({
         const takeoffThreshold = (settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36) + breakDemand;
         const headingThreshold = settings.mode === "training" ? .18 : settings.mode === "advanced" ? .52 : .34;
         catchReady = inLineup && takeoffAlignment >= headingThreshold && t >= missedWaveUntil.current && takeoffQuality >= takeoffThreshold;
-        const setCopy = setState.secondsToPeak === 0 ? "Set is here" : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
+        const setCopy = setState.setActive && setState.setWaveIndex > 0
+          ? `Wave ${setState.setWaveIndex} of ${setState.waveCount} building`
+          : setState.secondsToPeak === 0
+            ? "Set is here"
+            : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
         prompt = !inLineup
           ? duckDiveReady
             ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
@@ -9170,6 +9183,9 @@ function Simulation({
         stamina: Math.round(stamina.current),
         setEnergy: setState.energy,
         nextSetSeconds: setState.secondsToPeak,
+        setWaveIndex: setState.setWaveIndex,
+        setWaveCount: setState.waveCount,
+        setActive: setState.setActive,
         maneuver: maneuver.current,
         maneuverScore: maneuverScore.current,
         maneuverQuality: maneuverQuality.current,

@@ -116,6 +116,9 @@ export type GameStats = {
   stamina: number;
   setEnergy: number;
   nextSetSeconds: number;
+  setWaveIndex: number;
+  setWaveCount: number;
+  setActive: boolean;
   maneuver: string;
   maneuverScore: number;
   maneuverQuality: number;
@@ -185,6 +188,9 @@ export const INITIAL_STATS: GameStats = {
   stamina: 100,
   setEnergy: 0,
   nextSetSeconds: 0,
+  setWaveIndex: 0,
+  setWaveCount: 3,
+  setActive: false,
   maneuver: "",
   maneuverScore: 0,
   maneuverQuality: 0,
@@ -228,17 +234,40 @@ export const INITIAL_STATS: GameStats = {
 };
 
 export function waveSetState(elapsed: number, wavePeriod: number) {
-  const cycle = Math.max(18, wavePeriod * 3.1);
+  const period = Math.max(4, wavePeriod);
+  const waveCount = 3;
+  const cycle = Math.max(30, period * 4.8);
   const phase = ((elapsed % cycle) + cycle) % cycle;
-  const peakAt = cycle * 0.38;
-  const angularDistance = ((phase - peakAt) / cycle) * Math.PI * 2;
-  const pulse = Math.pow(Math.max(0, Math.cos(angularDistance) * 0.5 + 0.5), 3.2);
-  const energy = Math.min(1, 0.12 + pulse * 0.88);
-  const secondsToPeak = (peakAt - phase + cycle) % cycle;
+  const firstPeak = period * .55;
+  const spacing = period * .86;
+  const pulseWidth = period * .66;
+  let strongestPulse = 0;
+  let nearestWaveIndex = 0;
+  let futurePeak = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < waveCount; index += 1) {
+    const peak = firstPeak + index * spacing;
+    const normalized = Math.max(0, Math.min(1, 1 - Math.abs(phase - peak) / pulseWidth));
+    const eased = normalized * normalized * (3 - 2 * normalized);
+    const pulse = eased * (index === 0 ? .78 : index === 1 ? 1 : .88);
+    if (pulse > strongestPulse) {
+      strongestPulse = pulse;
+      nearestWaveIndex = index;
+    }
+    if (peak >= phase - .001 && peak < futurePeak) futurePeak = peak;
+  }
+  const energy = Math.min(1, .09 + strongestPulse * .91);
+  const setActive = strongestPulse >= .16;
+  const setWaveIndex = setActive ? nearestWaveIndex + 1 : 0;
+  const secondsToPeak = !Number.isFinite(futurePeak)
+    ? cycle - phase + firstPeak
+    : Math.max(0, futurePeak - phase);
   return {
     energy,
-    secondsToPeak: secondsToPeak < 0.75 ? 0 : secondsToPeak,
+    secondsToPeak: secondsToPeak < .72 ? 0 : secondsToPeak,
     cycle,
+    waveCount,
+    setWaveIndex,
+    setActive,
   };
 }
 

@@ -1287,8 +1287,17 @@ input:focus-visible {
 .set-heading > div { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 6px; letter-spacing: 0.14em; }
 .set-heading svg { width: 13px; color: #71e1d3; }
 .set-heading strong { color: #a6fff2; font-family: Impact, sans-serif; font-size: 15px; letter-spacing: 0.08em; }
-.set-meter { height: 3px; margin: 9px 0 11px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
-.set-meter i { display: block; height: 100%; background: linear-gradient(90deg, #368f9b, #8dfff0); box-shadow: 0 0 10px #71e1d3; transition: width 0.25s ease; }
+.set-meter { position: relative; height: 3px; margin: 9px 0 5px; background: rgba(255, 255, 255, 0.12); }
+.set-meter > i { display: block; height: 100%; background: linear-gradient(90deg, #368f9b, #8dfff0); box-shadow: 0 0 10px #71e1d3; transition: width 0.25s ease; }
+.set-meter > span { position: absolute; inset: -2px 0 auto; display: flex; justify-content: space-between; pointer-events: none; }
+.set-meter > span b { width: 2px; height: 7px; border: 1px solid rgba(186, 255, 246, .34); background: #193b40; transition: background .2s ease, box-shadow .2s ease, transform .2s ease; }
+.set-meter > span b.is-passed { background: rgba(142, 244, 229, .5); }
+.set-meter > span b.is-current { background: #c3fff7; box-shadow: 0 0 9px #71e1d3; transform: scaleY(1.5); }
+.set-meter.is-lull > i { background: linear-gradient(90deg, #315760, #54757b); box-shadow: none; }
+.set-readout { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 11px; color: rgba(255, 255, 255, .38); font-size: 4.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.set-readout span { white-space: nowrap; }
+.set-readout small { overflow: hidden; color: rgba(255, 255, 255, .48); font: inherit; letter-spacing: .04em; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.set-readout.is-set span { color: #99eee2; text-shadow: 0 0 8px rgba(113, 225, 211, .28); }
 .takeoff-window { display: grid; grid-template-columns: auto 1fr 24px; align-items: center; gap: 7px; margin: -2px 0 10px; }
 .takeoff-window > span, .takeoff-window > strong { color: rgba(255, 255, 255, .48); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
 .takeoff-window > strong { text-align: right; }
