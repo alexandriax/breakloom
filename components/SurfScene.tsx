@@ -6919,6 +6919,7 @@ function Simulation({
     ? renderQuality === "reduced" ? 1 : renderQuality === "high" ? 3 : 2
     : renderQuality === "reduced" ? 2 : 3;
   const player = useRef<THREE.Group>(null);
+  const waveStage = useRef<THREE.Group>(null);
   const van = useRef<THREE.Group>(null);
   const position = useRef(new THREE.Vector3(0, 0, 35));
   const vanPosition = useRef(new THREE.Vector3(0, 0, 78));
@@ -6946,9 +6947,10 @@ function Simulation({
   const stance = useRef(0);
   const barrelTime = useRef(0);
   const rideStartScore = useRef(0);
-  const rideOriginX = useRef(0);
+  const rideOriginAlong = useRef(0);
   const rideWavePhase = useRef(0);
-  const ridePocketOffsetX = useRef(0);
+  const ridePocketOffset = useRef(0);
+  const waveCrestOffset = useRef(0);
   const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
   const rideHeading = useRef(0);
   const pocketDistance = useRef(0);
@@ -7425,7 +7427,6 @@ function Simulation({
             phase.current = "riding";
             rideDistance.current = 0;
             pocketDistance.current = 0;
-            rideOriginX.current = position.current.x;
             rideWavePhase.current = primaryWavePhaseAt(
               position.current.x,
               position.current.z,
@@ -7433,12 +7434,6 @@ function Simulation({
               settings,
               character,
             );
-            ridePocketOffsetX.current = 0;
-            rideLineSide.current = Math.abs(character.peel) >= .18
-              ? Math.sign(character.peel)
-              : Math.abs(steer) > .16
-                ? Math.sign(steer)
-                : position.current.x < 0 ? -1 : 1;
             const catchTransport = primaryWaveVelocityAt(
               position.current.x,
               position.current.z,
@@ -7446,9 +7441,24 @@ function Simulation({
               settings,
               character,
             );
+            const catchNormalX = catchTransport.x / Math.max(.001, catchTransport.speed);
+            const catchNormalZ = catchTransport.z / Math.max(.001, catchTransport.speed);
+            const catchTangentX = catchNormalZ;
+            const catchTangentZ = -catchNormalX;
+            rideOriginAlong.current = position.current.x * catchTangentX + position.current.z * catchTangentZ;
+            ridePocketOffset.current = 0;
+            waveCrestOffset.current = 0;
+            rideLineSide.current = Math.abs(character.peel) >= .18
+              ? Math.sign(character.peel)
+              : Math.abs(steer) > .16
+                ? Math.sign(steer)
+                : position.current.x < 0 ? -1 : 1;
+            const catchTrim = rideLineSide.current
+              * catchTransport.speed
+              * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
             rideHeading.current = Math.atan2(
-              catchTransport.x + rideLineSide.current * catchTransport.speed * (.56 + character.length * .026 + Math.abs(character.peel) * .08),
-              catchTransport.z,
+              catchTransport.x + catchTangentX * catchTrim,
+              catchTransport.z + catchTangentZ * catchTrim,
             );
             barrelTime.current = 0;
             stance.current = 0;
@@ -7507,10 +7517,22 @@ function Simulation({
           -3.2,
           3.2,
         );
+        waveCrestOffset.current = THREE.MathUtils.damp(
+          waveCrestOffset.current,
+          THREE.MathUtils.clamp(-phaseError / Math.max(.08, waveNumber), -4.2, 4.2),
+          8.5,
+          delta,
+        );
+        const waveNormalX = waveTransport.x / Math.max(.001, waveTransport.speed);
+        const waveNormalZ = waveTransport.z / Math.max(.001, waveTransport.speed);
+        // The crest normal and its perpendicular tangent are the shared frame for
+        // wave transport, down-the-line trim, pocket tracking, and the visible face.
+        const waveTangentX = waveNormalZ;
+        const waveTangentZ = -waveNormalX;
         const peelVelocity = rideLineSide.current
           * waveTransport.speed
           * (.38 + Math.abs(character.peel) * .22 + character.length * .018);
-        ridePocketOffsetX.current += (waveTransport.x + peelVelocity) * delta;
+        ridePocketOffset.current += peelVelocity * delta;
         const waveSpeed = waveTransport.speed * (.88 + character.power * .12);
         const pumping = !finishing && move > 0.08 && stamina.current > 1;
         if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
@@ -7520,10 +7542,11 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const breakTravel = rideDistance.current;
-        const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginX.current * .07) * character.variability * 1.1;
-        const pocketX = rideOriginX.current + ridePocketOffsetX.current + pocketPulse;
+        const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * character.variability * 1.1;
+        const pocketAlong = rideOriginAlong.current + ridePocketOffset.current + pocketPulse;
         const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * .46 + (1 - character.steepness) * .9, 3.6, 6.7);
-        const signedPocketDistance = (position.current.x - pocketX) * rideLineSide.current;
+        const surferAlong = position.current.x * waveTangentX + position.current.z * waveTangentZ;
+        const signedPocketDistance = (surferAlong - pocketAlong) * rideLineSide.current;
         linePosition = THREE.MathUtils.clamp(signedPocketDistance / pocketWidth, -1.5, 1.5);
         const lineTolerance = settings.mode === "training" ? 1.3 : settings.mode === "advanced" ? .88 : 1.06;
         lineControl = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition), .38 * lineTolerance, 1.16 * lineTolerance);
@@ -7551,11 +7574,13 @@ function Simulation({
         const drift = Math.sign(steer) * railSlip.current * (1.15 + speed * .045);
         const railTurn = railLoad * boardSpec.turn * (4.4 + speed * .18) * (1 + tailPressure * .38 - nosePressure * .12) * turnGrip + drift;
         const trimDrive = rideLineSide.current * speed * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
-        const lateralVelocity = waveTransport.x + trimDrive + railTurn;
-        const shorewardVelocity = Math.max(
-          2.4,
-          waveTransport.z + phaseCorrection,
+        const tangentialVelocity = trimDrive + railTurn;
+        const normalVelocity = Math.max(
+          2.4 / Math.max(.45, waveNormalZ),
+          waveTransport.speed + phaseCorrection,
         ) * (1 + nosePressure * .025 - tailPressure * .018 + Math.abs(railLoad) * .012);
+        const lateralVelocity = waveNormalX * normalVelocity + waveTangentX * tangentialVelocity;
+        const shorewardVelocity = waveNormalZ * normalVelocity + waveTangentZ * tangentialVelocity;
         rideHeading.current = dampAngle(rideHeading.current, Math.atan2(lateralVelocity, shorewardVelocity), 4.8, delta);
         position.current.x += lateralVelocity * delta;
         position.current.z += shorewardVelocity * delta;
@@ -7842,6 +7867,9 @@ function Simulation({
     const playerY = isWater
       ? waterY + (phase.current === "riding" ? 0.16 - compression * .032 + rebound * .075 : 0.04)
       : 0;
+    if (phase.current !== "riding") {
+      waveCrestOffset.current = THREE.MathUtils.damp(waveCrestOffset.current, 0, 9, delta);
+    }
     player.current.position.set(position.current.x, playerY, position.current.z);
     player.current.visible = phase.current !== "driving";
     const targetPlayerHeading = phase.current === "riding"
@@ -7858,6 +7886,31 @@ function Simulation({
       7,
       delta,
     );
+    if (waveStage.current) {
+      const waveTransport = primaryWaveVelocityAt(
+        position.current.x,
+        position.current.z,
+        t,
+        settings,
+        character,
+      );
+      const waveNormalX = waveTransport.x / Math.max(.001, waveTransport.speed);
+      const waveNormalZ = waveTransport.z / Math.max(.001, waveTransport.speed);
+      const crestOffset = phase.current === "riding" ? waveCrestOffset.current : 0;
+      const waveStageX = position.current.x + waveNormalX * crestOffset;
+      const waveStageZ = position.current.z + waveNormalZ * crestOffset;
+      const waveStageY = isWater
+        ? waveHeightAt(waveStageX, waveStageZ, t, settings, character) + .025
+        : playerY;
+      waveStage.current.position.set(waveStageX, waveStageY, waveStageZ);
+      waveStage.current.rotation.y = dampAngle(
+        waveStage.current.rotation.y,
+        Math.atan2(waveNormalX, waveNormalZ),
+        phase.current === "riding" ? 12 : 7,
+        delta,
+      );
+      waveStage.current.rotation.z = THREE.MathUtils.damp(waveStage.current.rotation.z, 0, 14, delta);
+    }
 
     motion.current.phase = phase.current;
     motion.current.balance = balanceInput;
@@ -8530,10 +8583,12 @@ function Simulation({
         daylight={daylightStrength * directLight}
         tide={settings.tide}
       />
-      <group ref={player}>
-        <PaddleOutShorebreak motion={motion} settings={settings} light={light} mobile={mobileRenderer} />
+      <group ref={waveStage}>
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
+      </group>
+      <group ref={player}>
+        <PaddleOutShorebreak motion={motion} settings={settings} light={light} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
         <UnderwaterLightShafts motion={motion} light={light} cloudCover={cloudCover} mobile={mobileRenderer} />
         <UnderwaterSuspendedMatter motion={motion} settings={settings} mobile={mobileRenderer} />

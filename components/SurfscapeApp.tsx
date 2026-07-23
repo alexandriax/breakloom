@@ -1484,7 +1484,7 @@ export default function SurfscapeApp() {
         detail: `${coastPosition} · ${vehicleGrip}% grip · ${stats.vehicleSlip > .24 ? "unwind the stick" : "stop before exit"}`,
       }
     : stats.phase === "shore"
-      ? { title: "BEACH TRAVERSE", detail: "Full stick runs · drag scene to look" }
+      ? { title: "BEACH TRAVERSE", detail: "Full stick runs · swipe scene to look" }
       : stats.phase === "wading"
         ? { title: "SHOREBREAK", detail: "Push through until the board floats" }
         : stats.phase === "paddling"
@@ -2182,7 +2182,7 @@ export default function SurfscapeApp() {
             <span className="overline">FIELD GUIDE 01</span>
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
-              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
+              <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board and walk through the shallows. Click the scene to lock a 360° mouse view, or swipe on touch; use C or the camera button to frame your line.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and watch each wall approach. Tap Dive or Space just before impact to punch through, then turn shoreward and read the tightening catch pulse.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Set a rail, hold Trick or Space to compress, then release into a move. Stance, speed, wave position, and load decide what you throw; reconnect inside the gold zone to bank it.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
