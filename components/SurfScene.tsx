@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
+import { Environment, Lightformer, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
 import { createContext, MutableRefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
@@ -751,6 +751,70 @@ function ShorelineWash({
         side={THREE.DoubleSide}
       />
     </mesh>
+  );
+}
+
+function CoastalEnvironment({
+  light,
+  cloudFactor,
+  sunHeight,
+  sunPosition,
+  sunColor,
+  hazeColor,
+  mobile,
+}: {
+  light: number;
+  cloudFactor: number;
+  sunHeight: number;
+  sunPosition: [number, number, number];
+  sunColor: string;
+  hazeColor: string;
+  mobile: boolean;
+}) {
+  const quality = useRenderQuality();
+  const resolution = mobile ? 32 : quality === "high" ? 128 : quality === "balanced" ? 96 : 64;
+  const [sunX, sunY, sunZ] = sunPosition;
+  const rig = useMemo(() => {
+    const daylight = THREE.MathUtils.smoothstep(sunHeight, -.05, .18);
+    const sky = new THREE.Color(hazeColor)
+      .lerp(new THREE.Color("#b8e6ea"), light * .54)
+      .lerp(new THREE.Color("#65737b"), cloudFactor * .36);
+    const horizon = new THREE.Color(sunColor)
+      .lerp(new THREE.Color("#6ca8ad"), .48 + cloudFactor * .32)
+      .multiplyScalar(.56 + light * .44);
+    const oceanBounce = new THREE.Color("#176f78")
+      .lerp(new THREE.Color("#6bc4bd"), light * .46)
+      .lerp(new THREE.Color("#253e44"), cloudFactor * .4);
+    const landBounce = new THREE.Color("#9b7250")
+      .lerp(new THREE.Color("#d9b884"), light * .38)
+      .multiplyScalar(.42 + daylight * .4);
+    const sunDirection = new THREE.Vector3(sunX, sunY, sunZ).normalize().multiplyScalar(58);
+    const moonDirection = sunDirection.clone().multiplyScalar(-1).add(new THREE.Vector3(4, 4, -2));
+    const sunEnergy = daylight * (1 - cloudFactor * .68) * (2.2 + light * 5.4);
+    const moonEnergy = (1 - daylight) * (1 - cloudFactor * .42) * 1.7;
+
+    return (
+      <>
+        <color attach="background" args={[sky]} />
+        <Lightformer form="rect" color={sky} intensity={1.05 + light * .95} position={[0, 34, 0]} scale={[95, 48]} target={[0, 0, 0]} />
+        <Lightformer form="rect" color={horizon} intensity={.78 + light * 1.18} position={[0, 5, -54]} scale={[120, 16]} target={[0, 0, 0]} />
+        <Lightformer form="rect" color={oceanBounce} intensity={.62 + light * .82} position={[0, -18, -24]} scale={[110, 38]} target={[0, 0, 0]} />
+        <Lightformer form="rect" color={landBounce} intensity={.34 + daylight * .64} position={[0, -17, 38]} scale={[90, 34]} target={[0, 0, 0]} />
+        {sunEnergy > .02 && <Lightformer form="circle" color={sunColor} intensity={sunEnergy} position={sunDirection.toArray()} scale={8 + light * 5} target={[0, 0, 0]} />}
+        {moonEnergy > .02 && <Lightformer form="circle" color="#bfe8ff" intensity={moonEnergy} position={moonDirection.toArray()} scale={7} target={[0, 0, 0]} />}
+      </>
+    );
+  }, [cloudFactor, hazeColor, light, sunColor, sunHeight, sunX, sunY, sunZ]);
+
+  return (
+    <Environment
+      background={false}
+      frames={1}
+      resolution={resolution}
+      environmentIntensity={mobile ? .68 : quality === "high" ? .9 : .78}
+    >
+      {rig}
+    </Environment>
   );
 }
 
@@ -4419,6 +4483,97 @@ function VehicleSurfaceEffects({
   );
 }
 
+function KinematicContactShadows({
+  motion,
+  playerPosition,
+  playerHeading,
+  vanMotion,
+  vanPosition,
+  vanHeading,
+  mobile,
+  daylight,
+}: {
+  motion: MutableRefObject<MotionState>;
+  playerPosition: MutableRefObject<THREE.Vector3>;
+  playerHeading: MutableRefObject<number>;
+  vanMotion: MutableRefObject<VehicleMotionState>;
+  vanPosition: MutableRefObject<THREE.Vector3>;
+  vanHeading: MutableRefObject<number>;
+  mobile: boolean;
+  daylight: number;
+}) {
+  const playerShadow = useRef<THREE.Mesh>(null);
+  const playerMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const vanShadow = useRef<THREE.Mesh>(null);
+  const vanMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const shadowTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(64, 64, 2, 64, 64, 62);
+      gradient.addColorStop(0, "rgba(255,255,255,.92)");
+      gradient.addColorStop(.36, "rgba(255,255,255,.56)");
+      gradient.addColorStop(.72, "rgba(255,255,255,.15)");
+      gradient.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 128, 128);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    return texture;
+  }, []);
+
+  useEffect(() => () => shadowTexture.dispose(), [shadowTexture]);
+
+  useFrame((_, delta) => {
+    const state = motion.current;
+    const playerOnLand = state.phase === "shore" || state.phase === "wading";
+    const depthFade = 1 - THREE.MathUtils.smoothstep(state.waterDepth, .08, .84);
+    const playerOpacity = playerOnLand
+      ? (mobile ? .27 : .13) * (.72 + daylight * .28) * depthFade
+      : 0;
+    if (playerShadow.current) {
+      const target = playerPosition.current;
+      const wetSand = target.z < 29;
+      playerShadow.current.position.set(target.x, wetSand ? -.392 : -.482, target.z + .08);
+      playerShadow.current.rotation.set(-Math.PI / 2, 0, -playerHeading.current);
+      playerShadow.current.scale.x = THREE.MathUtils.damp(playerShadow.current.scale.x, .92 + state.run * .18, 9, delta);
+      playerShadow.current.scale.y = THREE.MathUtils.damp(playerShadow.current.scale.y, 1.52 - state.run * .12, 9, delta);
+      playerShadow.current.visible = playerOpacity > .003;
+    }
+    if (playerMaterial.current) playerMaterial.current.opacity = THREE.MathUtils.damp(playerMaterial.current.opacity, playerOpacity, 8, delta);
+
+    const vehicle = vanMotion.current;
+    const vanOpacity = (mobile ? .31 : .17) * (.72 + daylight * .28) * (1 - vehicle.wetness * .12);
+    if (vanShadow.current) {
+      const target = vanPosition.current;
+      const groundY = THREE.MathUtils.lerp(-.284, -.458, vehicle.offRoad);
+      vanShadow.current.position.set(target.x, groundY, target.z);
+      vanShadow.current.rotation.set(-Math.PI / 2, 0, -vanHeading.current);
+      vanShadow.current.scale.x = THREE.MathUtils.damp(vanShadow.current.scale.x, 2.45 + vehicle.slip * .18, 7, delta);
+      vanShadow.current.scale.y = THREE.MathUtils.damp(vanShadow.current.scale.y, 5.25 + Math.abs(vehicle.longitudinalG) * .14, 7, delta);
+    }
+    if (vanMaterial.current) vanMaterial.current.opacity = THREE.MathUtils.damp(vanMaterial.current.opacity, vanOpacity, 7, delta);
+  });
+
+  return (
+    <group>
+      <mesh ref={playerShadow} renderOrder={1} frustumCulled={false}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial ref={playerMaterial} color="#071013" alphaMap={shadowTexture} transparent opacity={0} depthWrite={false} toneMapped={false} polygonOffset polygonOffsetFactor={-2} />
+      </mesh>
+      <mesh ref={vanShadow} renderOrder={1} frustumCulled={false}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial ref={vanMaterial} color="#060b0c" alphaMap={shadowTexture} transparent opacity={0} depthWrite={false} toneMapped={false} polygonOffset polygonOffsetFactor={-2} />
+      </mesh>
+    </group>
+  );
+}
+
 function Simulation({
   beach,
   zoneName,
@@ -5739,6 +5894,15 @@ function Simulation({
         intensity={moonlightStrength * .34 * (1 - cloudFactor * .36)}
         color="#a9d7e8"
       />
+      <CoastalEnvironment
+        light={light}
+        cloudFactor={cloudFactor}
+        sunHeight={solarElevation}
+        sunPosition={celestialSunPosition}
+        sunColor={sunLightColor}
+        hazeColor={fogColor}
+        mobile={mobileRenderer}
+      />
       <Ocean
         settings={settings}
         character={character}
@@ -5755,6 +5919,16 @@ function Simulation({
       <FootprintTrail motion={motion} targetPosition={position} />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
+      <KinematicContactShadows
+        motion={motion}
+        playerPosition={position}
+        playerHeading={playerHeading}
+        vanMotion={vanMotion}
+        vanPosition={vanPosition}
+        vanHeading={vanHeading}
+        mobile={mobileRenderer}
+        daylight={daylightStrength * directLight}
+      />
       <group ref={player}>
         <PaddleOutShorebreak motion={motion} settings={settings} light={light} mobile={mobileRenderer} />
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
