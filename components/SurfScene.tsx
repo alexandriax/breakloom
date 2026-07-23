@@ -53,6 +53,13 @@ export type ReplayState = {
   duration: number;
   cameraMode: CameraMode;
 };
+export type ReplayControl = {
+  paused: boolean;
+  speed: number;
+  seekProgress: number;
+  seekRequest: number;
+  autoDirector: boolean;
+};
 type RenderQuality = "reduced" | "balanced" | "high";
 
 const RenderQualityContext = createContext<RenderQuality>("high");
@@ -182,6 +189,7 @@ type SurfSceneProps = {
   photoExposure: number;
   replayMode: boolean;
   replayRequest: number;
+  replayControl: ReplayControl;
   captureRequest: RideCaptureRequest | null;
   onCapture: (capture: RideFrameCapture) => void;
   onReplayReady: (ready: boolean) => void;
@@ -283,9 +291,9 @@ type ReplayRestoreState = {
 type ReplayPlayback = {
   active: boolean;
   handledRequest: number;
-  startedAt: number;
+  handledSeekRequest: number;
   duration: number;
-  rate: number;
+  progress: number;
   timeCycleOffset: number;
   cursor: number;
   lastReportAt: number;
@@ -7995,6 +8003,7 @@ function Simulation({
   photoExposure,
   replayMode,
   replayRequest,
+  replayControl,
   captureRequest,
   onCapture,
   onReplayReady,
@@ -8154,9 +8163,9 @@ function Simulation({
   const replayPlayback = useRef<ReplayPlayback>({
     active: false,
     handledRequest: 0,
-    startedAt: -1,
+    handledSeekRequest: 0,
     duration: 0,
-    rate: 1,
+    progress: 0,
     timeCycleOffset: 0,
     cursor: 0,
     lastReportAt: -1,
@@ -8278,8 +8287,8 @@ function Simulation({
       }
       const completedDuration = playback.duration;
       playback.active = false;
-      playback.startedAt = -1;
       playback.cursor = 0;
+      playback.progress = 0;
       playback.cameraCut = -1;
       playback.restore = null;
       replayStateCallback.current({
@@ -8304,11 +8313,11 @@ function Simulation({
       } else {
         const duration = THREE.MathUtils.clamp(trackDuration / .82, 4.8, 13);
         playback.active = true;
-        playback.startedAt = t;
         playback.duration = duration;
-        playback.rate = trackDuration / duration;
+        playback.progress = 0;
         playback.timeCycleOffset = Math.round((t - frames[0].at) / Math.max(4, settings.wavePeriod)) * Math.max(4, settings.wavePeriod);
         playback.cursor = 0;
+        playback.handledSeekRequest = replayControl.seekRequest;
         playback.lastReportAt = -1;
         playback.cameraCut = 0;
         playback.restore = {
@@ -9335,12 +9344,24 @@ function Simulation({
       const frames = replayFrames.current;
       const first = frames[0];
       const last = frames[frames.length - 1];
-      const elapsed = Math.max(0, t - playback.startedAt);
-      const replayProgress = THREE.MathUtils.clamp(elapsed / Math.max(.001, playback.duration), 0, 1);
+      if (replayControl.seekRequest > playback.handledSeekRequest) {
+        playback.handledSeekRequest = replayControl.seekRequest;
+        playback.progress = THREE.MathUtils.clamp(replayControl.seekProgress, 0, .9995);
+        playback.cursor = 0;
+        playback.lastReportAt = -1;
+      }
+      if (!replayControl.paused) {
+        playback.progress = THREE.MathUtils.clamp(
+          playback.progress + delta * THREE.MathUtils.clamp(replayControl.speed, .25, 2) / Math.max(.001, playback.duration),
+          0,
+          1,
+        );
+      }
+      const replayProgress = playback.progress;
       if (!replayMode || replayProgress >= 1 || !first || !last) {
         restoreReplay();
       } else {
-        const replayAt = Math.min(last.at, first.at + elapsed * playback.rate);
+        const replayAt = THREE.MathUtils.lerp(first.at, last.at, replayProgress);
         while (playback.cursor < frames.length - 2 && frames[playback.cursor + 1].at < replayAt) {
           playback.cursor += 1;
         }
@@ -9377,7 +9398,9 @@ function Simulation({
         worldFocus.current.copy(position.current);
 
         const cameraCut = replayProgress < .24 ? 0 : replayProgress < .5 ? 1 : replayProgress < .76 ? 2 : 3;
-        const cameraModeForCut = replayCameraForProgress(replayProgress);
+        const cameraModeForCut = replayControl.autoDirector
+          ? replayCameraForProgress(replayProgress)
+          : cameraMode;
         if (cameraCut !== playback.cameraCut || t - playback.lastReportAt >= .1) {
           playback.cameraCut = cameraCut;
           playback.lastReportAt = t;
