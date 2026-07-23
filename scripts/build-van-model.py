@@ -266,12 +266,33 @@ def build_van() -> bpy.types.Object:
     cube("WindshieldDivider", body, (0, 2.75, 2.76), (0.085, 0.075, 1.03), dark, 0.022)
     for side, sign in (("L", -1), ("R", 1)):
         for index, y in enumerate((1.72, 0.38, -1.05)):
+            if side == "L" and index == 0:
+                continue
             width = 1.08 if index < 2 else 1.16
             cube(f"SideWindow.{side}.{index}", body, (sign * 1.53, y, 2.75), (0.05, width, 0.83), glass, 0.05)
-        cube(f"DoorHandle.{side}", body, (sign * 1.58, 1.2, 2.02), (0.07, 0.34, 0.08), chrome, 0.022)
+        if side != "L":
+            cube(f"DoorHandle.{side}", body, (sign * 1.58, 1.2, 2.02), (0.07, 0.34, 0.08), chrome, 0.022)
         cube(f"RockSlider.{side}", body, (sign * 1.68, -0.05, 0.72), (0.16, 5.0, 0.18), dark, 0.05)
-        cube(f"MirrorArm.{side}", body, (sign * 1.73, 2.25, 2.64), (0.32, 0.055, 0.055), chrome, 0.02, (0, sign * 0.12, 0))
-        ellipsoid(f"Mirror.{side}", body, (sign * 1.93, 2.27, 2.66), (0.16, 0.08, 0.24), dark, (0, sign * 0.18, 0), 20, 12)
+        if side != "L":
+            cube(f"MirrorArm.{side}", body, (sign * 1.73, 2.25, 2.64), (0.32, 0.055, 0.055), chrome, 0.02, (0, sign * 0.12, 0))
+            ellipsoid(f"Mirror.{side}", body, (sign * 1.93, 2.27, 2.66), (0.16, 0.08, 0.24), dark, (0, sign * 0.18, 0), 20, 12)
+
+    # A real driver-side interaction joint. The dark inset masks the monocoque
+    # shell when the door opens, while the exterior panel, glass, mirror, and
+    # handle all remain children of the hinge for runtime animation.
+    cube("DoorAperture.Driver", body, (-1.635, 1.70, 2.08), (0.06, 1.1, 1.31), interior, 0.055)
+    door = empty("Door.Driver", body, (-1.70, 2.78, 2.05))
+    cube("Door.Driver.lower", door, (-0.045, -1.08, -0.55), (0.075, 1.08, 0.72), coral, 0.065)
+    cube("Door.Driver.upper", door, (-0.045, -1.08, 0.57), (0.075, 1.08, 0.62), cream, 0.065)
+    cube("Door.Driver.window", door, (-0.09, -1.08, 0.67), (0.032, 0.91, 0.43), glass, 0.045)
+    cube("Door.Driver.window.front", door, (-0.105, -0.15, 0.68), (0.045, 0.055, 0.51), dark, 0.018)
+    cube("Door.Driver.window.rear", door, (-0.105, -2.01, 0.68), (0.045, 0.055, 0.51), dark, 0.018)
+    cube("Door.Driver.window.sill", door, (-0.105, -1.08, 0.17), (0.045, 1.02, 0.065), dark, 0.018)
+    cube("Door.Driver.handle", door, (-0.13, -1.35, -0.03), (0.065, 0.31, 0.07), chrome, 0.022)
+    cube("Door.Driver.mirror-arm", door, (-0.29, -0.43, 0.59), (0.28, 0.055, 0.055), chrome, 0.02, (0, -0.12, 0))
+    ellipsoid("Door.Driver.mirror", door, (-0.52, -0.42, 0.61), (0.16, 0.08, 0.24), dark, (0, -0.18, 0), 20, 12)
+    cube("Door.Driver.courtesy", door, (-0.13, -1.77, -0.87), (0.035, 0.16, 0.055), indicator, 0.014)
+
     cube("Dashboard", body, (0, 2.18, 2.05), (2.65, 0.62, 0.24), interior, 0.08)
     for side, x in (("L", -0.72), ("R", 0.72)):
         cube(f"SeatBase.{side}", body, (x, 1.45, 1.55), (0.64, 0.68, 0.22), leather, 0.1)
@@ -353,7 +374,7 @@ def build_van() -> bpy.types.Object:
 
 
 def merge_joint_meshes(root: bpy.types.Object) -> None:
-    """Reduce draw nodes while preserving steering, suspension, and wheel joints."""
+    """Reduce draw nodes while preserving doors, steering, suspension, and wheel joints."""
     joints = [root, *[obj for obj in root.children_recursive if obj.type == "EMPTY"]]
     for joint in joints:
         meshes = [child for child in joint.children if child.type == "MESH"]

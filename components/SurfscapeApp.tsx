@@ -1689,7 +1689,10 @@ export default function SurfscapeApp() {
         audio.current?.effect("catch");
         haptic([14, 24, 28]);
       }
-      if (stats.phase === "driving") haptic(18);
+      if (stats.phase === "driving" || from === "driving") {
+        audio.current?.effect("door");
+        haptic([12, 26, 18]);
+      }
       if (stats.phase === "wipeout") {
         audio.current?.effect("wipeout");
         haptic([34, 36, 58]);

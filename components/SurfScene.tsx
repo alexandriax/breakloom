@@ -372,6 +372,15 @@ function dampAngle(current: number, target: number, responsiveness: number, delt
   return current + difference * (1 - Math.exp(-responsiveness * delta));
 }
 
+const VAN_DOOR_TRANSITION_SECONDS = 1.62;
+
+function vehicleDoorEnvelope(elapsed: number) {
+  if (elapsed < 0 || elapsed > VAN_DOOR_TRANSITION_SECONDS) return 0;
+  if (elapsed < .42) return THREE.MathUtils.smootherstep(elapsed, .04, .42);
+  if (elapsed < .86) return 1;
+  return 1 - THREE.MathUtils.smootherstep(elapsed, .86, VAN_DOOR_TRANSITION_SECONDS);
+}
+
 function lerpAngle(from: number, to: number, alpha: number) {
   const difference = Math.atan2(Math.sin(to - from), Math.cos(to - from));
   return from + difference * alpha;
@@ -583,6 +592,7 @@ type VehicleMotionState = {
   steer: number;
   throttle: number;
   driving: boolean;
+  door: number;
   brake: boolean;
   wetness: number;
   offRoad: number;
@@ -8336,6 +8346,10 @@ function SurfVan({
   const bodyRest = useRef({ y: 0, rotationX: 0, rotationZ: 0 });
   const steeringWheel = useRef<THREE.Object3D | null>(null);
   const steeringWheelRest = useRef(0);
+  const driverDoor = useRef<THREE.Object3D | null>(null);
+  const driverDoorRest = useRef(0);
+  const doorLightMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
+  const cabinLight = useRef<THREE.PointLight | null>(null);
   const steerLeft = useRef<THREE.Object3D | null>(null);
   const steerRight = useRef<THREE.Object3D | null>(null);
   const wheels = useRef<THREE.Object3D[]>([]);
@@ -8346,6 +8360,7 @@ function SurfVan({
   useEffect(() => {
     body.current = namedModelObject(model, "VanBody") ?? null;
     steeringWheel.current = namedModelObject(model, "SteeringWheel") ?? null;
+    driverDoor.current = namedModelObject(model, "Door.Driver") ?? null;
     steerLeft.current = namedModelObject(model, "Steer.FL") ?? null;
     steerRight.current = namedModelObject(model, "Steer.FR") ?? null;
     wheels.current = ["Wheel.FL", "Wheel.FR", "Wheel.RL", "Wheel.RR"]
@@ -8360,6 +8375,7 @@ function SurfVan({
       };
     }
     steeringWheelRest.current = steeringWheel.current?.rotation.z ?? 0;
+    driverDoorRest.current = driverDoor.current?.rotation.y ?? 0;
 
     const nextBrakeMaterials: THREE.MeshStandardMaterial[] = [];
     namedModelObject(model, "BrakeLights")?.traverse((object) => {
@@ -8370,6 +8386,17 @@ function SurfVan({
       });
     });
     brakeMaterials.current = nextBrakeMaterials;
+    const nextDoorLightMaterials: THREE.MeshStandardMaterial[] = [];
+    driverDoor.current?.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material) => {
+        if (material instanceof THREE.MeshStandardMaterial && material.name === "Amber indicators") {
+          nextDoorLightMaterials.push(material);
+        }
+      });
+    });
+    doorLightMaterials.current = nextDoorLightMaterials;
   }, [model]);
 
   useFrame(({ clock }, delta) => {
@@ -8403,6 +8430,22 @@ function SurfVan({
         11,
         delta,
       );
+    }
+    if (driverDoor.current) {
+      driverDoor.current.rotation.y = dampAngle(
+        driverDoor.current.rotation.y,
+        driverDoorRest.current - state.door * 1.08,
+        state.door > .03 ? 12 : 8,
+        delta,
+      );
+    }
+    const courtesyIntensity = state.door * (1.6 + darkness * 2.7);
+    doorLightMaterials.current.forEach((material) => {
+      material.emissiveIntensity = THREE.MathUtils.damp(material.emissiveIntensity, .18 + courtesyIntensity, 10, delta);
+    });
+    if (cabinLight.current) {
+      cabinLight.current.intensity = THREE.MathUtils.damp(cabinLight.current.intensity, courtesyIntensity, 9, delta);
+      cabinLight.current.distance = THREE.MathUtils.damp(cabinLight.current.distance, 4.4 + darkness * 2.8, 6, delta);
     }
     if (body.current) {
       const roadPulse = state.driving
@@ -8448,6 +8491,7 @@ function SurfVan({
       />
       <pointLight ref={(light) => { headLights.current[0] = light; }} position={[-1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.08} distance={11} decay={1.8} />
       <pointLight ref={(light) => { headLights.current[1] = light; }} position={[1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.08} distance={11} decay={1.8} />
+      <pointLight ref={cabinLight} position={[-1.72, 1.14, -1.58]} color="#ff9c4f" intensity={0} distance={4.4} decay={1.7} />
     </group>
   );
 }
@@ -9501,6 +9545,8 @@ function Simulation({
   const vanLateralG = useRef(0);
   const vanTraction = useRef(1);
   const vanSlip = useRef(0);
+  const vanDoorStartedAt = useRef(-10);
+  const vanControlLockedUntil = useRef(-10);
   const landVelocity = useRef(new THREE.Vector2());
   const playerHeading = useRef(0);
   const paddleHeading = useRef(0);
@@ -9644,6 +9690,7 @@ function Simulation({
     steer: 0,
     throttle: 0,
     driving: false,
+    door: 0,
     brake: false,
     wetness: 0,
     offRoad: 0,
@@ -9919,6 +9966,7 @@ function Simulation({
     }
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
+    const vanTransitionActive = t < vanControlLockedUntil.current;
 
     const actionDown = state.action || state.gamepadAction;
     const actionPressed = actionDown && !actionLatch.current;
@@ -9948,14 +9996,18 @@ function Simulation({
         runBlend = wantsRun ? THREE.MathUtils.smoothstep(speed, 3.6, 6) : 0;
         if (speed > .16) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), wantsRun ? 10 : 13, delta);
         prompt = nearVan
-          ? "DRIVE / SPACE to enter the Surfscape van"
+          ? vanTransitionActive
+            ? "Driver door closing"
+            : "DRIVE / SPACE to enter the Surfscape van"
           : position.current.z > 54
             ? "The van is parked beside the coast road"
             : cleanFinish.current
               ? "Clean finish — head back out"
               : "Walk toward the water · or head up-road to the van";
-        if (actionPressed && nearVan) {
+        if (actionPressed && nearVan && !vanTransitionActive) {
           phase.current = "driving";
+          vanDoorStartedAt.current = t;
+          vanControlLockedUntil.current = t + VAN_DOOR_TRANSITION_SECONDS;
           vanSpeed.current = 0;
           vanPreviousSpeed.current = 0;
           vanThrottle.current = 0;
@@ -9971,9 +10023,11 @@ function Simulation({
         const offRoad = THREE.MathUtils.smoothstep(roadOffset, 3.9, 6.1);
         const wetness = weatherWetness(weatherCode);
         const baseTraction = THREE.MathUtils.clamp(1 - offRoad * .31 - wetness * .09, .56, 1);
-        const inputThrottle = move;
+        const vehicleControlsLocked = t < vanControlLockedUntil.current;
+        const inputThrottle = vehicleControlsLocked ? 0 : move;
+        const inputSteer = vehicleControlsLocked ? 0 : steer;
         vanThrottle.current = THREE.MathUtils.damp(vanThrottle.current, inputThrottle, 7.8, delta);
-        vanSteer.current = THREE.MathUtils.damp(vanSteer.current, steer, 7.2, delta);
+        vanSteer.current = THREE.MathUtils.damp(vanSteer.current, inputSteer, 7.2, delta);
 
         const changingDirection = (vanSpeed.current > .35 && inputThrottle < -.04)
           || (vanSpeed.current < -.35 && inputThrottle > .04);
@@ -10027,7 +10081,9 @@ function Simulation({
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 4.7, delta);
           vanPosition.current.z = THREE.MathUtils.clamp(vanPosition.current.z, 71.8, 84.2);
         }
-        if (Math.abs(vanPosition.current.x) > COAST_PLAYABLE_HALF_WIDTH) {
+        if (vehicleControlsLocked) {
+          prompt = "Settle into the seat · door closing";
+        } else if (Math.abs(vanPosition.current.x) > COAST_PLAYABLE_HALF_WIDTH) {
           vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -COAST_PLAYABLE_HALF_WIDTH, COAST_PLAYABLE_HALF_WIDTH);
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 8, delta);
           prompt = "End of this modeled coastline — turn around for another run";
@@ -10056,9 +10112,11 @@ function Simulation({
         vanPreviousSpeed.current = vanSpeed.current;
         speed = Math.abs(vanSpeed.current);
         score.current += Math.abs(vanSpeed.current) * delta * 0.35;
-        if (actionPressed) {
+        if (actionPressed && !vehicleControlsLocked) {
           if (Math.abs(vanSpeed.current) < 0.9) {
             phase.current = "shore";
+            vanDoorStartedAt.current = t;
+            vanControlLockedUntil.current = t + VAN_DOOR_TRANSITION_SECONDS;
             vanSpeed.current = 0;
             position.current.set(
               vanPosition.current.x - Math.cos(vanHeading.current) * 3.2,
@@ -11421,6 +11479,14 @@ function Simulation({
     vanMotion.current.steer = vanSteer.current;
     vanMotion.current.throttle = vanThrottle.current;
     vanMotion.current.driving = vanDriving;
+    const vanDoorElapsed = t - vanDoorStartedAt.current;
+    const vanDoorTarget = vehicleDoorEnvelope(vanDoorElapsed);
+    vanMotion.current.door = THREE.MathUtils.damp(
+      vanMotion.current.door,
+      vanDoorTarget,
+      vanDoorTarget > vanMotion.current.door ? 16 : 10,
+      delta,
+    );
     vanMotion.current.brake = vanDriving && ((state.back && vanSpeed.current > .3) || (state.forward && vanSpeed.current < -.3));
     vanMotion.current.wetness = vanWetness;
     vanMotion.current.offRoad = vanOffRoad;

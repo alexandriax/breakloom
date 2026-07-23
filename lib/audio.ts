@@ -1,6 +1,6 @@
 import type { GamePhase } from "./game";
 
-type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "leash" | "wipeout" | "finish" | "coach";
+type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "leash" | "wipeout" | "finish" | "coach" | "door";
 
 const CHORDS = [
   [0, 7, 12, 19],
@@ -593,6 +593,12 @@ export class SurfscapeAudio {
       this.noiseBurst(now, 1.25, 470, .62, .3, "bandpass", 0, .16);
       this.noiseBurst(now + .04, .72, 2100, .5, .13, "highpass", -.2, .09);
       this.tone(now, 78, 38, .78, .12, "sine", 0, .14);
+    } else if (kind === "door") {
+      this.noiseBurst(now, .14, 690, .78, .065, "bandpass", -.34, .02);
+      this.tone(now + .015, 132, 74, .18, .042, "triangle", -.28, .055);
+      this.noiseBurst(now + 1.28, .11, 520, .82, .075, "lowpass", -.36, .025);
+      this.tone(now + 1.31, 86, 52, .16, .052, "triangle", -.3, .08);
+      this.noiseBurst(now + 1.36, .07, 1540, .9, .026, "bandpass", -.3, .01);
     } else if (kind === "finish") {
       [0, 7, 12].forEach((semitone, index) => {
         const frequency = 164.81 * Math.pow(2, semitone / 12);
