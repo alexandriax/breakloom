@@ -7750,6 +7750,11 @@ const CINEMATIC_GRADE_SHADER = {
     uStorm: { value: 0 },
     uNight: { value: 0 },
     uSpray: { value: 0 },
+    uOceanTime: { value: 0 },
+    uWaterline: { value: -.16 },
+    uRefraction: { value: 0 },
+    uSurfacePulse: { value: 0 },
+    uFlow: { value: new THREE.Vector2(0, 1) },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -7771,6 +7776,11 @@ const CINEMATIC_GRADE_SHADER = {
     uniform float uStorm;
     uniform float uNight;
     uniform float uSpray;
+    uniform float uOceanTime;
+    uniform float uWaterline;
+    uniform float uRefraction;
+    uniform float uSurfacePulse;
+    uniform vec2 uFlow;
     varying vec2 vUv;
 
     float luminance(vec3 color) {
@@ -7782,7 +7792,37 @@ const CINEMATIC_GRADE_SHADER = {
     }
 
     void main() {
-      vec4 source = texture2D(tDiffuse, vUv);
+      vec2 flow = normalize(uFlow + vec2(.0001));
+      vec2 crossFlow = vec2(-flow.y, flow.x);
+      float waterline = uWaterline
+        + sin(vUv.x * 17.0 + uOceanTime * 1.35) * (.0025 + uSurfacePulse * .009)
+        + sin(vUv.x * 43.0 - uOceanTime * 2.1) * (.0015 + uSurfacePulse * .004);
+      float belowSurface = 1.0 - smoothstep(waterline - .022, waterline + .018, vUv.y);
+      float surfaceBand = exp(-abs(vUv.y - waterline) * mix(44.0, 25.0, uSurfacePulse));
+      float longWave = sin(dot(vUv, flow) * 31.0 - uOceanTime * 1.85);
+      float crossWave = sin(dot(vUv, crossFlow) * 47.0 + uOceanTime * 2.35 + longWave * .42);
+      vec2 refractionVector = flow * (longWave * .62 + crossWave * .18)
+        + crossFlow * (crossWave * .46 - longWave * .12);
+      float refractionMask = belowSurface * (.34 + uUnderwater * .42)
+        + surfaceBand * (1.08 + uSurfacePulse * .72);
+      vec2 refractedUv = clamp(
+        vUv + refractionVector * uRefraction * refractionMask,
+        vec2(.002),
+        vec2(.998)
+      );
+      float chromaticOffset = uRefraction * (
+        belowSurface * .18
+        + surfaceBand * (.48 + uSurfacePulse * .54)
+      );
+      vec2 chromaticVector = normalize(refractionVector + vec2(.001)) * chromaticOffset;
+      vec4 source;
+      if (uRefraction > .00001) {
+        source = texture2D(tDiffuse, refractedUv);
+        source.r = texture2D(tDiffuse, clamp(refractedUv + chromaticVector, vec2(.002), vec2(.998))).r;
+        source.b = texture2D(tDiffuse, clamp(refractedUv - chromaticVector * .72, vec2(.002), vec2(.998))).b;
+      } else {
+        source = texture2D(tDiffuse, vUv);
+      }
       vec3 color = max(source.rgb, vec3(0.0));
       float initialLuma = luminance(color);
 
@@ -7812,6 +7852,7 @@ const CINEMATIC_GRADE_SHADER = {
       absorbed = mix(vec3(underwaterLuma) * vec3(.55, 1.04, 1.08), absorbed, .68);
       absorbed += vec3(0.0, .018, .024) * (1.0 - smoothstep(.2, .92, underwaterLuma));
       color = mix(color, absorbed, uUnderwater);
+      color += vec3(.31, .78, .74) * surfaceBand * uSurfacePulse * (.018 + (1.0 - initialLuma) * .022);
 
       float sprayVeil = uSpray * (1.0 - initialLuma) * .032;
       color += vec3(.80, .94, .98) * sprayVeil;
@@ -7835,6 +7876,7 @@ function AdaptiveImagePipeline({
   cloudFactor,
   weather,
   solarElevation,
+  flowAngle,
   mobile,
   reducedMotion,
 }: {
@@ -7842,12 +7884,15 @@ function AdaptiveImagePipeline({
   cloudFactor: number;
   weather: WeatherProfile;
   solarElevation: number;
+  flowAngle: number;
   mobile: boolean;
   reducedMotion: boolean;
 }) {
   const quality = useRenderQuality();
   const pass = useRef<ShaderPass>(null);
   const exposure = useRef(1.08);
+  const previousDepth = useRef(0);
+  const surfacePulse = useRef(0);
   const targets = useRef({
     contrast: 1,
     saturation: 1,
@@ -7858,11 +7903,26 @@ function AdaptiveImagePipeline({
     storm: 0,
     night: 0,
     spray: 0,
+    waterline: -.16,
+    refraction: 0,
+    surfacePulse: 0,
   });
   const gradeEnabled = !(mobile && quality === "reduced");
 
   useFrame(({ clock, gl: renderer }, delta) => {
     const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
+    const depthStep = Math.max(.001, Math.min(delta, .05));
+    const depthVelocity = (depth - previousDepth.current) / depthStep;
+    const crossedSurface = (previousDepth.current <= .045 && depth > .045)
+      || (previousDepth.current > .045 && depth <= .045);
+    if (crossedSurface || (depth > .015 && depth < .52 && Math.abs(depthVelocity) > 2.2)) {
+      surfacePulse.current = Math.max(
+        surfacePulse.current,
+        THREE.MathUtils.clamp(.52 + Math.abs(depthVelocity) * .085 + motion.current.impact * .28, .58, 1),
+      );
+    }
+    surfacePulse.current = Math.max(0, surfacePulse.current - delta * (depth > .04 ? 1.45 : 2.2));
+    previousDepth.current = depth;
     const night = 1 - THREE.MathUtils.smoothstep(solarElevation, -.05, .18);
     const goldenHour = 1 - THREE.MathUtils.smoothstep(Math.abs(solarElevation - .12), .04, .48);
     const storm = weather.storm
@@ -7897,10 +7957,24 @@ function AdaptiveImagePipeline({
     values.storm = storm;
     values.night = night;
     values.spray = spray;
+    const surfaceTransition = 1 - THREE.MathUtils.smoothstep(depth, .32, .78);
+    values.waterline = THREE.MathUtils.lerp(
+      -.16,
+      1.16,
+      THREE.MathUtils.smootherstep(depth, .004, .38),
+    );
+    values.surfacePulse = surfacePulse.current;
+    values.refraction = (
+      depth * .0032
+      + surfaceTransition * THREE.MathUtils.smoothstep(depth, .004, .28) * .0035
+      + surfacePulse.current * .008
+      + motion.current.wipeoutPower * depth * .0015
+    ) * (mobile ? .72 : 1);
 
     const uniforms = pass.current?.uniforms;
     if (!uniforms) return;
     uniforms.uTime.value = reducedMotion ? 0 : clock.elapsedTime * 37;
+    uniforms.uOceanTime.value = reducedMotion ? 0 : clock.elapsedTime;
     uniforms.uContrast.value = THREE.MathUtils.damp(uniforms.uContrast.value, values.contrast, 3.5, delta);
     uniforms.uSaturation.value = THREE.MathUtils.damp(uniforms.uSaturation.value, values.saturation, 3.5, delta);
     uniforms.uWarmth.value = THREE.MathUtils.damp(uniforms.uWarmth.value, values.warmth, 3.2, delta);
@@ -7915,6 +7989,20 @@ function AdaptiveImagePipeline({
       values.spray > uniforms.uSpray.value ? 10 : 3.5,
       delta,
     );
+    uniforms.uWaterline.value = THREE.MathUtils.damp(uniforms.uWaterline.value, values.waterline, 13, delta);
+    uniforms.uRefraction.value = THREE.MathUtils.damp(
+      uniforms.uRefraction.value,
+      values.refraction,
+      values.refraction > uniforms.uRefraction.value ? 16 : 7,
+      delta,
+    );
+    uniforms.uSurfacePulse.value = THREE.MathUtils.damp(
+      uniforms.uSurfacePulse.value,
+      values.surfacePulse,
+      values.surfacePulse > uniforms.uSurfacePulse.value ? 18 : 5,
+      delta,
+    );
+    uniforms.uFlow.value.set(Math.sin(flowAngle), Math.cos(flowAngle));
   });
 
   if (!gradeEnabled) return null;
@@ -11140,6 +11228,7 @@ function Simulation({
         cloudFactor={cloudFactor}
         weather={weather}
         solarElevation={solarElevation}
+        flowAngle={THREE.MathUtils.degToRad(settings.waveDirection - settings.coastHeading)}
         mobile={mobileRenderer}
         reducedMotion={reducedMotion}
       />
