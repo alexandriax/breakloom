@@ -558,13 +558,22 @@ export default function SurfscapeApp() {
       paused ? 0.34 : screen === "game" ? .4 + stats.sessionIntro * .6 : .42,
       sessionWeatherCode,
     );
+    audio.current?.setSubmersion(
+      paused
+        ? 0
+        : stats.phase === "wipeout"
+          ? 1
+          : stats.duckDiveActive
+            ? .72 + stats.duckDiveQuality * .24
+            : 0,
+    );
     const movementSpeed = stats.phase === "paddling" ? stats.speed * stats.paddleEffort : stats.speed;
     audio.current?.setMovement(
       stats.phase,
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sessionIntro, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sessionIntro, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1019,6 +1028,16 @@ export default function SurfscapeApp() {
   const touchBalancePosition = (THREEClamp(stats.balance, -.94, .94) + 1) * 50;
   const touchTargetPosition = (THREEClamp(stats.balanceTarget, -.94, .94) + 1) * 50;
   const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
+  const submersionIntensity = paused
+    ? 0
+    : stats.phase === "wipeout"
+      ? .92
+      : stats.duckDiveActive
+        ? .68 + stats.duckDiveQuality * .24
+        : 0;
+  const submersionStyle = {
+    "--submersion": submersionIntensity,
+  } as CSSProperties;
   const velocityIntensity = stats.phase === "riding"
     ? Math.min(.34, Math.max(0, stats.speed - 8.5) * .026 + stats.barrelIntensity * .11)
     : 0;
@@ -1321,6 +1340,13 @@ export default function SurfscapeApp() {
           </div>
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
+          </div>
+          <div
+            className={`submersion-lens ${submersionIntensity > .01 ? "is-active" : ""} ${stats.phase === "wipeout" ? "is-wipeout" : "is-duck-dive"}`}
+            style={submersionStyle}
+            aria-hidden="true"
+          >
+            {Array.from({ length: 9 }, (_, index) => <i key={index} />)}
           </div>
           <div className={`velocity-veil ${stats.barrelIntensity > .2 ? "is-barrel" : ""}`} style={{ opacity: velocityIntensity }} aria-hidden="true" />
           {cinemaBeat && <div className={`cinema-impact is-${cinemaBeat}`} key={`${cinemaBeat}-${cinemaBeatKey}`} aria-hidden="true" />}

@@ -30,6 +30,7 @@ function ramp(parameter: AudioParam, value: number, now: number, duration = .12)
 export class SurfscapeAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
+  private submersionFilter: BiquadFilterNode | null = null;
   private reverb: ConvolverNode | null = null;
   private reverbGain: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
@@ -81,14 +82,19 @@ export class SurfscapeAudio {
 
     const master = context.createGain();
     const compressor = context.createDynamicsCompressor();
+    const submersionFilter = context.createBiquadFilter();
     master.gain.value = this.enabled ? .42 : 0;
     compressor.threshold.value = -17;
     compressor.knee.value = 19;
     compressor.ratio.value = 3.2;
     compressor.attack.value = .008;
     compressor.release.value = .32;
-    master.connect(compressor).connect(context.destination);
+    submersionFilter.type = "lowpass";
+    submersionFilter.frequency.value = 18000;
+    submersionFilter.Q.value = .42;
+    master.connect(compressor).connect(submersionFilter).connect(context.destination);
     this.master = master;
+    this.submersionFilter = submersionFilter;
 
     const reverb = context.createConvolver();
     const reverbGain = context.createGain();
@@ -198,6 +204,16 @@ export class SurfscapeAudio {
     if (!this.context || !this.musicBus) return;
     ramp(this.musicBus.gain, enabled ? 1 : 0, this.context.currentTime, .32);
     if (enabled) this.nextMusicStepAt = this.context.currentTime + .08;
+  }
+
+  setSubmersion(amount: number) {
+    if (!this.context || !this.submersionFilter) return;
+    const now = this.context.currentTime;
+    const depth = Math.min(1, Math.max(0, amount));
+    const cutoff = 18000 * Math.pow(.042, depth);
+    ramp(this.submersionFilter.frequency, Math.max(620, cutoff), now, depth > .05 ? .12 : .34);
+    ramp(this.submersionFilter.Q, .42 + depth * 1.35, now, .16);
+    if (this.reverbGain) ramp(this.reverbGain.gain, .18 + depth * .27, now, depth > .05 ? .16 : .5);
   }
 
   setEnvironment(windSpeed: number, waveHeight: number, cloudCover: number, intensity = 1, weatherCode = 0) {

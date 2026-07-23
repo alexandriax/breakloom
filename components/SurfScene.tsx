@@ -2187,7 +2187,10 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const spray = useRef<THREE.Points>(null);
   const sprayMaterial = useRef<THREE.PointsMaterial>(null);
+  const bubbles = useRef<THREE.Points>(null);
+  const bubbleMaterial = useRef<THREE.PointsMaterial>(null);
   const particleCount = mobile ? 44 : 88;
+  const bubbleCount = mobile ? 28 : 56;
   const positions = useMemo(() => {
     const values = new Float32Array(particleCount * 3);
     for (let index = 0; index < particleCount; index += 1) values[index * 3 + 1] = -20;
@@ -2201,6 +2204,16 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const previousLift = useRef(0);
   const previousTakeoff = useRef(0);
   const previousImpact = useRef(0);
+  const previousWipeout = useRef(false);
+  const bubblePositions = useMemo(() => {
+    const values = new Float32Array(bubbleCount * 3);
+    for (let index = 0; index < bubbleCount; index += 1) values[index * 3 + 1] = -20;
+    return values;
+  }, [bubbleCount]);
+  const bubbleVelocities = useRef(new Float32Array(bubbleCount * 3));
+  const bubbleLife = useRef(new Float32Array(bubbleCount));
+  const bubbleCursor = useRef(0);
+  const bubbleEmission = useRef(0);
   const wakeTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 96;
@@ -2251,18 +2264,39 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }, []);
+  const bubbleTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const shell = context.createRadialGradient(27, 24, 2, 32, 32, 29);
+      shell.addColorStop(0, "rgba(255,255,255,.92)");
+      shell.addColorStop(.17, "rgba(225,255,251,.3)");
+      shell.addColorStop(.58, "rgba(112,222,218,.08)");
+      shell.addColorStop(.78, "rgba(205,255,250,.7)");
+      shell.addColorStop(1, "rgba(205,255,250,0)");
+      context.fillStyle = shell;
+      context.fillRect(0, 0, 64, 64);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
 
   useEffect(() => () => {
+    bubbleTexture.dispose();
     particleTexture.dispose();
     wakeTexture.dispose();
-  }, [particleTexture, wakeTexture]);
+  }, [bubbleTexture, particleTexture, wakeTexture]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
     const riding = state.phase === "riding";
     const paddling = state.phase === "paddling";
+    const wipeout = state.phase === "wipeout";
     if (wake.current) {
-      wake.current.visible = riding || paddling;
+      wake.current.visible = riding || paddling || wipeout;
       const speedScale = THREE.MathUtils.clamp(state.speed / 13, 0.2, 1.35);
       wake.current.scale.z = THREE.MathUtils.damp(wake.current.scale.z, paddling ? .28 + Math.min(.46, state.speed * .1) : speedScale, 6, delta);
       wake.current.scale.x = THREE.MathUtils.damp(wake.current.scale.x, riding ? 1 + Math.abs(state.rail) * .42 + state.slip * .3 : .72, 7, delta);
@@ -2280,6 +2314,57 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     });
     const positionAttribute = spray.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     const particlePositions = positionAttribute?.array as Float32Array | undefined;
+    const bubblePositionAttribute = bubbles.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const activeBubblePositions = bubblePositionAttribute?.array as Float32Array | undefined;
+
+    const emitBubbles = (count: number, violent: boolean) => {
+      if (!activeBubblePositions) return;
+      for (let particle = 0; particle < count; particle += 1) {
+        const index = bubbleCursor.current++ % bubbleCount;
+        const offset = index * 3;
+        const spread = violent ? 1.05 : .58;
+        activeBubblePositions[offset] = (Math.random() - .5) * spread;
+        activeBubblePositions[offset + 1] = -.72 + Math.random() * .58;
+        activeBubblePositions[offset + 2] = (Math.random() - .5) * (violent ? 1.45 : .82);
+        bubbleVelocities.current[offset] = (Math.random() - .5) * (violent ? .72 : .28);
+        bubbleVelocities.current[offset + 1] = .38 + Math.random() * (violent ? .86 : .52);
+        bubbleVelocities.current[offset + 2] = (Math.random() - .5) * (violent ? .58 : .22);
+        bubbleLife.current[index] = .72 + Math.random() * (violent ? 1.05 : .68);
+      }
+    };
+
+    const bubbleActive = state.duckDive > .025 || wipeout;
+    if (bubbleActive) {
+      bubbleEmission.current += delta * (wipeout ? 62 : 22 + state.duckDive * 42 + state.shorebreak * 18);
+      if (bubbleEmission.current >= 1) {
+        const count = Math.min(mobile ? 5 : 9, Math.floor(bubbleEmission.current));
+        emitBubbles(count, wipeout);
+        bubbleEmission.current -= count;
+      }
+    }
+    if (wipeout && !previousWipeout.current) emitBubbles(mobile ? 10 : 20, true);
+    if (activeBubblePositions) {
+      for (let index = 0; index < bubbleCount; index += 1) {
+        if (bubbleLife.current[index] <= 0) continue;
+        const offset = index * 3;
+        bubbleLife.current[index] -= delta;
+        const shimmer = Math.sin(clock.elapsedTime * 5.8 + index * 1.73) * .055;
+        activeBubblePositions[offset] += (bubbleVelocities.current[offset] + shimmer) * delta;
+        activeBubblePositions[offset + 1] += bubbleVelocities.current[offset + 1] * delta;
+        activeBubblePositions[offset + 2] += bubbleVelocities.current[offset + 2] * delta;
+        bubbleVelocities.current[offset] *= 1 - delta * .42;
+        bubbleVelocities.current[offset + 2] *= 1 - delta * .4;
+        if (bubbleLife.current[index] <= 0 || activeBubblePositions[offset + 1] > .48) {
+          bubbleLife.current[index] = 0;
+          activeBubblePositions[offset + 1] = -20;
+        }
+      }
+      if (bubblePositionAttribute) bubblePositionAttribute.needsUpdate = true;
+    }
+    if (bubbleMaterial.current) {
+      bubbleMaterial.current.opacity = THREE.MathUtils.damp(bubbleMaterial.current.opacity, bubbleActive ? .78 : 0, bubbleActive ? 12 : 3.8, delta);
+      bubbleMaterial.current.size = THREE.MathUtils.damp(bubbleMaterial.current.size, wipeout ? .16 : .11, 8, delta);
+    }
 
     const emit = (count: number, impact: boolean) => {
       if (!particlePositions) return;
@@ -2321,6 +2406,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     previousLift.current = state.maneuverLift;
     previousTakeoff.current = state.takeoff;
     previousImpact.current = state.impact;
+    previousWipeout.current = wipeout;
 
     if (!particlePositions) return;
     const relativeWind = THREE.MathUtils.degToRad(settings.windDirection - settings.coastHeading);
@@ -2389,6 +2475,24 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
           transparent
           opacity={0}
           alphaTest={0.03}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+      <points ref={bubbles} frustumCulled={false} renderOrder={4.7}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[bubblePositions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={bubbleMaterial}
+          map={bubbleTexture}
+          color="#bffdf5"
+          size={.11}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={.025}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
