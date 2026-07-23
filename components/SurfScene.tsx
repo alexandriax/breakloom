@@ -178,6 +178,9 @@ type MotionState = {
   sectionPressure: number;
   setEnergy: number;
   wipeout: number;
+  wipeoutProgress: number;
+  wipeoutPower: number;
+  breath: number;
   maneuver: number;
   maneuverSide: number;
   maneuverLift: number;
@@ -2901,7 +2904,8 @@ function SurferModel({
     const carryStride = carrying ? THREE.MathUtils.smoothstep(state.speed, .16, 1.35) * (1 - waterDepth * .42) : 0;
     const carryStep = Math.sin(clock.elapsedTime * (2.5 + state.speed * 1.55)) * carryStride;
     const bodyRigRoll = wipeout
-      ? state.wipeout * 2.1
+      ? state.wipeoutProgress * (2.8 + state.wipeoutPower * 2.35)
+        + Math.sin(clock.elapsedTime * 3.6) * state.wipeoutPower * .16
       : riding
         ? state.slip * state.rail * -.08
         : paddle
@@ -2915,7 +2919,8 @@ function SurferModel({
       : paddle
         ? -state.duckDive * .42 + state.shorebreak * .055
         : wipeout
-          ? -.18 - state.submersion * .5 + Math.sin(clock.elapsedTime * 3.4) * .06
+          ? -.18 - state.submersion * (.42 + state.wipeoutPower * .26)
+            + Math.sin(clock.elapsedTime * (3.4 + state.wipeoutPower * 2.2)) * (.045 + state.wipeoutPower * .055)
           : 0;
 
     const bodyRotationX = paddle ? Math.PI / 2 - 0.1 + state.duckDive * .08 : riding ? -0.18 + state.takeoff * 1.32 : 0;
@@ -2932,7 +2937,7 @@ function SurferModel({
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 : riding ? .84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : wipeout ? .42 - state.submersion * .34 + Math.sin(clock.elapsedTime * 4.1) * .045 : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 : riding ? .84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) + Math.sin(clock.elapsedTime * (4.1 + state.wipeoutPower * 1.8)) * (.035 + state.wipeoutPower * .035) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, bodyRigRoll, 9, delta);
     rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, bodyRigYaw, state.maneuverLift > .12 ? 13 : 8, delta);
@@ -2970,7 +2975,7 @@ function SurferModel({
 
     if (wipeout && !dynamics.active) {
       const throwSide = Math.sign(state.lineSide || state.rail || 1);
-      const throwPower = 1 + state.impact * .78 + state.slip * .42;
+      const throwPower = 1 + state.impact * .78 + state.slip * .42 + state.wipeoutPower * .58;
       dynamics.active = true;
       dynamics.offset.set(
         board.current.position.x,
@@ -7688,6 +7693,10 @@ function Simulation({
   const shorebreakId = useRef(0);
   const shorebreakResult = useRef<GameStats["shorebreakResult"]>("");
   const wipeoutAt = useRef(0);
+  const wipeoutDuration = useRef(2.25);
+  const wipeoutPower = useRef(0);
+  const wipeoutVelocity = useRef(new THREE.Vector2());
+  const breath = useRef(100);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
   const lastStatsAt = useRef(0);
@@ -7709,6 +7718,9 @@ function Simulation({
     sectionPressure: 0,
     setEnergy: 0,
     wipeout: 0,
+    wipeoutProgress: 0,
+    wipeoutPower: 0,
+    breath: 100,
     maneuver: 0,
     maneuverSide: 0,
     maneuverLift: 0,
@@ -7876,6 +7888,10 @@ function Simulation({
     let landingWindow = 0;
     let runBlend = 0;
     let paddleEffort = 0;
+    if (currentPhase !== "wipeout") {
+      breath.current = Math.min(100, breath.current + delta * 28);
+      wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
+    }
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
@@ -8540,6 +8556,35 @@ function Simulation({
         if (!finishing && unstableFor.current > (settings.mode === "training" ? 1.15 : 0.58)) {
           phase.current = "wipeout";
           wipeoutAt.current = t;
+          const waveEnergy = THREE.MathUtils.clamp(
+            settings.waveHeight / 4.2 * .24
+              + Math.max(0, settings.wavePeriod - 6) / 12 * .16
+              + setState.energy * .18
+              + character.power * .09
+              + Math.min(1, speed / 22) * .13
+              + sectionPressure * .12
+              + railSlip.current * .08,
+            0,
+            1,
+          );
+          const modeHoldScale = settings.mode === "training" ? .72 : settings.mode === "advanced" ? 1.12 : .94;
+          wipeoutPower.current = waveEnergy;
+          wipeoutDuration.current = THREE.MathUtils.clamp(
+            THREE.MathUtils.lerp(1.55, 4.18, Math.pow(waveEnergy, .84)) * modeHoldScale,
+            1.35,
+            4.65,
+          );
+          const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
+          const currentSpeed = settings.currentStrength / 3.6;
+          const washSpeed = 1.25 + waveEnergy * 4.1 + setState.energy * .72;
+          wipeoutVelocity.current.set(
+            waveNormalX * washSpeed + Math.sin(currentAngle) * currentSpeed * .72,
+            waveNormalZ * washSpeed - Math.cos(currentAngle) * currentSpeed * .72,
+          );
+          breath.current = 100;
+          motion.current.wipeout = 0;
+          motion.current.wipeoutProgress = 0;
+          motion.current.wipeoutPower = waveEnergy;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
           rideResult.current = "wipeout";
@@ -8577,17 +8622,69 @@ function Simulation({
           }
         }
       } else if (currentPhase === "wipeout") {
-        stamina.current = Math.min(100, stamina.current + delta * 14);
-        speed = 0;
-        prompt = "Wipeout — reset in the foam";
-        motion.current.wipeout = Math.min(1.8, t - wipeoutAt.current);
-        if (t - wipeoutAt.current > 2.25) {
-          phase.current = "paddling";
-          position.current.z = -22 + tideShift;
-          paddleHeading.current = 0;
-          paddleVelocity.current.set(0, 0);
+        const elapsed = Math.max(0, t - wipeoutAt.current);
+        const duration = Math.max(1.2, wipeoutDuration.current);
+        const progress = THREE.MathUtils.clamp(elapsed / duration, 0, 1);
+        const turbulence = THREE.MathUtils.smootherstep(progress, 0, .13)
+          * (1 - THREE.MathUtils.smoothstep(progress, .67, 1));
+        const waveTransport = primaryWaveVelocityAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const waveNormalX = waveTransport.x / Math.max(.001, waveTransport.speed);
+        const waveNormalZ = waveTransport.z / Math.max(.001, waveTransport.speed);
+        const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
+        const currentSpeed = settings.currentStrength / 3.6;
+        const residualWash = wipeoutPower.current * turbulence;
+        wipeoutVelocity.current.x += (
+          waveNormalX * residualWash * .42
+            + Math.sin(currentAngle) * currentSpeed * .18
+        ) * delta;
+        wipeoutVelocity.current.y += (
+          waveNormalZ * residualWash * .42
+            - Math.cos(currentAngle) * currentSpeed * .18
+        ) * delta;
+        wipeoutVelocity.current.multiplyScalar(Math.exp(-delta * (.48 + progress * 1.7)));
+        position.current.x += wipeoutVelocity.current.x * delta;
+        position.current.z += wipeoutVelocity.current.y * delta;
+        position.current.z = THREE.MathUtils.clamp(
+          position.current.z,
+          OUTER_PADDLE_LIMIT_Z + tideShift,
+          7.5 + tideShift,
+        );
+        stamina.current = Math.min(100, stamina.current + delta * (5 + progress * 7));
+        breath.current = Math.max(
+          24,
+          breath.current - delta * turbulence * (5.4 + wipeoutPower.current * 7.8),
+        );
+        speed = wipeoutVelocity.current.length();
+        const remaining = Math.max(0, duration - elapsed);
+        prompt = progress < .16
+          ? "Impact zone — protect your head"
+          : progress < .72
+            ? `Hold-down · ${remaining.toFixed(1)}s to surface`
+            : "Follow the leash — rising through the foam";
+        motion.current.wipeout = Math.min(1.8, elapsed);
+        motion.current.wipeoutProgress = progress;
+        motion.current.wipeoutPower = wipeoutPower.current;
+        motion.current.breath = breath.current;
+        if (progress >= 1) {
+          if (position.current.z > 1 + tideShift) {
+            phase.current = "wading";
+            playerHeading.current = Math.atan2(waveNormalX, waveNormalZ);
+            landVelocity.current.copy(wipeoutVelocity.current).multiplyScalar(.16);
+          } else {
+            phase.current = "paddling";
+            paddleHeading.current = Math.atan2(waveNormalX, waveNormalZ);
+            paddleVelocity.current.copy(wipeoutVelocity.current).multiplyScalar(.18);
+          }
           unstableFor.current = 0;
           motion.current.wipeout = 0;
+          motion.current.wipeoutProgress = 0;
+          motion.current.wipeoutPower = 0;
         }
       }
     }
@@ -8799,8 +8896,15 @@ function Simulation({
     const diveEnvelope = t < duckDiveUntil.current ? Math.sin(diveProgress * Math.PI) : 0;
     motion.current.duckDive = THREE.MathUtils.damp(motion.current.duckDive, diveEnvelope, diveEnvelope > motion.current.duckDive ? 14 : 9, delta);
     const wipeoutSubmersion = phase.current === "wipeout"
-      ? THREE.MathUtils.smootherstep(motion.current.wipeout, 0, .24)
-        * (1 - THREE.MathUtils.smoothstep(motion.current.wipeout, 1.48, 2.18))
+      ? THREE.MathUtils.smootherstep(motion.current.wipeoutProgress, .01, .14)
+        * (1 - THREE.MathUtils.smoothstep(motion.current.wipeoutProgress, .67, 1))
+        * THREE.MathUtils.clamp(
+          .66
+            + motion.current.wipeoutPower * .3
+            + Math.sin(t * (5.2 + motion.current.wipeoutPower * 2.4)) * motion.current.wipeoutPower * .045,
+          .58,
+          1,
+        )
       : 0;
     const submersionTarget = Math.max(motion.current.duckDive * .94, wipeoutSubmersion);
     motion.current.submersion = THREE.MathUtils.damp(
@@ -8810,6 +8914,7 @@ function Simulation({
       delta,
     );
     motion.current.paddleHeading = paddleHeading.current;
+    motion.current.breath = breath.current;
     const vanDriving = phase.current === "driving";
     if (!vanDriving) {
       vanSteer.current = THREE.MathUtils.damp(vanSteer.current, 0, 8, delta);
@@ -8958,8 +9063,9 @@ function Simulation({
       const rideRightX = Math.cos(rideHeading.current);
       const rideRightZ = -Math.sin(rideHeading.current);
       const wipeout = phase.current === "wipeout";
-      const underwaterDriftX = Math.sin(t * 4.4) * submersion;
-      const underwaterDriftZ = Math.cos(t * 3.7 + .8) * submersion;
+      const wipeoutTurbulence = .72 + motion.current.wipeoutPower * .56;
+      const underwaterDriftX = Math.sin(t * (4.4 + motion.current.wipeoutPower * 1.2)) * submersion * wipeoutTurbulence;
+      const underwaterDriftZ = Math.cos(t * (3.7 + motion.current.wipeoutPower) + .8) * submersion * wipeoutTurbulence;
       if (cameraMode === "pov") {
         if (riding) {
           const eyeForward = .34 + takeoffBeat * .16 - barrelCamera * .08;
@@ -9238,7 +9344,10 @@ function Simulation({
     const cameraVibrationBase = riding
       ? motion.current.maneuver * .052 + motion.current.slip * .038 + motion.current.barrel * .024 + Math.max(0, cameraTrackedSpeed - 11) * .0017
       : paddling ? motion.current.shorebreak * .018
-      : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * .55) * .082 : 0;
+      : phase.current === "wipeout"
+        ? (1 - THREE.MathUtils.smootherstep(motion.current.wipeoutProgress, .12, .92))
+          * (.052 + motion.current.wipeoutPower * .08)
+        : 0;
     const cameraVibration = cameraVibrationBase
       * (cameraMode === "cinematic" ? .28 : cameraMode === "pov" ? .9 : cameraMode === "immersive" ? 1.04 : .78)
       * cameraMotionStrength;
@@ -9445,6 +9554,11 @@ function Simulation({
         duckDiveActive,
         duckDiveQuality: duckDiveQuality.current,
         submersion: motion.current.submersion,
+        wipeoutPower: motion.current.wipeoutPower,
+        holdDownSeconds: phase.current === "wipeout"
+          ? Number(Math.max(0, wipeoutDuration.current - (t - wipeoutAt.current)).toFixed(1))
+          : 0,
+        breath: Math.round(breath.current),
         leashTension: motion.current.leashTension,
         shorebreakId: shorebreakId.current,
         shorebreakResult: shorebreakResult.current,

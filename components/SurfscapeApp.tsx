@@ -518,6 +518,7 @@ export default function SurfscapeApp() {
   const previousGripWarning = useRef(false);
   const previousVehicleSlipWarning = useRef(false);
   const previousPocketLock = useRef(false);
+  const previousResurface = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
   const joystickKnob = useRef<HTMLSpanElement>(null);
   const joystickPointer = useRef<number | null>(null);
@@ -939,6 +940,9 @@ export default function SurfscapeApp() {
     } else if (stats.phase !== "wipeout" || stats.leashTension < .28) {
       leashTaut.current = false;
     }
+    const resurfacing = stats.phase === "wipeout" && stats.holdDownSeconds <= .7;
+    if (resurfacing && !previousResurface.current) haptic([6, 18, 10]);
+    previousResurface.current = resurfacing;
     audio.current?.setPerspective(
       stats.cameraHeading,
       settings.windDirection,
@@ -993,6 +997,8 @@ export default function SurfscapeApp() {
       paused
         ? 0
         : stats.submersion,
+      stats.wipeoutPower,
+      stats.breath,
     );
     const movementSpeed = stats.phase === "paddling" ? stats.speed * stats.paddleEffort : stats.speed;
     audio.current?.setMovement(
@@ -1000,7 +1006,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1551,7 +1557,10 @@ export default function SurfscapeApp() {
                   ? { title: "WALL APPROACHING", detail: `${stats.shorebreakSeconds.toFixed(1)}s · keep paddling and prepare to dive` }
                   : { title: "READ THE CREST", detail: "Hold PADDLE · left stick turns" }
           : stats.phase === "wipeout"
-            ? { title: "UNDERWATER", detail: "Breathe · the board is resetting" }
+            ? {
+                title: stats.holdDownSeconds > .7 ? "HOLD-DOWN" : "RESURFACING",
+                detail: `${stats.holdDownSeconds.toFixed(1)}s · ${stats.breath}% breath · follow the leash`,
+              }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
   const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
   const mobileControlStyle = {
@@ -1905,6 +1914,34 @@ export default function SurfscapeApp() {
           </div>
           <div className={`velocity-veil ${stats.barrelIntensity > .2 ? "is-barrel" : ""}`} style={{ opacity: velocityIntensity }} aria-hidden="true" />
           {cinemaBeat && <div className={`cinema-impact is-${cinemaBeat}`} key={`${cinemaBeat}-${cinemaBeatKey}`} aria-hidden="true" />}
+          {stats.phase === "wipeout" && (
+            <div
+              className={`hold-down-instrument ${stats.holdDownSeconds <= .7 ? "is-rising" : ""}`}
+              aria-label={`Wipeout. ${stats.holdDownSeconds.toFixed(1)} seconds until the surface. Breath ${stats.breath} percent.`}
+            >
+              <div className="hold-down-heading">
+                <Waves />
+                <span>{stats.holdDownSeconds > .7 ? "HOLD-DOWN" : "RESURFACING"}</span>
+                <strong>{stats.holdDownSeconds.toFixed(1)}<small>s</small></strong>
+              </div>
+              <div className="breath-meter">
+                <span>BREATH</span>
+                <i><b style={{ width: `${stats.breath}%` }} /></i>
+                <strong>{stats.breath}%</strong>
+              </div>
+              <div className="wipeout-power">
+                <span>
+                  {stats.wipeoutPower >= .72
+                    ? "HEAVY WATER"
+                    : stats.wipeoutPower >= .42
+                      ? "POWERFUL WASH"
+                      : "LIGHT WASH"}
+                </span>
+                <i>{Array.from({ length: 5 }, (_, index) => <b key={index} className={index < Math.ceil(stats.wipeoutPower * 5) ? "is-active" : ""} />)}</i>
+                <small>FOLLOW THE LEASH</small>
+              </div>
+            </div>
+          )}
           {sessionIntroActive && (
             <div className="session-intro" style={sessionIntroStyle} aria-live="polite">
               <div className="session-intro-title">

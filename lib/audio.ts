@@ -279,14 +279,16 @@ export class SurfscapeAudio {
     if (enabled) this.nextMusicStepAt = this.context.currentTime + .08;
   }
 
-  setSubmersion(amount: number) {
+  setSubmersion(amount: number, turbulence = 0, breath = 100) {
     if (!this.context || !this.submersionFilter) return;
     const now = this.context.currentTime;
     const depth = Math.min(1, Math.max(0, amount));
-    const cutoff = 18000 * Math.pow(.042, depth);
+    const force = Math.min(1, Math.max(0, turbulence));
+    const breathStress = 1 - Math.min(100, Math.max(0, breath)) / 100;
+    const cutoff = 18000 * Math.pow(.042, depth) * (1 - force * depth * .2 - breathStress * depth * .08);
     ramp(this.submersionFilter.frequency, Math.max(620, cutoff), now, depth > .05 ? .12 : .34);
-    ramp(this.submersionFilter.Q, .42 + depth * 1.35, now, .16);
-    if (this.reverbGain) ramp(this.reverbGain.gain, .18 + depth * .27, now, depth > .05 ? .16 : .5);
+    ramp(this.submersionFilter.Q, .42 + depth * (1.35 + force * .48), now, .16);
+    if (this.reverbGain) ramp(this.reverbGain.gain, .18 + depth * (.27 + force * .09), now, depth > .05 ? .16 : .5);
   }
 
   setPerspective(
