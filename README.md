@@ -65,13 +65,13 @@ If the APIs are temporarily unavailable, each break has a modeled fallback so th
 
 ## Character asset
 
-The in-game surfer is an articulated Blender-authored GLB with named joints for the live walk, paddle, stance, maneuver, barrel, and wipeout poses. The current character uses athletic human proportions, tapered anatomy, a detailed face, five-finger hands, articulated bare feet, and layered wet hair. Three rig-compatible body variants provide full-suit, spring-suit, and tropical coverage; separate hood, glove, and boot geometry completes the cold-water 5/4 kit. PBR limestone neoprene, stretch panels, reinforced knees, sealed seams, UV rashguard fabric, hydrophobic boardshorts, and restrained Surfscape branding respond to the selected destination and live thermal conditions. Procedural secondary motion adds exertion-aware breathing, idle gaze and weight shifts, while shared water exposure drives wet materials and post-session runoff droplets. Alternating footprints follow instantaneous travel direction through turns, mirror the left and right foot shapes, vary stride and toe-out, retain darker wet-sand impressions, lift subtle displaced-sand rims, kick adaptive dry grains, and disappear when the tide reaches them. The checked-in model can be regenerated on macOS with Blender installed:
+The in-game surfer is an articulated Blender-authored GLB with named joints for the live walk, paddle, stance, maneuver, barrel, and wipeout poses. The current character uses athletic human proportions, tapered anatomy, a detailed face, five-finger hands, articulated bare feet, and layered wet hair. Four rig-compatible body variants provide dedicated cold-water, full-suit, spring-suit, and tropical coverage; the hooded setup keeps its facial detail while fitted glove and boot shells layer over neoprene hands and feet. Clean bonded torso and shoulder seams, shaped abrasion knee panels, a tighter wet-hair silhouette, PBR limestone neoprene, UV rashguard fabric, hydrophobic boardshorts, and restrained Surfscape branding respond to the selected destination and live thermal conditions. Procedural secondary motion adds exertion-aware breathing, idle gaze and weight shifts, while shared water exposure drives wet materials and post-session runoff droplets. Alternating footprints follow instantaneous travel direction through turns, mirror the left and right foot shapes, vary stride and toe-out, retain darker wet-sand impressions, lift subtle displaced-sand rims, kick adaptive dry grains, and disappear when the tide reaches them. The checked-in model can be regenerated on macOS with Blender installed:
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-surfer-model.py
 ```
 
-The script exports `public/models/surfer-premium.glb` and renders a local QA preview before the application build.
+The script exports `public/models/surfer-premium.glb` and renders separate warm- and cold-water QA previews before the application build.
 
 ## Vehicle asset
 

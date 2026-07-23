@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_PATH = ROOT / "assets" / "models" / "male-base-mesh-cc0.glb"
 MODEL_PATH = ROOT / "public" / "models" / "surfer-premium.glb"
 PREVIEW_PATH = Path("/tmp/surfscape-surfer-preview.png")
+COLD_PREVIEW_PATH = Path("/tmp/surfscape-surfer-cold-preview.png")
 PELVIS_HEIGHT = 0.0
 
 
@@ -137,6 +138,35 @@ def cube(
     return obj
 
 
+def tube_curve(
+    name: str,
+    points: list[tuple[float, float, float]],
+    radius: float,
+    mat: bpy.types.Material,
+) -> bpy.types.Object:
+    curve_data = bpy.data.curves.new(f"{name}.curve", "CURVE")
+    curve_data.dimensions = "3D"
+    curve_data.resolution_u = 3
+    curve_data.bevel_depth = radius
+    curve_data.bevel_resolution = 2
+    curve_data.resolution_u = 3
+    spline = curve_data.splines.new("BEZIER")
+    spline.bezier_points.add(len(points) - 1)
+    for bezier, point in zip(spline.bezier_points, points):
+        bezier.co = point
+        bezier.handle_left_type = "AUTO"
+        bezier.handle_right_type = "AUTO"
+    obj = bpy.data.objects.new(name, curve_data)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.convert(target="MESH")
+    smooth(obj)
+    return obj
+
+
 def join_objects(objects: list[bpy.types.Object], name: str) -> bpy.types.Object:
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
@@ -245,12 +275,9 @@ def assign_body_materials(
         bare_foot = group_weight(polygon, foot_groups) > .4
         bare_forearm = group_weight(polygon, lower_arm_groups) > .32
         bare_calf = group_weight(polygon, lower_leg_groups) > .34
-        knee_patch = y < -0.055 and 0.37 < z < 0.66 and abs(x) < 0.18
-        flex_panel = (
-            (0.98 < z < 1.53 and abs(x) > 0.19)
-            or (0.71 < z < 1.02 and abs(x) > 0.065)
-        )
-        if variant == "tropical":
+        if variant == "cold":
+            polygon.material_index = 3 if bare_head else 0
+        elif variant == "tropical":
             if bare_head or bare_hand or bare_foot:
                 polygon.material_index = 3
             elif 1.02 < z < 1.64:
@@ -263,10 +290,6 @@ def assign_body_materials(
             polygon.material_index = 3
         elif bare_head or bare_hand or bare_foot:
             polygon.material_index = 3
-        elif knee_patch:
-            polygon.material_index = 2
-        elif flex_panel:
-            polygon.material_index = 1
         else:
             polygon.material_index = 0
 
@@ -278,53 +301,66 @@ def create_head_details(
     pupil: bpy.types.Material,
     lip: bpy.types.Material,
     hair: bpy.types.Material,
-) -> bpy.types.Object:
-    details: list[bpy.types.Object] = []
+) -> tuple[bpy.types.Object, bpy.types.Object]:
+    face_details: list[bpy.types.Object] = []
+    hair_details: list[bpy.types.Object] = []
     for side, x in (("L", 0.036), ("R", -0.036)):
         angle = -0.045 if side == "L" else 0.045
-        details.append(ellipsoid(f"EyeWhite.{side}", (x, -0.154, 1.825), (.0175, .0038, .0068), eye_white, 24, 12, (0, 0, angle)))
-        details.append(ellipsoid(f"Iris.{side}", (x, -0.1575, 1.8245), (.0052, .0023, .0052), iris, 18, 10))
-        details.append(ellipsoid(f"Pupil.{side}", (x, -0.1593, 1.8245), (.0022, .0015, .0025), pupil, 14, 8))
-        details.append(ellipsoid(f"UpperLid.{side}", (x, -0.157, 1.831), (.019, .0028, .0042), skin, 20, 10, (0, 0, angle)))
-        details.append(ellipsoid(f"Brow.{side}", (x, -0.157, 1.852), (.026, .0032, .004), hair, 20, 8, (0, 0, angle)))
+        face_details.append(ellipsoid(f"EyeWhite.{side}", (x, -0.154, 1.825), (.0175, .0038, .0068), eye_white, 24, 12, (0, 0, angle)))
+        face_details.append(ellipsoid(f"Iris.{side}", (x, -0.1575, 1.8245), (.0052, .0023, .0052), iris, 18, 10))
+        face_details.append(ellipsoid(f"Pupil.{side}", (x, -0.1593, 1.8245), (.0022, .0015, .0025), pupil, 14, 8))
+        face_details.append(ellipsoid(f"UpperLid.{side}", (x, -0.157, 1.831), (.019, .0028, .0042), skin, 20, 10, (0, 0, angle)))
+        hair_details.append(ellipsoid(f"Brow.{side}", (x, -0.157, 1.852), (.026, .0032, .004), hair, 20, 8, (0, 0, angle)))
 
-    details.extend([
+    face_details.extend([
         ellipsoid("Nose.bridge", (0, -0.158, 1.796), (.0115, .0105, .036), skin, 22, 14, (-.06, 0, 0)),
         ellipsoid("Nose.tip", (0, -0.166, 1.768), (.015, .0115, .011), skin, 22, 12),
+        ellipsoid("Nostril.L", (.0065, -.1762, 1.764), (.0022, .0012, .0015), pupil, 12, 8),
+        ellipsoid("Nostril.R", (-.0065, -.1762, 1.764), (.0022, .0012, .0015), pupil, 12, 8),
         ellipsoid("Upper.lip", (0, -0.156, 1.73), (.021, .003, .0035), lip, 20, 8),
         ellipsoid("Lower.lip", (0, -0.155, 1.722), (.02, .0034, .004), lip, 20, 8),
-        ellipsoid("Hair.cap", (0, .008, 1.91), (.11, .125, .078), hair, 40, 22),
-        ellipsoid("Hair.back", (0, .085, 1.85), (.096, .052, .09), hair, 32, 18),
-        ellipsoid("Hair.temple.L", (.103, .015, 1.855), (.018, .046, .066), hair, 22, 14, (.03, 0, .05)),
-        ellipsoid("Hair.temple.R", (-.103, .015, 1.855), (.018, .046, .066), hair, 22, 14, (.03, 0, -.05)),
+        ellipsoid("Ear.L", (.102, -.002, 1.817), (.008, .006, .022), skin, 18, 10, (.03, 0, -.02)),
+        ellipsoid("Ear.R", (-.102, -.002, 1.817), (.008, .006, .022), skin, 18, 10, (.03, 0, .02)),
     ])
-    for index, x in enumerate((-.065, -.028, .012, .052)):
-        details.append(ellipsoid(
+    hair_details.extend([
+        ellipsoid("Hair.cap", (0, .026, 1.916), (.105, .101, .058), hair, 40, 22, (.025, 0, 0)),
+        ellipsoid("Hair.crown", (-.012, -.025, 1.935), (.084, .066, .032), hair, 34, 18, (.08, -.04, -.05)),
+        ellipsoid("Hair.back", (0, .086, 1.874), (.087, .034, .061), hair, 30, 16, (.04, 0, 0)),
+        ellipsoid("Hair.temple.L", (.101, .008, 1.869), (.011, .026, .046), hair, 20, 12, (.04, 0, .06)),
+        ellipsoid("Hair.temple.R", (-.101, .008, 1.869), (.011, .026, .046), hair, 20, 12, (.04, 0, -.06)),
+        ellipsoid("Hair.sideburn.L", (.101, -.02, 1.838), (.007, .012, .025), hair, 16, 10, (.08, 0, .04)),
+        ellipsoid("Hair.sideburn.R", (-.101, -.02, 1.838), (.007, .012, .025), hair, 16, 10, (.08, 0, -.04)),
+    ])
+    for index, x in enumerate((-.078, -.058, -.036, -.012, .014, .038, .061, .079)):
+        hair_details.append(ellipsoid(
             f"Hair.lock.{index}",
-            (x, -.108 + abs(x) * .14, 1.905 - abs(x) * .1),
-            (.011, .009, .024 + (index % 2) * .004),
+            (x, -.093 + abs(x) * .18, 1.91 - abs(x) * .12 - (index % 3) * .003),
+            (.0065 + (index % 2) * .0015, .006, .018 + (index % 3) * .004),
             hair,
-            18,
-            10,
-            (.04, (index - 1.5) * .012, -(index - 1.5) * .014),
+            16,
+            8,
+            (.08, (index - 3.5) * .01, -(index - 3.5) * .018),
         ))
-    head_details = join_objects(details, "Head.details")
-    return head_details
+    head_details = join_objects(face_details, "Head.details")
+    hair = join_objects(hair_details, "Hair.details")
+    return head_details, hair
 
 
 def create_wetsuit_details(
     seam: bpy.types.Material,
     reflective: bpy.types.Material,
     cuff: bpy.types.Material,
+    knee: bpy.types.Material,
 ) -> list[bpy.types.Object]:
     collar = torus("Collar.seam", (0, -.005, 1.635), .091, .007, seam)
     logo = cube("Chest.logo", (.105, -.163, 1.48), (.021, .006, .021), reflective, .003, (0, math.pi / 4, 0))
     leash_cuff = torus("Leash.cuff", (-.066, .004, .155), .053, .012, cuff)
     leash_tab = cube("Leash.cuff.tab", (-.119, -.002, .155), (.018, .014, .026), reflective, .004)
     wrist_details: list[bpy.types.Object] = []
+    shoulder_details: list[bpy.types.Object] = []
     for side, sign in (("L", 1), ("R", -1)):
-        direction = Vector((.137 * sign, -.039, -.193)).normalized()
-        rotation = Vector((0, 0, 1)).rotation_difference(direction).to_euler()
+        arm_direction = Vector((.137 * sign, -.039, -.193)).normalized()
+        rotation = Vector((0, 0, 1)).rotation_difference(arm_direction).to_euler()
         wrist_details.append(torus(
             f"Wrist.seam.{side}",
             (.509 * sign, -.031, 1.116),
@@ -333,18 +369,63 @@ def create_wetsuit_details(
             seam,
             tuple(rotation),
         ))
+        shoulder_details.append(torus(
+            f"Shoulder.seam.{side}",
+            (.285 * sign, -.03, 1.44),
+            .071,
+            .0045,
+            seam,
+            tuple(rotation),
+        ))
     ankle_details = [
         torus(f"Ankle.seam.{side}", (.068 * sign, .016, .155), .051, .005, seam)
         for side, sign in (("L", 1), ("R", -1))
     ]
-    return [collar, logo, leash_cuff, leash_tab, *wrist_details, *ankle_details]
+    torso_seams = [
+        tube_curve(
+            f"Torso.seam.{side}",
+            [
+                (.055 * sign, -.108, 1.62),
+                (.145 * sign, -.135, 1.49),
+                (.16 * sign, -.14, 1.34),
+                (.095 * sign, -.108, 1.08),
+            ],
+            .0032,
+            seam,
+        )
+        for side, sign in (("L", 1), ("R", -1))
+    ]
+    knee_patches = [
+        ellipsoid(
+            f"Knee.patch.{side}",
+            (.085 * sign, -.063, .51),
+            (.056, .0045, .105),
+            knee,
+            28,
+            16,
+            (-.04, sign * .025, 0),
+        )
+        for side, sign in (("L", 1), ("R", -1))
+    ]
+    return [
+        collar,
+        logo,
+        leash_cuff,
+        leash_tab,
+        *wrist_details,
+        *shoulder_details,
+        *ankle_details,
+        *torso_seams,
+        *knee_patches,
+    ]
 
 
 def create_cold_water_details(neoprene: bpy.types.Material) -> list[bpy.types.Object]:
     hood_parts = [
-        ellipsoid("Cold.Hood.back", (0, .045, 1.86), (.122, .108, .15), neoprene, 36, 22),
-        ellipsoid("Cold.Hood.temple.L", (.102, -.002, 1.835), (.025, .071, .112), neoprene, 24, 16, (.03, 0, .02)),
-        ellipsoid("Cold.Hood.temple.R", (-.102, -.002, 1.835), (.025, .071, .112), neoprene, 24, 16, (.03, 0, -.02)),
+        ellipsoid("Cold.Hood.back", (0, .052, 1.862), (.112, .091, .142), neoprene, 36, 22),
+        ellipsoid("Cold.Hood.crown", (0, .004, 1.928), (.108, .078, .058), neoprene, 34, 18, (.04, 0, 0)),
+        ellipsoid("Cold.Hood.temple.L", (.098, .008, 1.844), (.016, .038, .098), neoprene, 24, 16, (.03, 0, .025)),
+        ellipsoid("Cold.Hood.temple.R", (-.098, .008, 1.844), (.016, .038, .098), neoprene, 24, 16, (.03, 0, -.025)),
     ]
     hood = join_objects(hood_parts, "Cold.Hood")
     hood.data.name = "Cold.Hood.mesh"
@@ -352,20 +433,20 @@ def create_cold_water_details(neoprene: bpy.types.Material) -> list[bpy.types.Ob
     gloves = [
         ellipsoid(
             f"Cold.Glove.{side}",
-            (.548 * sign, -.034, 1.058),
-            (.069, .102, .054),
+            (.548 * sign, -.034, 1.047),
+            (.061, .049, .091),
             neoprene,
             28,
             16,
-            (.08, sign * .08, sign * -.04),
+            (.04, sign * .055, sign * -.035),
         )
         for side, sign in (("L", 1), ("R", -1))
     ]
     booties = [
         ellipsoid(
             f"Cold.Bootie.{side}",
-            (.071 * sign, -.045, .075),
-            (.071, .152, .061),
+            (.071 * sign, -.052, .067),
+            (.064, .137, .049),
             neoprene,
             30,
             16,
@@ -419,6 +500,13 @@ def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
     thermal_accessory = material("Thermal neoprene accessories", (.009, .014, .017, 1), .5, specular=.52, sheen=.05)
 
     assign_body_materials(body, wetsuit, panel, knee, skin)
+    cold_body = body.copy()
+    cold_body.data = body.data.copy()
+    cold_body.name = "SurferBody.Cold"
+    cold_body.data.name = "SurferBody.Cold.mesh"
+    bpy.context.scene.collection.objects.link(cold_body)
+    assign_body_materials(cold_body, wetsuit, panel, knee, skin, variant="cold")
+
     spring_body = body.copy()
     spring_body.data = body.data.copy()
     spring_body.name = "SurferBody.Spring"
@@ -441,24 +529,24 @@ def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
         boardshort,
         variant="tropical",
     )
-    head_details = create_head_details(skin, eye_white, iris, pupil, lip, hair)
-    details = create_wetsuit_details(seam, reflective, cuff)
+    head_details, hair_details = create_head_details(skin, eye_white, iris, pupil, lip, hair)
+    details = create_wetsuit_details(seam, reflective, cuff, knee)
     cold_details = create_cold_water_details(thermal_accessory)
     # The CC0 glTF carries its bind rotation and translation on the armature object.
     # Static detail meshes are authored in armature space, so give them that complete
     # transform before runtime attaches each piece to its matching joint.
     bind_matrix = armature.matrix_world.copy()
-    for detail in (head_details, *details, *cold_details):
+    for detail in (head_details, hair_details, *details, *cold_details):
         detail.matrix_world = bind_matrix @ detail.matrix_world
     bpy.context.view_layer.update()
 
     root = bpy.data.objects.new("SurferRig", None)
     bpy.context.scene.collection.objects.link(root)
-    for articulated in (armature, body, spring_body, tropical_body):
+    for articulated in (armature, body, cold_body, spring_body, tropical_body):
         world = articulated.matrix_world.copy()
         articulated.parent = root
         articulated.matrix_world = world
-    for detail in (head_details, *details, *cold_details):
+    for detail in (head_details, hair_details, *details, *cold_details):
         detail_world = detail.matrix_world.copy()
         detail.parent = root
         detail.matrix_world = detail_world
@@ -467,9 +555,11 @@ def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
         root,
         armature,
         body,
+        cold_body,
         spring_body,
         tropical_body,
         head_details,
+        hair_details,
         *details,
         *cold_details,
     ]
@@ -477,7 +567,7 @@ def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
 
 def setup_preview(root: bpy.types.Object, export_objects: list[bpy.types.Object]) -> None:
     for obj in export_objects:
-        if obj.name.startswith(("SurferBody.Spring", "SurferBody.Tropical")):
+        if obj.name.startswith(("SurferBody.Cold", "SurferBody.Spring", "SurferBody.Tropical", "Cold.")):
             obj.hide_render = True
     bpy.context.view_layer.update()
     bounds = [
@@ -533,6 +623,19 @@ def setup_preview(root: bpy.types.Object, export_objects: list[bpy.types.Object]
     scene.world.color = (.012, .02, .026)
     bpy.ops.render.render(write_still=True)
 
+    for obj in export_objects:
+        if obj.name == "SurferBody.Full":
+            obj.hide_render = True
+        elif obj.name == "SurferBody.Cold":
+            obj.hide_render = False
+        elif obj.name == "Hair.details":
+            obj.hide_render = True
+        elif obj.name.startswith("Cold."):
+            obj.hide_render = False
+    scene.render.filepath = str(COLD_PREVIEW_PATH)
+    bpy.context.view_layer.update()
+    bpy.ops.render.render(write_still=True)
+
 
 def main() -> None:
     reset_scene()
@@ -557,6 +660,7 @@ def main() -> None:
     setup_preview(root, export_objects)
     print(f"SURFSCAPE_MODEL={MODEL_PATH}")
     print(f"SURFSCAPE_PREVIEW={PREVIEW_PATH}")
+    print(f"SURFSCAPE_COLD_PREVIEW={COLD_PREVIEW_PATH}")
 
 
 if __name__ == "__main__":

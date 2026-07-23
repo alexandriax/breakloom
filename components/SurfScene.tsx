@@ -2754,20 +2754,29 @@ function prepareSurferScene(
   const accentColor = new THREE.Color(accent);
   const coldWaterKit = thermalKit.id === "hooded-5-4";
   const tropicalKit = thermalKit.bodyVariant === "tropical";
-  const activeBodyName = {
-    full: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Full.mesh"),
-    spring: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Spring.mesh"),
-    tropical: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Tropical.mesh"),
-  }[thermalKit.bodyVariant];
+  const activeBodyName = coldWaterKit
+    ? THREE.PropertyBinding.sanitizeNodeName("SurferBody.Cold.mesh")
+    : {
+        full: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Full.mesh"),
+        spring: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Spring.mesh"),
+        tropical: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Tropical.mesh"),
+      }[thermalKit.bodyVariant];
   model.updateMatrixWorld(true);
   const attachments = [
     ["Head.details", "Head"],
+    ["Hair.details", "Head"],
     ["Collar.seam", "Torso"],
     ["Chest.logo", "Torso"],
     ["Wrist.seam.L", "Hand.L"],
     ["Wrist.seam.R", "Hand.R"],
+    ["Shoulder.seam.L", "UpperArm.L"],
+    ["Shoulder.seam.R", "UpperArm.R"],
     ["Ankle.seam.L", "LowerLeg.L"],
     ["Ankle.seam.R", "LowerLeg.R"],
+    ["Torso.seam.L", "Torso"],
+    ["Torso.seam.R", "Torso"],
+    ["Knee.patch.L", "LowerLeg.L"],
+    ["Knee.patch.R", "LowerLeg.R"],
     ["Leash.cuff", "LowerLeg.R"],
     ["Leash.cuff.tab", "LowerLeg.R"],
     ["Cold.Hood", "Head"],
@@ -2790,10 +2799,16 @@ function prepareSurferScene(
       const coldAccessory = object.name.startsWith("Cold");
       const hair = materialNames.some((name) => name.includes("wet dark hair"));
       const warmWaterSeam = object.name.startsWith("Wristseam") || object.name.startsWith("Ankleseam");
+      const fullSuitDetail = object.name.startsWith("Shoulderseam")
+        || object.name.startsWith("Torsoseam")
+        || object.name.startsWith("Kneepatch")
+        || object.name.startsWith("Collarseam");
       object.visible = bodyVariant
         ? object.name.startsWith(activeBodyName)
         : coldAccessory
           ? coldWaterKit
+          : fullSuitDetail
+            ? !tropicalKit
           : hair
             ? !coldWaterKit
             : warmWaterSeam
