@@ -4546,6 +4546,10 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const railSheets = useRef<Array<THREE.Mesh | null>>([]);
   const railSheetMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
+  const pressureFans = useRef<Array<THREE.Mesh | null>>([]);
+  const pressureFanMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
+  const finTrails = useRef<Array<THREE.Mesh | null>>([]);
+  const finTrailMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const paddleRipples = useRef<Array<THREE.Mesh | null>>([]);
   const paddleRippleMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const spray = useRef<THREE.Points>(null);
@@ -4588,6 +4592,16 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const bubbleLife = useRef(new Float32Array(bubbleCount));
   const bubbleCursor = useRef(0);
   const bubbleEmission = useRef(0);
+  const finBubbleEmission = useRef(0);
+  const boardSpec = BOARD_SPECS[settings.board];
+  const finOffsets = useMemo(() => (
+    settings.board === "performance"
+      ? [-boardSpec.width * .46, 0, boardSpec.width * .46]
+      : settings.board === "fish"
+        ? [-boardSpec.width * .5, boardSpec.width * .5]
+        : [0]
+  ), [boardSpec.width, settings.board]);
+  const finTailPosition = -boardSpec.length * .38;
 
   useEffect(() => {
     velocities.current = new Float32Array(particleCount * 3);
@@ -4601,6 +4615,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     bubbleLife.current = new Float32Array(bubbleCount);
     bubbleCursor.current = 0;
     bubbleEmission.current = 0;
+    finBubbleEmission.current = 0;
   }, [bubbleCount]);
 
   const wakeTexture = useMemo(() => {
@@ -4697,6 +4712,86 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }, []);
+  const pressureFanTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const body = context.createRadialGradient(128, 245, 4, 128, 245, 230);
+      body.addColorStop(0, "rgba(244,255,252,.94)");
+      body.addColorStop(.18, "rgba(205,252,245,.58)");
+      body.addColorStop(.58, "rgba(151,235,226,.16)");
+      body.addColorStop(1, "rgba(130,224,215,0)");
+      context.fillStyle = body;
+      context.beginPath();
+      context.moveTo(116, 252);
+      context.bezierCurveTo(64, 205, 25, 115, 2, 24);
+      context.bezierCurveTo(78, 78, 162, 142, 142, 252);
+      context.closePath();
+      context.fill();
+      context.globalCompositeOperation = "screen";
+      context.lineCap = "round";
+      for (let streak = 0; streak < 34; streak += 1) {
+        const spread = seededRandom(streak, 701);
+        const startX = 119 + (seededRandom(streak, 702) - .5) * 17;
+        const endX = 6 + spread * 132;
+        const endY = 12 + seededRandom(streak, 703) * 146;
+        context.strokeStyle = `rgba(239,255,251,${(.08 + seededRandom(streak, 704) * .48).toFixed(2)})`;
+        context.lineWidth = .65 + seededRandom(streak, 705) * 2.4;
+        context.beginPath();
+        context.moveTo(startX, 250 - seededRandom(streak, 706) * 19);
+        context.quadraticCurveTo(92 + spread * 42, 184, endX, endY);
+        context.stroke();
+      }
+      context.globalCompositeOperation = "destination-out";
+      for (let cell = 0; cell < 30; cell += 1) {
+        const x = 12 + seededRandom(cell, 711) * 122;
+        const y = 22 + seededRandom(cell, 712) * 190;
+        context.beginPath();
+        context.ellipse(x, y, 1.4 + seededRandom(cell, 713) * 4.8, 4 + seededRandom(cell, 714) * 12, -.42, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+  const finTrailTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const trail = context.createLinearGradient(32, 0, 32, 256);
+      trail.addColorStop(0, "rgba(235,255,252,0)");
+      trail.addColorStop(.08, "rgba(237,255,252,.88)");
+      trail.addColorStop(.48, "rgba(177,243,235,.34)");
+      trail.addColorStop(1, "rgba(151,229,221,0)");
+      context.strokeStyle = trail;
+      context.lineCap = "round";
+      [0, 1, 2].forEach((line) => {
+        context.lineWidth = line === 1 ? 5.2 : 1.4;
+        context.globalAlpha = line === 1 ? .78 : .42;
+        context.beginPath();
+        context.moveTo(30 + line * 2, 5);
+        context.bezierCurveTo(22 + line * 5, 74, 39 - line * 4, 172, 28 + line * 3, 251);
+        context.stroke();
+      });
+      context.globalAlpha = 1;
+      context.fillStyle = "rgba(230,255,251,.72)";
+      for (let bead = 0; bead < 24; bead += 1) {
+        const y = 18 + seededRandom(bead, 721) * 224;
+        const x = 32 + (seededRandom(bead, 722) - .5) * (8 + y * .035);
+        context.beginPath();
+        context.arc(x, y, .65 + seededRandom(bead, 723) * 1.75, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
   const paddleRippleTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 128;
@@ -4758,9 +4853,11 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     bubbleTexture.dispose();
     paddleRippleTexture.dispose();
     particleTexture.dispose();
+    finTrailTexture.dispose();
+    pressureFanTexture.dispose();
     railSheetTexture.dispose();
     wakeTexture.dispose();
-  }, [bubbleTexture, paddleRippleTexture, particleTexture, railSheetTexture, wakeTexture]);
+  }, [bubbleTexture, finTrailTexture, paddleRippleTexture, particleTexture, pressureFanTexture, railSheetTexture, wakeTexture]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
@@ -4824,6 +4921,82 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       sheet.rotation.z = THREE.MathUtils.damp(sheet.rotation.z, side * (-.26 - energy * .28), 9, delta);
       sheet.visible = material.opacity > .004;
     });
+    const carvePressure = THREE.MathUtils.clamp(
+      railEnergy * (.58 + (1 - state.slip) * .42)
+      + impactEnergy * .34
+      + Math.abs(state.lateralForce) * .08 * waterContact,
+      0,
+      1.18,
+    );
+    pressureFans.current.forEach((fan, index) => {
+      const material = pressureFanMaterials.current[index];
+      if (!fan || !material) return;
+      const side = index === 0 ? -1 : 1;
+      const sideEnergy = side === loadedSide ? carvePressure : carvePressure * (.035 + state.slip * .1);
+      const fanOpacity = riding ? sideEnergy * (.28 + (1 - state.slip) * .18) : 0;
+      material.opacity = THREE.MathUtils.damp(
+        material.opacity,
+        fanOpacity,
+        fanOpacity > material.opacity ? 14 : 5.5,
+        delta,
+      );
+      const fanWidth = .42 + sideEnergy * 1.14;
+      const fanLength = .28 + sideEnergy * 1.35 + Math.max(0, state.speed - 8) * .022;
+      fan.position.x = THREE.MathUtils.damp(fan.position.x, side * (.22 + sideEnergy * .12), 11, delta);
+      fan.position.y = THREE.MathUtils.damp(fan.position.y, .026 + state.maneuverLift * .08, 12, delta);
+      fan.position.z = THREE.MathUtils.damp(fan.position.z, -.54 - fanLength * .68, 10, delta);
+      fan.scale.x = THREE.MathUtils.damp(fan.scale.x, -side * fanWidth, 11, delta);
+      fan.scale.y = THREE.MathUtils.damp(fan.scale.y, fanLength, 10, delta);
+      fan.rotation.z = THREE.MathUtils.damp(
+        fan.rotation.z,
+        side * (-.12 - sideEnergy * .16) - state.lateralForce * .04,
+        9,
+        delta,
+      );
+      fan.visible = material.opacity > .003;
+    });
+    const speedPressure = THREE.MathUtils.smootherstep(state.speed, 7.2, 16.5);
+    const finCavitation = riding
+      ? speedPressure
+        * (
+          .12
+          + Math.abs(state.rail) * .42
+          + state.slip * .72
+          + Math.abs(state.lateralForce) * .22
+          + Math.max(0, state.acceleration) * .12
+        )
+        * waterContact
+      : 0;
+    finTrails.current.forEach((trail, index) => {
+      const material = finTrailMaterials.current[index];
+      if (!trail || !material) return;
+      const finOffset = finOffsets[index];
+      const activeFin = finOffset !== undefined;
+      const sideBias = activeFin && Math.abs(finOffset) > .001
+        ? Math.sign(finOffset) === loadedSide ? 1.18 : .7
+        : .92;
+      const energy = activeFin ? THREE.MathUtils.clamp(finCavitation * sideBias, 0, 1.2) : 0;
+      const targetTrailOpacity = energy * (.22 + state.slip * .24);
+      material.opacity = THREE.MathUtils.damp(
+        material.opacity,
+        targetTrailOpacity,
+        targetTrailOpacity > material.opacity ? 13 : 4.8,
+        delta,
+      );
+      const trailLength = .22 + energy * 1.08 + Math.max(0, state.speed - 9) * .018;
+      trail.position.x = finOffset ?? 0;
+      trail.position.y = -.018 - Math.abs(state.rail) * .014;
+      trail.position.z = finTailPosition - trailLength * .92;
+      trail.scale.x = THREE.MathUtils.damp(trail.scale.x, .58 + energy * .38, 10, delta);
+      trail.scale.y = THREE.MathUtils.damp(trail.scale.y, trailLength, 10, delta);
+      trail.rotation.z = THREE.MathUtils.damp(
+        trail.rotation.z,
+        state.rail * -.035 - state.lateralForce * .025,
+        9,
+        delta,
+      );
+      trail.visible = material.opacity > .002;
+    });
     paddleRippleState.current.forEach((ripple, index) => {
       const mesh = paddleRipples.current[index];
       const material = paddleRippleMaterials.current[index];
@@ -4852,11 +5025,23 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     const bubblePositionAttribute = bubbles.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     const activeBubblePositions = bubblePositionAttribute?.array as Float32Array | undefined;
 
-    const emitBubbles = (count: number, violent: boolean) => {
+    const emitBubbles = (count: number, violent: boolean, fin = false) => {
       if (!activeBubblePositions) return;
       for (let particle = 0; particle < count; particle += 1) {
         const index = bubbleCursor.current++ % bubbleCount;
         const offset = index * 3;
+        if (fin) {
+          const finIndex = Math.floor(Math.random() * finOffsets.length);
+          const finOffset = finOffsets[finIndex] ?? 0;
+          activeBubblePositions[offset] = finOffset + (Math.random() - .5) * .08;
+          activeBubblePositions[offset + 1] = -.12 - Math.random() * .13;
+          activeBubblePositions[offset + 2] = finTailPosition - .08 - Math.random() * .28;
+          bubbleVelocities.current[offset] = state.rail * -.12 + (Math.random() - .5) * .09;
+          bubbleVelocities.current[offset + 1] = .06 + Math.random() * .15;
+          bubbleVelocities.current[offset + 2] = -(.42 + Math.random() * .76 + state.speed * .025);
+          bubbleLife.current[index] = .24 + Math.random() * .42;
+          continue;
+        }
         const spread = violent ? 1.05 : .58;
         activeBubblePositions[offset] = (Math.random() - .5) * spread;
         activeBubblePositions[offset + 1] = -.72 + Math.random() * .58;
@@ -4876,6 +5061,16 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
         emitBubbles(count, wipeout);
         bubbleEmission.current -= count;
       }
+    }
+    if (finCavitation > .025) {
+      finBubbleEmission.current += delta * (3 + finCavitation * (mobile ? 18 : 32));
+      if (finBubbleEmission.current >= 1) {
+        const count = Math.min(mobile ? 3 : 5, Math.floor(finBubbleEmission.current));
+        emitBubbles(count, false, true);
+        finBubbleEmission.current -= count;
+      }
+    } else {
+      finBubbleEmission.current = Math.max(0, finBubbleEmission.current - delta * 5);
     }
     if (wipeout && !previousWipeout.current) emitBubbles(mobile ? 10 : 20, true);
     if (activeBubblePositions) {
@@ -4897,8 +5092,19 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       if (bubblePositionAttribute) bubblePositionAttribute.needsUpdate = true;
     }
     if (bubbleMaterial.current) {
-      bubbleMaterial.current.opacity = THREE.MathUtils.damp(bubbleMaterial.current.opacity, bubbleActive ? .78 : 0, bubbleActive ? 12 : 3.8, delta);
-      bubbleMaterial.current.size = THREE.MathUtils.damp(bubbleMaterial.current.size, wipeout ? .16 : .11, 8, delta);
+      const targetBubbleOpacity = bubbleActive ? .78 : THREE.MathUtils.clamp(finCavitation * .64, 0, .62);
+      bubbleMaterial.current.opacity = THREE.MathUtils.damp(
+        bubbleMaterial.current.opacity,
+        targetBubbleOpacity,
+        targetBubbleOpacity > bubbleMaterial.current.opacity ? 12 : 3.8,
+        delta,
+      );
+      bubbleMaterial.current.size = THREE.MathUtils.damp(
+        bubbleMaterial.current.size,
+        bubbleActive ? wipeout ? .16 : .11 : .052 + finCavitation * .018,
+        8,
+        delta,
+      );
     }
 
     const emit = (count: number, impact: boolean) => {
@@ -5090,6 +5296,58 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
             transparent
             opacity={0}
             alphaTest={.018}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      {[-1, 1].map((side, index) => (
+        <mesh
+          key={`pressure-fan-${side}`}
+          ref={(mesh) => { pressureFans.current[index] = mesh; }}
+          position={[side * .22, .026, -.72]}
+          rotation={[-Math.PI / 2, 0, side * -.12]}
+          scale={[-side * .42, .28, 1]}
+          visible={false}
+          frustumCulled={false}
+          renderOrder={4.52}
+        >
+          <planeGeometry args={[1.8, 2.8]} />
+          <meshBasicMaterial
+            ref={(material) => { pressureFanMaterials.current[index] = material; }}
+            map={pressureFanTexture}
+            color={index ? "#d8fff8" : "#9deee4"}
+            side={THREE.DoubleSide}
+            transparent
+            opacity={0}
+            alphaTest={.014}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      {[0, 1, 2].map((index) => (
+        <mesh
+          key={`fin-trail-${index}`}
+          ref={(mesh) => { finTrails.current[index] = mesh; }}
+          position={[0, -.018, finTailPosition - .42]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          scale={[.58, .22, 1]}
+          visible={false}
+          frustumCulled={false}
+          renderOrder={4.3}
+        >
+          <planeGeometry args={[.18, 2.2]} />
+          <meshBasicMaterial
+            ref={(material) => { finTrailMaterials.current[index] = material; }}
+            map={finTrailTexture}
+            color={index === 1 ? "#e5fff9" : "#aeece5"}
+            side={THREE.DoubleSide}
+            transparent
+            opacity={0}
+            alphaTest={.012}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
