@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceWaveTakeoffCapture, BOARD_SPECS, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -86,7 +86,10 @@ type RenderQuality = "reduced" | "balanced" | "high";
 
 const RenderQualityContext = createContext<RenderQuality>("high");
 
-const LINEUP_ENTRY_Z = -30;
+// Breaking faces can be caught before the player reaches the outer waiting
+// lineup. This keeps inside reforms and visibly standing shoreward walls
+// playable instead of treating one offshore coordinate as a hard gate.
+const LINEUP_ENTRY_Z = -18;
 const COAST_PLAYABLE_HALF_WIDTH = 560;
 const COAST_GEOMETRY_WIDTH = 1600;
 const COAST_CHUNK_SPAN = 240;
@@ -10603,6 +10606,8 @@ function Simulation({
   const duckDiveUntil = useRef(0);
   const duckDiveWindowOpen = useRef(false);
   const catchWindowOpen = useRef(false);
+  const catchGraceUntil = useRef(0);
+  const catchWindowQuality = useRef(.5);
   const duckDiveQuality = useRef(0);
   const shorebreakId = useRef(0);
   const shorebreakResult = useRef<GameStats["shorebreakResult"]>("");
@@ -11070,6 +11075,7 @@ function Simulation({
     );
     const localWaveNumber = Math.PI * 2 / Math.max(.1, localWaveTransport.wavelength);
     const crestDistance = setState.crestPhaseError / Math.max(.001, localWaveNumber);
+    let waveSurfable = setState.crestSurfable;
     let speed = 0;
     let rideDrive = 0;
     let rideLateralForce = 0;
@@ -11419,7 +11425,6 @@ function Simulation({
         const takeoffWaveNormalX = localWaveTransport.x / Math.max(.001, localWaveTransport.speed);
         const takeoffWaveNormalZ = localWaveTransport.z / Math.max(.001, localWaveTransport.speed);
         const boardWaveAlignment = paddleForwardX * takeoffWaveNormalX + paddleForwardZ * takeoffWaveNormalZ;
-        takeoffAlignment = THREE.MathUtils.smoothstep(boardWaveAlignment, .42, .96);
         const takeoffCommitting = takeoffCommitAt.current >= 0;
         const takeoffSurface = waveSurfaceFrameAt(
           position.current.x,
@@ -11433,12 +11438,19 @@ function Simulation({
           -(takeoffSurface.slopeX * takeoffWaveNormalX + takeoffSurface.slopeZ * takeoffWaveNormalZ),
         );
         const breakProgress = THREE.MathUtils.smoothstep(breakCoastalZ, -150, -16);
-        const crestWindow = THREE.MathUtils.smootherstep(crestDistance, -.72, .16)
-          * (1 - THREE.MathUtils.smoothstep(
-            crestDistance,
-            2.1,
-            6.2 + settings.waveHeight * tideResponse.faceScale * .8,
-          ));
+        const takeoffSurfaceLookback = .16;
+        const previousTakeoffHeight = waveHeightAt(
+          position.current.x,
+          position.current.z,
+          t - takeoffSurfaceLookback,
+          settings,
+          character,
+        );
+        const surfaceRise = Math.max(
+          (takeoffSurface.height - previousTakeoffHeight) / takeoffSurfaceLookback,
+          waterRide.current.velocity * .72,
+        );
+        const surfaceLift = takeoffSurface.height - settings.tide * .3;
         const paddleNormalSpeed = paddleVelocity.current.x * takeoffWaveNormalX
           + paddleVelocity.current.y * takeoffWaveNormalZ;
         const paddleMatchTarget = THREE.MathUtils.clamp(
@@ -11451,58 +11463,67 @@ function Simulation({
           .48,
           paddleMatchTarget,
         ) * (.58 + Math.max(0, move) * .42);
-        const breakingStrength = THREE.MathUtils.clamp(
-          breakProgress
-            * (.54 + THREE.MathUtils.smootherstep(
-              openFaceSlope,
-              .018,
-              .14 + settings.waveHeight * .035,
-            ) * .46),
+        const takeoffPaddleDrive = THREE.MathUtils.clamp(
+          paddleDrive + Math.max(0, move) * .38,
           0,
           1,
         );
-        // Once a crest has enough real energy to break, every one remains
-        // catchable with excellent position and paddling. Extra energy widens
-        // the physical margin instead of acting as a second hidden gate.
-        const surfableEnergy = setState.crestSurfable
-          ? .5 + THREE.MathUtils.smootherstep(setState.crestEnergy, .28, .78) * .5
-          : 0;
-        const physicalCapture = crestWindow
-          * surfableEnergy
-          * breakingStrength
-          * (.42 + takeoffAlignment * .58)
-          * (.44 + paddleDrive * .56);
-        const staminaTiming = .82 + stamina.current * .0018;
-        const deepWaterAssist = settings.mode === "training" && coastalZ < -34 ? .08 : 0;
-        const touchTimingAssist = mobileRenderer ? .045 : 0;
-        takeoffQuality = inLineup
+        const takeoffReading = evaluateWaveTakeoff({
+          mode: settings.mode,
+          crestDistance,
+          crestEnergy: setState.crestEnergy,
+          crestSurfable: setState.crestSurfable,
+          faceSlope: openFaceSlope,
+          surfaceRise,
+          surfaceLift,
+          breakProgress,
+          alignment: boardWaveAlignment,
+          paddleDrive: takeoffPaddleDrive,
+          waveHeight: settings.waveHeight * tideResponse.faceScale,
+        });
+        waveSurfable = takeoffReading.surfable;
+        takeoffAlignment = takeoffReading.headingQuality;
+        const staminaQuality = .9 + stamina.current * .001;
+        const windQuality = 1 - onshoreChop * (
+          settings.mode === "training" ? .025 : settings.mode === "advanced" ? .09 : .055
+        );
+        const touchQuality = mobileRenderer ? .025 : 0;
+        takeoffQuality = inLineup && takeoffReading.surfable
           ? THREE.MathUtils.clamp(
-              physicalCapture
-                * staminaTiming
-                * (1 - onshoreChop * (settings.mode === "training" ? .035 : settings.mode === "advanced" ? .12 : .075))
-                + deepWaterAssist * crestWindow
-                + touchTimingAssist * crestWindow,
-              0,
+              takeoffReading.quality * staminaQuality * windQuality + touchQuality,
+              .12,
               1,
             )
           : 0;
-        const breakDemand = Math.max(0, tidePower + tideSteepness - 1.85) * .055;
-        const takeoffThreshold = (settings.mode === "training" ? .2 : settings.mode === "advanced" ? .42 : .31) + breakDemand;
-        const headingThreshold = settings.mode === "training" ? .16 : settings.mode === "advanced" ? .48 : .3;
         const catchWindowCandidate = !takeoffCommitting
           && inLineup
-          && setState.crestSurfable
-          && breakProgress > .12
-          && crestWindow > .08
-          && move > .12
-          && takeoffAlignment >= headingThreshold
-          && takeoffQuality >= takeoffThreshold;
-        catchWindowOpen.current = catchWindowCandidate;
+          && takeoffReading.catchable;
+        if (catchWindowCandidate) {
+          catchWindowOpen.current = true;
+          catchWindowQuality.current = takeoffQuality;
+          catchGraceUntil.current = t + (
+            settings.mode === "training" ? .9 : settings.mode === "advanced" ? .5 : .7
+          );
+        } else if (
+          takeoffCommitting
+          || !inLineup
+          || t >= catchGraceUntil.current
+          || crestDistance < -3.6
+          || crestDistance > 15.5 + settings.waveHeight
+        ) {
+          catchWindowOpen.current = false;
+          catchWindowQuality.current = 0;
+        } else if (catchWindowOpen.current) {
+          takeoffQuality = Math.max(
+            takeoffQuality,
+            catchWindowQuality.current * .86,
+          );
+        }
         catchReady = catchWindowOpen.current;
-        const waveReadCopy = setState.crestSurfable && crestDistance > -.7 && crestDistance < 8
-          ? crestDistance > .4
-            ? `Surfable crest ${crestDistance.toFixed(1)}m behind`
-            : "Surfable face under the board"
+        const waveReadCopy = takeoffReading.surfable && crestDistance > -3.2 && crestDistance < 15
+          ? takeoffReading.physicalLift > .32
+            ? `Rising face · lift ${Math.round(takeoffReading.physicalLift * 100)}%`
+            : `Surfable wall ${Math.max(0, crestDistance).toFixed(1)}m behind`
           : `Next surfable wave ${Math.max(1, Math.ceil(setState.secondsToPeak))}s`;
         const enterRide = (
           committedQuality: number,
@@ -11536,7 +11557,7 @@ function Simulation({
             -12,
             12,
           );
-          rideFacePosition.current = .18;
+          rideFacePosition.current = .06 + committedQuality * .18;
           rideLineSide.current = Math.abs(character.peel) >= .18
             ? Math.sign(character.peel)
             : Math.abs(steer) > .16
@@ -11545,8 +11566,8 @@ function Simulation({
           const catchTrim = rideLineSide.current
             * catchTransport.speed
             * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
-          const catchNormalSpeed = catchTransport.speed * (.92 + committedQuality * .08);
-          const catchTangentSpeed = catchTrim * (.62 + committedQuality * .38);
+          const catchNormalSpeed = catchTransport.speed * (.84 + committedQuality * .16);
+          const catchTangentSpeed = catchTrim * (.42 + committedQuality * .58);
           rideVelocity.current.set(
             catchNormalX * catchNormalSpeed + catchTangentX * catchTangentSpeed,
             catchNormalZ * catchNormalSpeed + catchTangentZ * catchTangentSpeed,
@@ -11558,8 +11579,8 @@ function Simulation({
           );
           barrelTime.current = 0;
           stance.current = 0;
-          unstableFor.current = (1 - committedQuality) * .14;
-          railSlip.current = (1 - committedQuality) * .18;
+          unstableFor.current = (1 - committedQuality) * .2;
+          railSlip.current = (1 - committedQuality) * .28;
           catchQuality.current = committedQuality;
           combo.current = .85 + committedQuality * .95;
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -11616,12 +11637,6 @@ function Simulation({
           );
           const caughtWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
           const caughtCrestDistance = caughtPhaseError / Math.max(.001, caughtWaveNumber);
-          const caughtWindow = THREE.MathUtils.smootherstep(caughtCrestDistance, -.82, .12)
-            * (1 - THREE.MathUtils.smoothstep(
-              caughtCrestDistance,
-              2.4,
-              6.8 + settings.waveHeight * tideResponse.faceScale,
-            ));
           const caughtSurface = waveSurfaceFrameAt(
             position.current.x,
             position.current.z,
@@ -11643,23 +11658,50 @@ function Simulation({
             .42,
             THREE.MathUtils.clamp(catchTransport.speed * .34, 1.55, 3.55),
           );
-          const caughtSurfableEnergy = setState.crestSurfable
-            ? .5 + THREE.MathUtils.smootherstep(setState.crestEnergy, .28, .78) * .5
-            : 0;
-          const captureStrength = THREE.MathUtils.clamp(
-            caughtWindow
-              * caughtSurfableEnergy
-              * (.48 + caughtFaceStrength * .52)
-              * (.42 + takeoffAlignment * .58)
-              * (.4 + speedMatch * .38 + Math.max(0, move) * .22),
+          const caughtLookback = .16;
+          const caughtPreviousHeight = waveHeightAt(
+            position.current.x,
+            position.current.z,
+            t - caughtLookback,
+            settings,
+            character,
+          );
+          const caughtSurfaceRise = Math.max(
+            (caughtSurface.height - caughtPreviousHeight) / caughtLookback,
+            waterRide.current.velocity * .72,
+          );
+          const caughtPaddleDrive = THREE.MathUtils.clamp(
+            speedMatch * .62 + Math.max(0, move) * .38,
             0,
             1,
           );
-          takeoffCapture.current = THREE.MathUtils.clamp(
-            takeoffCapture.current
-              + delta * (captureStrength > .08 ? .3 + captureStrength * 1.55 : -.92),
+          const caughtReading = evaluateWaveTakeoff({
+            mode: settings.mode,
+            crestDistance: caughtCrestDistance,
+            crestEnergy: setState.crestEnergy,
+            crestSurfable: setState.crestSurfable,
+            faceSlope: caughtFaceSlope,
+            surfaceRise: caughtSurfaceRise,
+            surfaceLift: caughtSurface.height - settings.tide * .3,
+            breakProgress,
+            alignment: boardWaveAlignment,
+            paddleDrive: caughtPaddleDrive,
+            waveHeight: settings.waveHeight * tideResponse.faceScale,
+          });
+          const captureStrength = THREE.MathUtils.clamp(
+            caughtReading.opportunity * .68
+              + caughtFaceStrength * .12
+              + speedMatch * .2,
             0,
             1,
+          );
+          const boardStillEngaged = caughtReading.faceEnvelope > .025
+            && caughtReading.physicalLift > .04;
+          takeoffCapture.current = advanceWaveTakeoffCapture(
+            takeoffCapture.current,
+            delta,
+            boardStillEngaged,
+            captureStrength,
           );
           takeoffCommitProgress = takeoffCapture.current;
           const wavePush = Math.max(0, catchTransport.speed - currentNormalSpeed)
@@ -11690,39 +11732,46 @@ function Simulation({
           );
           stamina.current = Math.max(0, stamina.current - delta * (7.2 + setState.crestEnergy * 2.4));
           takeoffQuality = THREE.MathUtils.clamp(
-            takeoffCommitQuality.current * .62 + captureStrength * .38,
-            0,
+            takeoffCommitQuality.current * .56
+              + caughtReading.quality * .3
+              + speedMatch * .14,
+            .12,
             1,
           );
           catchReady = false;
-          prompt = captureStrength < .22
-            ? "Crest slipping past — paddle hard and square the board"
-            : takeoffCommitProgress < .48
-              ? "Wave engaged — keep driving down the open face"
-              : takeoffCommitProgress < .86
+          prompt = captureStrength < .12
+            ? "The face is lifting — add two strong strokes"
+            : takeoffCommitProgress < .42
+              ? "Wave engaged — keep driving with the rise"
+              : takeoffCommitProgress < .68
                 ? "Rail is planing — hands planted"
-                : "Pop up — the wave owns your speed";
-          const lostCrest = caughtCrestDistance < -1.15
-            || caughtCrestDistance > 8.2 + settings.waveHeight
-            || (commitElapsed > .42 && takeoffCapture.current <= .015);
+                : "Pop up — stand into the open face";
+          const lostCrest = caughtCrestDistance < -3.6
+            || caughtCrestDistance > 15.5 + settings.waveHeight * 1.6
+            || (commitElapsed > 1.5 && takeoffCapture.current <= .04);
           if (lostCrest) {
             takeoffCommitAt.current = -1;
             takeoffCapture.current = 0;
             takeoffCommitProgress = 0;
-            missedWaveUntil.current = t + .35;
+            missedWaveUntil.current = t + .2;
             catchWindowOpen.current = false;
             prompt = "Wave rolled under — turn, reset, and read the next face";
-          } else if (takeoffCommitProgress >= .995 && commitElapsed >= .26) {
+          } else if (waveTakeoffCanStand(
+            commitElapsed,
+            takeoffCommitProgress,
+            caughtReading.physicalLift,
+          )) {
             const planingMatch = THREE.MathUtils.clamp(
               currentNormalSpeed / Math.max(.1, catchTransport.speed * .72),
               0,
               1,
             );
             const committedQuality = THREE.MathUtils.clamp(
-              takeoffCommitQuality.current * .62
-                + captureStrength * .24
-                + planingMatch * .14,
-              .18,
+              takeoffCommitQuality.current * .5
+                + caughtReading.quality * .28
+                + captureStrength * .1
+                + planingMatch * .12,
+              .14,
               1,
             );
             enterRide(committedQuality, catchTransport);
@@ -11732,21 +11781,23 @@ function Simulation({
             ? duckDiveReady
               ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
               : "Paddle beyond the break · the dive cue appears when the lip commits"
-            : takeoffAlignment < headingThreshold
+            : takeoffReading.headingQuality < .16
               ? "Turn the board toward shore · use A/D or the stick"
               : catchReady
-                ? `${takeoffQuality > .76 ? "Clean open face" : "Wave is lifting the board"} · POP / SPACE`
-                : crestDistance > .4 && crestDistance < 9 && setState.crestSurfable
-                  ? `Crest ${crestDistance.toFixed(1)}m behind · paddle hard`
+                ? `${takeoffQuality > .72 ? "Clean open face" : "The swell has the board"} · POP / SPACE`
+                : takeoffReading.surfable && takeoffReading.faceEnvelope > .08
+                  ? `Face rising ${Math.round(takeoffReading.physicalLift * 100)}% · paddle toward shore`
                   : `Read the surface · ${waveReadCopy}`;
           if (actionPressed && inLineup) {
             if (catchReady) {
               takeoffCommitAt.current = t;
               takeoffCommitQuality.current = takeoffQuality;
               takeoffCapture.current = THREE.MathUtils.clamp(
-                takeoffQuality * (settings.mode === "training" ? .24 : .16),
-                .04,
+                .22 + takeoffQuality * (
+                  settings.mode === "training" ? .22 : .18
+                ),
                 .24,
+                .44,
               );
               rideWavePhase.current = setState.crestPhase;
               stamina.current = Math.max(0, stamina.current - 2.5);
@@ -11919,7 +11970,22 @@ function Simulation({
             1,
           );
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
-        speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
+        const takeoffRecovery = THREE.MathUtils.smoothstep(
+          rideDistance.current,
+          7,
+          28,
+        );
+        const entryPlaningEfficiency = THREE.MathUtils.lerp(
+          .86 + catchQuality.current * .14,
+          1,
+          takeoffRecovery,
+        );
+        speed = (
+          waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16)
+            + pumpBoost
+            + nosePressure * 0.85
+            - tailPressure * 0.48
+        ) * entryPlaningEfficiency;
         speed *= (
           .82
           + lineControl * .24
@@ -12498,7 +12564,14 @@ function Simulation({
           !qaScenario
           && !finishing
           && !activeManeuver.current
-          && (position.current.z - tideShift > 11 + (character.length - 1) * 11 || rideDistance.current > 82 + character.length * 24)
+          && (
+            position.current.z - tideShift > 11 + (character.length - 1) * 11
+            || rideDistance.current > (
+              62
+                + character.length * 18
+                + catchQuality.current * 55
+            )
+          )
         ) {
           score.current += 750 + rideDistance.current * 11;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
@@ -13734,7 +13807,7 @@ function Simulation({
         crestApproach: setState.crestProximity,
         crestDistance: Number(crestDistance.toFixed(1)),
         nextWaveEnergy: setState.nextSurfableEnergy,
-        waveSurfable: setState.crestSurfable,
+        waveSurfable,
         maneuver: maneuver.current,
         maneuverScore: maneuverScore.current,
         maneuverQuality: maneuverQuality.current,

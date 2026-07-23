@@ -93,6 +93,34 @@ export type SessionSettings = {
   weatherCode: number;
 };
 
+export type WaveTakeoffSample = {
+  mode: GameMode;
+  crestDistance: number;
+  crestEnergy: number;
+  crestSurfable: boolean;
+  faceSlope: number;
+  surfaceRise: number;
+  surfaceLift: number;
+  breakProgress: number;
+  alignment: number;
+  paddleDrive: number;
+  waveHeight: number;
+};
+
+export type WaveTakeoffReading = {
+  catchable: boolean;
+  surfable: boolean;
+  opportunity: number;
+  quality: number;
+  faceEnvelope: number;
+  physicalLift: number;
+  riseStrength: number;
+  liftStrength: number;
+  slopeStrength: number;
+  headingQuality: number;
+  positionQuality: number;
+};
+
 export type ThermalKitId = "hooded-5-4" | "full-4-3" | "full-3-2" | "spring-2-2" | "tropical";
 
 export type ThermalKit = {
@@ -774,6 +802,137 @@ export function waveSurfaceFrameAt(
 function smoothstep(edge0: number, edge1: number, value: number) {
   const normalized = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
   return normalized * normalized * (3 - 2 * normalized);
+}
+
+export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReading {
+  const waveHeight = Math.max(.25, sample.waveHeight);
+  // A real takeoff develops across the rising wall, not at one mathematical
+  // crest coordinate. Allow late entries just behind the lip and early entries
+  // well down the open face; exact placement becomes a quality input.
+  const faceEnvelope = smoothstep(-3.2, .35, sample.crestDistance)
+    * (1 - smoothstep(
+      7.2,
+      Math.max(12, 13.5 + waveHeight * 1.8),
+      sample.crestDistance,
+    ));
+  const riseStrength = smoothstep(
+    -.06,
+    .18 + waveHeight * .16,
+    sample.surfaceRise,
+  );
+  const liftStrength = smoothstep(
+    .01,
+    .15 + waveHeight * .22,
+    sample.surfaceLift,
+  );
+  const slopeStrength = smoothstep(
+    .002,
+    .065 + waveHeight * .026,
+    sample.faceSlope,
+  );
+  const physicalLift = Math.max(
+    liftStrength * .92,
+    riseStrength * .72 + slopeStrength * .28,
+    slopeStrength * .58 + liftStrength * .42,
+  );
+  // The deterministic crest spectrum still describes wave power, but the
+  // rendered surface can prove that a lower-energy crest has stood up enough
+  // to surf. This keeps visuals and mechanics connected.
+  const surfable = sample.crestSurfable || (
+    sample.crestEnergy >= .16
+    && physicalLift >= .34
+    && (riseStrength >= .1 || slopeStrength >= .18)
+  );
+  const headingQuality = smoothstep(-.25, .88, sample.alignment);
+  const paddleQuality = Math.max(0, Math.min(1, sample.paddleDrive));
+  const breakSupport = .52 + Math.max(0, Math.min(1, sample.breakProgress)) * .48;
+  const opportunity = surfable
+    ? faceEnvelope
+      * (.18 + physicalLift * .82)
+      * breakSupport
+      * (.7 + headingQuality * .3)
+      * (.72 + paddleQuality * .28)
+    : 0;
+  const idealFaceDistance = 2.7 + Math.min(1.8, waveHeight * .45);
+  const positionQuality = 1 - smoothstep(
+    2.4,
+    8.6,
+    Math.abs(sample.crestDistance - idealFaceDistance),
+  );
+  const energyQuality = .3 + smoothstep(.16, .86, sample.crestEnergy) * .7;
+  const quality = surfable
+    ? Math.max(.12, Math.min(
+        1,
+        .05
+          + opportunity * .22
+          + positionQuality * .12
+          + headingQuality * .15
+          + paddleQuality * .28
+          + energyQuality * .08
+          + physicalLift * .1,
+      ))
+    : 0;
+  const threshold = sample.mode === "training"
+    ? .1
+    : sample.mode === "advanced"
+      ? .17
+      : .13;
+  const headingMinimum = sample.mode === "training"
+    ? -.2
+    : sample.mode === "advanced"
+      ? 0
+      : -.1;
+  return {
+    catchable: surfable
+      && faceEnvelope > .045
+      && physicalLift > .075
+      && sample.alignment >= headingMinimum
+      && opportunity >= threshold,
+    surfable,
+    opportunity,
+    quality,
+    faceEnvelope,
+    physicalLift,
+    riseStrength,
+    liftStrength,
+    slopeStrength,
+    headingQuality,
+    positionQuality,
+  };
+}
+
+export function advanceWaveTakeoffCapture(
+  capture: number,
+  delta: number,
+  boardStillEngaged: boolean,
+  captureStrength: number,
+) {
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      capture + Math.max(0, delta) * (
+        boardStillEngaged
+          ? .62 + Math.max(0, Math.min(1, captureStrength)) * 1.25
+          : -.28
+      ),
+    ),
+  );
+}
+
+export function waveTakeoffCanStand(
+  elapsed: number,
+  capture: number,
+  physicalLift: number,
+) {
+  return elapsed >= .28 && (
+    capture >= .72
+    || (
+      elapsed >= .92
+      && capture >= .36
+      && physicalLift > .08
+    )
+  );
 }
 
 function primaryWaveWavelength(period: number, compression: number) {

@@ -3022,7 +3022,7 @@ export default function SurfscapeApp() {
         ? "SURFABLE CREST"
         : "NEXT SURFABLE WAVE";
   const surfRadarDetail = stats.catchReady
-    ? "Face is lifting · square the board and commit"
+    ? `The swell is lifting the board · ${Math.round(stats.takeoffQuality * 100)}% entry`
     : crestAtBoard
       ? "Match the wall's speed and keep driving"
       : currentCrestInRange
@@ -3074,15 +3074,15 @@ export default function SurfscapeApp() {
         : stats.phase === "paddling"
           ? takeoffCommitted
             ? {
-                title: stats.takeoffCommitProgress < .48 ? "MATCH THE CREST" : stats.takeoffCommitProgress < .82 ? "HANDS PLANTED" : "POP UP",
-                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% · wave momentum is loading the board`,
+                title: stats.takeoffCommitProgress < .42 ? "DRIVE WITH THE RISE" : stats.takeoffCommitProgress < .68 ? "HANDS PLANTED" : "POP UP",
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% · stay with the lifting face`,
               }
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
             : stats.duckDiveReady
               ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · tap DIVE and punch through` }
             : stats.catchReady
-            ? { title: "TAKEOFF OPEN", detail: "Release paddle · tap CATCH now" }
+            ? { title: "FACE ENGAGED", detail: `${Math.round(stats.takeoffQuality * 100)}% entry · tap CATCH anywhere through the lift` }
             : stats.inLineup && stats.takeoffAlignment < .3
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
@@ -4086,7 +4086,7 @@ export default function SurfscapeApp() {
             {stats.phase === "paddling" && (
               <>
                 <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${takeoffCommitted ? "is-committed" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
-                  <span>{takeoffCommitted ? "CREST MATCH" : stats.inLineup ? "TAKEOFF" : "SHOREBREAK"}</span>
+                  <span>{takeoffCommitted ? "WAVE CAPTURE" : stats.inLineup ? "RISING FACE" : "SHOREBREAK"}</span>
                   <i><b style={{ width: `${takeoffCommitted ? Math.round(stats.takeoffCommitProgress * 100) : stats.inLineup ? Math.round(stats.takeoffQuality * 100) : shorebreakTiming}%` }} /></i>
                   <strong>{takeoffCommitted ? stats.takeoffCommitProgress > .74 ? "POP" : "DRIVE" : stats.duckDiveReady ? "DIVE" : stats.catchReady ? "GO" : stats.inLineup ? `${Math.round(stats.takeoffQuality * 100)}%` : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 3 ? `${stats.shorebreakSeconds.toFixed(1)}s` : "READ"}</strong>
                 </div>
