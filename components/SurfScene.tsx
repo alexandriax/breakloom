@@ -143,6 +143,7 @@ type MotionState = {
   steer: number;
   speed: number;
   run: number;
+  waterDepth: number;
   paddleEffort: number;
   waveQuality: number;
   linePosition: number;
@@ -1380,6 +1381,9 @@ function PremiumSurferBody({
     const wading = state.phase === "wading";
     const walking = state.phase === "shore" || wading;
     const wipeout = state.phase === "wipeout";
+    const waterDepth = THREE.MathUtils.clamp(state.waterDepth, 0, 1);
+    const carryGrip = walking ? 1 - waterDepth * .9 : 0;
+    const boardGuide = wading ? THREE.MathUtils.smoothstep(waterDepth, .16, .9) : 0;
     const wetTarget = paddle || riding || wading || wipeout ? 1 : .08;
     wetness.current = THREE.MathUtils.damp(wetness.current, wetTarget, wetTarget > wetness.current ? 4.8 : .32, delta);
     responsiveMaterials.forEach((surface) => {
@@ -1399,13 +1403,21 @@ function PremiumSurferBody({
         surface.clearcoatRoughness = THREE.MathUtils.damp(surface.clearcoatRoughness, THREE.MathUtils.lerp(baseClearcoatRoughness, isHair ? .12 : .2, wetness.current), 4, delta);
       }
     });
-    const stroke = paddle ? Math.sin(t * (4.2 + state.paddleEffort * 2.4)) * state.paddleEffort : 0;
+    const paddlePhase = t * (4.2 + state.paddleEffort * 2.4);
+    const stroke = paddle ? Math.sin(paddlePhase) * state.paddleEffort : 0;
+    const leftPull = paddle ? Math.max(0, -Math.sin(paddlePhase)) * state.paddleEffort : 0;
+    const rightPull = paddle ? Math.max(0, Math.sin(paddlePhase)) * state.paddleEffort : 0;
+    const paddleRoll = paddle ? stroke * .085 * (1 - state.duckDive) : 0;
     const stride = walking ? THREE.MathUtils.smoothstep(state.speed, .12, 1.3) : 0;
     const cadence = 2.5 + state.speed * (1.48 + state.run * .26);
-    const step = walking ? Math.sin(t * cadence) * stride : 0;
+    const step = walking ? Math.sin(t * cadence) * stride * (1 - waterDepth * .28) : 0;
     const runLean = walking ? state.run * .065 : 0;
-    const stepLift = wading ? 1.18 : 1;
-    const bob = walking ? (Math.abs(Math.sin(t * cadence)) - .5) * (.028 + state.run * .026) * stride : 0;
+    const stepLift = 1 + waterDepth * .44;
+    const bob = walking
+      ? (Math.abs(Math.sin(t * cadence)) - .5) * (.028 + state.run * .026) * stride * (1 - waterDepth * .48)
+        + (wading ? Math.sin(t * 2.1) * .014 * waterDepth : 0)
+      : 0;
+    const wipeoutWave = wipeout ? Math.sin(t * 6.4 + state.wipeout * 2.7) : 0;
     if (locomotionRoot.current) {
       locomotionRoot.current.position.y = THREE.MathUtils.damp(locomotionRoot.current.position.y, bob, 12, delta);
       locomotionRoot.current.rotation.x = THREE.MathUtils.damp(locomotionRoot.current.rotation.x, runLean, 9, delta);
@@ -1420,35 +1432,43 @@ function PremiumSurferBody({
     };
 
     const rideLean = (state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * (.08 + state.trickCharge * .06)) * (1 - state.takeoff * .72);
-    pose("Pelvis", riding ? -0.08 - state.compression * .12 + state.stance * 0.045 : walking ? step * 0.025 : 0, riding ? state.rail * -0.1 : 0, riding ? rideLean * 0.35 : 0, 7);
-    pose("Torso", paddle ? -0.1 - state.duckDive * .24 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 : walking ? runLean - step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 : 0, riding ? rideLean : 0, 7);
-    pose("Head", paddle ? -0.24 + state.duckDive * .14 : riding ? -0.12 - state.compression * .08 + state.barrel * 0.08 : 0, riding ? state.rail * 0.14 : 0, riding ? -rideLean * 0.4 : 0, 8);
+    pose("Pelvis", riding ? -0.08 - state.compression * .12 + state.stance * 0.045 : walking ? step * 0.025 : wipeout ? wipeoutWave * .16 : 0, riding ? state.rail * -0.1 : paddle ? -paddleRoll * .34 : 0, riding ? rideLean * 0.35 : paddle ? paddleRoll * .26 : 0, 7);
+    pose("Torso", paddle ? -0.1 - state.duckDive * .24 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 : walking ? runLean - step * 0.018 - boardGuide * .025 : wipeout ? -.18 + wipeoutWave * .22 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 - state.lineSide * .045 : paddle ? paddleRoll : 0, riding ? rideLean : paddle ? paddleRoll * .58 : wipeout ? -wipeoutWave * .24 : 0, 7);
+    pose("Head", paddle ? -0.24 + state.duckDive * .14 : riding ? -0.12 - state.compression * .08 + state.barrel * 0.08 : wading ? -.03 * boardGuide : wipeout ? .1 - wipeoutWave * .12 : 0, riding ? state.rail * 0.12 + state.lineSide * .11 + state.maneuverSide * state.maneuver * .08 : paddle ? -paddleRoll * .54 : 0, riding ? -rideLean * 0.4 : paddle ? -paddleRoll * .42 : wipeout ? wipeoutWave * .16 : 0, 8);
+
+    const leftRideArmX = -0.48 - state.maneuver * 0.22 + state.trickCharge * .28 - state.maneuverLift * .22;
+    const rightRideArmX = 0.48 + state.maneuver * 0.22 - state.trickCharge * .28 + state.maneuverLift * .22;
+    const popPlant = riding ? state.takeoff : 0;
+    const leftCarryArmX = THREE.MathUtils.lerp(step * .42, -.18, boardGuide);
+    const rightCarryArmX = THREE.MathUtils.lerp(.16 + step * -.08, -.34, boardGuide);
+    const leftCarryArmZ = THREE.MathUtils.lerp(.08, .22, boardGuide);
+    const rightCarryArmZ = THREE.MathUtils.lerp(-.38, -.58, boardGuide);
 
     pose(
       "UpperArm.L",
-      wipeout ? 1.2 : paddle ? stroke * 1.18 * (1 - state.duckDive) - state.duckDive * .72 : riding ? -0.48 - state.maneuver * 0.22 + state.trickCharge * .28 - state.maneuverLift * .22 : step * 0.56,
+      wipeout ? 1.04 + wipeoutWave * .48 : paddle ? stroke * 1.18 * (1 - state.duckDive) - state.duckDive * .72 : riding ? THREE.MathUtils.lerp(leftRideArmX, -.82, popPlant) : walking ? THREE.MathUtils.lerp(step * .56, leftCarryArmX, carryGrip) : 0,
       riding ? -0.12 + state.rail * 0.12 : 0,
-      riding ? 1.03 + state.maneuver * 0.32 + state.slip * .16 : paddle ? 0.14 : 0.08,
+      riding ? THREE.MathUtils.lerp(1.03 + state.maneuver * 0.32 + state.slip * .16, .58, popPlant) : paddle ? .14 + paddleRoll * .22 : walking ? THREE.MathUtils.lerp(.08, leftCarryArmZ, carryGrip) : wipeout ? .34 : .08,
       9,
     );
     pose(
       "UpperArm.R",
-      wipeout ? -1.1 : paddle ? -stroke * 1.18 * (1 - state.duckDive) + state.duckDive * .72 : riding ? 0.48 + state.maneuver * 0.22 - state.trickCharge * .28 + state.maneuverLift * .22 : -step * 0.56,
+      wipeout ? -1.02 + wipeoutWave * .42 : paddle ? -stroke * 1.18 * (1 - state.duckDive) + state.duckDive * .72 : riding ? THREE.MathUtils.lerp(rightRideArmX, .82, popPlant) : walking ? THREE.MathUtils.lerp(-step * .56, rightCarryArmX, carryGrip) : 0,
       riding ? 0.12 + state.rail * 0.12 : 0,
-      riding ? -1.03 - state.maneuver * 0.32 - state.slip * .16 : paddle ? -0.14 : -0.08,
+      riding ? THREE.MathUtils.lerp(-1.03 - state.maneuver * 0.32 - state.slip * .16, -.58, popPlant) : paddle ? -.14 + paddleRoll * .22 : walking ? THREE.MathUtils.lerp(-.08, rightCarryArmZ, carryGrip) : wipeout ? -.34 : -.08,
       9,
     );
-    pose("LowerArm.L", paddle ? Math.max(0, -stroke) * -0.72 - state.duckDive * .42 : riding ? -0.42 : wipeout ? 0.8 : 0, 0, riding ? 0.12 : 0, 10);
-    pose("LowerArm.R", paddle ? Math.max(0, stroke) * 0.72 + state.duckDive * .42 : riding ? 0.42 : wipeout ? -0.8 : 0, 0, riding ? -0.12 : 0, 10);
-    pose("Hand.L", 0, riding ? -0.16 : 0, riding ? 0.08 : 0, 10);
-    pose("Hand.R", 0, riding ? 0.16 : 0, riding ? -0.08 : 0, 10);
+    pose("LowerArm.L", paddle ? -leftPull * .82 + Math.max(0, stroke) * .16 - state.duckDive * .42 : riding ? THREE.MathUtils.lerp(-.42, -.72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.08, .28, boardGuide) : wipeout ? .72 - wipeoutWave * .28 : 0, paddle ? leftPull * .08 : 0, riding ? .12 : walking ? carryGrip * .08 : 0, 10);
+    pose("LowerArm.R", paddle ? rightPull * .82 - Math.max(0, -stroke) * .16 + state.duckDive * .42 : riding ? THREE.MathUtils.lerp(.42, .72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.62, .44, boardGuide) : wipeout ? -.72 - wipeoutWave * .28 : 0, paddle ? -rightPull * .08 : 0, riding ? -.12 : walking ? carryGrip * -.1 : 0, 10);
+    pose("Hand.L", paddle ? leftPull * -.12 : 0, riding ? -.16 : walking ? carryGrip * -.05 : 0, riding ? .08 : walking ? carryGrip * .06 : 0, 10);
+    pose("Hand.R", paddle ? rightPull * .12 : walking ? .08 * carryGrip : 0, riding ? .16 : walking ? .08 * carryGrip : 0, riding ? -.08 : walking ? -.12 * carryGrip : 0, 10);
 
-    pose("UpperLeg.L", riding ? -0.74 - state.stance * 0.12 - state.compression * .24 : walking ? step * 0.62 * stepLift : paddle ? -0.08 : 0, 0, riding ? 0.17 + state.rail * .04 : 0, 8);
-    pose("UpperLeg.R", riding ? 0.6 - state.stance * 0.12 + state.compression * .22 : walking ? -step * 0.62 * stepLift : paddle ? 0.08 : 0, 0, riding ? -0.17 + state.rail * .04 : 0, 8);
-    pose("LowerLeg.L", riding ? 1.02 + state.compression * .24 : walking ? Math.max(0, -step) * 0.56 * stepLift : paddle ? 0.08 : 0, 0, 0, 9);
-    pose("LowerLeg.R", riding ? -0.92 - state.compression * .24 : walking ? Math.max(0, step) * -0.56 * stepLift : paddle ? -0.08 : 0, 0, 0, 9);
-    pose("Foot.L", riding ? -0.18 : walking ? -step * .08 : 0, riding ? 0.08 : 0, riding ? -0.08 : 0, 9);
-    pose("Foot.R", riding ? 0.18 : walking ? step * .08 : 0, riding ? -0.08 : 0, riding ? 0.08 : 0, 9);
+    pose("UpperLeg.L", riding ? THREE.MathUtils.lerp(-0.74 - state.stance * .12 - state.compression * .24, -.34, popPlant) : walking ? step * .62 * stepLift : paddle ? -.08 : wipeout ? .48 + wipeoutWave * .32 : 0, 0, riding ? .17 + state.rail * .04 : wipeout ? .16 : 0, 8);
+    pose("UpperLeg.R", riding ? THREE.MathUtils.lerp(.6 - state.stance * .12 + state.compression * .22, .3, popPlant) : walking ? -step * .62 * stepLift : paddle ? .08 : wipeout ? -.44 + wipeoutWave * .28 : 0, 0, riding ? -.17 + state.rail * .04 : wipeout ? -.16 : 0, 8);
+    pose("LowerLeg.L", riding ? THREE.MathUtils.lerp(1.02 + state.compression * .24, 1.28, popPlant) : walking ? Math.max(0, -step) * .56 * stepLift : paddle ? .08 : wipeout ? .74 - wipeoutWave * .34 : 0, 0, wipeout ? -.08 : 0, 9);
+    pose("LowerLeg.R", riding ? THREE.MathUtils.lerp(-.92 - state.compression * .24, -1.18, popPlant) : walking ? Math.max(0, step) * -.56 * stepLift : paddle ? -.08 : wipeout ? -.7 - wipeoutWave * .34 : 0, 0, wipeout ? .08 : 0, 9);
+    pose("Foot.L", riding ? -.18 : walking ? -step * .08 : wipeout ? -.24 + wipeoutWave * .12 : 0, riding ? .08 : 0, riding ? -.08 : wipeout ? -.12 : 0, 9);
+    pose("Foot.R", riding ? .18 : walking ? step * .08 : wipeout ? .24 + wipeoutWave * .12 : 0, riding ? -.08 : 0, riding ? .08 : wipeout ? .12 : 0, 9);
   });
 
   useEffect(() => () => {
@@ -1680,7 +1700,7 @@ function SurfLeashCord({
     const boardObject = boardRef.current;
     const ankle = ankleJointRef.current;
     const state = motion.current;
-    const active = state.phase === "paddling" || state.phase === "riding" || state.phase === "wipeout";
+    const active = state.phase === "paddling" || state.phase === "riding" || state.phase === "wipeout" || (state.phase === "wading" && state.waterDepth > .42);
     if (!line) return;
     line.visible = Boolean(active && rigObject && boardObject && ankle);
     if (!line.visible || !rigObject || !boardObject || !ankle) return;
@@ -1696,13 +1716,18 @@ function SurfLeashCord({
     const positions = line.geometry.getAttribute("position") as THREE.BufferAttribute;
     const distance = start.distanceTo(end);
     const pulse = Math.sin(clock.elapsedTime * 5.4 + state.speed * .18);
+    const tension = THREE.MathUtils.clamp(
+      (state.phase === "wipeout" ? state.wipeout * .72 : state.slip * .45 + state.impact * .35) + Math.max(0, distance - .8) * .22,
+      0,
+      1,
+    );
     for (let index = 0; index <= LEASH_SEGMENTS; index += 1) {
       const progress = index / LEASH_SEGMENTS;
       const arc = Math.sin(progress * Math.PI);
       point.lerpVectors(start, end, progress);
-      point.x += arc * (state.rail * .09 + pulse * .025);
-      point.y -= arc * (.1 + distance * .045 + state.speed * .004 + state.impact * .09);
-      point.z -= arc * (.08 + state.speed * .006 + state.maneuverLift * .12);
+      point.x += arc * (state.rail * .09 + pulse * .025 * (1 - tension * .72));
+      point.y -= arc * (.1 + distance * .045 + state.speed * .004 + state.impact * .09) * (1 - tension * .58);
+      point.z -= arc * (.08 + state.speed * .006 + state.maneuverLift * .12) * (1 - tension * .34);
       positions.setXYZ(index, point.x, point.y, point.z);
     }
     positions.needsUpdate = true;
@@ -1737,9 +1762,12 @@ function SurferModel({
     const paddle = state.phase === "paddling";
     const riding = state.phase === "riding";
     const carrying = state.phase === "shore" || state.phase === "wading";
+    const wading = state.phase === "wading";
     const wipeout = state.phase === "wipeout";
+    const waterDepth = THREE.MathUtils.clamp(state.waterDepth, 0, 1);
+    const carryBlend = carrying ? 1 - waterDepth : 0;
     const rebound = Math.sin((1 - state.impact) * Math.PI) * state.impact;
-    const carryStride = carrying ? THREE.MathUtils.smoothstep(state.speed, .16, 1.35) : 0;
+    const carryStride = carrying ? THREE.MathUtils.smoothstep(state.speed, .16, 1.35) * (1 - waterDepth * .42) : 0;
     const carryStep = Math.sin(clock.elapsedTime * (2.5 + state.speed * 1.55)) * carryStride;
 
     const bodyRotationX = paddle ? Math.PI / 2 - 0.1 + state.duckDive * .08 : riding ? -0.18 + state.takeoff * 1.32 : 0;
@@ -1756,7 +1784,7 @@ function SurferModel({
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 - state.duckDive * .16 : riding ? 0.84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 : riding ? .84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : paddle ? Math.sin(clock.elapsedTime * 8) * state.shorebreak * .025 : 0, 9, delta);
     rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 + state.maneuverSpin : 0, state.maneuverLift > .12 ? 13 : 8, delta);
@@ -1764,7 +1792,7 @@ function SurferModel({
 
     board.current.rotation.z = THREE.MathUtils.damp(
       board.current.rotation.z,
-      carrying ? -0.12 + carryStep * .026 : riding ? state.rail * -.27 - state.maneuverSide * state.maneuver * 0.22 : 0,
+      carrying ? (-.12 + carryStep * .026) * carryBlend : riding ? state.rail * -.27 - state.maneuverSide * state.maneuver * .22 : 0,
       7,
       delta,
     );
@@ -1774,16 +1802,16 @@ function SurferModel({
       9,
       delta,
     );
-    board.current.position.x = THREE.MathUtils.damp(board.current.position.x, carrying ? 0.68 + carryStep * .018 : 0, 7, delta);
+    board.current.position.x = THREE.MathUtils.damp(board.current.position.x, carrying ? THREE.MathUtils.lerp(.68 + carryStep * .018, .04, waterDepth) : 0, 7, delta);
     board.current.position.y = THREE.MathUtils.damp(
       board.current.position.y,
-      carrying ? 1.14 + Math.abs(carryStep) * .026 : paddle ? .16 - state.duckDive * .12 : 0.16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
+      carrying ? THREE.MathUtils.lerp(1.14 + Math.abs(carryStep) * .026, .16 + Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : paddle ? .16 - state.duckDive * .12 : .16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
       7,
       delta,
     );
     board.current.rotation.x = THREE.MathUtils.damp(
       board.current.rotation.x,
-      carrying ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : paddle ? state.duckDive * .3 - state.shorebreak * .035 : 0,
+      carrying ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : riding ? state.stance * -.05 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : paddle ? state.duckDive * .3 - state.shorebreak * .035 : 0,
       7,
       delta,
     );
@@ -1791,14 +1819,16 @@ function SurferModel({
     if (contact.current) {
       const material = contact.current.material as THREE.MeshBasicMaterial;
       const waterContact = 1 - THREE.MathUtils.smoothstep(state.maneuverLift, .08, .48);
-      const targetOpacity = paddle
+      const targetOpacity = wading
+        ? (.025 + waterDepth * .075) * THREE.MathUtils.smoothstep(waterDepth, .18, .72)
+        : paddle
         ? (.09 + state.paddleEffort * .08) * (1 - state.duckDive * .75)
         : riding
           ? (.1 + Math.min(.16, state.speed * .007) + Math.abs(state.rail) * .07) * waterContact
           : wipeout ? .08 : 0;
       material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity, 8, delta);
-      contact.current.scale.x = THREE.MathUtils.damp(contact.current.scale.x, BOARD_SPECS[boardType].width * (.7 + Math.abs(state.rail) * .12), 8, delta);
-      contact.current.scale.y = THREE.MathUtils.damp(contact.current.scale.y, BOARD_SPECS[boardType].length * (.32 + Math.min(.12, state.speed * .004)), 8, delta);
+      contact.current.scale.x = THREE.MathUtils.damp(contact.current.scale.x, BOARD_SPECS[boardType].width * (.7 + Math.abs(state.rail) * .12 + waterDepth * .08), 8, delta);
+      contact.current.scale.y = THREE.MathUtils.damp(contact.current.scale.y, BOARD_SPECS[boardType].length * (.32 + Math.min(.12, state.speed * .004) + (wading ? waterDepth * .07 : 0)), 8, delta);
       contact.current.rotation.z = THREE.MathUtils.damp(contact.current.rotation.z, riding ? -state.rail * .12 : 0, 7, delta);
     }
 
@@ -4319,6 +4349,7 @@ function Simulation({
     steer: 0,
     speed: 0,
     run: 0,
+    waterDepth: 0,
     paddleEffort: 0,
     waveQuality: 0,
     linePosition: 0,
@@ -5097,6 +5128,17 @@ function Simulation({
     motion.current.speed = Math.abs(speed);
     if (phase.current !== "riding") trickCharge.current = 0;
     motion.current.run = THREE.MathUtils.damp(motion.current.run, runBlend, 8, delta);
+    const waterDepthTarget = phase.current === "shore" || phase.current === "driving"
+      ? 0
+      : phase.current === "wading"
+        ? 1 - THREE.MathUtils.smoothstep(position.current.z, .72, 8)
+        : 1;
+    motion.current.waterDepth = THREE.MathUtils.damp(
+      motion.current.waterDepth,
+      waterDepthTarget,
+      waterDepthTarget > motion.current.waterDepth ? 5.5 : 8,
+      delta,
+    );
     motion.current.paddleEffort = THREE.MathUtils.damp(motion.current.paddleEffort, paddleEffort, 9, delta);
     motion.current.waveQuality = THREE.MathUtils.damp(motion.current.waveQuality, waveQuality, 5, delta);
     motion.current.linePosition = THREE.MathUtils.damp(motion.current.linePosition, linePosition, 6.5, delta);
