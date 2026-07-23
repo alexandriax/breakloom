@@ -30,6 +30,7 @@ import {
   SunMedium,
   Target,
   Thermometer,
+  Timer,
   Trophy,
   Volume2,
   VolumeX,
@@ -70,6 +71,7 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 });
 
 type Screen = "launch" | "game";
+type SessionFormat = "free" | "heat";
 type PersonalBest = { score: number; distance: number; combo: number };
 type CoastPassportRecord = {
   rides: number;
@@ -81,6 +83,8 @@ type CoastPassportRecord = {
   longestBarrel: number;
   bestGrade: GameStats["grade"];
   mastery: number;
+  bestHeat: number;
+  heatWins: number;
   lastZone: string;
   lastSurfedAt: number;
 };
@@ -95,6 +99,7 @@ type RideToast = {
   barrelTime: number;
   grade: GameStats["grade"];
 };
+type HeatWave = RideToast & { judgeScore: number };
 type PassportAward = { level: number; label: string };
 type WetLensEvent = {
   id: number;
@@ -123,6 +128,7 @@ const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15
 
 const RECORD_KEY = "surfscape-personal-best-v1";
 const PASSPORT_KEY = "surfscape-world-tour-v1";
+const HEAT_DURATION_SECONDS = 5 * 60;
 const GRADE_ORDER: GameStats["grade"][] = ["C", "B", "A", "S"];
 const EMPTY_COAST_RECORD: CoastPassportRecord = {
   rides: 0,
@@ -134,6 +140,8 @@ const EMPTY_COAST_RECORD: CoastPassportRecord = {
   longestBarrel: 0,
   bestGrade: "C",
   mastery: 0,
+  bestHeat: 0,
+  heatWins: 0,
   lastZone: "",
   lastSurfedAt: 0,
 };
@@ -180,6 +188,23 @@ function formatExposure(value: number) {
 
 function gradeRank(grade: GameStats["grade"]) {
   return Math.max(0, GRADE_ORDER.indexOf(grade));
+}
+
+function formatHeatClock(seconds: number) {
+  const safe = Math.max(0, seconds);
+  const minutes = Math.floor(safe / 60);
+  const remainder = Math.floor(safe % 60);
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function judgeHeatWave(ride: RideToast) {
+  const execution = Math.min(4.1, Math.log1p(Math.max(0, ride.score)) / Math.log(12001) * 4.1);
+  const line = Math.min(1.8, ride.distance / 70 * 1.8);
+  const pocket = Math.min(1.1, ride.pocketDistance / 30 * 1.1);
+  const variety = Math.min(1.2, ride.maneuvers * .42);
+  const barrel = Math.min(1.35, ride.barrelTime * .42);
+  const completion = ride.result === "clean" ? .45 : -.68;
+  return Math.round(THREEClamp(execution + line + pocket + variety + barrel + completion, .2, 10) * 100) / 100;
 }
 
 function coastMasteryLabel(mastery: number) {
@@ -232,6 +257,8 @@ function normalizePassport(value: unknown): SurfPassport {
       longestBarrel: numberValue(record.longestBarrel),
       bestGrade,
       mastery: Math.floor(THREEClamp(Math.max(inferredMastery, numberValue(record.mastery)), 0, 3)),
+      bestHeat: Math.min(20, numberValue(record.bestHeat)),
+      heatWins: Math.floor(numberValue(record.heatWins)),
       lastZone: typeof record.lastZone === "string" ? record.lastZone.slice(0, 80) : "",
       lastSurfedAt: numberValue(record.lastSurfedAt),
     };
@@ -638,6 +665,11 @@ export default function SurfscapeApp() {
   const [selectedForecastTime, setSelectedForecastTime] = useState<string | null>(null);
   const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(INITIAL_MODELED_CONDITIONS, DEFAULT_BEACH.heading));
   const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
+  const [sessionFormat, setSessionFormat] = useState<SessionFormat>("free");
+  const [heatRemaining, setHeatRemaining] = useState(HEAT_DURATION_SECONDS);
+  const [heatWaves, setHeatWaves] = useState<HeatWave[]>([]);
+  const [heatExpired, setHeatExpired] = useState(false);
+  const [heatComplete, setHeatComplete] = useState(false);
   const [paused, setPaused] = useState(false);
   const [photoMode, setPhotoMode] = useState(false);
   const [photoStatus, setPhotoStatus] = useState<PhotoStatus>("idle");
@@ -714,6 +746,10 @@ export default function SurfscapeApp() {
   const previousPocketLock = useRef(false);
   const previousResurface = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
+  const heatRemainingValue = useRef(HEAT_DURATION_SECONDS);
+  const heatStarted = useRef(false);
+  const heatLastSecond = useRef(HEAT_DURATION_SECONDS);
+  const heatRecordCommitted = useRef(false);
   const preReplayCameraMode = useRef<CameraMode>("follow");
   const replayCameraCut = useRef<CameraMode | null>(null);
   const replayProgressValue = useRef(0);
@@ -757,6 +793,15 @@ export default function SurfscapeApp() {
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
   );
   const currentCoastRecord = passport[beach.id] ?? EMPTY_COAST_RECORD;
+  const heatTarget = Math.round((12.5 + beach.difficulty * .45) * 100) / 100;
+  const rankedHeatWaves = useMemo(
+    () => [...heatWaves].sort((left, right) => right.judgeScore - left.judgeScore || left.id - right.id),
+    [heatWaves],
+  );
+  const countedHeatWaves = rankedHeatWaves.slice(0, 2);
+  const countedHeatWaveIds = new Set(countedHeatWaves.map((wave) => wave.id));
+  const heatTotal = Math.round(countedHeatWaves.reduce((total, wave) => total + wave.judgeScore, 0) * 100) / 100;
+  const heatWon = heatTotal >= heatTarget;
   const passportSummary = useMemo(() => BEACHES.reduce(
     (summary, coast) => {
       const record = passport[coast.id];
@@ -1020,6 +1065,53 @@ export default function SurfscapeApp() {
       document.removeEventListener("fullscreenchange", syncFullscreen);
     };
   }, []);
+
+  useEffect(() => {
+    if (screen !== "game" || sessionFormat !== "heat" || heatComplete || heatExpired) return;
+    let frame = 0;
+    let previousAt = performance.now();
+    let lastReported = heatRemainingValue.current;
+    const tick = (now: number) => {
+      const delta = Math.min(.12, Math.max(0, (now - previousAt) / 1000));
+      previousAt = now;
+      const running = !paused
+        && !photoMode
+        && !replayActive
+        && stats.sessionIntro >= .999;
+      if (running) {
+        if (!heatStarted.current) {
+          heatStarted.current = true;
+          audio.current?.effect("coach");
+          haptic([10, 18, 10, 28, 14]);
+        }
+        const previous = heatRemainingValue.current;
+        const next = Math.max(0, previous - delta);
+        heatRemainingValue.current = next;
+        const second = Math.ceil(next);
+        if (second !== heatLastSecond.current) {
+          heatLastSecond.current = second;
+          if (second === 60) {
+            audio.current?.effect("coach");
+            haptic([8, 18, 8]);
+          } else if (second > 0 && second <= 10) {
+            haptic(second <= 3 ? 8 : 4);
+          }
+        }
+        if (next <= 0 && previous > 0) {
+          setHeatRemaining(0);
+          setHeatExpired(true);
+          audio.current?.effect("coach");
+          haptic([14, 22, 14, 34, 22]);
+        } else if (lastReported - next >= .1) {
+          lastReported = next;
+          setHeatRemaining(next);
+        }
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [heatComplete, heatExpired, paused, photoMode, replayActive, screen, sessionFormat, stats.sessionIntro]);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
@@ -1638,11 +1730,53 @@ export default function SurfscapeApp() {
         grade: stats.rideGrade,
       };
       setRideToast(completedRide);
+      const heatScoreTimer = sessionFormat === "heat" && !heatComplete
+        ? window.setTimeout(() => {
+            setHeatWaves((current) => current.some((wave) => wave.id === completedRide.id)
+              ? current
+              : [...current, { ...completedRide, judgeScore: judgeHeatWave(completedRide) }]);
+          }, 0)
+        : null;
       setShareStatus("idle");
       const timer = window.setTimeout(() => setRideToast(null), 8200);
-      return () => window.clearTimeout(timer);
+      return () => {
+        if (heatScoreTimer !== null) window.clearTimeout(heatScoreTimer);
+        window.clearTimeout(timer);
+      };
     }
-  }, [stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
+  }, [heatComplete, sessionFormat, stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
+
+  useEffect(() => {
+    if (sessionFormat !== "heat" || !heatExpired || heatComplete) return;
+    if (stats.phase === "riding" && !stats.rideResult) return;
+    if (stats.rideResult && !heatWaves.some((wave) => wave.id === stats.rideResultId)) return;
+    const timer = window.setTimeout(() => {
+      clearAnalogMovement();
+      if (document.pointerLockElement === cameraLookSurface.current) document.exitPointerLock();
+      setHeatComplete(true);
+      audio.current?.effect("coach");
+      haptic(heatWon ? [12, 22, 12, 28, 18, 38] : [8, 20, 10]);
+    }, stats.rideResult ? 900 : 180);
+    return () => window.clearTimeout(timer);
+  }, [heatComplete, heatExpired, heatTotal, heatWaves, heatWon, sessionFormat, stats.phase, stats.rideResult, stats.rideResultId]);
+
+  useEffect(() => {
+    if (!heatComplete || heatRecordCommitted.current) return;
+    heatRecordCommitted.current = true;
+    setPassport((current) => {
+      const previous = current[beach.id] ?? EMPTY_COAST_RECORD;
+      return {
+        ...current,
+        [beach.id]: {
+          ...previous,
+          bestHeat: Math.max(previous.bestHeat, heatTotal),
+          heatWins: previous.heatWins + (heatWon ? 1 : 0),
+          lastZone: zoneLabel,
+          lastSurfedAt: Date.now(),
+        },
+      };
+    });
+  }, [beach.id, heatComplete, heatTotal, heatWon, zoneLabel]);
 
   useEffect(() => {
     if (
@@ -1680,6 +1814,8 @@ export default function SurfscapeApp() {
         longestBarrel: Math.max(previousRecord.longestBarrel, completedRide.barrelTime),
         bestGrade,
         mastery: nextMastery,
+        bestHeat: previousRecord.bestHeat,
+        heatWins: previousRecord.heatWins,
         lastZone: zoneLabel,
         lastSurfedAt: Date.now(),
       },
@@ -1731,6 +1867,7 @@ export default function SurfscapeApp() {
   };
 
   const chooseMode = (mode: GameMode) => {
+    if (mode !== "advanced") setSessionFormat("free");
     if (mode === "playground") {
       setSettings((current) => ({ ...current, mode }));
     } else {
@@ -1782,6 +1919,17 @@ export default function SurfscapeApp() {
     replayCameraCut.current = null;
   }
 
+  function resetHeatSession() {
+    heatRemainingValue.current = HEAT_DURATION_SECONDS;
+    heatStarted.current = false;
+    heatLastSecond.current = HEAT_DURATION_SECONDS;
+    heatRecordCommitted.current = false;
+    setHeatRemaining(HEAT_DURATION_SECONDS);
+    setHeatWaves([]);
+    setHeatExpired(false);
+    setHeatComplete(false);
+  }
+
   const startSession = async () => {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
@@ -1799,6 +1947,7 @@ export default function SurfscapeApp() {
     setPhotoMode(false);
     setPhotoStatus("idle");
     resetReplayStudio();
+    resetHeatSession();
     setStats(INITIAL_STATS);
     trainingStepValue.current = 0;
     setTrainingStep(0);
@@ -1829,8 +1978,35 @@ export default function SurfscapeApp() {
     setPhotoMode(false);
     setPhotoStatus("idle");
     resetReplayStudio();
+    resetHeatSession();
     setWetLens(null);
     setScreen("launch");
+    setPaused(false);
+  };
+
+  const restartSession = () => {
+    controls.current = { ...EMPTY_CONTROLS };
+    clearAnalogMovement();
+    resetRideCapture();
+    resetReplayStudio();
+    resetHeatSession();
+    photoFile.current = null;
+    setPhotoMode(false);
+    setPhotoStatus("idle");
+    previousPhase.current = "shore";
+    previousTakeoffPhase.current = "shore";
+    previousManeuverId.current = 0;
+    previousRideResultId.current = 0;
+    previousPassportRideResultId.current = 0;
+    setManeuverToast(null);
+    setRideToast(null);
+    setPassportAward(null);
+    setStats(INITIAL_STATS);
+    setWetLens(null);
+    setShareStatus("idle");
+    trainingStepValue.current = 0;
+    setTrainingStep(0);
+    setSessionKey((value) => value + 1);
     setPaused(false);
   };
 
@@ -2200,6 +2376,16 @@ export default function SurfscapeApp() {
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const hasPhoto = photoStatus === "ready" || photoStatus === "shared" || photoStatus === "saved";
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
+  const heatNeed = Math.max(0, Math.round((heatTarget - heatTotal) * 100) / 100);
+  const heatWaveForToast = rideToast
+    ? heatWaves.find((wave) => wave.id === rideToast.id) ?? { ...rideToast, judgeScore: judgeHeatWave(rideToast) }
+    : null;
+  const heatWaveNumber = rideToast
+    ? Math.max(1, heatWaves.findIndex((wave) => wave.id === rideToast.id) + 1 || heatWaves.length + 1)
+    : heatWaves.length;
+  const finalHeatWaveRunning = sessionFormat === "heat" && heatExpired && stats.phase === "riding" && !heatComplete;
+  const heatAllowsGameplay = sessionFormat !== "heat"
+    || (!heatComplete && (!heatExpired || finalHeatWaveRunning));
   const trainingComplete = trainingStep >= TRAINING_STEPS.length;
   const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
   const accentStyle = { "--spot-accent": beach.palette[0], "--sand-accent": beach.palette[1] } as CSSProperties;
@@ -2228,7 +2414,13 @@ export default function SurfscapeApp() {
     && gradeRank(stats.rideGrade) >= gradeRank("A")
     && stats.pocketDistance >= 25
     && (stats.rideManeuvers >= 2 || stats.barrelTime >= 2);
-  const objectives = settings.mode === "playground"
+  const objectives = sessionFormat === "heat"
+    ? [
+        { label: "Post two scoring rides", done: heatWaves.length >= 2 },
+        { label: `Clear the ${heatTarget.toFixed(2)} qualification line`, done: heatWon },
+        { label: "Earn one 7.00+ excellent score", done: rankedHeatWaves.some((wave) => wave.judgeScore >= 7) },
+      ]
+    : settings.mode === "playground"
     ? [
         { label: "Ride 40 m", done: stats.rideDistance >= 40 },
         { label: "Land 2 moves", done: stats.maneuverCount >= 2 },
@@ -2386,7 +2578,7 @@ export default function SurfscapeApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
-          active={screen === "game" && !paused && !photoMode && !replayActive}
+          active={screen === "game" && !paused && !photoMode && !replayActive && heatAllowsGameplay}
           renderActive={screen === "game" && !paused}
           photoMode={photoMode}
           photoFocalLength={photoFocalLength}
@@ -2492,6 +2684,32 @@ export default function SurfscapeApp() {
                     </button>
                   ))}
                 </div>
+                {settings.mode === "advanced" && (
+                  <div className="session-format-picker">
+                    <div>
+                      <span>SESSION FORMAT</span>
+                      <strong>Choose how this ocean scores you</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className={sessionFormat === "free" ? "is-selected" : ""}
+                      onClick={() => setSessionFormat("free")}
+                      aria-pressed={sessionFormat === "free"}
+                    >
+                      <Waves />
+                      <span><small>OPEN SESSION</small><strong>Free Surf</strong><em>Ride without a clock</em></span>
+                    </button>
+                    <button
+                      type="button"
+                      className={sessionFormat === "heat" ? "is-selected" : ""}
+                      onClick={() => setSessionFormat("heat")}
+                      aria-pressed={sessionFormat === "heat"}
+                    >
+                      <Timer />
+                      <span><small>5:00 · BEST TWO</small><strong>World Tour Heat</strong><em>Beat {heatTarget.toFixed(2)} to qualify</em></span>
+                    </button>
+                  </div>
+                )}
                 <div className="quiver-picker">
                   <div className="quiver-head"><span>QUIVER / 03</span><strong>Choose the board under your feet</strong></div>
                   <div className="quiver-grid">
@@ -2566,7 +2784,7 @@ export default function SurfscapeApp() {
                       <strong>{coastMasteryLabel(currentCoastRecord.mastery)}</strong>
                       <small>
                         {currentCoastRecord.rides > 0
-                          ? `${currentCoastRecord.bestGrade} BEST · ${currentCoastRecord.bestScore.toLocaleString()} PTS · ${currentCoastRecord.cleanRides} CLEAN`
+                          ? `${currentCoastRecord.bestGrade} BEST · ${currentCoastRecord.bestScore.toLocaleString()} PTS · ${currentCoastRecord.cleanRides} CLEAN${currentCoastRecord.bestHeat > 0 ? ` · HEAT ${currentCoastRecord.bestHeat.toFixed(2)}` : ""}`
                           : "LOG A WAVE · FINISH CLEAN · MASTER THE COAST"}
                       </small>
                     </div>
@@ -2681,8 +2899,8 @@ export default function SurfscapeApp() {
 
           <footer className="launch-footer">
             <div className="session-summary">
-              <span>{selectedMode.kicker}</span>
-              <strong>{selectedMode.name}</strong>
+              <span>{sessionFormat === "heat" ? "World tour heat" : selectedMode.kicker}</span>
+              <strong>{sessionFormat === "heat" ? `5:00 · target ${heatTarget.toFixed(2)}` : selectedMode.name}</strong>
               <i />
               <span>{zoneLabel}</span>
               <strong>{localTime} {sessionConditions.timezoneAbbreviation}</strong>
@@ -2697,7 +2915,7 @@ export default function SurfscapeApp() {
               <strong>{BOARD_SPECS[settings.board].name}</strong>
             </div>
             <button className="launch-button" onClick={startSession}>
-              <span>ENTER THE WATER</span>
+              <span>{sessionFormat === "heat" ? "START WORLD TOUR HEAT" : "ENTER THE WATER"}</span>
               <i><Play fill="currentColor" /></i>
             </button>
           </footer>
@@ -2705,7 +2923,7 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
+        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
           <div
             ref={cameraLookSurface}
             className={`camera-look-surface ${pointerLocked ? "is-locked" : ""}`}
@@ -2919,7 +3137,7 @@ export default function SurfscapeApp() {
           {sessionIntroActive && (
             <div className="session-intro" style={sessionIntroStyle} aria-live="polite">
               <div className="session-intro-title">
-                <span>{selectedForecast ? "FORECAST SESSION" : conditions.source === "live" ? "LIVE OCEAN MODEL" : "MODELED SESSION"} · {settings.mode.toUpperCase()}</span>
+                <span>{selectedForecast ? "FORECAST SESSION" : conditions.source === "live" ? "LIVE OCEAN MODEL" : "MODELED SESSION"} · {settings.mode.toUpperCase()}{sessionFormat === "heat" ? " · WORLD TOUR HEAT" : ""}</span>
                 <h2>{zoneLabel}</h2>
                 <p>{beach.name} · {beach.region}</p>
                 <div>
@@ -2929,7 +3147,7 @@ export default function SurfscapeApp() {
                   <strong><Thermometer /> {settings.waterTemperature.toFixed(0)}° · {thermalKit.shortName}</strong>
                 </div>
               </div>
-              <small><i /> OCEAN MODEL LOCKED · CONTROLS LIVE</small>
+              <small><i /> {sessionFormat === "heat" ? "HEAT HORN ARMED · BEST TWO WAVES COUNT" : "OCEAN MODEL LOCKED · CONTROLS LIVE"}</small>
             </div>
           )}
           <header className="game-topbar">
@@ -2937,16 +3155,39 @@ export default function SurfscapeApp() {
               <Waves />
               <div><strong>SURFSCAPE</strong><span>{zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
             </div>
-            <div className={`game-objective ${settings.mode === "training" ? "is-training" : ""} ${settings.mode === "training" && trainingComplete ? "is-complete" : ""}`}>
+            <div className={`game-objective ${sessionFormat === "heat" ? "is-heat" : settings.mode === "training" ? "is-training" : ""} ${settings.mode === "training" && trainingComplete ? "is-complete" : ""}`}>
               <span>
-                {settings.mode === "training"
+                {sessionFormat === "heat"
+                  ? `WORLD TOUR HEAT · ${heatExpired ? finalHeatWaveRunning ? "FINAL WAVE" : "HORN SOUNDED" : formatHeatClock(heatRemaining)}`
+                  : settings.mode === "training"
                   ? trainingComplete
                     ? "TRAINING COMPLETE"
                     : `LESSON ${String(trainingStep + 1).padStart(2, "0")} / ${String(TRAINING_STEPS.length).padStart(2, "0")} · ${trainingLesson.title}`
                   : stats.phase}
               </span>
-              <strong>{settings.mode === "training" && trainingComplete ? "First clean line complete — the ocean is open" : stats.prompt}</strong>
-              {settings.mode === "training" && (
+              <strong>
+                {sessionFormat === "heat"
+                  ? heatWaves.length === 0
+                    ? `Best two waves count · qualification target ${heatTarget.toFixed(2)}`
+                    : heatWon
+                      ? `${heatTotal.toFixed(2)} total · qualification line cleared`
+                      : `${heatTotal.toFixed(2)} total · need ${heatNeed.toFixed(2)} to qualify`
+                  : settings.mode === "training" && trainingComplete
+                    ? "First clean line complete — the ocean is open"
+                    : stats.prompt}
+              </strong>
+              {sessionFormat === "heat" && (
+                <div className="heat-score-strip" aria-label={`Heat total ${heatTotal.toFixed(2)} out of 20. Qualification target ${heatTarget.toFixed(2)}.`}>
+                  {[0, 1].map((slot) => (
+                    <i key={slot} className={countedHeatWaves[slot] ? "is-filled" : ""}>
+                      <b style={{ width: `${(countedHeatWaves[slot]?.judgeScore ?? 0) * 10}%` }} />
+                      <em>{countedHeatWaves[slot]?.judgeScore.toFixed(2) ?? "—"}</em>
+                    </i>
+                  ))}
+                  <small>{heatTotal.toFixed(2)} / 20</small>
+                </div>
+              )}
+              {sessionFormat !== "heat" && settings.mode === "training" && (
                 <div className="coach-progress" role="progressbar" aria-label="Training progress" aria-valuemin={0} aria-valuemax={TRAINING_STEPS.length} aria-valuenow={trainingStep}>
                   {TRAINING_STEPS.map((step, index) => <i key={step.title} className={index < trainingStep ? "is-done" : index === trainingStep ? "is-current" : ""} />)}
                   <small>{trainingComplete ? "You are ready for Raw Ocean mode." : trainingLesson.detail}</small>
@@ -2968,10 +3209,16 @@ export default function SurfscapeApp() {
           </header>
 
           <div className="score-panel">
-            <span>SESSION SCORE <b>{stats.grade}</b></span>
-            <strong>{stats.score.toLocaleString()}</strong>
-            <div><i style={{ width: `${Math.min(100, stats.combo * 12.5)}%` }} /></div>
-            <small>{stats.combo.toFixed(1)}× flow · best {personalBest.score.toLocaleString()}</small>
+            <span>{sessionFormat === "heat" ? "HEAT TOTAL" : "SESSION SCORE"} <b>{sessionFormat === "heat" ? heatWaves.length : stats.grade}</b></span>
+            <strong>{sessionFormat === "heat" ? heatTotal.toFixed(2) : stats.score.toLocaleString()}</strong>
+            <div><i style={{ width: `${sessionFormat === "heat" ? Math.min(100, heatTotal / 20 * 100) : Math.min(100, stats.combo * 12.5)}%` }} /></div>
+            <small>
+              {sessionFormat === "heat"
+                ? heatWon
+                  ? `qualified · coast best ${Math.max(currentCoastRecord.bestHeat, heatTotal).toFixed(2)}`
+                  : `${heatNeed.toFixed(2)} needed · best ${currentCoastRecord.bestHeat.toFixed(2)}`
+                : `${stats.combo.toFixed(1)}× flow · best ${personalBest.score.toLocaleString()}`}
+            </small>
           </div>
 
           <div className="set-panel">
@@ -3032,7 +3279,7 @@ export default function SurfscapeApp() {
               <strong>{stats.stamina}</strong>
             </div>
             <div className="session-goals">
-              <span><Target /> {settings.mode === "playground" ? "SESSION LINES" : `WORLD TOUR · ${currentCoastRecord.mastery}/3 STAMPS`}</span>
+              <span><Target /> {sessionFormat === "heat" ? `HEAT SHEET · ${heatWaves.length} WAVES` : settings.mode === "playground" ? "SESSION LINES" : `WORLD TOUR · ${currentCoastRecord.mastery}/3 STAMPS`}</span>
               {objectives.map((objective) => (
                 <small key={objective.label} className={objective.done ? "is-done" : ""}>
                   {objective.done ? <CircleCheck /> : <i />} {objective.label}
@@ -3070,11 +3317,14 @@ export default function SurfscapeApp() {
 
           {rideToast && (
             <div className={`ride-recap is-${rideToast.result}`} key={rideToast.id}>
-              <div className="ride-grade"><span>{rideToast.result === "clean" ? "CLEAN LINE" : "LINE LOST"}</span><strong>{rideToast.grade}</strong></div>
+              <div className="ride-grade">
+                <span>{sessionFormat === "heat" ? "JUDGES" : rideToast.result === "clean" ? "CLEAN LINE" : "LINE LOST"}</span>
+                <strong>{sessionFormat === "heat" ? heatWaveForToast?.judgeScore.toFixed(2) : rideToast.grade}</strong>
+              </div>
               <div className="ride-recap-copy">
-                <span>{rideToast.result === "clean" ? "WAVE COMPLETE" : "WIPEOUT / RESET"}</span>
-                <strong>{rideToast.score.toLocaleString()} PTS</strong>
-                <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel</small>
+                <span>{sessionFormat === "heat" ? `HEAT WAVE ${String(heatWaveNumber).padStart(2, "0")} · ${rideToast.result === "clean" ? "MADE" : "INCOMPLETE"}` : rideToast.result === "clean" ? "WAVE COMPLETE" : "WIPEOUT / RESET"}</span>
+                <strong>{sessionFormat === "heat" ? `${heatWaveForToast?.judgeScore.toFixed(2)} / 10` : `${rideToast.score.toLocaleString()} PTS`}</strong>
+                <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel{sessionFormat === "heat" ? ` · ${rideToast.score.toLocaleString()} raw` : ""}</small>
                 {passportAward && (
                   <em className={`passport-award level-${passportAward.level}`}>
                     <Trophy />
@@ -3284,6 +3534,74 @@ export default function SurfscapeApp() {
             )}
           </div>
 
+          {heatComplete && (
+            <div className={`heat-results ${heatWon ? "is-qualified" : ""}`} role="dialog" aria-modal="true" aria-labelledby="heat-result-title">
+              <div className="heat-results-card">
+                <header>
+                  <div>
+                    <Trophy />
+                    <span>WORLD TOUR HEAT · {beach.name.toUpperCase()}</span>
+                  </div>
+                  <small>{zoneLabel.toUpperCase()} · BEST TWO WAVES COUNT</small>
+                </header>
+                <div className="heat-results-hero">
+                  <div>
+                    <span>{heatWon ? "QUALIFICATION LINE CLEARED" : "HEAT COMPLETE"}</span>
+                    <h2 id="heat-result-title">{heatWon ? "YOU ADVANCE." : "CHASE THE NEXT SET."}</h2>
+                    <p>
+                      {heatWon
+                        ? `${heatTotal.toFixed(2)} beats the ${heatTarget.toFixed(2)} coast target. That line is now part of your Surf Passport.`
+                        : `${heatNeed.toFixed(2)} points separated this heat from the ${heatTarget.toFixed(2)} qualification line.`}
+                    </p>
+                  </div>
+                  <div className="heat-total-lockup">
+                    <span>HEAT TOTAL</span>
+                    <strong>{heatTotal.toFixed(2)}</strong>
+                    <small>/ 20.00</small>
+                  </div>
+                </div>
+                <div className="heat-counting-waves">
+                  {[0, 1].map((slot) => {
+                    const wave = countedHeatWaves[slot];
+                    return (
+                      <article key={slot} className={wave ? "is-scored" : ""}>
+                        <span>COUNTING WAVE {slot + 1}</span>
+                        <strong>{wave?.judgeScore.toFixed(2) ?? "—"}</strong>
+                        <small>{wave ? `${wave.distance.toFixed(0)} m · ${wave.maneuvers} moves · ${wave.grade} grade` : "No score posted"}</small>
+                        <i><b style={{ width: `${(wave?.judgeScore ?? 0) * 10}%` }} /></i>
+                      </article>
+                    );
+                  })}
+                </div>
+                <div className="heat-scorecard">
+                  <div className="heat-scorecard-heading">
+                    <span>JUDGES&apos; SCORECARD</span>
+                    <strong>{heatWaves.length} WAVES · COAST BEST {Math.max(currentCoastRecord.bestHeat, heatTotal).toFixed(2)}</strong>
+                  </div>
+                  {rankedHeatWaves.length > 0 ? (
+                    <div>
+                      {rankedHeatWaves.slice(0, 6).map((wave, index) => (
+                        <span key={wave.id} className={countedHeatWaveIds.has(wave.id) ? "is-counting" : ""}>
+                          <i>{String(index + 1).padStart(2, "0")}</i>
+                          <b>{wave.judgeScore.toFixed(2)}</b>
+                          <small>{wave.result === "clean" ? "MADE" : "FELL"} · {wave.distance.toFixed(0)} M · {wave.maneuvers} MOVES</small>
+                          {countedHeatWaveIds.has(wave.id) ? <CircleCheck /> : <em>DROP</em>}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No scoring rides were completed before the horn.</p>
+                  )}
+                </div>
+                <footer>
+                  <button type="button" className="heat-restart" onClick={restartSession}><RotateCcw /> SURF ANOTHER HEAT</button>
+                  <button type="button" onClick={() => { setSessionFormat("free"); setHeatComplete(false); setHeatExpired(false); }}><Waves /> CONTINUE FREE SURF</button>
+                  <button type="button" onClick={leaveSession}><MapPin /> CHOOSE ANOTHER BREAK</button>
+                </footer>
+              </div>
+            </div>
+          )}
+
           {paused && (
             <div className="pause-overlay">
               <div className="pause-card">
@@ -3294,7 +3612,7 @@ export default function SurfscapeApp() {
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); resetReplayStudio(); photoFile.current = null; setPhotoMode(false); setPhotoStatus("idle"); previousPhase.current = "shore"; previousTakeoffPhase.current = "shore"; previousManeuverId.current = 0; previousRideResultId.current = 0; previousPassportRideResultId.current = 0; setManeuverToast(null); setRideToast(null); setPassportAward(null); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={restartSession}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}
