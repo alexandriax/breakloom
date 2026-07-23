@@ -73,6 +73,11 @@ type MotionState = {
   finish: number;
   takeoffRead: number;
   catchReady: number;
+  shorebreak: number;
+  shorebreakPower: number;
+  shorebreakSeconds: number;
+  duckDive: number;
+  paddleHeading: number;
 };
 
 function dampAngle(current: number, target: number, responsiveness: number, delta: number) {
@@ -968,6 +973,132 @@ function BreakingWave({
   );
 }
 
+const PADDLE_WALL_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uHeight;
+  uniform float uPower;
+  varying vec2 vUv;
+  varying float vCrest;
+  varying float vFold;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    float rise = pow(uv.y, 1.34);
+    float crest = smoothstep(.66, 1.0, uv.y);
+    float fold = crest * crest * uPower;
+    vec3 p = position;
+    p.x += sin(position.x * .38 + uTime * 2.1) * (.035 + uPower * .075) * uv.y;
+    p.y = rise * uHeight + sin(position.x * .52 - uTime * 2.6) * .035 * uv.y;
+    p.z = 1.15 - rise * (.34 + uHeight * .045) - fold * (.28 + uHeight * .22);
+    vUv = uv;
+    vCrest = crest;
+    vFold = fold;
+    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+
+const PADDLE_WALL_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform float uLight;
+  varying vec2 vUv;
+  varying float vCrest;
+  varying float vFold;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  void main() {
+    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    if (dot(normal, viewDirection) < 0.0) normal *= -1.0;
+    float fresnel = pow(1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0), 3.2);
+    float broad = noise(vUv * vec2(15.0, 7.0) + vec2(uTime * .24, -uTime * .54));
+    float veins = noise(vUv * vec2(46.0, 11.0) + vec2(-uTime * .72, uTime * .17));
+    vec3 deep = mix(vec3(.006, .08, .11), vec3(.025, .28, .27), vUv.y);
+    vec3 reflected = mix(vec3(.08, .23, .28), vec3(.34, .68, .67), uLight);
+    vec3 color = mix(deep, reflected, fresnel * .5);
+    color *= .88 + broad * .18;
+    float foamNoise = smoothstep(.34, .78, broad) * (.7 + veins * .48);
+    float feather = vCrest * foamNoise + smoothstep(.76, .96, veins) * vFold * .62;
+    color = mix(color, mix(vec3(.62, .9, .86), vec3(.97, 1.0, .98), uLight), clamp(feather, 0.0, .94));
+    float edge = smoothstep(0.0, .08, vUv.x) * smoothstep(0.0, .08, 1.0 - vUv.x);
+    float lower = smoothstep(0.0, .14, vUv.y);
+    float alpha = uOpacity * edge * lower * (.24 + fresnel * .38 + vCrest * .34 + feather * .42);
+    gl_FragColor = vec4(color, clamp(alpha, 0.0, .92));
+  }
+`;
+
+function PaddleOutShorebreak({ motion, settings, light, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; light: number; mobile: boolean }) {
+  const group = useRef<THREE.Group>(null);
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uHeight: { value: .8 },
+    uPower: { value: 0 },
+    uOpacity: { value: 0 },
+    uLight: { value: 1 },
+  }), []);
+
+  useFrame(({ clock }, delta) => {
+    if (!group.current || !material.current) return;
+    const state = motion.current;
+    const paddling = state.phase === "paddling";
+    const approaching = paddling && state.shorebreakPower > .04 && (state.shorebreakSeconds <= 2.8 || state.shorebreak > .015);
+    const values = material.current.uniforms;
+    const targetHeight = settings.waveHeight * (.32 + state.shorebreakPower * .58) + .22;
+    const preRoll = state.shorebreakSeconds > 0 ? 1 - THREE.MathUtils.smoothstep(state.shorebreakSeconds, .2, 2.8) : state.shorebreak;
+    const targetOpacity = approaching ? THREE.MathUtils.clamp(.04 + preRoll * .42 + state.shorebreak * .34, 0, .8) : 0;
+    values.uTime.value = clock.elapsedTime;
+    values.uHeight.value = THREE.MathUtils.damp(values.uHeight.value, targetHeight, 6, delta);
+    values.uPower.value = THREE.MathUtils.damp(values.uPower.value, state.shorebreakPower, 6, delta);
+    values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, approaching ? 9 : 5, delta);
+    values.uLight.value = light;
+    const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
+    const sourceHeading = waveAngle + Math.PI;
+    const relativeHeading = sourceHeading - state.paddleHeading;
+    const wallDistance = state.shorebreakSeconds > 0 ? Math.min(12, state.shorebreakSeconds * 4.35) : 0;
+    group.current.position.x = THREE.MathUtils.damp(group.current.position.x, Math.sin(relativeHeading) * wallDistance, 11, delta);
+    group.current.position.z = THREE.MathUtils.damp(group.current.position.z, Math.cos(relativeHeading) * wallDistance, 11, delta);
+    group.current.position.y = -0.02 - state.duckDive * .18;
+    group.current.rotation.y = dampAngle(group.current.rotation.y, relativeHeading, 7, delta);
+    group.current.scale.x = THREE.MathUtils.damp(group.current.scale.x, .92 + state.shorebreakPower * .12, 5, delta);
+    group.current.visible = values.uOpacity.value > .006;
+  });
+
+  return (
+    <group ref={group} visible={false}>
+      <mesh renderOrder={3.25}>
+        <planeGeometry args={[mobile ? 22 : 28, 1, mobile ? 36 : 54, mobile ? 12 : 18]} />
+        <shaderMaterial
+          ref={material}
+          uniforms={uniforms}
+          vertexShader={PADDLE_WALL_VERTEX}
+          fragmentShader={PADDLE_WALL_FRAGMENT}
+          transparent
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 const SURFER_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surfer-premium.glb`;
 const VAN_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surf-van-premium.glb`;
 const SURFER_JOINT_NAMES = [
@@ -1047,25 +1178,25 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
 
     const rideLean = (state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * (.08 + state.trickCharge * .06)) * (1 - state.takeoff * .72);
     pose("Pelvis", riding ? -0.08 - state.compression * .12 + state.stance * 0.045 : walking ? step * 0.025 : 0, riding ? state.rail * -0.1 : 0, riding ? rideLean * 0.35 : 0, 7);
-    pose("Torso", paddle ? -0.1 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 : walking ? runLean - step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 : 0, riding ? rideLean : 0, 7);
-    pose("Head", paddle ? -0.24 : riding ? -0.12 - state.compression * .08 + state.barrel * 0.08 : 0, riding ? state.rail * 0.14 : 0, riding ? -rideLean * 0.4 : 0, 8);
+    pose("Torso", paddle ? -0.1 - state.duckDive * .24 : riding ? 0.18 + state.compression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 : walking ? runLean - step * 0.018 : 0, riding ? state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 : 0, riding ? rideLean : 0, 7);
+    pose("Head", paddle ? -0.24 + state.duckDive * .14 : riding ? -0.12 - state.compression * .08 + state.barrel * 0.08 : 0, riding ? state.rail * 0.14 : 0, riding ? -rideLean * 0.4 : 0, 8);
 
     pose(
       "UpperArm.L",
-      wipeout ? 1.2 : paddle ? stroke * 1.18 : riding ? -0.48 - state.maneuver * 0.22 + state.trickCharge * .28 - state.maneuverLift * .22 : step * 0.56,
+      wipeout ? 1.2 : paddle ? stroke * 1.18 * (1 - state.duckDive) - state.duckDive * .72 : riding ? -0.48 - state.maneuver * 0.22 + state.trickCharge * .28 - state.maneuverLift * .22 : step * 0.56,
       riding ? -0.12 + state.rail * 0.12 : 0,
       riding ? 1.03 + state.maneuver * 0.32 + state.slip * .16 : paddle ? 0.14 : 0.08,
       9,
     );
     pose(
       "UpperArm.R",
-      wipeout ? -1.1 : paddle ? -stroke * 1.18 : riding ? 0.48 + state.maneuver * 0.22 - state.trickCharge * .28 + state.maneuverLift * .22 : -step * 0.56,
+      wipeout ? -1.1 : paddle ? -stroke * 1.18 * (1 - state.duckDive) + state.duckDive * .72 : riding ? 0.48 + state.maneuver * 0.22 - state.trickCharge * .28 + state.maneuverLift * .22 : -step * 0.56,
       riding ? 0.12 + state.rail * 0.12 : 0,
       riding ? -1.03 - state.maneuver * 0.32 - state.slip * .16 : paddle ? -0.14 : -0.08,
       9,
     );
-    pose("LowerArm.L", paddle ? Math.max(0, -stroke) * -0.72 : riding ? -0.42 : wipeout ? 0.8 : 0, 0, riding ? 0.12 : 0, 10);
-    pose("LowerArm.R", paddle ? Math.max(0, stroke) * 0.72 : riding ? 0.42 : wipeout ? -0.8 : 0, 0, riding ? -0.12 : 0, 10);
+    pose("LowerArm.L", paddle ? Math.max(0, -stroke) * -0.72 - state.duckDive * .42 : riding ? -0.42 : wipeout ? 0.8 : 0, 0, riding ? 0.12 : 0, 10);
+    pose("LowerArm.R", paddle ? Math.max(0, stroke) * 0.72 + state.duckDive * .42 : riding ? 0.42 : wipeout ? -0.8 : 0, 0, riding ? -0.12 : 0, 10);
     pose("Hand.L", 0, riding ? -0.16 : 0, riding ? 0.08 : 0, 10);
     pose("Hand.R", 0, riding ? 0.16 : 0, riding ? -0.08 : 0, 10);
 
@@ -1290,7 +1421,7 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
     const carryStride = carrying ? THREE.MathUtils.smoothstep(state.speed, .16, 1.35) : 0;
     const carryStep = Math.sin(clock.elapsedTime * (2.5 + state.speed * 1.55)) * carryStride;
 
-    const bodyRotationX = paddle ? Math.PI / 2 - 0.1 : riding ? -0.18 + state.takeoff * 1.32 : 0;
+    const bodyRotationX = paddle ? Math.PI / 2 - 0.1 + state.duckDive * .08 : riding ? -0.18 + state.takeoff * 1.32 : 0;
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
     body.current.rotation.z = THREE.MathUtils.damp(
       body.current.rotation.z,
@@ -1304,11 +1435,11 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 : riding ? 0.84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? 0.44 - state.duckDive * .16 : riding ? 0.84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
-    rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : 0, 9, delta);
+    rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : paddle ? Math.sin(clock.elapsedTime * 8) * state.shorebreak * .025 : 0, 9, delta);
     rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 + state.maneuverSpin : 0, state.maneuverLift > .12 ? 13 : 8, delta);
-    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, riding ? state.maneuverLift : 0, state.maneuverLift > .08 ? 13 : 9, delta);
+    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, riding ? state.maneuverLift : paddle ? -state.duckDive * .42 + state.shorebreak * .055 : 0, state.maneuverLift > .08 || state.duckDive > .08 ? 13 : 9, delta);
 
     board.current.rotation.z = THREE.MathUtils.damp(
       board.current.rotation.z,
@@ -1325,13 +1456,13 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
     board.current.position.x = THREE.MathUtils.damp(board.current.position.x, carrying ? 0.68 + carryStep * .018 : 0, 7, delta);
     board.current.position.y = THREE.MathUtils.damp(
       board.current.position.y,
-      carrying ? 1.14 + Math.abs(carryStep) * .026 : 0.16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
+      carrying ? 1.14 + Math.abs(carryStep) * .026 : paddle ? .16 - state.duckDive * .12 : 0.16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
       7,
       delta,
     );
     board.current.rotation.x = THREE.MathUtils.damp(
       board.current.rotation.x,
-      carrying ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : 0,
+      carrying ? Math.PI / 2 - 0.08 : riding ? state.stance * -0.05 + state.barrel * 0.025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : paddle ? state.duckDive * .3 - state.shorebreak * .035 : 0,
       7,
       delta,
     );
@@ -1649,6 +1780,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const previousManeuver = useRef(0);
   const previousLift = useRef(0);
   const previousTakeoff = useRef(0);
+  const previousImpact = useRef(0);
   const wakeTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 96;
@@ -1715,10 +1847,10 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       wake.current.scale.z = THREE.MathUtils.damp(wake.current.scale.z, paddling ? .28 + Math.min(.46, state.speed * .1) : speedScale, 6, delta);
       wake.current.scale.x = THREE.MathUtils.damp(wake.current.scale.x, riding ? 1 + Math.abs(state.rail) * .42 + state.slip * .3 : .72, 7, delta);
       wake.current.rotation.y = THREE.MathUtils.damp(wake.current.rotation.y, riding ? state.rail * -.11 - Math.sign(state.rail) * state.slip * .08 : 0, 7, delta);
-      wake.current.position.y = Math.sin(clock.elapsedTime * 7.5) * 0.018;
+      wake.current.position.y = Math.sin(clock.elapsedTime * 7.5) * 0.018 - state.duckDive * .22;
     }
     const waterContact = 1 - THREE.MathUtils.smoothstep(state.maneuverLift, .14, .5);
-    const targetOpacity = riding ? (0.2 + Math.min(0.38, state.speed * 0.018) + Math.abs(state.rail) * .12 + state.slip * .16) * waterContact : paddling ? .045 + state.paddleEffort * .14 + Math.min(.08, state.speed * .018) : 0;
+    const targetOpacity = riding ? (0.2 + Math.min(0.38, state.speed * 0.018) + Math.abs(state.rail) * .12 + state.slip * .16) * waterContact : paddling ? (.045 + state.paddleEffort * .14 + Math.min(.08, state.speed * .018) + state.shorebreak * .16) * (1 - state.duckDive * .72) : 0;
     wakeMaterials.current.forEach((material, index) => {
       if (!material) return;
       const side = index === 0 ? -1 : 1;
@@ -1756,10 +1888,19 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       if (state.maneuverLift > .2 && previousLift.current <= .2) emit(mobile ? 10 : 20, true);
       if (state.maneuverLift < .08 && previousLift.current >= .08) emit(mobile ? 16 : 30, true);
       if (state.takeoff > .82 && previousTakeoff.current <= .82) emit(mobile ? 8 : 15, true);
+    } else if (paddling) {
+      emission.current += delta * (state.shorebreak * 34 + state.duckDive * 12);
+      if (emission.current >= 1) {
+        const count = Math.min(4, Math.floor(emission.current));
+        emit(count, false);
+        emission.current -= count;
+      }
+      if (state.impact > .62 && previousImpact.current <= .62) emit(mobile ? 14 : 28, true);
     }
     previousManeuver.current = state.maneuver;
     previousLift.current = state.maneuverLift;
     previousTakeoff.current = state.takeoff;
+    previousImpact.current = state.impact;
 
     if (!particlePositions) return;
     const relativeWind = THREE.MathUtils.degToRad(settings.windDirection - settings.coastHeading);
@@ -3744,6 +3885,11 @@ function Simulation({
   const unstableFor = useRef(0);
   const railSlip = useRef(0);
   const missedWaveUntil = useRef(0);
+  const nextShorebreakAt = useRef(0);
+  const duckDiveUntil = useRef(0);
+  const duckDiveQuality = useRef(0);
+  const shorebreakId = useRef(0);
+  const shorebreakResult = useRef<GameStats["shorebreakResult"]>("");
   const wipeoutAt = useRef(0);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
@@ -3782,6 +3928,11 @@ function Simulation({
     finish: 0,
     takeoffRead: 0,
     catchReady: 0,
+    shorebreak: 0,
+    shorebreakPower: 0,
+    shorebreakSeconds: 0,
+    duckDive: 0,
+    paddleHeading: 0,
   });
   const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false, wetness: 0, offRoad: 0 });
   const cameraTarget = useRef(new THREE.Vector3());
@@ -3834,6 +3985,11 @@ function Simulation({
     let compression = 0;
     let catchReady = false;
     let inLineup = false;
+    let shorebreakIntensity = 0;
+    let shorebreakPower = 0;
+    let shorebreakSeconds = 0;
+    let duckDiveReady = false;
+    let duckDiveActive = false;
     let takeoffAlignment = 0;
     let takeoffQuality = 0;
     let maneuverProgress = 0;
@@ -3950,6 +4106,8 @@ function Simulation({
           phase.current = "paddling";
           paddleHeading.current = playerHeading.current;
           paddleVelocity.current.copy(landVelocity.current).multiplyScalar(.55);
+          nextShorebreakAt.current = t + (settings.mode === "training" ? 3.2 : 2.55);
+          shorebreakResult.current = "";
           landVelocity.current.set(0, 0);
         }
       } else if (currentPhase === "paddling") {
@@ -3968,6 +4126,9 @@ function Simulation({
         const currentSpeed = settings.currentStrength / 3.6;
         const currentX = Math.sin(relativeCurrentAngle) * currentSpeed;
         const currentZ = -Math.cos(relativeCurrentAngle) * currentSpeed;
+        const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
+        const waveTravelX = Math.sin(relativeWaveAngle);
+        const waveTravelZ = Math.max(.35, Math.cos(relativeWaveAngle));
         const targetPaddleX = paddleForwardX * paddleThrust + currentX;
         const targetPaddleZ = paddleForwardZ * paddleThrust + currentZ;
         const paddleResponse = Math.abs(move) > .04 ? 3.7 : 1.7;
@@ -3978,6 +4139,53 @@ function Simulation({
         position.current.z = Math.max(-52, position.current.z);
         speed = paddleVelocity.current.length();
         inLineup = position.current.z < -18;
+        if (nextShorebreakAt.current <= 0) nextShorebreakAt.current = t + 2.55;
+        const breakZone = THREE.MathUtils.smoothstep(position.current.z, -18, -8) * (1 - THREE.MathUtils.smoothstep(position.current.z, -3, 1));
+        shorebreakPower = !inLineup
+          ? THREE.MathUtils.clamp(
+              breakZone * (.34 + setState.energy * .66) * (.52 + settings.waveHeight * .22) * (.86 + character.power * .14),
+              0,
+              1,
+            )
+          : 0;
+        shorebreakSeconds = !inLineup ? Math.max(0, nextShorebreakAt.current - t) : 0;
+        const shorebreakApproach = 1 - THREE.MathUtils.smoothstep(shorebreakSeconds, .06, 2.45);
+        shorebreakIntensity = shorebreakPower * shorebreakApproach;
+        duckDiveActive = t < duckDiveUntil.current;
+        duckDiveReady = !inLineup && shorebreakPower > .18 && shorebreakSeconds > .035 && shorebreakSeconds < 1.08;
+        if (actionPressed && duckDiveReady) {
+          const diveTimingWindow = settings.mode === "training" ? 1 : settings.mode === "advanced" ? .64 : mobileRenderer ? .88 : .78;
+          duckDiveQuality.current = THREE.MathUtils.clamp(1 - Math.abs(shorebreakSeconds - .3) / diveTimingWindow, 0, 1);
+          duckDiveUntil.current = t + 1.12;
+          duckDiveActive = true;
+          stamina.current = Math.max(0, stamina.current - (2.4 + shorebreakPower * 1.8));
+        }
+        if (!inLineup && t >= nextShorebreakAt.current) {
+          if (!duckDiveActive) duckDiveQuality.current = 0;
+          const diveThreshold = settings.mode === "training" ? .24 : settings.mode === "advanced" ? .46 : .34;
+          const cleanDive = duckDiveActive && duckDiveQuality.current >= diveThreshold;
+          shorebreakResult.current = cleanDive ? "clean" : "hit";
+          shorebreakId.current += 1;
+          if (cleanDive) {
+            paddleVelocity.current.multiplyScalar(.86 + duckDiveQuality.current * .08);
+            position.current.x += waveTravelX * (.08 + shorebreakPower * .14);
+            position.current.z += waveTravelZ * (.08 + shorebreakPower * .14);
+            stamina.current = Math.max(0, stamina.current - (1.2 + shorebreakPower * 1.6));
+            motion.current.impact = .22 + shorebreakPower * .24;
+          } else {
+            const wash = .72 + shorebreakPower * 1.38;
+            position.current.x += waveTravelX * wash;
+            position.current.z += waveTravelZ * wash;
+            paddleVelocity.current.y += waveTravelZ * (.82 + shorebreakPower * 1.32);
+            paddleVelocity.current.x += waveTravelX * (.82 + shorebreakPower * 1.32) + currentX * (.55 + shorebreakPower * .9);
+            paddleVelocity.current.multiplyScalar(.54);
+            stamina.current = Math.max(0, stamina.current - (5.5 + shorebreakPower * 9.5));
+            motion.current.impact = .66 + shorebreakPower * .34;
+          }
+          const breakInterval = Math.max(4.4, settings.wavePeriod * .58);
+          const variation = Math.sin(shorebreakId.current * 2.31 + position.current.x * .04) * character.variability * .09;
+          nextShorebreakAt.current = t + breakInterval * (.88 + setState.energy * .16 + variation);
+        }
         takeoffAlignment = THREE.MathUtils.smoothstep(paddleForwardZ, .08, .94);
         const takeoffPhase = primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character);
         const crestAlignment = THREE.MathUtils.smoothstep(Math.sin(takeoffPhase), -.08, .96);
@@ -3997,7 +4205,11 @@ function Simulation({
         catchReady = inLineup && takeoffAlignment >= headingThreshold && t >= missedWaveUntil.current && takeoffQuality >= takeoffThreshold;
         const setCopy = setState.secondsToPeak === 0 ? "Set is here" : `Next set ${Math.ceil(setState.secondsToPeak)}s`;
         prompt = !inLineup
-          ? "Paddle beyond the break"
+          ? duckDiveReady
+            ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
+            : shorebreakIntensity > .08
+              ? `Set wall building · ${shorebreakSeconds.toFixed(1)}s to impact`
+              : "Paddle beyond the break · read the incoming walls"
           : takeoffAlignment < headingThreshold
             ? "Turn the board toward shore · use A/D or the stick"
           : t < missedWaveUntil.current
@@ -4417,6 +4629,13 @@ function Simulation({
     motion.current.finish = Math.max(0, motion.current.finish - delta * .7);
     motion.current.takeoffRead = THREE.MathUtils.damp(motion.current.takeoffRead, takeoffQuality, 8, delta);
     motion.current.catchReady = THREE.MathUtils.damp(motion.current.catchReady, catchReady ? 1 : 0, catchReady ? 12 : 5, delta);
+    motion.current.shorebreak = THREE.MathUtils.damp(motion.current.shorebreak, shorebreakIntensity, shorebreakIntensity > motion.current.shorebreak ? 9 : 5, delta);
+    motion.current.shorebreakPower = THREE.MathUtils.damp(motion.current.shorebreakPower, shorebreakPower, 5, delta);
+    motion.current.shorebreakSeconds = shorebreakSeconds;
+    const diveProgress = THREE.MathUtils.clamp(1 - (duckDiveUntil.current - t) / 1.12, 0, 1);
+    const diveEnvelope = t < duckDiveUntil.current ? Math.sin(diveProgress * Math.PI) : 0;
+    motion.current.duckDive = THREE.MathUtils.damp(motion.current.duckDive, diveEnvelope, diveEnvelope > motion.current.duckDive ? 14 : 9, delta);
+    motion.current.paddleHeading = paddleHeading.current;
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
@@ -4473,37 +4692,39 @@ function Simulation({
       const forwardZ = Math.cos(paddleHeading.current);
       const rightX = Math.cos(paddleHeading.current);
       const rightZ = -Math.sin(paddleHeading.current);
+      const diveBeat = motion.current.duckDive;
+      const wallBeat = motion.current.shorebreak;
       if (cameraMode === "immersive") {
         cameraPosition.current.set(
           position.current.x - forwardX * 4.6 + rightX * .68,
-          playerY + 2.2,
+          playerY + 2.2 - diveBeat * .48 + wallBeat * .16,
           position.current.z - forwardZ * 4.6 + rightZ * .68,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 3.8,
-          playerY + .42,
+          playerY + .42 - diveBeat * .24,
           position.current.z + forwardZ * 3.8,
         );
       } else if (cameraMode === "cinematic") {
         cameraPosition.current.set(
           position.current.x - forwardX * 3.1 + rightX * 6,
-          playerY + 3.6,
+          playerY + 3.6 - diveBeat * .34 + wallBeat * .22,
           position.current.z - forwardZ * 3.1 + rightZ * 6,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 2.2,
-          playerY + .52,
+          playerY + .52 - diveBeat * .2,
           position.current.z + forwardZ * 2.2,
         );
       } else {
         cameraPosition.current.set(
           position.current.x - forwardX * 9.5,
-          playerY + 4.9,
+          playerY + 4.9 - diveBeat * .38 + wallBeat * .2,
           position.current.z - forwardZ * 9.5,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 3,
-          playerY + .9,
+          playerY + .9 - diveBeat * .18,
           position.current.z + forwardZ * 3,
         );
       }
@@ -4564,6 +4785,7 @@ function Simulation({
     cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
     const cameraShakeBase = riding
       ? motion.current.maneuver * 0.1 + motion.current.takeoff * .04 + motion.current.impact * .075 + motion.current.slip * .045 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
+      : paddling ? motion.current.impact * .07 + motion.current.shorebreak * .025
       : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * 0.55) * 0.16 : 0;
     const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
     cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
@@ -4586,12 +4808,12 @@ function Simulation({
             ? 70 + Math.min(7, Math.abs(vanSpeed.current) * .28)
             : riding
               ? 68 + Math.min(10, Math.max(0, speed - 7) * .82) + motion.current.maneuver * 3.4 + motion.current.takeoff * 1.4 - motion.current.finish * 2.8
-              : paddling ? 62 : 64
+              : paddling ? 62 + motion.current.shorebreak * 3.2 - motion.current.duckDive * 2.2 : 64
           : driving
             ? 59 + Math.min(5, Math.abs(vanSpeed.current) * .2)
             : riding
               ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 3.1 + motion.current.takeoff * 1.2 - motion.current.finish * 2.5
-              : paddling ? 56 : 58;
+              : paddling ? 56 + motion.current.shorebreak * 2.5 - motion.current.duckDive * 1.6 : 58;
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {
         const focalLength = 0.5 * camera.getFilmHeight() / Math.tan(THREE.MathUtils.degToRad(nextFov * 0.5));
@@ -4647,6 +4869,13 @@ function Simulation({
         nearVan,
         inLineup,
         catchReady,
+        shorebreakIntensity: motion.current.shorebreak,
+        shorebreakSeconds,
+        duckDiveReady,
+        duckDiveActive,
+        duckDiveQuality: duckDiveQuality.current,
+        shorebreakId: shorebreakId.current,
+        shorebreakResult: shorebreakResult.current,
         takeoffAlignment,
         takeoffQuality,
         prompt,
@@ -4765,6 +4994,7 @@ function Simulation({
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <group ref={player}>
+        <PaddleOutShorebreak motion={motion} settings={settings} light={light} mobile={mobileRenderer} />
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />

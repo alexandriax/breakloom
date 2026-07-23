@@ -111,6 +111,7 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
 
 const TRAINING_STEPS = [
   { title: "Enter the shallows", detail: "Move from the sand into the water." },
+  { title: "Punch through", detail: "Tap Dive just before the shorebreak reaches you." },
   { title: "Reach the lineup", detail: "Paddle beyond the breaking waves." },
   { title: "Read the crest", detail: "Turn toward shore and wait for the takeoff window." },
   { title: "Commit to the drop", detail: "Catch the wave when the shoulder appears." },
@@ -124,13 +125,14 @@ function reachedTrainingStep(stats: GameStats) {
   const hasRidden = stats.phase === "riding" || stats.rideDistance > 0 || stats.rideResult !== "";
   let reached = 0;
   if (waterPhase) reached = 1;
-  if (stats.inLineup || hasRidden) reached = 2;
-  if (stats.catchReady || hasRidden) reached = 3;
-  if (hasRidden) reached = 4;
+  if (stats.shorebreakId > 0 || stats.inLineup || hasRidden) reached = 2;
+  if (stats.inLineup || hasRidden) reached = 3;
+  if (stats.catchReady || hasRidden) reached = 4;
+  if (hasRidden) reached = 5;
   const hasTrackedPocket = stats.pocketDistance >= 15;
-  if (hasTrackedPocket) reached = 5;
-  if (hasTrackedPocket && stats.maneuverCount > 0) reached = 6;
-  if (hasTrackedPocket && stats.maneuverCount > 0 && stats.rideResult === "clean") reached = 7;
+  if (hasTrackedPocket) reached = 6;
+  if (hasTrackedPocket && stats.maneuverCount > 0) reached = 7;
+  if (hasTrackedPocket && stats.maneuverCount > 0 && stats.rideResult === "clean") reached = 8;
   return reached;
 }
 
@@ -275,6 +277,7 @@ export default function SurfscapeApp() {
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
   const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
+  const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const previousPhase = useRef(stats.phase);
@@ -283,6 +286,9 @@ export default function SurfscapeApp() {
   const previousChargeBand = useRef(0);
   const previousRideResultId = useRef(0);
   const previousCatchReady = useRef(false);
+  const previousDuckDiveReady = useRef(false);
+  const previousShorebreakId = useRef(0);
+  const shorebreakToastTimer = useRef<number | null>(null);
   const previousBalanceLock = useRef(false);
   const lastBalanceHapticAt = useRef(0);
   const previousTakeoffPhase = useRef(stats.phase);
@@ -482,6 +488,29 @@ export default function SurfscapeApp() {
       !paused && !stats.vehicleMode,
     );
   }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+
+  useEffect(() => {
+    if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
+    previousDuckDiveReady.current = stats.duckDiveReady;
+  }, [stats.duckDiveReady]);
+
+  useEffect(() => {
+    if (stats.shorebreakId <= 0 || stats.shorebreakId === previousShorebreakId.current) return;
+    previousShorebreakId.current = stats.shorebreakId;
+    const clean = stats.shorebreakResult === "clean";
+    setShorebreakToast({ id: stats.shorebreakId, result: clean ? "clean" : "hit", quality: stats.duckDiveQuality });
+    audio.current?.effect(clean ? "duck" : "shorebreak");
+    haptic(clean ? [7, 16, 10] : [18, 20, 28]);
+    if (shorebreakToastTimer.current !== null) window.clearTimeout(shorebreakToastTimer.current);
+    shorebreakToastTimer.current = window.setTimeout(() => {
+      setShorebreakToast(null);
+      shorebreakToastTimer.current = null;
+    }, 1550);
+  }, [stats.duckDiveQuality, stats.shorebreakId, stats.shorebreakResult]);
+
+  useEffect(() => () => {
+    if (shorebreakToastTimer.current !== null) window.clearTimeout(shorebreakToastTimer.current);
+  }, []);
 
   useEffect(() => {
     if (stats.maneuverActive && !previousManeuverActive.current) {
@@ -814,7 +843,7 @@ export default function SurfscapeApp() {
   const activeLine = stats.phase === "riding" && breakCharacter.line === "A-FRAME"
     ? stats.lineSide > 0 ? "RIGHT" : "LEFT"
     : breakCharacter.line;
-  const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady;
+  const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady || stats.duckDiveReady;
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
     : stats.nearVan
@@ -823,6 +852,8 @@ export default function SurfscapeApp() {
         ? stats.maneuverActive
           ? stats.maneuverPhase === "air" ? "SPOT IT" : "LAND"
           : stats.trickCharge > .04 ? `RELEASE ${Math.round(stats.trickCharge * 100)}` : "HOLD TRICK"
+        : stats.duckDiveReady
+          ? "DIVE"
         : stats.catchReady
           ? "CATCH"
           : stats.phase === "paddling"
@@ -835,17 +866,24 @@ export default function SurfscapeApp() {
       : stats.phase === "wading"
         ? { title: "SHOREBREAK", detail: "Push through until the board floats" }
         : stats.phase === "paddling"
-          ? stats.catchReady
+          ? stats.duckDiveActive
+            ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
+            : stats.duckDiveReady
+              ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · tap DIVE and punch through` }
+            : stats.catchReady
             ? { title: "TAKEOFF OPEN", detail: "Release paddle · tap CATCH now" }
             : stats.inLineup && stats.takeoffAlignment < .3
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
                 ? { title: "HOLD THE LINEUP", detail: "Board is set · wait for the crest pulse" }
-                : { title: "READ THE CREST", detail: "Hold PADDLE · left stick turns" }
+                : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 2.8
+                  ? { title: "WALL APPROACHING", detail: `${stats.shorebreakSeconds.toFixed(1)}s · keep paddling and prepare to dive` }
+                  : { title: "READ THE CREST", detail: "Hold PADDLE · left stick turns" }
           : stats.phase === "wipeout"
             ? { title: "UNDERWATER", detail: "Breathe · the board is resetting" }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
   const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
+  const shorebreakTiming = Math.round((1 - THREEClamp(stats.shorebreakSeconds / 2.8, 0, 1)) * 100);
   const touchBalancePosition = (THREEClamp(stats.balance, -.94, .94) + 1) * 50;
   const touchTargetPosition = (THREEClamp(stats.balanceTarget, -.94, .94) + 1) * 50;
   const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
@@ -1182,10 +1220,10 @@ export default function SurfscapeApp() {
             </div>
             <div className="set-meter"><i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></div>
             {stats.phase === "paddling" && (
-              <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""}`}>
-                <span>TAKEOFF</span>
-                <i><b style={{ width: `${Math.round(stats.takeoffQuality * 100)}%` }} /></i>
-                <strong>{stats.catchReady ? "GO" : `${Math.round(stats.takeoffQuality * 100)}%`}</strong>
+              <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
+                <span>{stats.inLineup ? "TAKEOFF" : "SHOREBREAK"}</span>
+                <i><b style={{ width: `${stats.inLineup ? Math.round(stats.takeoffQuality * 100) : shorebreakTiming}%` }} /></i>
+                <strong>{stats.duckDiveReady ? "DIVE" : stats.catchReady ? "GO" : stats.inLineup ? `${Math.round(stats.takeoffQuality * 100)}%` : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 3 ? `${stats.shorebreakSeconds.toFixed(1)}s` : "READ"}</strong>
               </div>
             )}
             <div className="stamina-row">
@@ -1202,6 +1240,15 @@ export default function SurfscapeApp() {
               ))}
             </div>
           </div>
+
+          {shorebreakToast && !takeoffToast && !maneuverToast && !rideToast && (
+            <div className={`shorebreak-toast is-${shorebreakToast.result}`} key={shorebreakToast.id}>
+              <Waves />
+              <span>{shorebreakToast.result === "clean" ? "CLEAN DIVE" : "WHITEWATER HIT"}</span>
+              <strong>{shorebreakToast.result === "clean" ? "PUNCHED THROUGH" : "WASHED SHOREWARD"}</strong>
+              <b>{Math.round(shorebreakToast.quality * 100)}%</b>
+            </div>
+          )}
 
           {maneuverToast && !rideToast && (
             <div className={`maneuver-toast quality-${maneuverToast.quality >= .82 ? "stomped" : maneuverToast.quality >= .48 ? "clean" : "recovered"}`} key={maneuverToast.id}>
@@ -1298,14 +1345,14 @@ export default function SurfscapeApp() {
                     <span><kbd>W</kbd><kbd>S</kbd> {stats.phase === "riding" ? "nose / tail stance" : "paddle"}</span>
                   </>
                 )}
-                <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : "catch wave"}</span>
+                <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" && !stats.inLineup ? "duck-dive the shorebreak" : "catch wave"}</span>
                 <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
                 <span><span className="mouse-icon" /> mouse to balance</span>
               </>
             )}
           </div>
 
-          <div className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""}`}>
+          <div className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""}`}>
             <div
               className="analog-stick"
               role="group"
@@ -1389,7 +1436,7 @@ export default function SurfscapeApp() {
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board, walk through the shallows, drag to look around, and use C or the camera button to frame your line.</p></article>
-              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle beyond the break, turn the board back toward shore, and watch the foam pulse tighten as a catchable crest arrives. After the drop, follow the caustic seam.</p></article>
+              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and watch each wall approach. Tap Dive or Space just before impact to punch through, then turn shoreward and read the tightening catch pulse.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Set a rail, hold Trick or Space to compress, then release into a move. Stance, speed, wave position, and load decide what you throw; reconnect inside the gold zone to bank it.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>

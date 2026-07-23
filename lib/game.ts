@@ -126,6 +126,13 @@ export type GameStats = {
   nearVan: boolean;
   inLineup: boolean;
   catchReady: boolean;
+  shorebreakIntensity: number;
+  shorebreakSeconds: number;
+  duckDiveReady: boolean;
+  duckDiveActive: boolean;
+  duckDiveQuality: number;
+  shorebreakId: number;
+  shorebreakResult: "" | "clean" | "hit";
   takeoffAlignment: number;
   takeoffQuality: number;
   prompt: string;
@@ -177,6 +184,13 @@ export const INITIAL_STATS: GameStats = {
   nearVan: false,
   inLineup: false,
   catchReady: false,
+  shorebreakIntensity: 0,
+  shorebreakSeconds: 0,
+  duckDiveReady: false,
+  duckDiveActive: false,
+  duckDiveQuality: 0,
+  shorebreakId: 0,
+  shorebreakResult: "",
   takeoffAlignment: 0,
   takeoffQuality: 0,
   prompt: "Walk toward the water · or find the van",

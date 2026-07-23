@@ -1,6 +1,6 @@
 import type { GamePhase } from "./game";
 
-type EffectKind = "catch" | "release" | "turn" | "wipeout" | "finish" | "coach";
+type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "wipeout" | "finish" | "coach";
 
 const CHORDS = [
   [0, 7, 12, 19],
@@ -318,6 +318,14 @@ export class SurfscapeAudio {
       this.noiseBurst(now, .48, 780, .7, .18, "bandpass", 0, .08);
       this.tone(now, 92, 176, .58, .095, "sine", 0, .12);
       this.tone(now + .055, 184, 272, .42, .036, "triangle", -.18, .2);
+    } else if (kind === "duck") {
+      this.noiseBurst(now, .46, 430, .7, .13, "lowpass", 0, .1);
+      this.tone(now, 96, 62, .42, .055, "sine", 0, .13);
+      this.noiseBurst(now + .16, .28, 980, .5, .08, "bandpass", this.foleySide * .2, .05);
+    } else if (kind === "shorebreak") {
+      this.noiseBurst(now, .82, 720, .76, .24, "bandpass", 0, .12);
+      this.noiseBurst(now + .035, .44, 2200, .58, .1, "highpass", this.foleySide * .24, .07);
+      this.tone(now, 82, 46, .62, .08, "sine", 0, .11);
     } else if (kind === "release") {
       this.noiseBurst(now, .34, 1180, .72, .13, "bandpass", this.foleySide * .28, .04);
       this.tone(now, 112, 224, .28, .035, "triangle", this.foleySide * .2, .12);
