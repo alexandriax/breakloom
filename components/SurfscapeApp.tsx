@@ -500,6 +500,7 @@ export default function SurfscapeApp() {
   const previousRideResultId = useRef(0);
   const previousCatchReady = useRef(false);
   const previousDuckDiveReady = useRef(false);
+  const leashTaut = useRef(false);
   const previousShorebreakId = useRef(0);
   const wetLensSequence = useRef(0);
   const previousSprayHit = useRef(false);
@@ -898,6 +899,13 @@ export default function SurfscapeApp() {
     }
     if (stats.catchReady && !previousCatchReady.current) haptic([7, 24, 13]);
     previousCatchReady.current = stats.catchReady;
+    if (stats.phase === "wipeout" && stats.leashTension >= .64 && !leashTaut.current) {
+      audio.current?.effect("leash");
+      haptic([9, 24, 15]);
+      leashTaut.current = true;
+    } else if (stats.phase !== "wipeout" || stats.leashTension < .28) {
+      leashTaut.current = false;
+    }
     audio.current?.setVehicle(
       paused ? 0 : stats.speed,
       !paused && stats.vehicleMode,
@@ -952,7 +960,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);

@@ -1,6 +1,6 @@
 import type { GamePhase } from "./game";
 
-type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "wipeout" | "finish" | "coach";
+type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "leash" | "wipeout" | "finish" | "coach";
 
 const CHORDS = [
   [0, 7, 12, 19],
@@ -473,6 +473,10 @@ export class SurfscapeAudio {
     } else if (kind === "turn") {
       this.noiseBurst(now, .24, 1650, .85, .14, "bandpass", this.foleySide * .36, .05);
       this.tone(now, 142, 118, .22, .04, "triangle", this.foleySide * .25, .08);
+    } else if (kind === "leash") {
+      this.noiseBurst(now, .19, 2480, 1.25, .072, "bandpass", this.foleySide * .28, .025);
+      this.tone(now, 168, 74, .2, .036, "triangle", this.foleySide * .18, .045);
+      this.noiseBurst(now + .045, .25, 920, .72, .055, "lowpass", -this.foleySide * .16, .03);
     } else if (kind === "wipeout") {
       this.noiseBurst(now, 1.25, 470, .62, .3, "bandpass", 0, .16);
       this.noiseBurst(now + .04, .72, 2100, .5, .13, "highpass", -.2, .09);

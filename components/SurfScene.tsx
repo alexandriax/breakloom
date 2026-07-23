@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Lightformer, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
-import { createContext, MutableRefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, MutableRefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
@@ -190,6 +190,7 @@ type MotionState = {
   shorebreakSeconds: number;
   duckDive: number;
   submersion: number;
+  leashTension: number;
   paddleHeading: number;
 };
 
@@ -1947,8 +1948,6 @@ function PremiumSurfboard({
   );
 }
 
-const LEASH_SEGMENTS = 22;
-
 function SurfLeashCord({
   motion,
   boardType,
@@ -1962,29 +1961,43 @@ function SurfLeashCord({
   boardRef: MutableRefObject<THREE.Group | null>;
   ankleJointRef: MutableRefObject<THREE.Object3D | null>;
 }) {
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const segmentCount = mobile
+    ? quality === "reduced" ? 11 : 14
+    : quality === "reduced" ? 15 : 20;
   const cord = useMemo(() => {
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array((LEASH_SEGMENTS + 1) * 3), 3));
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array((segmentCount + 1) * 3), 3));
     const material = new THREE.LineBasicMaterial({
-      color: "#111b1e",
+      color: "#6b8a87",
       transparent: true,
-      opacity: .88,
+      opacity: .42,
       depthWrite: false,
     });
     const line = new THREE.Line(geometry, material);
     line.frustumCulled = false;
     line.renderOrder = 4;
     return line;
-  }, []);
+  }, [segmentCount]);
   const cordRef = useRef<THREE.Line>(null);
+  const tubeRef = useRef<THREE.InstancedMesh>(null);
+  const connectorRef = useRef<THREE.InstancedMesh>(null);
   const scratchRef = useRef({
     start: new THREE.Vector3(),
     end: new THREE.Vector3(),
     point: new THREE.Vector3(),
+    previous: new THREE.Vector3(),
+    segment: new THREE.Vector3(),
+    midpoint: new THREE.Vector3(),
+    up: new THREE.Vector3(0, 1, 0),
+    dummy: new THREE.Object3D(),
   });
 
   useFrame(({ clock }) => {
     const line = cordRef.current;
+    const tube = tubeRef.current;
+    const connectors = connectorRef.current;
     const rigObject = rigRef.current;
     const boardObject = boardRef.current;
     const ankle = ankleJointRef.current;
@@ -1992,9 +2005,20 @@ function SurfLeashCord({
     const active = state.phase === "paddling" || state.phase === "riding" || state.phase === "wipeout" || (state.phase === "wading" && state.waterDepth > .42);
     if (!line) return;
     line.visible = Boolean(active && rigObject && boardObject && ankle);
+    if (tube) tube.visible = line.visible;
+    if (connectors) connectors.visible = line.visible;
     if (!line.visible || !rigObject || !boardObject || !ankle) return;
 
-    const { start, end, point } = scratchRef.current;
+    const {
+      start,
+      end,
+      point,
+      previous,
+      segment,
+      midpoint,
+      up,
+      dummy,
+    } = scratchRef.current;
     start.set(0, .13, -BOARD_SPECS[boardType].length * .43);
     boardObject.localToWorld(start);
     rigObject.worldToLocal(start);
@@ -2005,21 +2029,47 @@ function SurfLeashCord({
     const positions = line.geometry.getAttribute("position") as THREE.BufferAttribute;
     const distance = start.distanceTo(end);
     const pulse = Math.sin(clock.elapsedTime * 5.4 + state.speed * .18);
-    const tension = THREE.MathUtils.clamp(
-      (state.phase === "wipeout" ? state.wipeout * .72 : state.slip * .45 + state.impact * .35) + Math.max(0, distance - .8) * .22,
-      0,
-      1,
+    const tension = Math.max(
+      state.leashTension,
+      THREE.MathUtils.clamp(state.slip * .32 + state.impact * .22, 0, .48),
     );
-    for (let index = 0; index <= LEASH_SEGMENTS; index += 1) {
-      const progress = index / LEASH_SEGMENTS;
+    const cordRadius = THREE.MathUtils.lerp(.0115, .0155, tension);
+    for (let index = 0; index <= segmentCount; index += 1) {
+      const progress = index / segmentCount;
       const arc = Math.sin(progress * Math.PI);
       point.lerpVectors(start, end, progress);
       point.x += arc * (state.rail * .09 + pulse * .025 * (1 - tension * .72));
       point.y -= arc * (.1 + distance * .045 + state.speed * .004 + state.impact * .09) * (1 - tension * .58);
       point.z -= arc * (.08 + state.speed * .006 + state.maneuverLift * .12) * (1 - tension * .34);
       positions.setXYZ(index, point.x, point.y, point.z);
+      if (tube && index > 0) {
+        previous.fromBufferAttribute(positions, index - 1);
+        segment.copy(point).sub(previous);
+        const segmentLength = segment.length();
+        midpoint.copy(previous).addScaledVector(segment, .5);
+        dummy.position.copy(midpoint);
+        dummy.quaternion.setFromUnitVectors(up, segment.normalize());
+        dummy.scale.set(cordRadius, Math.max(.001, segmentLength), cordRadius);
+        dummy.updateMatrix();
+        tube.setMatrixAt(index - 1, dummy.matrix);
+      }
     }
     positions.needsUpdate = true;
+    if (tube) {
+      tube.instanceMatrix.needsUpdate = true;
+      const material = tube.material as THREE.MeshPhysicalMaterial;
+      material.emissiveIntensity = THREE.MathUtils.lerp(.015, .12, tension);
+    }
+    if (connectors) {
+      [start, end].forEach((connector, index) => {
+        dummy.position.copy(connector);
+        dummy.quaternion.identity();
+        dummy.scale.setScalar(index === 0 ? .035 : .043);
+        dummy.updateMatrix();
+        connectors.setMatrixAt(index, dummy.matrix);
+      });
+      connectors.instanceMatrix.needsUpdate = true;
+    }
   });
 
   useEffect(() => () => {
@@ -2027,7 +2077,198 @@ function SurfLeashCord({
     cord.material.dispose();
   }, [cord]);
 
-  return <primitive ref={cordRef} object={cord} />;
+  return (
+    <>
+      <primitive ref={cordRef} object={cord} />
+      <instancedMesh ref={tubeRef} args={[undefined, undefined, segmentCount]} frustumCulled={false} renderOrder={4}>
+        <cylinderGeometry args={[1, 1, 1, 7, 1, true]} />
+        <meshPhysicalMaterial
+          color="#102426"
+          roughness={.42}
+          metalness={.02}
+          clearcoat={.56}
+          clearcoatRoughness={.22}
+          emissive="#245153"
+          emissiveIntensity={.015}
+        />
+      </instancedMesh>
+      <instancedMesh ref={connectorRef} args={[undefined, undefined, 2]} frustumCulled={false} renderOrder={4}>
+        <sphereGeometry args={[1, 10, 7]} />
+        <meshPhysicalMaterial color="#172d2e" roughness={.36} clearcoat={.62} clearcoatRoughness={.18} />
+      </instancedMesh>
+    </>
+  );
+}
+
+function TetheredBoardWaterEffects({
+  motion,
+  boardRef,
+  rootRef,
+}: {
+  motion: MutableRefObject<MotionState>;
+  boardRef: MutableRefObject<THREE.Group | null>;
+  rootRef: MutableRefObject<THREE.Group | null>;
+}) {
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const particleCount = mobile
+    ? quality === "reduced" ? 14 : quality === "high" ? 26 : 20
+    : quality === "reduced" ? 24 : quality === "balanced" ? 34 : 44;
+  const spray = useRef<THREE.Points>(null);
+  const sprayMaterial = useRef<THREE.PointsMaterial>(null);
+  const ripple = useRef<THREE.Mesh>(null);
+  const rippleMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const positions = useMemo(() => {
+    const values = new Float32Array(particleCount * 3);
+    for (let index = 0; index < particleCount; index += 1) values[index * 3 + 1] = -20;
+    return values;
+  }, [particleCount]);
+  const velocities = useRef(new Float32Array(particleCount * 3));
+  const life = useRef(new Float32Array(particleCount));
+  const cursor = useRef(0);
+  const previousWipeout = useRef(false);
+  const previousTension = useRef(0);
+  const rippleLife = useRef(0);
+  const boardPosition = useRef(new THREE.Vector3());
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 48;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(19, 21, 1, 24, 31, 29);
+      gradient.addColorStop(0, "rgba(255,255,255,.98)");
+      gradient.addColorStop(.24, "rgba(211,255,250,.9)");
+      gradient.addColorStop(.66, "rgba(118,224,219,.28)");
+      gradient.addColorStop(1, "rgba(118,224,219,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 48, 64);
+    }
+    const value = new THREE.CanvasTexture(canvas);
+    value.colorSpace = THREE.SRGBColorSpace;
+    return value;
+  }, []);
+
+  useEffect(() => {
+    velocities.current = new Float32Array(particleCount * 3);
+    life.current = new Float32Array(particleCount);
+    cursor.current = 0;
+  }, [particleCount]);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  useFrame((_, delta) => {
+    const board = boardRef.current;
+    const root = rootRef.current;
+    const state = motion.current;
+    const attribute = spray.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const activePositions = attribute?.array as Float32Array | undefined;
+    if (!board || !root || !attribute || !activePositions) return;
+
+    const contact = boardPosition.current.set(0, .06, 0);
+    board.localToWorld(contact);
+    root.worldToLocal(contact);
+    const wipeout = state.phase === "wipeout";
+    const tensionSnap = state.leashTension >= .64 && previousTension.current < .64;
+    const firstImpact = wipeout && !previousWipeout.current;
+
+    const emit = (count: number, strength: number) => {
+      for (let particle = 0; particle < count; particle += 1) {
+        const index = cursor.current++ % particleCount;
+        const offset = index * 3;
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * .34;
+        activePositions[offset] = contact.x + Math.cos(angle) * radius;
+        activePositions[offset + 1] = Math.max(.035, contact.y + Math.random() * .08);
+        activePositions[offset + 2] = contact.z + Math.sin(angle) * radius;
+        const burst = strength * (.65 + Math.random() * .75);
+        velocities.current[offset] = Math.cos(angle) * burst;
+        velocities.current[offset + 1] = .55 + Math.random() * 1.3 * strength;
+        velocities.current[offset + 2] = Math.sin(angle) * burst - .24 * strength;
+        life.current[index] = .44 + Math.random() * .42;
+      }
+      attribute.needsUpdate = true;
+    };
+
+    if (firstImpact) {
+      emit(mobile ? 10 : 18, 1.4);
+      rippleLife.current = 1;
+    }
+    if (tensionSnap) {
+      emit(mobile ? 7 : 13, .82 + state.leashTension * .55);
+      rippleLife.current = Math.max(rippleLife.current, .82);
+    }
+
+    for (let index = 0; index < particleCount; index += 1) {
+      if (life.current[index] <= 0) continue;
+      const offset = index * 3;
+      life.current[index] -= delta;
+      activePositions[offset] += velocities.current[offset] * delta;
+      activePositions[offset + 1] += velocities.current[offset + 1] * delta;
+      activePositions[offset + 2] += velocities.current[offset + 2] * delta;
+      velocities.current[offset] *= 1 - delta * 1.8;
+      velocities.current[offset + 1] -= delta * 3.4;
+      velocities.current[offset + 2] *= 1 - delta * 1.55;
+      if (life.current[index] <= 0 || activePositions[offset + 1] < -.08) {
+        life.current[index] = 0;
+        activePositions[offset + 1] = -20;
+      }
+    }
+    attribute.needsUpdate = true;
+
+    if (sprayMaterial.current) {
+      sprayMaterial.current.opacity = THREE.MathUtils.damp(
+        sprayMaterial.current.opacity,
+        wipeout ? .82 : .42,
+        7,
+        delta,
+      );
+    }
+
+    rippleLife.current = Math.max(0, rippleLife.current - delta * .92);
+    if (ripple.current && rippleMaterial.current) {
+      const progress = 1 - rippleLife.current;
+      ripple.current.visible = rippleLife.current > .01;
+      ripple.current.position.set(contact.x, .035, contact.z);
+      ripple.current.scale.setScalar(.34 + progress * (1.35 + state.leashTension * .55));
+      rippleMaterial.current.opacity = Math.sin(rippleLife.current * Math.PI) * .38;
+    }
+
+    previousWipeout.current = wipeout;
+    previousTension.current = state.leashTension;
+  });
+
+  return (
+    <>
+      <points ref={spray} frustumCulled={false} renderOrder={7}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={sprayMaterial}
+          map={texture}
+          color="#c8fff8"
+          size={mobile ? .09 : .075}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={.025}
+          depthWrite={false}
+        />
+      </points>
+      <mesh ref={ripple} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={5}>
+        <ringGeometry args={[.64, 1, 38]} />
+        <meshBasicMaterial
+          ref={rippleMaterial}
+          color="#c6fff7"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+    </>
+  );
 }
 
 function SurferRunoffEffects({ motion }: { motion: MutableRefObject<MotionState> }) {
@@ -2177,20 +2418,34 @@ function SurferModel({
   motion,
   boardType,
   accent,
+  onLeashTension,
 }: {
   motion: MutableRefObject<MotionState>;
   boardType: BoardType;
   accent: string;
+  onLeashTension: (tension: number) => void;
 }) {
+  const root = useRef<THREE.Group>(null);
   const rig = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const board = useRef<THREE.Group>(null);
   const ankleJointRef = useRef<THREE.Object3D | null>(null);
   const contact = useRef<THREE.Mesh>(null);
+  const boardDynamics = useRef({
+    active: false,
+    offset: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    rotation: new THREE.Vector3(),
+    angularVelocity: new THREE.Vector3(),
+    anchor: new THREE.Vector3(),
+    attachment: new THREE.Vector3(),
+    pull: new THREE.Vector3(),
+  });
 
   useFrame(({ clock }, delta) => {
-    if (!rig.current || !body.current || !board.current) return;
+    if (!root.current || !rig.current || !body.current || !board.current) return;
     const state = motion.current;
+    const spec = BOARD_SPECS[boardType];
     const paddle = state.phase === "paddling";
     const riding = state.phase === "riding";
     const carrying = state.phase === "shore" || state.phase === "wading";
@@ -2201,6 +2456,23 @@ function SurferModel({
     const rebound = Math.sin((1 - state.impact) * Math.PI) * state.impact;
     const carryStride = carrying ? THREE.MathUtils.smoothstep(state.speed, .16, 1.35) * (1 - waterDepth * .42) : 0;
     const carryStep = Math.sin(clock.elapsedTime * (2.5 + state.speed * 1.55)) * carryStride;
+    const bodyRigRoll = wipeout
+      ? state.wipeout * 2.1
+      : riding
+        ? state.slip * state.rail * -.08
+        : paddle
+          ? Math.sin(clock.elapsedTime * 8) * state.shorebreak * .025
+          : 0;
+    const bodyRigYaw = riding
+      ? state.slip * Math.sign(state.rail) * .13 + state.maneuverSpin
+      : 0;
+    const bodyRigLift = riding
+      ? state.maneuverLift
+      : paddle
+        ? -state.duckDive * .42 + state.shorebreak * .055
+        : wipeout
+          ? -.18 - state.submersion * .5 + Math.sin(clock.elapsedTime * 3.4) * .06
+          : 0;
 
     const bodyRotationX = paddle ? Math.PI / 2 - 0.1 + state.duckDive * .08 : riding ? -0.18 + state.takeoff * 1.32 : 0;
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
@@ -2218,35 +2490,143 @@ function SurferModel({
     );
     body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 : riding ? .84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : wipeout ? .42 - state.submersion * .34 + Math.sin(clock.elapsedTime * 4.1) * .045 : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
-    rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : paddle ? Math.sin(clock.elapsedTime * 8) * state.shorebreak * .025 : 0, 9, delta);
-    rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 + state.maneuverSpin : 0, state.maneuverLift > .12 ? 13 : 8, delta);
-    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, riding ? state.maneuverLift : paddle ? -state.duckDive * .42 + state.shorebreak * .055 : wipeout ? -.18 - state.submersion * .5 + Math.sin(clock.elapsedTime * 3.4) * .06 : 0, state.maneuverLift > .08 || state.duckDive > .08 || wipeout ? 13 : 9, delta);
+    rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, bodyRigRoll, 9, delta);
+    rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, bodyRigYaw, state.maneuverLift > .12 ? 13 : 8, delta);
+    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, bodyRigLift, state.maneuverLift > .08 || state.duckDive > .08 || wipeout ? 13 : 9, delta);
 
-    board.current.rotation.z = THREE.MathUtils.damp(
-      board.current.rotation.z,
-      carrying ? (-.12 + carryStep * .026) * carryBlend : riding ? state.rail * -.27 - state.maneuverSide * state.maneuver * .22 : wipeout ? Math.sin(clock.elapsedTime * 4.1) * .34 : 0,
-      7,
-      delta,
-    );
-    board.current.rotation.y = THREE.MathUtils.damp(
-      board.current.rotation.y,
-      riding ? state.maneuverSide * state.maneuver * 0.52 + state.slip * Math.sign(state.rail) * .18 - state.maneuverSpin * .22 : wipeout ? Math.sin(clock.elapsedTime * 2.8 + .6) * .28 : 0,
-      9,
-      delta,
-    );
-    board.current.position.x = THREE.MathUtils.damp(board.current.position.x, carrying ? THREE.MathUtils.lerp(.68 + carryStep * .018, .04, waterDepth) : 0, 7, delta);
-    board.current.position.y = THREE.MathUtils.damp(
-      board.current.position.y,
-      carrying ? THREE.MathUtils.lerp(1.14 + Math.abs(carryStep) * .026, .16 + Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : paddle ? .16 - state.duckDive * .12 : wipeout ? .06 - state.submersion * .14 + Math.sin(clock.elapsedTime * 3.5) * .075 : .16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
-      7,
-      delta,
-    );
-    board.current.rotation.x = THREE.MathUtils.damp(
-      board.current.rotation.x,
-      carrying ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : riding ? state.stance * -.05 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : paddle ? state.duckDive * .3 - state.shorebreak * .035 : wipeout ? .12 + Math.sin(clock.elapsedTime * 3.5 + .8) * .18 : 0,
-      7,
-      delta,
-    );
+    const baseBoardX = carrying ? THREE.MathUtils.lerp(.68 + carryStep * .018, .04, waterDepth) : 0;
+    const baseBoardY = carrying
+      ? THREE.MathUtils.lerp(1.14 + Math.abs(carryStep) * .026, .16 + Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) + rig.current.position.y
+      : paddle
+        ? .16 - state.duckDive * .12 + rig.current.position.y
+        : riding
+          ? .16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09 + rig.current.position.y
+          : .13 + Math.sin(clock.elapsedTime * 3.5) * .025;
+    const baseBoardRotationX = carrying
+      ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth)
+      : riding
+        ? state.stance * -.05 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2
+        : paddle
+          ? state.duckDive * .3 - state.shorebreak * .035
+          : 0;
+    const baseBoardRotationY = riding
+      ? state.maneuverSide * state.maneuver * .52
+        + state.slip * Math.sign(state.rail) * .18
+        - state.maneuverSpin * .22
+        + rig.current.rotation.y
+      : rig.current.rotation.y;
+    const baseBoardRotationZ = (
+      carrying
+        ? (-.12 + carryStep * .026) * carryBlend
+        : riding
+          ? state.rail * -.27 - state.maneuverSide * state.maneuver * .22
+          : 0
+    ) + rig.current.rotation.z;
+    const dynamics = boardDynamics.current;
+
+    if (wipeout && !dynamics.active) {
+      const throwSide = Math.sign(state.lineSide || state.rail || 1);
+      const throwPower = 1 + state.impact * .78 + state.slip * .42;
+      dynamics.active = true;
+      dynamics.offset.set(
+        board.current.position.x,
+        board.current.position.y - baseBoardY,
+        board.current.position.z,
+      );
+      dynamics.velocity.set(
+        -throwSide * (1.28 + throwPower * .68),
+        .52 + throwPower * .34,
+        .42 + throwPower * .36,
+      );
+      dynamics.rotation.set(
+        board.current.rotation.x,
+        board.current.rotation.y,
+        board.current.rotation.z,
+      );
+      dynamics.angularVelocity.set(
+        .92 + throwPower * .44,
+        -throwSide * (.72 + throwPower * .34),
+        throwSide * (1.22 + throwPower * .52),
+      );
+    }
+
+    if (wipeout) {
+      const step = Math.min(delta, .034);
+      const recovery = THREE.MathUtils.smoothstep(state.wipeout, 1.22, 1.8);
+      const drag = Math.exp(-step * THREE.MathUtils.lerp(1.08, 4.6, recovery));
+      const angularDrag = Math.exp(-step * THREE.MathUtils.lerp(1.28, 5.4, recovery));
+      dynamics.velocity.x += (
+        Math.sin(clock.elapsedTime * 2.7 + state.lineSide) * .18
+        - dynamics.offset.x * (1.45 + recovery * 17)
+      ) * step;
+      dynamics.velocity.y += (
+        -dynamics.offset.y * (7.8 + recovery * 18)
+        - .28
+      ) * step;
+      dynamics.velocity.z += (
+        Math.cos(clock.elapsedTime * 2.15 + .7) * .13
+        - dynamics.offset.z * (1.18 + recovery * 16)
+      ) * step;
+      dynamics.velocity.multiplyScalar(drag);
+      dynamics.offset.addScaledVector(dynamics.velocity, step);
+
+      dynamics.angularVelocity.x += (-Math.sin(dynamics.rotation.x) * 1.35 - dynamics.rotation.x * recovery * 8.2) * step;
+      dynamics.angularVelocity.y += (-dynamics.rotation.y * recovery * 7.4) * step;
+      dynamics.angularVelocity.z += (-Math.sin(dynamics.rotation.z) * 1.52 - dynamics.rotation.z * recovery * 8.8) * step;
+      dynamics.angularVelocity.multiplyScalar(angularDrag);
+      dynamics.rotation.addScaledVector(dynamics.angularVelocity, step);
+
+      board.current.position.set(
+        baseBoardX + dynamics.offset.x,
+        baseBoardY + dynamics.offset.y,
+        dynamics.offset.z,
+      );
+      board.current.rotation.set(
+        dynamics.rotation.x,
+        dynamics.rotation.y,
+        dynamics.rotation.z,
+      );
+      root.current.updateWorldMatrix(true, false);
+      board.current.updateWorldMatrix(true, false);
+      ankleJointRef.current?.updateWorldMatrix(true, false);
+
+      if (ankleJointRef.current) {
+        dynamics.anchor.set(0, 0, 0);
+        ankleJointRef.current.localToWorld(dynamics.anchor);
+        root.current.worldToLocal(dynamics.anchor);
+        dynamics.attachment.set(0, .13, -spec.length * .43);
+        board.current.localToWorld(dynamics.attachment);
+        root.current.worldToLocal(dynamics.attachment);
+        dynamics.pull.copy(dynamics.attachment).sub(dynamics.anchor);
+        const leashDistance = dynamics.pull.length();
+        const leashLength = spec.length * .88;
+        const stretch = Math.max(0, leashDistance - leashLength);
+        const nextTension = THREE.MathUtils.smootherstep(leashDistance, leashLength * .72, leashLength * 1.1);
+        onLeashTension(THREE.MathUtils.damp(
+          state.leashTension,
+          nextTension,
+          nextTension > state.leashTension ? 18 : 6.5,
+          delta,
+        ));
+        if (stretch > 0.001) {
+          dynamics.pull.multiplyScalar(1 / Math.max(.001, leashDistance));
+          dynamics.offset.addScaledVector(dynamics.pull, -stretch * .28);
+          dynamics.velocity.addScaledVector(dynamics.pull, -stretch * (10 + recovery * 9) * step);
+        }
+      }
+    } else {
+      dynamics.active = false;
+      dynamics.offset.multiplyScalar(Math.exp(-delta * 9));
+      dynamics.velocity.set(0, 0, 0);
+      dynamics.angularVelocity.set(0, 0, 0);
+      onLeashTension(THREE.MathUtils.damp(state.leashTension, 0, 8, delta));
+      board.current.position.x = THREE.MathUtils.damp(board.current.position.x, baseBoardX, 8, delta);
+      board.current.position.y = THREE.MathUtils.damp(board.current.position.y, baseBoardY, 8, delta);
+      board.current.position.z = THREE.MathUtils.damp(board.current.position.z, 0, 8, delta);
+      board.current.rotation.x = dampAngle(board.current.rotation.x, baseBoardRotationX, 8, delta);
+      board.current.rotation.y = dampAngle(board.current.rotation.y, baseBoardRotationY, 9, delta);
+      board.current.rotation.z = dampAngle(board.current.rotation.z, baseBoardRotationZ, 8, delta);
+    }
 
     if (contact.current) {
       const material = contact.current.material as THREE.MeshBasicMaterial;
@@ -2257,32 +2637,33 @@ function SurferModel({
         ? (.09 + state.paddleEffort * .08) * (1 - state.duckDive * .75)
         : riding
           ? (.1 + Math.min(.16, state.speed * .007) + Math.abs(state.rail) * .07) * waterContact
-          : wipeout ? .08 : 0;
+          : wipeout ? .08 + state.leashTension * .08 : 0;
       material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity, 8, delta);
-      contact.current.scale.x = THREE.MathUtils.damp(contact.current.scale.x, BOARD_SPECS[boardType].width * (.7 + Math.abs(state.rail) * .12 + waterDepth * .08), 8, delta);
-      contact.current.scale.y = THREE.MathUtils.damp(contact.current.scale.y, BOARD_SPECS[boardType].length * (.32 + Math.min(.12, state.speed * .004) + (wading ? waterDepth * .07 : 0)), 8, delta);
+      contact.current.position.x = THREE.MathUtils.damp(contact.current.position.x, wipeout ? board.current.position.x : 0, 12, delta);
+      contact.current.position.z = THREE.MathUtils.damp(contact.current.position.z, wipeout ? board.current.position.z : 0, 12, delta);
+      contact.current.scale.x = THREE.MathUtils.damp(contact.current.scale.x, spec.width * (.7 + Math.abs(state.rail) * .12 + waterDepth * .08 + state.leashTension * .18), 8, delta);
+      contact.current.scale.y = THREE.MathUtils.damp(contact.current.scale.y, spec.length * (.32 + Math.min(.12, state.speed * .004) + (wading ? waterDepth * .07 : 0) + state.leashTension * .08), 8, delta);
       contact.current.rotation.z = THREE.MathUtils.damp(contact.current.rotation.z, riding ? -state.rail * .12 : 0, 7, delta);
     }
-
   });
 
   return (
-    <group>
+    <group ref={root}>
       <mesh ref={contact} position={[0, .025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
         <circleGeometry args={[1, 30]} />
         <meshBasicMaterial color="#05252b" transparent opacity={0} depthWrite={false} blending={THREE.MultiplyBlending} />
       </mesh>
       <group ref={rig}>
-        <group ref={board} position={[0, 0.16, 0]}>
-          <PremiumSurfboard boardType={boardType} motion={motion} />
-        </group>
         <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
         <SurferRunoffEffects motion={motion} />
-
         <group ref={body} position={[0, 1.02, 0]}>
           <PremiumSurferBody motion={motion} accent={accent} ankleJointRef={ankleJointRef} />
         </group>
       </group>
+      <group ref={board} position={[0, 0.16, 0]}>
+        <PremiumSurfboard boardType={boardType} motion={motion} />
+      </group>
+      <TetheredBoardWaterEffects motion={motion} boardRef={board} rootRef={root} />
     </group>
   );
 }
@@ -6051,8 +6432,12 @@ function Simulation({
     shorebreakSeconds: 0,
     duckDive: 0,
     submersion: 0,
+    leashTension: 0,
     paddleHeading: 0,
   });
+  const setLeashTension = useCallback((tension: number) => {
+    motion.current.leashTension = tension;
+  }, []);
   const vanMotion = useRef<VehicleMotionState>({
     speed: 0,
     steer: 0,
@@ -7269,6 +7654,7 @@ function Simulation({
         duckDiveActive,
         duckDiveQuality: duckDiveQuality.current,
         submersion: motion.current.submersion,
+        leashTension: motion.current.leashTension,
         shorebreakId: shorebreakId.current,
         shorebreakResult: shorebreakResult.current,
         takeoffAlignment,
@@ -7443,7 +7829,12 @@ function Simulation({
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
         <UnderwaterSuspendedMatter motion={motion} settings={settings} mobile={mobileRenderer} />
-        <SurferModel motion={motion} boardType={settings.board} accent={beach.palette[0]} />
+        <SurferModel
+          motion={motion}
+          boardType={settings.board}
+          accent={beach.palette[0]}
+          onLeashTension={setLeashTension}
+        />
       </group>
       <group ref={van}>
         <SurfVan motion={vanMotion} darkness={vanDarkness} />
