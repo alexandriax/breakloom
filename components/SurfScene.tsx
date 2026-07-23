@@ -36,6 +36,10 @@ type RenderQuality = "reduced" | "balanced" | "high";
 
 const RenderQualityContext = createContext<RenderQuality>("high");
 
+const LINEUP_ENTRY_Z = -30;
+const OUTER_PADDLE_LIMIT_Z = -238;
+const WATER_SIDE_LIMIT = 112;
+
 function useRenderQuality() {
   return useContext(RenderQualityContext);
 }
@@ -315,7 +319,9 @@ const OCEAN_VERTEX = /* glsl */ `
     float phaseOffset
   ) {
     float waveNumber = PI * 2.0 / wavelength;
-    float phase = dot(origin, direction) * waveNumber + uTime * phaseSpeed + phaseOffset;
+    // Travel in the supplied swell direction. Positive coastal Y points toward
+    // shore, so subtracting time makes the crest advance landward.
+    float phase = dot(origin, direction) * waveNumber - uTime * phaseSpeed + phaseOffset;
     float sine = sin(phase);
     float cosine = cos(phase);
     float horizontal = steepness * amplitude;
@@ -372,7 +378,7 @@ const OCEAN_VERTEX = /* glsl */ `
       47.5,
       amplitude * .11,
       .42,
-      -angularSpeed * 2.7,
+      angularSpeed * 2.7,
       0.0
     );
     float windWave = gerstner(
@@ -4985,9 +4991,9 @@ function Simulation({
         paddleVelocity.current.y = THREE.MathUtils.damp(paddleVelocity.current.y, targetPaddleZ, paddleResponse, delta);
         position.current.x += paddleVelocity.current.x * delta;
         position.current.z += paddleVelocity.current.y * delta;
-        position.current.z = Math.max(-52, position.current.z);
+        position.current.z = Math.max(OUTER_PADDLE_LIMIT_Z, position.current.z);
         speed = paddleVelocity.current.length();
-        inLineup = position.current.z < -18;
+        inLineup = position.current.z < LINEUP_ENTRY_Z;
         if (nextShorebreakAt.current <= 0) nextShorebreakAt.current = t + 2.55;
         const breakZone = THREE.MathUtils.smoothstep(position.current.z, -18, -8) * (1 - THREE.MathUtils.smoothstep(position.current.z, -3, 1));
         shorebreakPower = !inLineup
@@ -5121,9 +5127,9 @@ function Simulation({
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
-        const breakTravel = Math.max(0, position.current.z - rideOriginZ.current);
+        const breakTravel = rideDistance.current;
         const swellCrossing = Math.sin(((settings.waveDirection - settings.coastHeading) * Math.PI) / 180);
-        const pocketSweep = rideLineSide.current * breakTravel * (.12 + Math.abs(character.peel) * .24 + character.length * .018) + swellCrossing * breakTravel * .07;
+        const pocketSweep = rideLineSide.current * breakTravel * (.82 + Math.abs(character.peel) * .1 + character.length * .015) + swellCrossing * breakTravel * .04;
         const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginX.current * .07) * character.variability * 1.1;
         const pocketX = rideOriginX.current + pocketSweep + pocketPulse;
         const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * .46 + (1 - character.steepness) * .9, 3.6, 6.7);
@@ -5151,12 +5157,17 @@ function Simulation({
           1,
         );
         speed *= 1 - railSlip.current * .075;
-        position.current.z += speed * delta;
         const turnGrip = 1 - railSlip.current * .46;
         const drift = Math.sign(steer) * railSlip.current * (1.15 + speed * .045);
-        position.current.x += (railLoad * boardSpec.turn * (4.4 + speed * 0.18) * (1 + tailPressure * 0.38 - nosePressure * 0.12) * turnGrip + drift) * delta;
-        rideDistance.current += speed * delta;
-        if (lineControl > .5) pocketDistance.current += speed * delta;
+        const railTurn = railLoad * boardSpec.turn * (4.4 + speed * .18) * (1 + tailPressure * .38 - nosePressure * .12) * turnGrip + drift;
+        const trimDrive = rideLineSide.current * speed * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
+        const lateralVelocity = trimDrive + railTurn;
+        const shorewardVelocity = speed * (.23 + nosePressure * .055 - tailPressure * .035 + Math.abs(railLoad) * .025);
+        position.current.x += lateralVelocity * delta;
+        position.current.z += shorewardVelocity * delta;
+        const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
+        rideDistance.current += rideStep;
+        if (lineControl > .5) pocketDistance.current += rideStep;
         balanceTarget =
           Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) * (.88 + character.power * .08 + character.variability * .1) / boardSpec.stability +
           Math.sin(t * 3.1) * settings.currentStrength * 0.045 -
@@ -5375,7 +5386,11 @@ function Simulation({
           railSlip.current = 1;
           activeManeuver.current = null;
           motion.current.impact = .45;
-        } else if (!finishing && !activeManeuver.current && position.current.z > 11 + (character.length - 1) * 11) {
+        } else if (
+          !finishing
+          && !activeManeuver.current
+          && (position.current.z > 11 + (character.length - 1) * 11 || rideDistance.current > 82 + character.length * 24)
+        ) {
           score.current += 750 + rideDistance.current * 11;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
@@ -5416,7 +5431,7 @@ function Simulation({
     }
 
     const landRange = phase.current === "shore" || phase.current === "wading" || phase.current === "driving";
-    position.current.x = THREE.MathUtils.clamp(position.current.x, landRange ? -118 : -52, landRange ? 118 : 52);
+    position.current.x = THREE.MathUtils.clamp(position.current.x, landRange ? -118 : -WATER_SIDE_LIMIT, landRange ? 118 : WATER_SIDE_LIMIT);
     const waterY = waveHeightAt(position.current.x, position.current.z, t, settings, character);
     const isWater = phase.current !== "shore";
     if (phase.current !== "riding") {
@@ -5431,7 +5446,10 @@ function Simulation({
     player.current.position.set(position.current.x, playerY, position.current.z);
     player.current.visible = phase.current !== "driving";
     const targetPlayerHeading = phase.current === "riding"
-      ? railLoad * -.32 - Math.sign(railLoad) * railSlip.current * .12
+      ? Math.atan2(
+          rideLineSide.current * (.56 + character.length * .026 + Math.abs(character.peel) * .08) + railLoad * boardSpec.turn * .52,
+          .23 + Math.max(0, stance.current) * .055 - Math.max(0, -stance.current) * .035,
+        )
       : phase.current === "shore" || phase.current === "wading"
         ? playerHeading.current
         : phase.current === "paddling"
@@ -5672,15 +5690,15 @@ function Simulation({
         THREE.MathUtils.lerp(-20, normalTargetZ, sessionIntroProgress),
       );
     }
-    const lookScale = (cameraMode === "cinematic" ? .18 : cameraMode === "immersive" ? (riding ? .24 : .58) : riding ? .34 : driving ? .76 : 1)
-      * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
     cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
     cameraOrbit.current.setFromVector3(cameraOffset.current);
-    cameraOrbit.current.theta += state.lookYaw * 1.68 * lookScale;
+    // lookYaw is an unrestricted angle. Keeping it independent of camera mode
+    // gives every phase a true 360-degree freelook instead of a narrow offset.
+    cameraOrbit.current.theta += state.lookYaw * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
     cameraOrbit.current.phi = THREE.MathUtils.clamp(
-      cameraOrbit.current.phi + state.lookPitch * .62 * lookScale,
-      .38,
-      Math.PI * .49,
+      cameraOrbit.current.phi + state.lookPitch * .82 * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress),
+      .18,
+      Math.PI - .18,
     );
     cameraOffset.current.setFromSpherical(cameraOrbit.current);
     cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);

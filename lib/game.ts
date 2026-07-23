@@ -273,7 +273,7 @@ export function waveHeightAt(
   const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const waveAlong = x * Math.sin(relativeWaveAngle) + z * Math.max(.35, Math.cos(relativeWaveAngle));
   const waveCross = x * Math.cos(relativeWaveAngle) - z * Math.sin(relativeWaveAngle);
-  const p2 = waveAlong * 0.31 - waveCross * 0.05 + elapsed * speed * 7.1 + 1.7;
+  const p2 = waveAlong * 0.31 - waveCross * 0.05 - elapsed * speed * 7.1 + 1.7;
   const p3 = waveAlong * 0.09 + waveCross * 0.13 - elapsed * speed * 2.7;
   return (
     settings.tide * 0.3 +
@@ -311,7 +311,7 @@ export function primaryWavePhaseAt(
   const curvedZ = breakZ + Math.sin(waveAngle) * .0019 * x * x;
   const waveNumber = (Math.PI * 2) / (33 * compression);
   const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
-  return (x * directionX / directionLength + curvedZ * directionZ / directionLength) * waveNumber + elapsed * angularSpeed * 5.4;
+  return (x * directionX / directionLength + curvedZ * directionZ / directionLength) * waveNumber - elapsed * angularSpeed * 5.4;
 }
 
 export function compassDirection(degrees: number) {

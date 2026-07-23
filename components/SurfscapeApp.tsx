@@ -472,6 +472,7 @@ export default function SurfscapeApp() {
   const [trainingStep, setTrainingStep] = useState(0);
   const trainingStepValue = useRef(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
+  const [pointerLocked, setPointerLocked] = useState(false);
   const [showPlanner, setShowPlanner] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
@@ -506,6 +507,7 @@ export default function SurfscapeApp() {
   const joystickBounds = useRef<DOMRect | null>(null);
   const balancePointer = useRef<number | null>(null);
   const balanceBounds = useRef<DOMRect | null>(null);
+  const cameraLookSurface = useRef<HTMLDivElement>(null);
   const lookGesture = useRef<{
     pointerId: number;
     x: number;
@@ -521,6 +523,33 @@ export default function SurfscapeApp() {
   const availableForecastWindows = useMemo(() => forecastWindows(conditions), [conditions]);
   const sessionWeatherCode = settings.weatherCode;
   const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : sessionConditions.cloudCover;
+
+  useEffect(() => {
+    const onPointerLockChange = () => {
+      const locked = document.pointerLockElement === cameraLookSurface.current;
+      setPointerLocked(locked);
+      if (!locked) lookGesture.current = null;
+    };
+    const onLockedMouseMove = (event: MouseEvent) => {
+      if (document.pointerLockElement !== cameraLookSurface.current || screen !== "game" || paused) return;
+      controls.current.gamepadActive = false;
+      const yaw = controls.current.lookYaw - event.movementX * .00235;
+      controls.current.lookYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+      controls.current.lookPitch = THREEClamp(controls.current.lookPitch + event.movementY * .00205, -1.35, 1.35);
+    };
+    document.addEventListener("pointerlockchange", onPointerLockChange);
+    document.addEventListener("mousemove", onLockedMouseMove);
+    return () => {
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
+      document.removeEventListener("mousemove", onLockedMouseMove);
+    };
+  }, [paused, screen]);
+
+  useEffect(() => {
+    if ((screen !== "game" || paused) && document.pointerLockElement === cameraLookSurface.current) {
+      document.exitPointerLock();
+    }
+  }, [paused, screen]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -639,6 +668,7 @@ export default function SurfscapeApp() {
       controls.current.right = false;
       controls.current.sprint = false;
       controls.current.action = false;
+      controls.current.balance = 0;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
       joystickPointer.current = null;
@@ -650,13 +680,15 @@ export default function SurfscapeApp() {
       if (screen !== "game") return;
       controls.current.gamepadActive = false;
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
+      if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
       }
       if (key === "w" || key === "arrowup") controls.current.forward = true;
       if (key === "s" || key === "arrowdown") controls.current.back = true;
       if (key === "a" || key === "arrowleft") controls.current.left = true;
       if (key === "d" || key === "arrowright") controls.current.right = true;
+      if (key === "q") controls.current.balance = -1;
+      if (key === "e") controls.current.balance = 1;
       if (key === "shift") controls.current.sprint = true;
       if (key === " ") controls.current.action = true;
       if (key === "c" && !event.repeat) {
@@ -673,6 +705,8 @@ export default function SurfscapeApp() {
       if (key === "s" || key === "arrowdown") controls.current.back = false;
       if (key === "a" || key === "arrowleft") controls.current.left = false;
       if (key === "d" || key === "arrowright") controls.current.right = false;
+      if (key === "q" && controls.current.balance < 0) controls.current.balance = 0;
+      if (key === "e" && controls.current.balance > 0) controls.current.balance = 0;
       if (key === "shift") controls.current.sprint = false;
       if (key === " ") controls.current.action = false;
     };
@@ -756,8 +790,9 @@ export default function SurfscapeApp() {
       controls.current.gamepadSprint = sprint;
       if (hasActivity) controls.current.gamepadActive = true;
       if (Math.abs(lookX) > .01 || Math.abs(lookY) > .01) {
-        controls.current.lookYaw = THREEClamp(controls.current.lookYaw - lookX * delta * 1.32, -1, 1);
-        controls.current.lookPitch = THREEClamp(controls.current.lookPitch + lookY * delta * 1.08, -1, 1);
+        const yaw = controls.current.lookYaw - lookX * delta * 2.42;
+        controls.current.lookYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+        controls.current.lookPitch = THREEClamp(controls.current.lookPitch + lookY * delta * 1.62, -1.35, 1.35);
       }
 
       const nextCameraButton = Boolean(gamepad.buttons[5]?.pressed);
@@ -1182,7 +1217,7 @@ export default function SurfscapeApp() {
 
   const updateBalance = (event: ReactPointerEvent<HTMLElement>) => {
     if (screen !== "game" || paused) return;
-    if (event.pointerType === "mouse" && event.buttons === 0) {
+    if (event.pointerType === "mouse" && event.buttons === 0 && document.pointerLockElement !== cameraLookSurface.current) {
       controls.current.gamepadActive = false;
       controls.current.balance = THREEClamp((event.clientX / window.innerWidth - 0.5) * 2, -1, 1);
     }
@@ -1214,6 +1249,11 @@ export default function SurfscapeApp() {
     if (paused) return;
     event.preventDefault();
     controls.current.gamepadActive = false;
+    if (event.pointerType === "mouse" && document.pointerLockElement !== event.currentTarget && event.currentTarget.requestPointerLock) {
+      event.currentTarget.requestPointerLock();
+      return;
+    }
+    if (document.pointerLockElement === event.currentTarget) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.classList.add("is-dragging");
     lookGesture.current = {
@@ -1231,8 +1271,9 @@ export default function SurfscapeApp() {
     event.preventDefault();
     const span = Math.max(320, Math.min(window.innerWidth, 900));
     const verticalSpan = Math.max(260, Math.min(window.innerHeight, 700));
-    controls.current.lookYaw = THREEClamp(gesture.yaw - ((event.clientX - gesture.x) / span) * 2.45, -1, 1);
-    controls.current.lookPitch = THREEClamp(gesture.pitch + ((event.clientY - gesture.y) / verticalSpan) * 2.1, -1, 1);
+    const yaw = gesture.yaw - ((event.clientX - gesture.x) / span) * Math.PI * 2.2;
+    controls.current.lookYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
+    controls.current.lookPitch = THREEClamp(gesture.pitch + ((event.clientY - gesture.y) / verticalSpan) * 2.7, -1.35, 1.35);
   };
 
   const endCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1695,8 +1736,9 @@ export default function SurfscapeApp() {
       {screen === "game" && (
         <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
           <div
-            className="camera-look-surface"
-            aria-label="Drag to look around"
+            ref={cameraLookSurface}
+            className={`camera-look-surface ${pointerLocked ? "is-locked" : ""}`}
+            aria-label={pointerLocked ? "Mouse locked for 360 degree view. Press Escape to release." : "Click to lock the mouse or drag to look around"}
             onPointerDown={beginCameraLook}
             onPointerMove={updateCameraLook}
             onPointerUp={endCameraLook}
@@ -1708,7 +1750,7 @@ export default function SurfscapeApp() {
             onDoubleClick={centerCameraLook}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <span>{gamepadConnected ? "RIGHT STICK VIEW · LT/RT BALANCE" : stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
+            <span>{gamepadConnected ? "RIGHT STICK · 360° VIEW" : pointerLocked ? "360° VIEW LOCKED · ESC RELEASES" : "CLICK / TOUCH · 360° VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
           </div>
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
@@ -1874,7 +1916,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : "Track the pocket · balance with mouse or thumb · shift stance with W/S"}</small>
+            <small>{stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · shift stance with W/S`}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -1918,7 +1960,7 @@ export default function SurfscapeApp() {
                 <span><kbd>A</kbd><kbd>D</kbd> steer</span>
                 <span><kbd>SPACE</kbd> exit when stopped</span>
                 <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
-                <span><span className="mouse-icon" /> drag view to look</span>
+                <span><span className="mouse-icon" /> click to lock 360° view</span>
               </>
             ) : (
               <>
@@ -1935,7 +1977,7 @@ export default function SurfscapeApp() {
                 )}
                 <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" && !stats.inLineup ? "duck-dive the shorebreak" : "catch wave"}</span>
                 <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
-                <span><span className="mouse-icon" /> mouse to balance</span>
+                <span>{pointerLocked ? <><kbd>Q</kbd><kbd>E</kbd> balance</> : <><span className="mouse-icon" /> mouse to balance</>}</span>
               </>
             )}
           </div>

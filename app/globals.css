@@ -780,6 +780,7 @@ input:focus-visible {
 }
 
 .camera-look-surface.is-dragging { cursor: grabbing; }
+.camera-look-surface.is-locked { cursor: none; }
 .is-paused .camera-look-surface { pointer-events: none; }
 
 .camera-look-surface > span {
