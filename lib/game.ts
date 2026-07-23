@@ -97,6 +97,7 @@ export type GameStats = {
   rideDistance: number;
   pocketDistance: number;
   offshoreDistance: number;
+  coastDistance: number;
   speed: number;
   paddleEffort: number;
   balance: number;
@@ -164,6 +165,7 @@ export const INITIAL_STATS: GameStats = {
   rideDistance: 0,
   pocketDistance: 0,
   offshoreDistance: 0,
+  coastDistance: 0,
   speed: 0,
   paddleEffort: 0,
   balance: 0,

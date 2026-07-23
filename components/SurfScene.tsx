@@ -37,7 +37,12 @@ type RenderQuality = "reduced" | "balanced" | "high";
 const RenderQualityContext = createContext<RenderQuality>("high");
 
 const LINEUP_ENTRY_Z = -30;
-const WATER_SIDE_LIMIT = 112;
+const COAST_PLAYABLE_HALF_WIDTH = 560;
+const COAST_GEOMETRY_WIDTH = 1600;
+const COAST_CHUNK_SPAN = 240;
+const COAST_CHUNK_SLOTS = [-1, 0, 1] as const;
+const OCEAN_RENDER_WIDTH = 620;
+const WATER_SIDE_LIMIT = COAST_PLAYABLE_HALF_WIDTH;
 const OCEAN_PLANE_DEPTH = 1250;
 const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z - OCEAN_PLANE_DEPTH * .5;
 
@@ -292,6 +297,7 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uSteepness;
   uniform float uHollow;
   uniform float uVariability;
+  uniform float uCenterX;
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
@@ -338,7 +344,7 @@ const OCEAN_VERTEX = /* glsl */ `
 
   void main() {
     vec2 origin = position.xy;
-    vec2 surfaceOrigin = vec2(origin.x, -origin.y + ${OCEAN_CENTER_Z.toFixed(1)});
+    vec2 surfaceOrigin = vec2(origin.x + uCenterX, -origin.y + ${OCEAN_CENTER_Z.toFixed(1)});
     vec3 p = position;
     float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
     vec2 waveDir = coastalVector(uWaveDirection);
@@ -346,7 +352,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vec2 windDir = coastalVector(uWindDirection);
     float section = sin(surfaceOrigin.x * .07 + uTime * .05) * uVariability * 2.3;
     float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section;
-    float curve = waveDir.x * .0019 * origin.x * origin.x;
+    float curve = waveDir.x * .0019 * surfaceOrigin.x * surfaceOrigin.x;
     vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
     float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
     float shallowCompression = mix(1.0, mix(.82, .69, uSteepness), smoothstep(-32.0, 9.0, breakCoord));
@@ -559,6 +565,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
 function Ocean({
   settings,
   character,
+  focusPosition,
   light,
   cloudCover,
   sunPosition,
@@ -569,6 +576,7 @@ function Ocean({
 }: {
   settings: SessionSettings;
   character: BreakCharacter;
+  focusPosition: MutableRefObject<THREE.Vector3>;
   light: number;
   cloudCover: number;
   sunPosition: [number, number, number];
@@ -582,8 +590,8 @@ function Ocean({
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
   const crossShoreSegments = mobile
-    ? quality === "reduced" ? 42 : quality === "high" ? 66 : 54
-    : quality === "reduced" ? 92 : quality === "balanced" ? 112 : 132;
+    ? quality === "reduced" ? 80 : quality === "high" ? 140 : 108
+    : quality === "reduced" ? 180 : quality === "balanced" ? 224 : 280;
   const offshoreSegments = mobile
     ? quality === "reduced" ? 96 : quality === "high" ? 150 : 120
     : quality === "reduced" ? 190 : quality === "balanced" ? 238 : 280;
@@ -608,6 +616,7 @@ function Ocean({
       uSteepness: { value: character.steepness },
       uHollow: { value: character.hollow },
       uVariability: { value: character.variability },
+      uCenterX: { value: 0 },
       uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
       uSunColor: { value: new THREE.Color("#fff0ca") },
       uHazeColor: { value: new THREE.Color("#78979c") },
@@ -619,7 +628,10 @@ function Ocean({
 
   useFrame(({ clock }, delta) => {
     if (!material.current) return;
-    if (ocean.current) ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, OCEAN_CENTER_Z + tideShift, 2.8, delta);
+    if (ocean.current) {
+      ocean.current.position.x = THREE.MathUtils.damp(ocean.current.position.x, focusPosition.current.x, 12, delta);
+      ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, OCEAN_CENTER_Z + tideShift, 2.8, delta);
+    }
     const values = material.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
@@ -640,6 +652,7 @@ function Ocean({
     values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness, .035);
     values.uHollow.value = THREE.MathUtils.lerp(values.uHollow.value, character.hollow, .035);
     values.uVariability.value = THREE.MathUtils.lerp(values.uVariability.value, character.variability, .035);
+    values.uCenterX.value = ocean.current?.position.x ?? focusPosition.current.x;
     values.uSunDirection.value.set(...sunPosition).normalize();
     values.uSunColor.value.set(sunColor);
     values.uHazeColor.value.set(hazeColor);
@@ -647,7 +660,7 @@ function Ocean({
 
   return (
     <mesh ref={ocean} position={[0, -0.08, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[280, OCEAN_PLANE_DEPTH, crossShoreSegments, offshoreSegments]} />
+      <planeGeometry args={[OCEAN_RENDER_WIDTH, OCEAN_PLANE_DEPTH, crossShoreSegments, offshoreSegments]} />
       <shaderMaterial
         ref={material}
         uniforms={uniforms}
@@ -823,14 +836,14 @@ function UnderwaterWorld({
   const opacity = useRef(0);
   const kind = seabedKind(character);
   const crossSegments = mobile
-    ? quality === "reduced" ? 30 : quality === "high" ? 48 : 38
-    : quality === "reduced" ? 52 : quality === "balanced" ? 68 : 82;
+    ? quality === "reduced" ? 48 : quality === "high" ? 80 : 64
+    : quality === "reduced" ? 96 : quality === "balanced" ? 128 : 160;
   const offshoreSegments = mobile
     ? quality === "reduced" ? 72 : quality === "high" ? 116 : 92
     : quality === "reduced" ? 112 : quality === "balanced" ? 148 : 184;
   const rockCount = mobile
-    ? quality === "reduced" ? 18 : quality === "high" ? 34 : 26
-    : quality === "reduced" ? 34 : quality === "balanced" ? 52 : 68;
+    ? quality === "reduced" ? 60 : quality === "high" ? 120 : 88
+    : quality === "reduced" ? 120 : quality === "balanced" ? 180 : 240;
   const bedColor = useMemo(
     () => new THREE.Color(sandColor).lerp(new THREE.Color(kind >= 1 ? "#315750" : "#6a6952"), kind >= 1 ? .58 : .38),
     [kind, sandColor],
@@ -856,7 +869,7 @@ function UnderwaterWorld({
     const dummy = new THREE.Object3D();
     const matrices: THREE.Matrix4[] = [];
     for (let index = 0; index < rockCount; index += 1) {
-      const x = (seededRandom(index, 1111) - .5) * 252;
+      const x = (seededRandom(index, 1111) - .5) * (COAST_GEOMETRY_WIDTH - 36);
       const z = -7 - seededRandom(index, 1112) * 116;
       const reefScale = kind >= 1 ? 1.45 : .72;
       const width = (.16 + seededRandom(index, 1113) * .52) * reefScale;
@@ -917,7 +930,7 @@ function UnderwaterWorld({
         rotation={[-Math.PI / 2, 0, 0]}
         receiveShadow
       >
-        <planeGeometry args={[280, OCEAN_PLANE_DEPTH, crossSegments, offshoreSegments]} />
+        <planeGeometry args={[COAST_GEOMETRY_WIDTH, OCEAN_PLANE_DEPTH, crossSegments, offshoreSegments]} />
         <shaderMaterial
           ref={floorMaterial}
           uniforms={uniforms}
@@ -1173,7 +1186,7 @@ function ShorelineWash({
 
   return (
     <mesh ref={wash} position={[0, -0.405, 20 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
-      <planeGeometry args={[250, 32]} />
+      <planeGeometry args={[COAST_GEOMETRY_WIDTH, 32]} />
       <shaderMaterial
         ref={material}
         uniforms={uniforms}
@@ -5575,11 +5588,11 @@ const ROAD_FRAGMENT = /* glsl */ `
   }
 
   void main() {
-    vec2 road = vec2(vUv.x * 92.0, vUv.y * 7.0);
+    vec2 road = vec2(vWorldPosition.x * .368, vUv.y * 7.0);
     float aggregate = fbm(road * 2.2);
     float coarse = fbm(road * .24 + vec2(17.0, 3.0));
     float laneWear = exp(-pow((vUv.y - .28) * 17.0, 2.0)) + exp(-pow((vUv.y - .72) * 17.0, 2.0));
-    float seam = (1.0 - smoothstep(0.0, .018, abs(fract(vUv.x * 5.0 + .17) - .5))) * .16;
+    float seam = (1.0 - smoothstep(0.0, .018, abs(fract(vWorldPosition.x / 50.0 + .17) - .5))) * .16;
     vec3 dryAsphalt = mix(vec3(.055, .061, .06), vec3(.105, .112, .108), aggregate * .72 + coarse * .28);
     dryAsphalt *= 1.0 - laneWear * .075 - seam;
 
@@ -5620,7 +5633,7 @@ function RoadSurface({ weatherCode, light }: { weatherCode: number; light: numbe
 
   return (
     <mesh position={[0, -0.35, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[250, 14]} />
+      <planeGeometry args={[COAST_GEOMETRY_WIDTH, 14]} />
       <shaderMaterial ref={material} uniforms={uniforms} vertexShader={ROAD_VERTEX} fragmentShader={ROAD_FRAGMENT} />
     </mesh>
   );
@@ -6042,8 +6055,124 @@ function BeachUmbrella({
   );
 }
 
+function alongshoreZoneOffsets(beach: Beach, currentZoneName: string) {
+  const reference = beach.zones.find((zone) => zone.name === currentZoneName)
+    ?? beach.zones.find((zone) => zone.name.includes(currentZoneName) || currentZoneName.includes(zone.name))
+    ?? { lat: beach.lat, lon: beach.lon };
+  const latitudeScale = 111_320;
+  const longitudeScale = Math.cos(THREE.MathUtils.degToRad((reference.lat + beach.lat) * .5)) * latitudeScale;
+  const alongshoreBearing = THREE.MathUtils.degToRad(beach.heading + 90);
+  const alongshoreEast = Math.sin(alongshoreBearing);
+  const alongshoreNorth = Math.cos(alongshoreBearing);
+  return beach.zones.map((zone) => {
+    const east = (zone.lon - reference.lon) * longitudeScale;
+    const north = (zone.lat - reference.lat) * latitudeScale;
+    return {
+      zone,
+      offset: east * alongshoreEast + north * alongshoreNorth,
+      current: zone.name === currentZoneName,
+    };
+  });
+}
+
+function CoastZoneMarker({
+  label,
+  note,
+  offset,
+  current,
+  light,
+}: {
+  label: string;
+  note: string;
+  offset: number;
+  current: boolean;
+  light: number;
+}) {
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 200;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.fillStyle = current ? "rgba(8,38,42,.96)" : "rgba(18,27,31,.94)";
+      context.fillRect(0, 0, 640, 200);
+      context.strokeStyle = current ? "#8ef4e5" : "#e8c574";
+      context.lineWidth = 9;
+      context.strokeRect(7, 7, 626, 186);
+      context.fillStyle = current ? "#8ef4e5" : "#e8c574";
+      context.font = "800 24px Arial";
+      context.letterSpacing = "5px";
+      context.fillText(current ? "CURRENT SURF PEAK" : "COASTAL SURF PEAK", 38, 47);
+      const title = label.toUpperCase();
+      let titleSize = 62;
+      context.font = `900 ${titleSize}px Arial`;
+      while (context.measureText(title).width > 566 && titleSize > 34) {
+        titleSize -= 2;
+        context.font = `900 ${titleSize}px Arial`;
+      }
+      context.fillStyle = "#f5f4eb";
+      context.fillText(title, 36, 118);
+      context.font = "700 22px Arial";
+      context.fillStyle = "rgba(229,241,235,.72)";
+      const detail = note.toUpperCase();
+      context.fillText(detail.length > 48 ? `${detail.slice(0, 46)}…` : detail, 38, 164);
+    }
+    const value = new THREE.CanvasTexture(canvas);
+    value.colorSpace = THREE.SRGBColorSpace;
+    value.anisotropy = 4;
+    return value;
+  }, [current, label, note]);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  return (
+    <group position={[offset, 0, 68.8]}>
+      {[-2.08, 2.08].map((x) => (
+        <mesh key={x} position={[x, 1.15, .08]} castShadow>
+          <cylinderGeometry args={[.055, .075, 2.3, 8]} />
+          <meshStandardMaterial color="#9ca7a2" metalness={.62} roughness={.38} />
+        </mesh>
+      ))}
+      <mesh position={[0, 2.15, 0]} castShadow>
+        <planeGeometry args={[5.25, 1.64]} />
+        <meshStandardMaterial
+          map={texture}
+          emissive={current ? "#195b55" : "#5f4b18"}
+          emissiveIntensity={(1 - light) * .46 + .08}
+          metalness={.08}
+          roughness={.54}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <pointLight position={[0, 2.25, -.45]} intensity={current ? (1 - light) * .42 : 0} distance={9} color="#8ef4e5" />
+    </group>
+  );
+}
+
+function CoastWayfinding({ beach, zoneName, light }: { beach: Beach; zoneName: string; light: number }) {
+  const markers = useMemo(
+    () => alongshoreZoneOffsets(beach, zoneName).filter(({ offset }) => Math.abs(offset) <= COAST_PLAYABLE_HALF_WIDTH - 24),
+    [beach, zoneName],
+  );
+  return (
+    <group>
+      {markers.map(({ zone, offset, current }) => (
+        <CoastZoneMarker
+          key={zone.name}
+          label={zone.name}
+          note={zone.note}
+          offset={offset}
+          current={current}
+          light={light}
+        />
+      ))}
+    </group>
+  );
+}
+
 function BeachLife({
   beach,
+  zoneName,
   windSpeed,
   windDirection,
   coastHeading,
@@ -6053,6 +6182,7 @@ function BeachLife({
   playerPosition,
 }: {
   beach: Beach;
+  zoneName: string;
   windSpeed: number;
   windDirection: number;
   coastHeading: number;
@@ -6066,9 +6196,16 @@ function BeachLife({
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const quality = useRenderQuality();
   const wetSand = useRef<THREE.Mesh>(null);
+  const coastChunkGroups = useRef<Array<THREE.Group | null>>([]);
   const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
-  const sandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 11), [sandTextureSource]);
-  const wetSandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 2), [sandTextureSource]);
+  const sandTexture = useMemo(
+    () => createTiledSandTexture(sandTextureSource, Math.round(COAST_GEOMETRY_WIDTH / 250 * 22), 11),
+    [sandTextureSource],
+  );
+  const wetSandTexture = useMemo(
+    () => createTiledSandTexture(sandTextureSource, Math.round(COAST_GEOMETRY_WIDTH / 250 * 22), 2),
+    [sandTextureSource],
+  );
   const dunes = useMemo(
     () =>
       Array.from({ length: 22 }, (_, index) => ({
@@ -6094,35 +6231,40 @@ function BeachLife({
   const tideShift = shorelineShiftForTide(tide);
   useFrame((_, delta) => {
     if (wetSand.current) wetSand.current.position.z = THREE.MathUtils.damp(wetSand.current.position.z, 21 + tideShift, 2.8, delta);
+    const coastCenter = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN) * COAST_CHUNK_SPAN;
+    coastChunkGroups.current.forEach((chunk, index) => {
+      if (!chunk) return;
+      chunk.position.x = coastCenter + COAST_CHUNK_SLOTS[index] * COAST_CHUNK_SPAN;
+    });
   });
   return (
     <group>
       <mesh position={[0, -0.5, 64]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[250, 125, 20, 20]} />
+        <planeGeometry args={[COAST_GEOMETRY_WIDTH, 125, 64, 20]} />
         <meshStandardMaterial color={surface[0]} map={sandTexture} bumpMap={sandTexture} bumpScale={0.045} roughness={0.93} metalness={0} />
       </mesh>
       <mesh ref={wetSand} position={[0, -0.43, 21 + tideShift]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[250, 18]} />
+        <planeGeometry args={[COAST_GEOMETRY_WIDTH, 18]} />
         <meshStandardMaterial color={surface[1]} map={wetSandTexture} bumpMap={wetSandTexture} bumpScale={0.025} roughness={0.76} metalness={0.04} />
       </mesh>
       <group position={[0, 0, 78]}>
         <RoadSurface weatherCode={weatherCode} light={light} />
         <mesh position={[0, -0.31, -6.5]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[250, 0.18]} />
+          <planeGeometry args={[COAST_GEOMETRY_WIDTH, 0.18]} />
           <meshStandardMaterial color="#dfd6b5" roughness={0.78} />
         </mesh>
         <mesh position={[0, -0.31, 6.5]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[250, 0.18]} />
+          <planeGeometry args={[COAST_GEOMETRY_WIDTH, 0.18]} />
           <meshStandardMaterial color="#dfd6b5" roughness={0.78} />
         </mesh>
-        {Array.from({ length: 24 }, (_, index) => (
-          <mesh key={index} position={[-115 + index * 10, -0.29, 0]} receiveShadow>
+        {Array.from({ length: Math.floor((COAST_GEOMETRY_WIDTH - 50) / 10) }, (_, index) => (
+          <mesh key={index} position={[-COAST_GEOMETRY_WIDTH / 2 + 25 + index * 10, -0.29, 0]} receiveShadow>
             <boxGeometry args={[5.5, 0.04, 0.16]} />
             <meshStandardMaterial color="#d8c86c" roughness={0.82} emissive="#5b4d13" emissiveIntensity={0.08} />
           </mesh>
         ))}
-        {Array.from({ length: 18 }, (_, index) => (
-          <group key={index} position={[-110 + index * 13, 0, -8.3]}>
+        {Array.from({ length: Math.floor((COAST_GEOMETRY_WIDTH - 50) / 13) }, (_, index) => (
+          <group key={index} position={[-COAST_GEOMETRY_WIDTH / 2 + 25 + index * 13, 0, -8.3]}>
             <mesh position={[0, 0.35, 0]}>
               <cylinderGeometry args={[0.045, 0.06, 1.3, 6]} />
               <meshStandardMaterial color="#7c6a4d" roughness={1} />
@@ -6148,32 +6290,43 @@ function BeachLife({
           </mesh>
         </group>
       </group>
-      {biome !== "urban" && biome !== "rugged" && dunes
-        .filter((dune) => dune.z > 88)
-        .slice(0, mobileRenderer ? quality === "reduced" ? 8 : quality === "high" ? 17 : 13 : quality === "reduced" ? 13 : 22)
-        .map((dune, index) => (
-        <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, 0.8 + (index % 3) * 0.28, dune.s * 0.72]} receiveShadow>
-          <sphereGeometry args={[1, 12, 8]} />
-          <meshStandardMaterial color={biome === "volcanic" ? index % 2 ? "#373a36" : "#484a43" : index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
-        </mesh>
+      {COAST_CHUNK_SLOTS.map((slot, chunkIndex) => (
+        <group
+          key={slot}
+          ref={(node) => {
+            coastChunkGroups.current[chunkIndex] = node;
+          }}
+          position={[slot * COAST_CHUNK_SPAN, 0, 0]}
+        >
+          {biome !== "urban" && biome !== "rugged" && dunes
+            .filter((dune) => dune.z > 88)
+            .slice(0, mobileRenderer ? quality === "reduced" ? 8 : quality === "high" ? 17 : 13 : quality === "reduced" ? 13 : 22)
+            .map((dune, index) => (
+            <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, 0.8 + (index % 3) * 0.28, dune.s * 0.72]} receiveShadow>
+              <sphereGeometry args={[1, 12, 8]} />
+              <meshStandardMaterial color={biome === "volcanic" ? index % 2 ? "#373a36" : "#484a43" : index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
+            </mesh>
+          ))}
+          <BeachUmbrella
+            wind={wind}
+            windDirection={windDirection}
+            coastHeading={coastHeading}
+            weatherCode={weatherCode}
+            mobile={mobileRenderer}
+          />
+          <LifeguardStation wind={wind} light={light} />
+          <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
+          <CoastBackdrop
+            biome={biome}
+            wind={wind}
+            windDirection={windDirection}
+            coastHeading={coastHeading}
+            light={light}
+            mobile={mobileRenderer}
+          />
+        </group>
       ))}
-      <BeachUmbrella
-        wind={wind}
-        windDirection={windDirection}
-        coastHeading={coastHeading}
-        weatherCode={weatherCode}
-        mobile={mobileRenderer}
-      />
-      <LifeguardStation wind={wind} light={light} />
-      <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
-      <CoastBackdrop
-        biome={biome}
-        wind={wind}
-        windDirection={windDirection}
-        coastHeading={coastHeading}
-        light={light}
-        mobile={mobileRenderer}
-      />
+      <CoastWayfinding beach={beach} zoneName={zoneName} light={light} />
       <DestinationLandmarks beach={beach} mobile={mobileRenderer} light={light} />
     </group>
   );
@@ -6769,6 +6922,7 @@ function Simulation({
   const van = useRef<THREE.Group>(null);
   const position = useRef(new THREE.Vector3(0, 0, 35));
   const vanPosition = useRef(new THREE.Vector3(0, 0, 78));
+  const worldFocus = useRef(new THREE.Vector3(0, 0, 35));
   const vanHeading = useRef(-Math.PI / 2);
   const vanSpeed = useRef(0);
   const vanSteer = useRef(0);
@@ -6893,6 +7047,21 @@ function Simulation({
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
   const cameraOffset = useRef(new THREE.Vector3());
   const cameraOrbit = useRef(new THREE.Spherical());
+  const sunLight = useRef<THREE.DirectionalLight>(null);
+  const sunTarget = useMemo(() => new THREE.Object3D(), []);
+  const timeToHour = (value: string, fallback: number) => {
+    if (!value) return fallback;
+    const time = value.includes("T") ? value.split("T")[1] : value;
+    const [hours, minutes] = time.split(":").map(Number);
+    return Number.isFinite(hours) ? hours + (minutes || 0) / 60 : fallback;
+  };
+  const sunriseHour = timeToHour(sunrise, 6);
+  const sunsetHour = timeToHour(sunset, 18);
+  const hourAngle = ((settings.timeOfDay - sunriseHour) / Math.max(8, sunsetHour - sunriseHour)) * Math.PI;
+  const solarElevation = Math.sin(hourAngle);
+  const sunHeight = Math.max(-0.08, solarElevation);
+  const sunX = Math.cos(hourAngle) * 160;
+  const lightingSunPosition: [number, number, number] = [sunX * .22, Math.max(6, sunHeight * 44), -30];
 
   useEffect(() => {
     onReady();
@@ -6906,6 +7075,16 @@ function Simulation({
       : THREE.MathUtils.smootherstep(t, .12, 3.25);
     const state = controls.current;
     const currentPhase = phase.current;
+    worldFocus.current.copy(currentPhase === "driving" ? vanPosition.current : position.current);
+    if (sunLight.current) {
+      sunLight.current.position.set(
+        worldFocus.current.x + lightingSunPosition[0],
+        lightingSunPosition[1],
+        worldFocus.current.z + lightingSunPosition[2],
+      );
+      sunTarget.position.set(worldFocus.current.x, 0, worldFocus.current.z);
+      sunTarget.updateMatrixWorld();
+    }
     const tideShift = shorelineShiftForTide(settings.tide);
     const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
     const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY + state.gamepadMoveY, -1, 1);
@@ -7067,10 +7246,10 @@ function Simulation({
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 4.7, delta);
           vanPosition.current.z = THREE.MathUtils.clamp(vanPosition.current.z, 71.8, 84.2);
         }
-        if (Math.abs(vanPosition.current.x) > 116) {
-          vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -116, 116);
+        if (Math.abs(vanPosition.current.x) > COAST_PLAYABLE_HALF_WIDTH) {
+          vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -COAST_PLAYABLE_HALF_WIDTH, COAST_PLAYABLE_HALF_WIDTH);
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 8, delta);
-          prompt = "Road end — steer around for another pass";
+          prompt = "End of this modeled coastline — turn around for another run";
         } else if (nextRoadEdge > 4.3) {
           prompt = vanSlip.current > .25 ? "Loose shoulder — ease the wheel and find grip" : "Ease back onto the coast road";
         } else if (vanSlip.current > .22) {
@@ -7647,7 +7826,11 @@ function Simulation({
     }
 
     const landRange = phase.current === "shore" || phase.current === "wading" || phase.current === "driving";
-    position.current.x = THREE.MathUtils.clamp(position.current.x, landRange ? -118 : -WATER_SIDE_LIMIT, landRange ? 118 : WATER_SIDE_LIMIT);
+    position.current.x = THREE.MathUtils.clamp(
+      position.current.x,
+      landRange ? -COAST_PLAYABLE_HALF_WIDTH : -WATER_SIDE_LIMIT,
+      landRange ? COAST_PLAYABLE_HALF_WIDTH : WATER_SIDE_LIMIT,
+    );
     const waterY = waveHeightAt(position.current.x, position.current.z, t, settings, character);
     const isWater = phase.current !== "shore";
     if (phase.current !== "riding") {
@@ -8123,6 +8306,7 @@ function Simulation({
           0,
           SHORELINE_REFERENCE_Z - (position.current.z - tideShift),
         ).toFixed(1)),
+        coastDistance: Number((phase.current === "driving" ? vanPosition.current.x : position.current.x).toFixed(1)),
         speed: Math.max(0, speed),
         paddleEffort: motion.current.paddleEffort,
         balance: balanceInput,
@@ -8186,18 +8370,6 @@ function Simulation({
     }
   });
 
-  const timeToHour = (value: string, fallback: number) => {
-    if (!value) return fallback;
-    const clock = value.includes("T") ? value.split("T")[1] : value;
-    const [hours, minutes] = clock.split(":").map(Number);
-    return Number.isFinite(hours) ? hours + (minutes || 0) / 60 : fallback;
-  };
-  const sunriseHour = timeToHour(sunrise, 6);
-  const sunsetHour = timeToHour(sunset, 18);
-  const hourAngle = ((settings.timeOfDay - sunriseHour) / Math.max(8, sunsetHour - sunriseHour)) * Math.PI;
-  const solarElevation = Math.sin(hourAngle);
-  const sunHeight = Math.max(-0.08, solarElevation);
-  const sunX = Math.cos(hourAngle) * 160;
   const light = THREE.MathUtils.clamp(sunHeight * 1.1 + 0.12, 0.08, 1);
   const weather = weatherProfile(weatherCode);
   const weatherCloudFloor = weather.storm ? .88 : weather.kind !== "none" ? .64 : weather.fog ? .8 : 0;
@@ -8235,7 +8407,6 @@ function Simulation({
   const fogFar = weather.fog ? 112 : weather.storm ? 148 : weather.intensity > .7 ? 172 : weather.kind !== "none" ? 205 : 240;
   const sunLightColor = sunHeight < 0.3 ? "#ff9f72" : "#fff0ca";
   const celestialSunPosition: [number, number, number] = [sunX, solarElevation * 150, -120];
-  const lightingSunPosition: [number, number, number] = [sunX * .22, Math.max(6, sunHeight * 44), -30];
   const oceanSunPosition: [number, number, number] = [sunX * .22, solarElevation * 44, -30];
 
   return (
@@ -8277,6 +8448,8 @@ function Simulation({
       <ambientLight intensity={(0.18 + light * 0.42) * (.94 + cloudFactor * .08)} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
       <hemisphereLight args={["#a9d9dc", "#5c4431", (0.38 + light * 0.55) * (.93 + cloudFactor * .09)]} />
       <directionalLight
+        ref={sunLight}
+        target={sunTarget}
         position={lightingSunPosition}
         intensity={(0.45 + light * 2.2) * directLight * daylightStrength}
         color={sunLightColor}
@@ -8289,6 +8462,7 @@ function Simulation({
         shadow-camera-top={35}
         shadow-camera-bottom={-35}
       />
+      <primitive object={sunTarget} />
       <directionalLight
         position={[-sunX * .18, 28, 34]}
         intensity={moonlightStrength * .34 * (1 - cloudFactor * .36)}
@@ -8315,6 +8489,7 @@ function Simulation({
       <Ocean
         settings={settings}
         character={character}
+        focusPosition={worldFocus}
         light={light}
         cloudCover={cloudCover}
         sunPosition={oceanSunPosition}
@@ -8325,13 +8500,14 @@ function Simulation({
       />
       <BeachLife
         beach={beach}
+        zoneName={zoneName}
         windSpeed={settings.windSpeed}
         windDirection={settings.windDirection}
         coastHeading={settings.coastHeading}
         weatherCode={weatherCode}
         light={light}
         tide={settings.tide}
-        playerPosition={position}
+        playerPosition={worldFocus}
       />
       <ShorelineWash settings={settings} light={light} sunPosition={oceanSunPosition} sunColor={sunLightColor} />
       <FootprintTrail

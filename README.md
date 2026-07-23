@@ -2,7 +2,7 @@
 
 Surfscape is a browser-based 3D surfing game driven by current marine forecast data. Pick an exact paddle-out on a real OpenStreetMap shoreline, read the local swell, walk into the water, paddle beyond the break, and surf a procedural wave set.
 
-You can also walk up to the coast road, enter the Surfscape van, and drive between peaks with three boards on the roof rack.
+You can also walk up to the coast road, enter the Surfscape van, and drive more than a kilometer between peaks with three boards on the roof rack. The road, sand, wet shoreline, ocean, and device-adaptive coastal detail stream along the active traveler instead of ending at the original short showcase strip. Roadside wayfinding is projected from each destination's real surf-zone coordinates, while the HUD tracks signed along-coast distance and bearing.
 
 Those three boards form a playable quiver: the Apex performance shortboard turns fastest and scores technical surfing, the Drift Twin fish carries speed through weaker sections, and the Horizon longboard paddles easily, stabilizes balance, and unlocks stronger nose rides. Their fiberglass shells flex and torsionally load under speed, stance, rail pressure, and landings before springing back on release.
 

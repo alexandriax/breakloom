@@ -1459,6 +1459,8 @@ export default function SurfscapeApp() {
     : stats.vehicleOffRoad > .16
       ? "ROAD SHOULDER"
       : "COAST ROAD";
+  const coastBearing = compassDirection(settings.coastHeading + (stats.coastDistance < 0 ? -90 : 90));
+  const coastPosition = `${Math.abs(stats.coastDistance).toFixed(0)} m ${coastBearing}`;
   const vehicleGrip = Math.round(stats.vehicleTraction * 100);
   const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady || stats.duckDiveReady;
   const mobileActionLabel = stats.vehicleMode
@@ -1479,7 +1481,7 @@ export default function SurfscapeApp() {
   const mobileContext = stats.vehicleMode
     ? {
         title: stats.vehicleSlip > .24 ? "SETTLE THE VAN" : vehicleSurfaceLabel,
-        detail: `${vehicleGrip}% grip · ${stats.vehicleSlip > .24 ? "unwind the stick" : "stop before exit"}`,
+        detail: `${coastPosition} · ${vehicleGrip}% grip · ${stats.vehicleSlip > .24 ? "unwind the stick" : "stop before exit"}`,
       }
     : stats.phase === "shore"
       ? { title: "BEACH TRAVERSE", detail: "Full stick runs · drag scene to look" }
@@ -2015,7 +2017,7 @@ export default function SurfscapeApp() {
             </div>
             <div className="vehicle-copy">
               <span>COAST RUNNER / SURF RACK 03</span>
-              <strong>{stats.vehicleSlip > .24 ? "Tires sliding — unwind the steering" : vehicleSurfaceLabel}</strong>
+              <strong>{stats.vehicleSlip > .24 ? "Tires sliding — unwind the steering" : `${vehicleSurfaceLabel} · ${coastPosition}`}</strong>
               <div className="vehicle-grip">
                 <i><b style={{ width: `${vehicleGrip}%` }} /></i>
                 <em>{vehicleGrip}% GRIP</em>
@@ -2031,8 +2033,14 @@ export default function SurfscapeApp() {
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div>
               <Crosshair />
-              <span>{stats.phase === "paddling" ? "OFFSHORE" : "DISTANCE"}</span>
-              <strong>{stats.phase === "paddling" ? stats.offshoreDistance.toFixed(0) : stats.rideDistance.toFixed(0)} m</strong>
+              <span>{stats.phase === "paddling" ? "OFFSHORE" : stats.phase === "driving" ? "COAST" : "DISTANCE"}</span>
+              <strong>
+                {stats.phase === "paddling"
+                  ? stats.offshoreDistance.toFixed(0)
+                  : stats.phase === "driving"
+                    ? Math.abs(stats.coastDistance).toFixed(0)
+                    : stats.rideDistance.toFixed(0)} m
+              </strong>
             </div>
             <div><CloudSun /><span>SKY</span><strong>{weatherLabel(sessionWeatherCode)}</strong></div>
           </div>
