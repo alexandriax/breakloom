@@ -1784,18 +1784,6 @@ export default function SurfscapeApp() {
       stats.vehicleSlip,
       stats.vehicleMode && stats.vehicleThrottle < -.08 && stats.vehicleGear === "D",
     );
-    audio.current?.setSurf(
-      paused ? 0 : stats.speed,
-      !paused && stats.phase === "riding",
-      stats.setEnergy,
-      stats.barrelIntensity,
-      stats.railLoad,
-      stats.railGrip,
-      stats.trickCharge,
-      stats.facePosition,
-      stats.acceleration,
-      stats.lateralForce,
-    );
     audio.current?.setWaveField(
       stats.phase,
       stats.setEnergy,
@@ -1811,14 +1799,6 @@ export default function SurfscapeApp() {
       settings.swellDirection,
       screen === "game" && !paused,
       stats.cameraHeading,
-    );
-    audio.current?.setScore(
-      stats.phase,
-      stats.setEnergy,
-      stats.barrelIntensity,
-      settings.timeOfDay,
-      sessionWeatherCode,
-      screen === "game" && !paused,
     );
     audio.current?.setEnvironment(
       settings.windSpeed,
@@ -1841,6 +1821,37 @@ export default function SurfscapeApp() {
       !paused && !stats.vehicleMode,
     );
   }, [effectiveFaceHeight, paused, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+
+  useEffect(() => {
+    const phase = replayActive ? "riding" : stats.phase;
+    const speed = replayActive ? replayTelemetry.speed : stats.speed;
+    const barrel = replayActive ? replayTelemetry.barrel : stats.barrelIntensity;
+    const railLoad = replayActive ? replayTelemetry.railLoad : stats.railLoad;
+    const railGrip = replayActive ? replayTelemetry.railGrip : stats.railGrip;
+    const facePosition = replayActive ? replayTelemetry.facePosition : stats.facePosition;
+    const active = screen === "game" && !paused;
+    audio.current?.setSurf(
+      active ? speed : 0,
+      active && phase === "riding",
+      stats.setEnergy,
+      barrel,
+      railLoad,
+      railGrip,
+      replayActive ? 0 : stats.trickCharge,
+      facePosition,
+      replayActive ? 0 : stats.acceleration,
+      replayActive ? 0 : stats.lateralForce,
+    );
+    audio.current?.setScore(
+      phase,
+      stats.setEnergy,
+      barrel,
+      settings.timeOfDay,
+      sessionWeatherCode,
+      active,
+    );
+    audio.current?.setAcousticSpace(phase, barrel, active);
+  }, [paused, replayActive, replayTelemetry.barrel, replayTelemetry.facePosition, replayTelemetry.railGrip, replayTelemetry.railLoad, replayTelemetry.speed, screen, sessionWeatherCode, settings.timeOfDay, stats.acceleration, stats.barrelIntensity, stats.facePosition, stats.lateralForce, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge]);
 
   useEffect(() => {
     if (

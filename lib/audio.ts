@@ -34,6 +34,8 @@ export class SurfscapeAudio {
   private reverb: ConvolverNode | null = null;
   private reverbGain: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private worldGain: GainNode | null = null;
+  private worldFilter: BiquadFilterNode | null = null;
 
   private oceanGain: GainNode | null = null;
   private oceanFilter: BiquadFilterNode | null = null;
@@ -52,6 +54,10 @@ export class SurfscapeAudio {
   private surfGain: GainNode | null = null;
   private surfFilter: BiquadFilterNode | null = null;
   private surfPanner: StereoPannerNode | null = null;
+  private barrelRoar: AudioBufferSourceNode | null = null;
+  private barrelRoarGain: GainNode | null = null;
+  private barrelRoarFilter: BiquadFilterNode | null = null;
+  private barrelRoarPanner: StereoPannerNode | null = null;
 
   private breaker: AudioBufferSourceNode | null = null;
   private breakerRumbleGain: GainNode | null = null;
@@ -131,6 +137,17 @@ export class SurfscapeAudio {
     this.reverb = reverb;
     this.reverbGain = reverbGain;
 
+    const worldGain = context.createGain();
+    const worldFilter = context.createBiquadFilter();
+    worldGain.gain.value = 1;
+    worldFilter.type = "lowpass";
+    worldFilter.frequency.value = 18000;
+    worldFilter.Q.value = .48;
+    worldGain.connect(worldFilter).connect(master);
+    this.sendToReverb(worldFilter, .075);
+    this.worldGain = worldGain;
+    this.worldFilter = worldFilter;
+
     const ocean = this.loopNoise(.72, 0.31);
     const oceanFilter = context.createBiquadFilter();
     const oceanGain = context.createGain();
@@ -139,8 +156,7 @@ export class SurfscapeAudio {
     oceanFilter.frequency.value = 720;
     oceanFilter.Q.value = .55;
     oceanGain.gain.value = .24;
-    ocean.connect(oceanFilter).connect(oceanGain).connect(oceanPanner).connect(master);
-    this.sendToReverb(oceanPanner, .06);
+    ocean.connect(oceanFilter).connect(oceanGain).connect(oceanPanner).connect(worldGain);
     this.oceanFilter = oceanFilter;
     this.oceanGain = oceanGain;
     this.oceanPanner = oceanPanner;
@@ -153,7 +169,7 @@ export class SurfscapeAudio {
     undertowFilter.frequency.value = 185;
     undertowFilter.Q.value = 1.1;
     undertowGain.gain.value = .065;
-    undertow.connect(undertowFilter).connect(undertowGain).connect(undertowPanner).connect(master);
+    undertow.connect(undertowFilter).connect(undertowGain).connect(undertowPanner).connect(worldGain);
     this.undertowGain = undertowGain;
     this.undertowPanner = undertowPanner;
 
@@ -164,8 +180,7 @@ export class SurfscapeAudio {
     foamFilter.type = "highpass";
     foamFilter.frequency.value = 2750;
     foamGain.gain.value = .022;
-    foam.connect(foamFilter).connect(foamGain).connect(foamPanner).connect(master);
-    this.sendToReverb(foamPanner, .025);
+    foam.connect(foamFilter).connect(foamGain).connect(foamPanner).connect(worldGain);
     this.foamGain = foamGain;
     this.foamPanner = foamPanner;
 
@@ -177,8 +192,7 @@ export class SurfscapeAudio {
     windFilter.frequency.value = 1280;
     windFilter.Q.value = .46;
     windGain.gain.value = .012;
-    wind.connect(windFilter).connect(windGain).connect(windPanner).connect(master);
-    this.sendToReverb(windPanner, .04);
+    wind.connect(windFilter).connect(windGain).connect(windPanner).connect(worldGain);
     this.windFilter = windFilter;
     this.windGain = windGain;
     this.windPanner = windPanner;
@@ -190,8 +204,7 @@ export class SurfscapeAudio {
     rainFilter.frequency.value = 2850;
     rainFilter.Q.value = .42;
     rainGain.gain.value = 0;
-    rain.connect(rainFilter).connect(rainGain).connect(master);
-    this.sendToReverb(rainFilter, .035);
+    rain.connect(rainFilter).connect(rainGain).connect(worldGain);
     this.rainFilter = rainFilter;
     this.rainGain = rainGain;
 
@@ -204,11 +217,26 @@ export class SurfscapeAudio {
     surfFilter.Q.value = .65;
     surfGain.gain.value = 0;
     surf.connect(surfFilter).connect(surfPanner).connect(surfGain).connect(master);
-    this.sendToReverb(surfFilter, .08);
+    this.sendToReverb(surfGain, .08);
     this.surf = surf;
     this.surfFilter = surfFilter;
     this.surfGain = surfGain;
     this.surfPanner = surfPanner;
+
+    const barrelRoar = this.loopNoise(.58, 1.86);
+    const barrelRoarFilter = context.createBiquadFilter();
+    const barrelRoarGain = context.createGain();
+    const barrelRoarPanner = context.createStereoPanner();
+    barrelRoarFilter.type = "bandpass";
+    barrelRoarFilter.frequency.value = 360;
+    barrelRoarFilter.Q.value = 1.28;
+    barrelRoarGain.gain.value = 0;
+    barrelRoar.connect(barrelRoarFilter).connect(barrelRoarGain).connect(barrelRoarPanner).connect(master);
+    this.sendToReverb(barrelRoarPanner, .24);
+    this.barrelRoar = barrelRoar;
+    this.barrelRoarGain = barrelRoarGain;
+    this.barrelRoarFilter = barrelRoarFilter;
+    this.barrelRoarPanner = barrelRoarPanner;
 
     const breaker = this.loopNoise(.74, 5.42);
     const breakerRumbleFilter = context.createBiquadFilter();
@@ -238,8 +266,7 @@ export class SurfscapeAudio {
     breakerWashGain.gain.value = 0;
     breaker.connect(breakerRumbleFilter).connect(breakerRumbleGain).connect(breakerPanner);
     breaker.connect(breakerWashFilter).connect(breakerWashGain).connect(breakerPanner);
-    breakerPanner.connect(master);
-    this.sendToReverb(breakerPanner, .1);
+    breakerPanner.connect(worldGain);
     this.breaker = breaker;
     this.breakerRumbleGain = breakerRumbleGain;
     this.breakerRumbleFilter = breakerRumbleFilter;
@@ -277,6 +304,32 @@ export class SurfscapeAudio {
     if (!this.context || !this.musicBus) return;
     ramp(this.musicBus.gain, enabled ? 1 : 0, this.context.currentTime, .32);
     if (enabled) this.nextMusicStepAt = this.context.currentTime + .08;
+  }
+
+  setAcousticSpace(phase: GamePhase, barrel: number, active: boolean) {
+    if (!this.context || !this.worldGain || !this.worldFilter) return;
+    const now = this.context.currentTime;
+    const cabin = active && phase === "driving" ? 1 : 0;
+    const tube = active && phase === "riding"
+      ? Math.min(1, Math.max(0, barrel))
+      : 0;
+    const worldLevel = cabin
+      ? .38
+      : 1 - tube * .08;
+    const cutoff = cabin
+      ? 1480
+      : 18000 * Math.pow(.23, tube);
+    ramp(this.worldGain.gain, worldLevel, now, cabin ? .2 : .42);
+    ramp(this.worldFilter.frequency, cutoff, now, cabin ? .18 : tube > .08 ? .24 : .55);
+    ramp(this.worldFilter.Q, .48 + cabin * .34 + tube * 1.42, now, .3);
+    if (this.musicBus) {
+      const scoreSpace = this.musicEnabled
+        ? active
+          ? 1 - tube * .48 - cabin * .12
+          : .58
+        : 0;
+      ramp(this.musicBus.gain, scoreSpace, now, tube > .08 ? .28 : .46);
+    }
   }
 
   setSubmersion(amount: number, turbulence = 0, breath = 100) {
@@ -397,6 +450,17 @@ export class SurfscapeAudio {
     ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34 + lip * .18 + cornerLoad * .25 + cavitation * .42, now, .12);
     ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12 + lip * .06 - bottom * .025 + drive * .035 + cornerLoad * .025 + cavitation * .065, now, .1);
     if (this.surfPanner) ramp(this.surfPanner.pan, Math.max(-.72, Math.min(.72, railLoad * .57 + lateralForce * .24)), now, .1);
+    if (this.barrelRoar && this.barrelRoarGain && this.barrelRoarFilter) {
+      const enclosure = active ? Math.pow(Math.min(1, Math.max(0, barrel)), 1.18) : 0;
+      const tubePressure = enclosure * (.62 + setEnergy * .26 + velocity * .24);
+      ramp(this.barrelRoarGain.gain, tubePressure * .115, now, tubePressure > this.barrelRoarGain.gain.value ? .16 : .38);
+      ramp(this.barrelRoarFilter.frequency, 285 + enclosure * 260 + velocity * 190 + setEnergy * 85, now, .2);
+      ramp(this.barrelRoarFilter.Q, 1.18 + enclosure * 2.05 + setEnergy * .34, now, .24);
+      ramp(this.barrelRoar.playbackRate, .82 + enclosure * .24 + velocity * .13 + setEnergy * .08, now, .2);
+      if (this.barrelRoarPanner) {
+        ramp(this.barrelRoarPanner.pan, Math.max(-.28, Math.min(.28, -railLoad * .14 - lateralForce * .08)), now, .16);
+      }
+    }
   }
 
   setWaveField(
