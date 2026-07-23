@@ -1816,13 +1816,22 @@ export default function SurfscapeApp() {
       stats.wipeoutPower,
       stats.breath,
     );
+    audio.current?.setAthlete(
+      stats.phase,
+      paused ? 0 : stats.paddleEffort,
+      stats.stamina,
+      paused ? 0 : stats.submersion,
+      stats.breath,
+      paused ? 0 : stats.speed,
+      screen === "game" && !paused && !photoMode && !replayActive,
+    );
     const movementSpeed = stats.phase === "paddling" ? stats.speed * stats.paddleEffort : stats.speed;
     audio.current?.setMovement(
       stats.phase,
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [effectiveFaceHeight, paused, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [effectiveFaceHeight, paused, photoMode, replayActive, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.stamina, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     const phase = replayActive ? "riding" : stats.phase;

@@ -85,6 +85,10 @@ export class SurfscapeAudio {
 
   private nextFoleyAt = 0;
   private nextGullAt = 0;
+  private nextAthleteBreathAt = 0;
+  private nextHeartbeatAt = 0;
+  private nextGaspAt = 0;
+  private athleteWasSubmerged = false;
   private foleySide = -1;
   private enabled = true;
 
@@ -290,6 +294,9 @@ export class SurfscapeAudio {
     this.createEngine();
     this.nextGullAt = context.currentTime + 5 + Math.random() * 5;
     this.nextSetBreathAt = context.currentTime + 1.2;
+    this.nextAthleteBreathAt = context.currentTime + 1.4;
+    this.nextHeartbeatAt = context.currentTime + .8;
+    this.nextGaspAt = context.currentTime + .5;
     this.nextMusicStepAt = context.currentTime + .12;
   }
 
@@ -630,6 +637,79 @@ export class SurfscapeAudio {
     this.foleySide *= -1;
   }
 
+  setAthlete(
+    phase: GamePhase,
+    paddleEffort: number,
+    stamina: number,
+    submersion: number,
+    breath: number,
+    speed: number,
+    active: boolean,
+  ) {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    const depth = Math.min(1, Math.max(0, submersion));
+    const effort = Math.min(1, Math.max(0, paddleEffort));
+    const fatigue = 1 - Math.min(100, Math.max(0, stamina)) / 100;
+    const breathStress = 1 - Math.min(100, Math.max(0, breath)) / 100;
+    const pace = Math.min(1, Math.max(0, speed) / 16);
+
+    if (!this.enabled || !active) {
+      this.athleteWasSubmerged = depth > .34;
+      this.nextAthleteBreathAt = now + .28;
+      this.nextHeartbeatAt = now + .28;
+      return;
+    }
+
+    if (depth > .34) this.athleteWasSubmerged = true;
+    const resurfaced = this.athleteWasSubmerged && depth < .11;
+    if (resurfaced) this.athleteWasSubmerged = false;
+
+    const paddling = phase === "paddling";
+    const riding = phase === "riding";
+    const running = phase === "shore" && speed > 4.15;
+    const heldUnder = phase === "wipeout" && depth > .24;
+    const exertion = Math.min(
+      1,
+      paddling
+        ? .12 + effort * .67 + fatigue * .32
+        : riding
+          ? .08 + fatigue * .54 + pace * .18
+          : running
+            ? .3 + pace * .34 + fatigue * .28
+            : phase === "wading"
+              ? .08 + pace * .2 + fatigue * .16
+              : fatigue * .08,
+    );
+
+    if (resurfaced && breathStress > .08 && now >= this.nextGaspAt) {
+      this.athleteBreath(now, Math.min(1, .48 + breathStress * .72), 0, true);
+      this.nextGaspAt = now + 2.4;
+      this.nextAthleteBreathAt = now + .72;
+    }
+
+    if (!heldUnder && depth < .18 && exertion > .17 && now >= this.nextAthleteBreathAt) {
+      const shoulderPan = paddling ? this.foleySide * .12 : 0;
+      this.athleteBreath(now, exertion, shoulderPan, false);
+      const baseInterval = paddling
+        ? 1.72 - effort * .72
+        : running
+          ? 1.68 - pace * .48
+          : 2.55 - exertion * .92;
+      this.nextAthleteBreathAt = now + Math.max(.74, baseInterval) * (.93 + Math.random() * .14);
+    }
+
+    const holdStress = heldUnder
+      ? Math.min(1, .16 + breathStress * .72 + depth * .18)
+      : 0;
+    if (holdStress > .28 && now >= this.nextHeartbeatAt) {
+      this.athleteHeartbeat(now, holdStress);
+      this.nextHeartbeatAt = now + Math.max(.48, .96 - holdStress * .4);
+    } else if (!heldUnder) {
+      this.nextHeartbeatAt = Math.max(this.nextHeartbeatAt, now + .24);
+    }
+  }
+
   effect(kind: EffectKind) {
     if (!this.enabled || !this.context || !this.master) return;
     const now = this.context.currentTime;
@@ -960,6 +1040,26 @@ export class SurfscapeAudio {
   private paddle(now: number, side: number, wading: boolean) {
     this.noiseBurst(now, wading ? .28 : .22, wading ? 680 : 1280, .62, wading ? .075 : .062, "bandpass", side * .48, .05);
     this.tone(now, wading ? 112 : 176, wading ? 72 : 98, .2, .018, "sine", side * .38, .05);
+  }
+
+  private athleteBreath(now: number, intensity: number, pan: number, gasp: boolean) {
+    const strength = Math.min(1, Math.max(0, intensity));
+    if (gasp) {
+      this.noiseBurst(now, .46, 1140, .58, .018 + strength * .022, "bandpass", pan, .025);
+      this.noiseBurst(now + .38, .78, 720, .72, .015 + strength * .023, "bandpass", pan * .5, .035);
+      return;
+    }
+    this.noiseBurst(now, .42 + strength * .24, 680 + strength * 260, .66, .006 + strength * .014, "bandpass", pan, .022);
+    if (strength > .62) {
+      this.noiseBurst(now + .12, .3, 1850, .48, (strength - .62) * .012, "highpass", -pan * .4, .012);
+    }
+  }
+
+  private athleteHeartbeat(now: number, stress: number) {
+    const strength = Math.min(1, Math.max(0, stress));
+    const gain = .008 + strength * .015;
+    this.tone(now, 62, 44, .13, gain, "sine", -.05, .035);
+    this.tone(now + .16, 54, 39, .11, gain * .66, "sine", .04, .028);
   }
 
   private setBreath(now: number, intensity: number, pan: number) {
