@@ -4037,3 +4037,96 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .launch-footer .session-summary { display: none; }
   .launch-footer .launch-button { width: 100%; max-width: none; }
 }
+
+/*
+ * Live HUD compositing
+ *
+ * Safari and several mobile Chromium GPUs intermittently drop backdrop-filter
+ * layers when a WebGL canvas and the filtered DOM layer both repaint. Gameplay
+ * telemetry is intentionally rendered on solid translucent surfaces instead,
+ * and each instrument owns a stable paint layer.
+ */
+.game-topbar,
+.hud-vitals,
+.hud-drawer,
+.balance-instrument,
+.vehicle-instrument,
+.maneuver-toast,
+.takeoff-toast,
+.shorebreak-toast,
+.ride-recap,
+.hold-down-instrument,
+.game-objective strong,
+.touch-ride-telemetry,
+.analog-stick,
+.motion-balance-toggle,
+.touch-balance,
+.touch-context,
+.action-button {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  isolation: isolate;
+}
+
+.game-topbar,
+.hud-vitals,
+.hud-drawer,
+.balance-instrument,
+.vehicle-instrument,
+.maneuver-toast,
+.takeoff-toast,
+.shorebreak-toast,
+.ride-recap,
+.hold-down-instrument {
+  contain: layout style paint;
+}
+
+.game-topbar {
+  background: linear-gradient(105deg, rgba(3, 14, 19, .94), rgba(6, 23, 29, .9));
+}
+
+.hud-vitals {
+  background: linear-gradient(105deg, rgba(3, 15, 20, .92), rgba(5, 22, 27, .86));
+}
+
+.balance-instrument,
+.vehicle-instrument {
+  background: linear-gradient(105deg, rgba(3, 15, 20, .92), rgba(5, 22, 28, .86));
+}
+
+.touch-ride-telemetry {
+  background: linear-gradient(90deg, rgba(3, 15, 20, .96), rgba(7, 28, 32, .92), rgba(3, 15, 20, .96));
+}
+
+.analog-stick {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(34, 91, 98, .52) 0 34%, rgba(3, 13, 18, .94) 70%),
+    conic-gradient(from 45deg, rgba(113, 225, 211, .18), transparent 22%, rgba(113, 225, 211, .12) 48%, transparent 72%, rgba(113, 225, 211, .18));
+}
+
+.touch-balance {
+  background: linear-gradient(180deg, rgba(7, 24, 30, .96), rgba(2, 12, 17, .98));
+}
+
+.touch-context {
+  background: linear-gradient(180deg, rgba(5, 20, 27, .94), rgba(3, 13, 18, .97));
+}
+
+.motion-balance-toggle {
+  background: linear-gradient(90deg, rgba(5, 23, 29, .96), rgba(4, 17, 23, .94));
+}
+
+.game-objective strong {
+  background-color: rgba(3, 14, 19, .9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-controls.is-catch-ready .action-button,
+  .mobile-controls.is-dive-ready .action-button,
+  .controller-chip::after,
+  .coach-progress i.is-current {
+    animation: none;
+  }
+}

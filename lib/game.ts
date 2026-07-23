@@ -590,6 +590,17 @@ export function waveSetStateAt(
   );
 }
 
+function breakingWaveProfile(phase: number, nonlinearity: number) {
+  // A Stokes-like profile keeps the wave continuous while concentrating more
+  // of its vertical change into the front face. The extra harmonics are faded
+  // in only as the swell shoals, so the deep-water surface remains broad and
+  // the same crest becomes visibly steeper as it approaches the break.
+  const shape = Math.max(0, Math.min(.46, nonlinearity));
+  return Math.sin(phase)
+    - shape * Math.cos(phase * 2)
+    - shape * .36 * Math.sin(phase * 3);
+}
+
 export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
   const performance = score + rideDistance * 18 + maneuverCount * 420;
   if (performance >= 11500) return "S";
@@ -644,6 +655,11 @@ export function waveHeightAt(
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const setEnergy = waveEnergyForPhase(p1);
   const setLift = 0.78 + setEnergy * 0.34;
+  const shoaling = smoothstep(-58, 9, breakZ);
+  const primaryNonlinearity = shoaling
+    * (.12 + steepness * .2 + (character?.hollow ?? .35) * tideResponse.hollowScale * .08)
+    * (.72 + setEnergy * .28);
+  const primaryProfile = breakingWaveProfile(p1, primaryNonlinearity);
   const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const relativeSwellAngle = ((settings.swellDirection - settings.coastHeading) * Math.PI) / 180;
   const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
@@ -692,7 +708,7 @@ export function waveHeightAt(
   ) * (Math.PI * 2 / windWavelength) - elapsed * (1.7 + windChop * 1.2) + 2.4;
   return (
     settings.tide * 0.3 +
-    amplitude * setLift * shoreBoost * Math.sin(p1) * 0.64 +
+    amplitude * setLift * shoreBoost * primaryProfile * 0.64 +
     swellAmplitude * swellShoaling * Math.sin(swellPhase) +
     amplitude * Math.sin(crossPhase) * 0.11 +
     (.035 + windChop * .065) * Math.sin(windPhase)

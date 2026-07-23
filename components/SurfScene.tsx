@@ -844,6 +844,20 @@ const OCEAN_VERTEX = /* glsl */ `
       angularSpeed,
       0.0
     );
+    float primaryShoaling = smoothstep(-58.0, 9.0, breakCoord);
+    float primaryNonlinearity = clamp(
+      primaryShoaling
+        * (.12 + uSteepness * .2 + uHollow * .08)
+        * (.72 + setEnergy * .28),
+      0.0,
+      .46
+    );
+    float shapedPrimary = primary
+      - primaryNonlinearity * cos(primaryPhase * 2.0)
+      - primaryNonlinearity * .36 * sin(primaryPhase * 3.0);
+    // gerstner() already supplied the fundamental. Add only the nonlinear
+    // harmonics here so the rendered surface matches waveHeightAt() exactly.
+    p.z += amplitude * .64 * shore * setLift * (shapedPrimary - primary);
     float liveSwell = gerstner(
       p,
       surfaceOrigin,
@@ -879,9 +893,9 @@ const OCEAN_VERTEX = /* glsl */ `
     p.z += uTide * .3 + capillary;
 
     vHeight = p.z;
-    vCrest = primary * shore;
+    vCrest = shapedPrimary * shore;
     float breakerThreshold = mix(.58, .4, uHollow);
-    vBreaker = smoothstep(-18.0, 12.0, breakCoord) * smoothstep(breakerThreshold, .96, primary * .5 + .5) * setLift * (.72 + uHollow * .34);
+    vBreaker = smoothstep(-28.0, 12.0, breakCoord) * smoothstep(breakerThreshold, 1.08, shapedPrimary * .5 + .5) * setLift * (.78 + uHollow * .42);
     vChop = abs(liveSwell) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
     vSurface = surfaceOrigin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
@@ -1654,13 +1668,13 @@ function LineupWaveSetVolume({
         settings.waveHeight
           * tideResponse.faceScale
           * character.power
-          * (.12 + shoaling * .36)
-          * (.5 + energy * .72),
-        .12,
-        2.75,
+          * (.2 + shoaling * .72)
+          * (.56 + energy * .64),
+        .16,
+        4.6,
       );
-      const targetOpacity = (.045 + energy * .19)
-        * (.3 + shoaling * .7)
+      const targetOpacity = (.11 + energy * .34)
+        * (.42 + shoaling * .58)
         * shoreFade
         * distanceFade
         * riderSuppression;
@@ -2461,7 +2475,7 @@ const BREAKING_WAVE_FRAGMENT = /* glsl */ `
     color = mix(color, foamColor, foam);
 
     float lowerFade = smoothstep(.0, .1, vUv.y);
-    float alpha = uOpacity * vEdge * lowerFade * (.32 + fresnel * .38 + vPocket * .14 + vSection * .08);
+    float alpha = uOpacity * vEdge * lowerFade * (.62 + fresnel * .24 + vPocket * .12 + vSection * .06);
     alpha = max(alpha, foam * uOpacity * .96);
     gl_FragColor = vec4(color, clamp(alpha, 0.0, .96));
   }
@@ -2689,7 +2703,7 @@ function BreakingWave({
         )
       : 0;
     const targetOpacity = riding
-      ? THREE.MathUtils.clamp(.28 + state.waveQuality * .25 + state.barrel * .3 + effectivePower * .045, .3, .92)
+      ? THREE.MathUtils.clamp(.58 + state.waveQuality * .2 + state.barrel * .12 + effectivePower * .035, .58, .96)
       : 0;
     const targetCurtain = riding
       ? THREE.MathUtils.clamp((state.waveQuality - .5 + effectiveHollow * .14) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .96)
@@ -13050,7 +13064,7 @@ function Simulation({
       }
     }
 
-    if (active && t - lastStatsAt.current > 0.11) {
+    if (active && t - lastStatsAt.current > 0.16) {
       lastStatsAt.current = t;
       camera.getWorldDirection(cameraForward.current);
       cameraForward.current.y = 0;
