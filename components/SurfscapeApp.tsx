@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Settings2,
   Share2,
+  Smartphone,
   Sparkles,
   SunMedium,
   Target,
@@ -72,6 +73,7 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 
 type Screen = "launch" | "game";
 type SessionFormat = "free" | "heat";
+type MotionBalanceStatus = "checking" | "unavailable" | "idle" | "requesting" | "active" | "denied";
 type PersonalBest = { score: number; distance: number; combo: number };
 type CoastPassportRecord = {
   rides: number;
@@ -121,6 +123,9 @@ type DualRumbleActuator = {
     strongMagnitude: number;
     weakMagnitude: number;
   }) => Promise<unknown>;
+};
+type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<"granted" | "denied">;
 };
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
@@ -184,6 +189,21 @@ function steppedPhotoFocalLength(current: number, direction: number) {
 
 function formatExposure(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)} EV`;
+}
+
+function normalizedMotionRoll(event: DeviceOrientationEvent) {
+  const legacyOrientation = Number((window as Window & { orientation?: number }).orientation ?? 0);
+  const screenAngle = Number(window.screen.orientation?.angle ?? legacyOrientation);
+  const orientation = ((screenAngle % 360) + 360) % 360;
+  const portrait = orientation === 0 || orientation === 180;
+  const source = portrait ? event.gamma : event.beta;
+  if (source === null || !Number.isFinite(source)) return null;
+  const direction = orientation === 0 || orientation === 90 ? 1 : -1;
+  return source * direction;
+}
+
+function shortestAngleDelta(value: number, origin: number) {
+  return ((value - origin + 540) % 360) - 180;
 }
 
 function gradeRank(grade: GameStats["grade"]) {
@@ -698,6 +718,7 @@ export default function SurfscapeApp() {
   const trainingStepValue = useRef(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [pointerLocked, setPointerLocked] = useState(false);
+  const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
   const [showPlanner, setShowPlanner] = useState(true);
   const [showHowTo, setShowHowTo] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
@@ -759,6 +780,8 @@ export default function SurfscapeApp() {
   const joystickBounds = useRef<DOMRect | null>(null);
   const balancePointer = useRef<number | null>(null);
   const balanceBounds = useRef<DOMRect | null>(null);
+  const motionBalanceOrigin = useRef<number | null>(null);
+  const motionBalanceValue = useRef(0);
   const cameraLookSurface = useRef<HTMLDivElement>(null);
   const lookGesture = useRef<{
     pointerId: number;
@@ -993,6 +1016,65 @@ export default function SurfscapeApp() {
       document.exitPointerLock();
     }
   }, [paused, screen]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const touchDevice = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+      const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? touchDevice;
+      setMotionBalanceStatus("DeviceOrientationEvent" in window && touchDevice && coarsePointer ? "idle" : "unavailable");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (motionBalanceStatus !== "active") return;
+    if (stats.phase === "riding") {
+      motionBalanceOrigin.current = null;
+      motionBalanceValue.current = 0;
+      controls.current.balance = 0;
+    } else {
+      controls.current.balance = 0;
+    }
+  }, [motionBalanceStatus, stats.phase]);
+
+  useEffect(() => {
+    if (motionBalanceStatus !== "active") return;
+    const resetMotionCenter = () => {
+      motionBalanceOrigin.current = null;
+      motionBalanceValue.current = 0;
+      controls.current.balance = 0;
+    };
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      const roll = normalizedMotionRoll(event);
+      if (roll === null) return;
+      if (motionBalanceOrigin.current === null) {
+        motionBalanceOrigin.current = roll;
+        motionBalanceValue.current = 0;
+        controls.current.balance = 0;
+        return;
+      }
+      const target = THREEClamp(shortestAngleDelta(roll, motionBalanceOrigin.current) / 17.5, -1, 1);
+      motionBalanceValue.current += (target - motionBalanceValue.current) * .24;
+      if (
+        screen === "game"
+        && !paused
+        && !photoMode
+        && !replayActive
+        && stats.phase === "riding"
+      ) {
+        controls.current.gamepadActive = false;
+        controls.current.balance = motionBalanceValue.current;
+      }
+    };
+    window.addEventListener("deviceorientation", onOrientation, { passive: true });
+    window.addEventListener("orientationchange", resetMotionCenter);
+    window.screen.orientation?.addEventListener("change", resetMotionCenter);
+    return () => {
+      window.removeEventListener("deviceorientation", onOrientation);
+      window.removeEventListener("orientationchange", resetMotionCenter);
+      window.screen.orientation?.removeEventListener("change", resetMotionCenter);
+    };
+  }, [motionBalanceStatus, paused, photoMode, replayActive, screen, stats.phase]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -2054,6 +2136,41 @@ export default function SurfscapeApp() {
     if (choice.outcome === "accepted") setInstallPrompt(null);
   };
 
+  const toggleMotionBalance = async () => {
+    if (motionBalanceStatus === "requesting" || motionBalanceStatus === "checking") return;
+    if (motionBalanceStatus === "active") {
+      motionBalanceOrigin.current = null;
+      motionBalanceValue.current = 0;
+      controls.current.balance = 0;
+      setMotionBalanceStatus("idle");
+      haptic(5);
+      return;
+    }
+    if (motionBalanceStatus === "unavailable") return;
+    setMotionBalanceStatus("requesting");
+    try {
+      const orientationApi = (window as Window & {
+        DeviceOrientationEvent?: DeviceOrientationPermissionApi;
+      }).DeviceOrientationEvent;
+      const permission = orientationApi?.requestPermission
+        ? await orientationApi.requestPermission()
+        : "granted";
+      if (permission !== "granted") {
+        setMotionBalanceStatus("denied");
+        haptic([6, 20, 6]);
+        return;
+      }
+      motionBalanceOrigin.current = null;
+      motionBalanceValue.current = 0;
+      controls.current.balance = 0;
+      setMotionBalanceStatus("active");
+      haptic([7, 16, 11]);
+    } catch {
+      setMotionBalanceStatus("denied");
+      haptic([6, 20, 6]);
+    }
+  };
+
   const setControl = (name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">, value: boolean) => {
     controls.current[name] = value;
   };
@@ -2121,6 +2238,7 @@ export default function SurfscapeApp() {
   };
 
   const updateTouchBalance = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (motionBalanceStatus === "active") return;
     event.preventDefault();
     if (event.type === "pointerdown") {
       controls.current.gamepadActive = false;
@@ -2376,6 +2494,14 @@ export default function SurfscapeApp() {
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const hasPhoto = photoStatus === "ready" || photoStatus === "shared" || photoStatus === "saved";
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
+  const motionBalanceActive = motionBalanceStatus === "active";
+  const motionBalanceLabel = motionBalanceStatus === "requesting"
+    ? "REQUESTING MOTION"
+    : motionBalanceStatus === "denied"
+      ? "MOTION BLOCKED"
+      : motionBalanceActive
+        ? "MOTION BALANCE ON"
+        : "ENABLE MOTION";
   const heatNeed = Math.max(0, Math.round((heatTarget - heatTotal) * 100) / 100);
   const heatWaveForToast = rideToast
     ? heatWaves.find((wave) => wave.id === rideToast.id) ?? { ...rideToast, judgeScore: judgeHeatWave(rideToast) }
@@ -3475,42 +3601,58 @@ export default function SurfscapeApp() {
               <span ref={joystickKnob} className="analog-knob"><i /></span>
               <small>{stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
             </div>
-            {stats.phase === "riding" && !ridingOut ? (
-              <div
-                className={`touch-balance ${stats.maneuverActive ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
-                role="slider"
-                aria-label="Surf balance. Match your white thumb marker to the glowing target."
-                aria-valuemin={-100}
-                aria-valuemax={100}
-                aria-valuenow={Math.round(stats.balance * 100)}
-                tabIndex={0}
-                onPointerDown={updateTouchBalance}
-                onPointerMove={updateTouchBalance}
-                onPointerUp={endTouchBalance}
-                onPointerCancel={endTouchBalance}
-                onLostPointerCapture={endTouchBalance}
-                onKeyDown={(event) => {
-                  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                  event.preventDefault();
-                  controls.current.balance = THREEClamp(controls.current.balance + (event.key === "ArrowRight" ? .08 : -.08), -1, 1);
-                }}
-              >
-                <span><em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `LOADED ${Math.round(stats.trickCharge * 100)}%` : "MATCH TARGET"}</em><strong>{balanceAccuracy}%</strong></span>
-                {stats.maneuverActive && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
-                <i
-                  className={`touch-rail-pressure ${stats.railLoad < 0 ? "is-left" : "is-right"}`}
-                  style={{ width: `${Math.min(48, Math.abs(stats.railLoad) * 48)}%` }}
-                />
-                <i className="touch-balance-target" style={{ left: `${touchTargetPosition}%` }} />
-                <b className="touch-balance-thumb" style={{ left: `${touchBalancePosition}%` }} />
-                <small><em>LEAN LEFT</em><em>LEAN RIGHT</em></small>
-              </div>
-            ) : (
-              <div className={`touch-context ${stats.catchReady ? "is-ready" : ""}`} aria-live="polite">
-                <strong>{mobileContext.title}</strong>
-                <small>{mobileContext.detail}</small>
-              </div>
-            )}
+            <div className={`mobile-balance-stack ${motionBalanceActive ? "is-motion" : ""}`}>
+              {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
+                <button
+                  type="button"
+                  className={`motion-balance-toggle status-${motionBalanceStatus}`}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => void toggleMotionBalance()}
+                  aria-pressed={motionBalanceActive}
+                  disabled={motionBalanceStatus === "requesting"}
+                >
+                  <Smartphone />
+                  <span>{motionBalanceLabel}</span>
+                  <small>{motionBalanceActive ? "TILT · TAP OFF" : motionBalanceStatus === "denied" ? "CHECK BROWSER ACCESS" : "FREE YOUR THUMB"}</small>
+                </button>
+              )}
+              {stats.phase === "riding" && !ridingOut ? (
+                <div
+                  className={`touch-balance ${motionBalanceActive ? "is-motion" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
+                  role={motionBalanceActive ? "meter" : "slider"}
+                  aria-label={motionBalanceActive ? "Motion surf balance. Tilt the device to match the glowing target." : "Surf balance. Match your white thumb marker to the glowing target."}
+                  aria-valuemin={-100}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(stats.balance * 100)}
+                  tabIndex={motionBalanceActive ? -1 : 0}
+                  onPointerDown={updateTouchBalance}
+                  onPointerMove={updateTouchBalance}
+                  onPointerUp={endTouchBalance}
+                  onPointerCancel={endTouchBalance}
+                  onLostPointerCapture={endTouchBalance}
+                  onKeyDown={(event) => {
+                    if (motionBalanceActive || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+                    event.preventDefault();
+                    controls.current.balance = THREEClamp(controls.current.balance + (event.key === "ArrowRight" ? .08 : -.08), -1, 1);
+                  }}
+                >
+                  <span><em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `LOADED ${Math.round(stats.trickCharge * 100)}%` : motionBalanceActive ? "TILT TO TARGET" : "MATCH TARGET"}</em><strong>{balanceAccuracy}%</strong></span>
+                  {stats.maneuverActive && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
+                  <i
+                    className={`touch-rail-pressure ${stats.railLoad < 0 ? "is-left" : "is-right"}`}
+                    style={{ width: `${Math.min(48, Math.abs(stats.railLoad) * 48)}%` }}
+                  />
+                  <i className="touch-balance-target" style={{ left: `${touchTargetPosition}%` }} />
+                  <b className="touch-balance-thumb" style={{ left: `${touchBalancePosition}%` }} />
+                  <small><em>{motionBalanceActive ? "TILT LEFT" : "LEAN LEFT"}</em><em>{motionBalanceActive ? "TILT RIGHT" : "LEAN RIGHT"}</em></small>
+                </div>
+              ) : (
+                <div className={`touch-context ${stats.catchReady ? "is-ready" : ""}`} aria-live="polite">
+                  <strong>{mobileContext.title}</strong>
+                  <small>{mobileContext.detail}</small>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               className={`action-button ${mobileActionIsContextual ? "is-contextual" : "is-propulsion"} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}
@@ -3610,6 +3752,15 @@ export default function SurfscapeApp() {
                 <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
+                {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
+                  <button
+                    className={`motion-toggle ${motionBalanceActive ? "" : "is-off"} ${motionBalanceStatus === "denied" ? "is-denied" : ""}`}
+                    onClick={() => void toggleMotionBalance()}
+                    disabled={motionBalanceStatus === "requesting"}
+                  >
+                    <Smartphone /> Motion balance · {motionBalanceStatus === "requesting" ? "Requesting access" : motionBalanceStatus === "denied" ? "Browser access needed" : motionBalanceActive ? "On" : "Off"}
+                  </button>
+                )}
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
                 <button onClick={restartSession}><RotateCcw /> Restart session</button>
@@ -3628,7 +3779,7 @@ export default function SurfscapeApp() {
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board and walk through the shallows. Click the scene to lock a 360° mouse view, or swipe on touch; use C or the camera button to frame your line.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and watch each wall approach. Turn shoreward, read the tightening catch pulse, then commit; the surfer drives through final strokes, plants both hands, and carries the pop-up into the drop.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Set a rail, hold Trick or Space to compress, then release into a move. Stance, speed, wave position, and load decide what you throw; reconnect inside the gold zone to bank it.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Set a rail, hold Trick or Space to compress, then release into a move. On mobile, enable Motion Balance above the rail to tilt the phone instead of covering the wave with your thumb.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>

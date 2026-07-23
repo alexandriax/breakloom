@@ -2328,6 +2328,10 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .pause-card button.primary-pause { background: var(--coral); border-color: var(--coral); font-weight: 800; }
 .pause-card button.music-toggle { border-color: rgba(113, 225, 211, .34); color: #b9fff6; }
 .pause-card button.music-toggle.is-off { border-color: var(--line); color: var(--muted); }
+.pause-card button.motion-toggle { border-color: rgba(124, 228, 211, .42); background: linear-gradient(90deg, rgba(61, 191, 173, .13), rgba(255, 255, 255, .025)); color: #bffff3; }
+.pause-card button.motion-toggle.is-off { border-color: var(--line); background: rgba(255, 255, 255, .025); color: var(--muted); }
+.pause-card button.motion-toggle.is-denied { border-color: rgba(239, 151, 105, .34); color: #ffd1aa; }
+.pause-card button:disabled { cursor: progress; opacity: .6; }
 .pause-card button svg { width: 15px; }
 
 .howto-card {
@@ -2627,6 +2631,34 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .analog-stick:active .analog-knob { border-color: white; box-shadow: 0 5px 14px rgba(0, 0, 0, 0.5), inset 0 1px rgba(255, 255, 255, 0.4), 0 0 24px rgba(87, 226, 211, 0.34); }
   .analog-knob i { width: 12px; height: 12px; border: 1px solid rgba(255, 255, 255, 0.54); border-radius: 50%; background: rgba(255, 255, 255, 0.13); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25); }
   .analog-stick small { position: absolute; z-index: 3; left: 50%; bottom: -2px; padding: 2px 6px; border-radius: 6px; background: rgba(3, 13, 18, 0.86); color: rgba(208, 255, 249, 0.78); font-size: 5px; font-weight: 900; letter-spacing: 0.13em; white-space: nowrap; transform: translateX(-50%); pointer-events: none; }
+  .mobile-balance-stack { min-width: 0; display: flex; flex-direction: column; align-self: end; gap: 5px; }
+  .motion-balance-toggle {
+    width: 100%;
+    min-width: 0;
+    height: 22px;
+    display: grid;
+    grid-template-columns: 15px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    overflow: hidden;
+    border: 1px solid rgba(184, 241, 231, .2);
+    border-radius: 8px;
+    background: linear-gradient(90deg, rgba(5, 23, 29, .82), rgba(4, 17, 23, .68));
+    box-shadow: inset 0 1px rgba(255, 255, 255, .05);
+    color: rgba(211, 247, 241, .62);
+    backdrop-filter: blur(10px);
+    touch-action: manipulation;
+  }
+  .motion-balance-toggle svg { width: 12px; color: #8debd9; }
+  .motion-balance-toggle span,
+  .motion-balance-toggle small { overflow: hidden; font-size: 4px; font-weight: 900; letter-spacing: .1em; text-overflow: ellipsis; white-space: nowrap; }
+  .motion-balance-toggle small { color: rgba(211, 247, 241, .34); text-align: right; }
+  .motion-balance-toggle.status-active { border-color: rgba(128, 247, 218, .52); background: linear-gradient(90deg, rgba(36, 142, 128, .34), rgba(5, 27, 31, .76)); color: #c6fff2; box-shadow: inset 0 0 15px rgba(64, 220, 188, .1), 0 0 13px rgba(64, 220, 188, .08); }
+  .motion-balance-toggle.status-active svg { filter: drop-shadow(0 0 5px rgba(115, 246, 216, .65)); }
+  .motion-balance-toggle.status-denied { border-color: rgba(255, 167, 112, .36); color: #ffc7a2; }
+  .motion-balance-toggle:disabled { opacity: .58; }
+  .mobile-balance-stack .touch-balance { width: 100%; margin-bottom: 0; }
   .touch-balance { height: 70px; position: relative; align-self: end; margin-bottom: 2px; border: 1px solid rgba(255, 255, 255, 0.27); border-radius: 18px; background: linear-gradient(180deg, rgba(7, 24, 30, .78), rgba(2, 12, 17, .84)); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.08); backdrop-filter: blur(12px); touch-action: none; overflow: hidden; }
   .touch-balance::before { content: ""; position: absolute; top: 38px; left: 11px; right: 11px; height: 4px; border-radius: 3px; background: linear-gradient(90deg, rgba(239, 102, 79, .9), rgba(217, 193, 111, .82) 25%, rgba(106, 220, 167, .94) 50%, rgba(217, 193, 111, .82) 75%, rgba(239, 102, 79, .9)); box-shadow: 0 0 9px rgba(106, 220, 167, .12); opacity: .9; }
   .touch-rail-pressure { position: absolute; z-index: 2; top: 37px; height: 6px; border-radius: 4px; background: linear-gradient(90deg, rgba(255, 213, 142, .42), rgba(255, 246, 215, .9)); box-shadow: 0 0 10px rgba(255, 221, 161, .46); pointer-events: none; transition: width .08s linear; }
@@ -2642,6 +2674,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .touch-landing-zone { position: absolute; z-index: 2; top: 31px; height: 18px; border: 1px solid rgba(255, 211, 146, .78); border-radius: 5px; background: linear-gradient(90deg, rgba(225, 150, 72, .12), rgba(255, 226, 168, .4), rgba(225, 150, 72, .12)); box-shadow: 0 0 13px rgba(244, 186, 107, .34); animation: landing-zone-pulse .42s ease-in-out infinite alternate; pointer-events: none; }
   .touch-balance.is-locked { border-color: rgba(132, 255, 225, .58); box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 20px rgba(75, 211, 183, .11), 0 0 17px rgba(82, 226, 196, .13); }
   .touch-balance.is-locked .touch-balance-thumb { background: #d8fff7; box-shadow: 0 0 14px #9cffe9, 0 2px 8px rgba(0, 0, 0, .5); }
+  .touch-balance.is-motion { border-color: rgba(126, 245, 217, .44); background: radial-gradient(circle at 50% 105%, rgba(49, 186, 161, .14), transparent 58%), linear-gradient(180deg, rgba(7, 28, 31, .82), rgba(2, 13, 18, .86)); box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 22px rgba(69, 223, 192, .08), 0 0 16px rgba(67, 218, 188, .08); cursor: default; }
+  .touch-balance.is-motion > span em { color: #baffed; text-shadow: 0 0 8px rgba(102, 235, 207, .45); }
   .touch-balance.is-landing { border-color: rgba(255, 210, 145, .7); box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 20px rgba(233, 169, 104, .12), 0 0 16px rgba(233, 169, 104, .12); }
   .touch-balance.is-landing > span em { color: #ffdca5; }
   .mobile-controls.is-grip-warning .touch-balance { border-color: rgba(255, 132, 100, .72); box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 22px rgba(239, 88, 61, .13), 0 0 18px rgba(239, 88, 61, .13); }
@@ -2713,6 +2747,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .analog-ring { inset: 12px; }
   .analog-knob { width: 40px; height: 40px; }
   .analog-stick small { bottom: -4px; }
+  .mobile-balance-stack { gap: 3px; }
+  .motion-balance-toggle { height: 18px; grid-template-columns: 13px minmax(0, 1fr); padding: 0 6px; }
+  .motion-balance-toggle small { display: none; }
   .touch-balance { height: 58px; margin-bottom: 1px; }
   .touch-balance::before { top: 31px; }
   .touch-rail-pressure { top: 30px; }
