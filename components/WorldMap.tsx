@@ -40,7 +40,7 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
         zoom: beach.zoom,
         zoomControl: false,
         attributionControl: true,
-        scrollWheelZoom: true,
+        scrollWheelZoom: false,
       });
 
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {

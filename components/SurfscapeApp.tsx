@@ -3116,6 +3116,14 @@ export default function SurfscapeApp() {
               <span>SURFSCAPE</span>
               <small>01</small>
             </button>
+            <label className="header-beach-select">
+              <MapPin />
+              <span><small>SURF DESTINATION</small><strong>{beach.name}</strong></span>
+              <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)} aria-label="Choose surf destination">
+                {BEACHES.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.country}</option>)}
+              </select>
+              <ChevronDown />
+            </label>
             <div className="launch-nav">
               <span className={`live-chip ${conditions.source === "live" ? "is-live" : ""}`}>
                 <i /> {conditionsLoading ? "Reading buoy models" : selectedForecast ? "Forecast session" : conditions.source === "live" ? "Live ocean model" : "Modeled offline"}
@@ -3242,13 +3250,14 @@ export default function SurfscapeApp() {
               <div className="planner-inner">
                 <div className="planner-head">
                   <div>
-                    <span className="overline">02 / CHOOSE A LINE</span>
-                    <h2>{beach.name}</h2>
-                    <p>{beach.region} · {beach.country}</p>
+                    <span className="overline">02 / BUILD YOUR SESSION</span>
+                    <h2>{zoneLabel}</h2>
+                    <p>{beach.name} · {beach.region}</p>
                   </div>
                   <label className="break-select">
-                    <span className="sr-only">Select surf destination</span>
-                    <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)}>
+                    <MapPin />
+                    <span><small>CHANGE BEACH</small><strong>{beach.name}</strong></span>
+                    <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)} aria-label="Change beach">
                       {BEACHES.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.country}</option>)}
                     </select>
                     <ChevronDown />
