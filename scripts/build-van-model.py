@@ -276,7 +276,20 @@ def build_van() -> bpy.types.Object:
     for side, x in (("L", -0.72), ("R", 0.72)):
         cube(f"SeatBase.{side}", body, (x, 1.45, 1.55), (0.64, 0.68, 0.22), leather, 0.1)
         cube(f"SeatBack.{side}", body, (x, 1.67, 2.0), (0.65, 0.22, 0.78), leather, 0.12, (-0.12, 0, 0))
-    torus("SteeringWheel", body, (-0.68, 2.2, 2.23), 0.23, 0.035, dark, (math.pi / 2.4, 0, 0), 24, 8)
+    steering_wheel = empty("SteeringWheel", body, (-0.68, 2.2, 2.23))
+    steering_wheel.rotation_euler = (math.pi / 2.4, 0, 0)
+    torus("SteeringWheel.rim", steering_wheel, (0, 0, 0), 0.23, 0.035, dark, major_segments=24, minor_segments=8)
+    cylinder("SteeringWheel.hub", steering_wheel, (0, 0, 0), 0.055, 0.075, dark, vertices=18)
+    for index, angle in enumerate((0, math.pi * 2 / 3, math.pi * 4 / 3)):
+        cube(
+            f"SteeringWheel.spoke.{index}",
+            steering_wheel,
+            (math.sin(angle) * .105, math.cos(angle) * .105, 0),
+            (.024, .13, .024),
+            dark,
+            .009,
+            (0, 0, -angle),
+        )
     cylinder("SteeringColumn", body, (-0.68, 2.18, 2.05), 0.04, 0.42, dark, (math.pi / 2.4, 0, 0), 14)
 
     # Front and rear lighting clusters, grille, badging, and recovery points.

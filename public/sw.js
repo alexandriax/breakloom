@@ -1,4 +1,4 @@
-const CACHE_NAME = "surfscape-shell-2026-07-23-ab";
+const CACHE_NAME = "surfscape-shell-2026-07-23-ac";
 const CACHE_PREFIX = "surfscape-shell-";
 const scopeUrl = new URL(self.registration.scope);
 const scoped = (path) => new URL(path, scopeUrl).href;

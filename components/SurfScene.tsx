@@ -94,6 +94,16 @@ const OCEAN_RENDER_WIDTH = 620;
 const WATER_SIDE_LIMIT = COAST_PLAYABLE_HALF_WIDTH;
 const OCEAN_PLANE_DEPTH = 1250;
 const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z - OCEAN_PLANE_DEPTH * .5;
+const CAMERA_WATER_SAMPLE_DIRECTIONS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [.7071, .7071],
+  [-.7071, .7071],
+  [.7071, -.7071],
+  [-.7071, -.7071],
+] as const;
 
 function cameraWaterEnvelopeAt(
   x: number,
@@ -102,14 +112,24 @@ function cameraWaterEnvelopeAt(
   settings: SessionSettings,
   character: BreakCharacter,
 ) {
-  const radius = THREE.MathUtils.clamp(.68 + settings.waveHeight * .11, .72, 1.18);
-  return Math.max(
-    waveHeightAt(x, z, elapsed, settings, character),
-    waveHeightAt(x - radius, z, elapsed, settings, character),
-    waveHeightAt(x + radius, z, elapsed, settings, character),
-    waveHeightAt(x, z - radius, elapsed, settings, character),
-    waveHeightAt(x, z + radius, elapsed, settings, character),
-  );
+  // The rendered Gerstner surface displaces horizontally as well as vertically.
+  // Sample a footprint larger than the camera body so a steep lip cannot move
+  // over the lens between frames and expose the single mathematical surface.
+  const radius = THREE.MathUtils.clamp(1.12 + settings.waveHeight * .34, 1.38, 3.25);
+  let envelope = waveHeightAt(x, z, elapsed, settings, character);
+  CAMERA_WATER_SAMPLE_DIRECTIONS.forEach(([directionX, directionZ]) => {
+    envelope = Math.max(
+      envelope,
+      waveHeightAt(
+        x + directionX * radius,
+        z + directionZ * radius,
+        elapsed,
+        settings,
+        character,
+      ),
+    );
+  });
+  return envelope;
 }
 
 function useRenderQuality() {
@@ -934,6 +954,60 @@ const OCEAN_FRAGMENT = /* glsl */ `
   }
 `;
 
+const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uWind;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
+  uniform vec3 uHazeColor;
+  varying float vHeight;
+  varying float vBreaker;
+  varying float vChop;
+  varying vec2 vSurface;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  void main() {
+    vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    if (surfaceNormal.y > 0.0) surfaceNormal *= -1.0;
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    float facing = max(.055, abs(dot(surfaceNormal, viewDirection)));
+    float wind = clamp(uWind / 24.0, 0.0, 1.45);
+    float bodyDepth = (.28 + abs(vHeight) * .16 + vBreaker * .64 + vChop * .14) / facing;
+    float absorption = 1.0 - exp(-bodyDepth * .88);
+    float cells = noise(vSurface * vec2(.38, .18) + vec2(uTime * .12, -uTime * .08));
+    float veins = noise(vSurface * vec2(1.24, .57) + vec2(-uTime * (.22 + wind * .08), uTime * .13));
+    float sunThrough = pow(max(0.0, normalize(uSunDirection).y), 1.5) * (1.0 - uCloud * .72);
+    float lens = pow(max(0.0, cells * .56 + veins * .44 - .57), 2.8) * sunThrough;
+    vec3 deepBody = mix(vec3(.002, .035, .062), vec3(.006, .11, .12), uLight);
+    vec3 litBody = mix(vec3(.025, .18, .19), vec3(.12, .48, .4), uLight);
+    vec3 color = mix(litBody, deepBody, absorption * .78);
+    color += uSunColor * lens * (.035 + uLight * .2);
+    color *= .72 + cells * .12 + veins * .08;
+    color = mix(color, uHazeColor * .35, smoothstep(75.0, 260.0, length(cameraPosition - vWorldPosition)) * .45);
+    gl_FragColor = vec4(color, .995);
+  }
+`;
+
 function Ocean({
   settings,
   character,
@@ -958,6 +1032,7 @@ function Ocean({
   rain: number;
 }) {
   const ocean = useRef<THREE.Mesh>(null);
+  const subsurface = useRef<THREE.Mesh>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
@@ -971,6 +1046,8 @@ function Ocean({
   const offshoreSegments = mobile
     ? quality === "reduced" ? 96 : quality === "high" ? 150 : 120
     : quality === "reduced" ? 190 : quality === "balanced" ? 238 : 280;
+  const subsurfaceCrossShoreSegments = Math.max(48, Math.round(crossShoreSegments * .62));
+  const subsurfaceOffshoreSegments = Math.max(64, Math.round(offshoreSegments * .6));
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -1013,6 +1090,10 @@ function Ocean({
       ocean.current.position.x = THREE.MathUtils.damp(ocean.current.position.x, focusPosition.current.x, 12, delta);
       ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, OCEAN_CENTER_Z + tideShift, 2.8, delta);
     }
+    if (subsurface.current) {
+      subsurface.current.position.x = ocean.current?.position.x ?? focusPosition.current.x;
+      subsurface.current.position.z = ocean.current?.position.z ?? OCEAN_CENTER_Z + tideShift;
+    }
     const values = material.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
@@ -1045,16 +1126,34 @@ function Ocean({
   });
 
   return (
-    <mesh ref={ocean} position={[0, -0.08, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[OCEAN_RENDER_WIDTH, OCEAN_PLANE_DEPTH, crossShoreSegments, offshoreSegments]} />
-      <shaderMaterial
-        ref={material}
-        uniforms={uniforms}
-        vertexShader={OCEAN_VERTEX}
-        fragmentShader={OCEAN_FRAGMENT}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
+    <>
+      <mesh ref={ocean} position={[0, -0.08, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[OCEAN_RENDER_WIDTH, OCEAN_PLANE_DEPTH, crossShoreSegments, offshoreSegments]} />
+        <shaderMaterial
+          ref={material}
+          uniforms={uniforms}
+          vertexShader={OCEAN_VERTEX}
+          fragmentShader={OCEAN_FRAGMENT}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh
+        ref={subsurface}
+        position={[0, -.34 - Math.min(.18, settings.waveHeight * .04), OCEAN_CENTER_Z + tideShift]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        renderOrder={-1}
+      >
+        <planeGeometry args={[OCEAN_RENDER_WIDTH, OCEAN_PLANE_DEPTH, subsurfaceCrossShoreSegments, subsurfaceOffshoreSegments]} />
+        <shaderMaterial
+          uniforms={uniforms}
+          vertexShader={OCEAN_VERTEX}
+          fragmentShader={OCEAN_SUBSURFACE_FRAGMENT}
+          side={THREE.BackSide}
+          transparent
+          opacity={.995}
+        />
+      </mesh>
+    </>
   );
 }
 
@@ -2869,11 +2968,13 @@ function PremiumSurferBody({
   accent,
   ankleJointRef,
   thermalKit,
+  vehicleMotion,
 }: {
   motion: MutableRefObject<MotionState>;
   accent: string;
   ankleJointRef: MutableRefObject<THREE.Object3D | null>;
   thermalKit: ThermalKit;
+  vehicleMotion?: MutableRefObject<VehicleMotionState>;
 }) {
   const { scene } = useGLTF(SURFER_MODEL_URL);
   const sourceNeoprene = useTexture(NEOPRENE_TEXTURE_URL);
@@ -2938,6 +3039,13 @@ function PremiumSurferBody({
     const wading = state.phase === "wading";
     const walking = state.phase === "shore" || wading;
     const wipeout = state.phase === "wipeout";
+    const driving = state.phase === "driving";
+    const vehicle = vehicleMotion?.current;
+    const driveSteer = driving ? vehicle?.steer ?? 0 : 0;
+    const driveThrottle = driving ? vehicle?.throttle ?? 0 : 0;
+    const driveLongitudinalG = driving ? vehicle?.longitudinalG ?? 0 : 0;
+    const driveLateralG = driving ? vehicle?.lateralG ?? 0 : 0;
+    const driveBrake = driving && Boolean(vehicle?.brake);
     const rideSettle = riding ? state.finish : 0;
     const rideCompression = THREE.MathUtils.clamp(
       state.compression
@@ -3021,9 +3129,9 @@ function PremiumSurferBody({
       + state.rail * (.08 + state.trickCharge * .06)
       + state.lateralForce * .075
     ) * (1 - state.takeoff * .72) * (1 - rideSettle * .78);
-    pose("Pelvis", riding ? -0.08 - rideCompression * .12 + state.stance * 0.045 : walking ? step * 0.025 + idleSway * .012 : wipeout ? wipeoutWave * .16 : 0, riding ? state.rail * -0.1 * (1 - rideSettle) : paddle ? -paddleRoll * .34 : walking ? idleScan * .008 : 0, riding ? rideLean * 0.35 : paddle ? paddleRoll * .26 : walking ? idleSway * .018 : 0, 7);
-    pose("Torso", paddle ? THREE.MathUtils.lerp(-0.1 - state.duckDive * .24, .16, takeoffPlant) : riding ? 0.18 + rideCompression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 - rideSettle * .08 - state.acceleration * .045 : walking ? runLean - step * 0.018 - boardGuide * .025 + breath : wipeout ? -.18 + wipeoutWave * .22 : 0, riding ? (state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 - state.lineSide * .045 + state.lateralForce * .055) * (1 - rideSettle * .82) : paddle ? paddleRoll * (1 - takeoffPlant) : walking ? idleScan * .018 : 0, riding ? rideLean : paddle ? paddleRoll * .58 * (1 - takeoffPlant) : walking ? idleSway * .022 : wipeout ? -wipeoutWave * .24 : 0, 7);
-    pose("Head", paddle ? THREE.MathUtils.lerp(-0.24 + state.duckDive * .14, -.08, takeoffPlant) : riding ? -0.12 - rideCompression * .08 + state.barrel * 0.08 + rideSettle * .07 : walking ? (wading ? -.03 * boardGuide : 0) - breath * .42 : wipeout ? .1 - wipeoutWave * .12 : 0, riding ? (state.rail * 0.12 + state.lineSide * .11 + state.maneuverSide * state.maneuver * .08) * (1 - rideSettle * .7) : paddle ? -paddleRoll * .54 * (1 - takeoffPlant) : walking ? idleScan * .23 : 0, riding ? -rideLean * 0.4 : paddle ? -paddleRoll * .42 * (1 - takeoffPlant) : walking ? -idleSway * .028 : wipeout ? wipeoutWave * .16 : 0, 8);
+    pose("Pelvis", driving ? -.14 - driveLongitudinalG * .05 : riding ? -0.08 - rideCompression * .12 + state.stance * 0.045 : walking ? step * 0.025 + idleSway * .012 : wipeout ? wipeoutWave * .16 : 0, driving ? driveSteer * .045 : riding ? state.rail * -0.1 * (1 - rideSettle) : paddle ? -paddleRoll * .34 : walking ? idleScan * .008 : 0, driving ? -driveLateralG * .1 : riding ? rideLean * 0.35 : paddle ? paddleRoll * .26 : walking ? idleSway * .018 : 0, 7);
+    pose("Torso", driving ? .1 - driveLongitudinalG * .08 - (driveBrake ? .035 : 0) : paddle ? THREE.MathUtils.lerp(-0.1 - state.duckDive * .24, .16, takeoffPlant) : riding ? 0.18 + rideCompression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 - rideSettle * .08 - state.acceleration * .045 : walking ? runLean - step * 0.018 - boardGuide * .025 + breath : wipeout ? -.18 + wipeoutWave * .22 : 0, driving ? driveSteer * .055 : riding ? (state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + state.maneuverSpin * .12 - state.lineSide * .045 + state.lateralForce * .055) * (1 - rideSettle * .82) : paddle ? paddleRoll * (1 - takeoffPlant) : walking ? idleScan * .018 : 0, driving ? -driveLateralG * .14 : riding ? rideLean : paddle ? paddleRoll * .58 * (1 - takeoffPlant) : walking ? idleSway * .022 : wipeout ? -wipeoutWave * .24 : 0, 7);
+    pose("Head", driving ? -.06 + driveLongitudinalG * .025 : paddle ? THREE.MathUtils.lerp(-0.24 + state.duckDive * .14, -.08, takeoffPlant) : riding ? -0.12 - rideCompression * .08 + state.barrel * 0.08 + rideSettle * .07 : walking ? (wading ? -.03 * boardGuide : 0) - breath * .42 : wipeout ? .1 - wipeoutWave * .12 : 0, driving ? driveSteer * .18 : riding ? (state.rail * 0.12 + state.lineSide * .11 + state.maneuverSide * state.maneuver * .08) * (1 - rideSettle * .7) : paddle ? -paddleRoll * .54 * (1 - takeoffPlant) : walking ? idleScan * .23 : 0, driving ? driveLateralG * .055 : riding ? -rideLean * 0.4 : paddle ? -paddleRoll * .42 * (1 - takeoffPlant) : walking ? -idleSway * .028 : wipeout ? wipeoutWave * .16 : 0, 8);
 
     const leftRideArmX = THREE.MathUtils.lerp(
       -0.48 - state.maneuver * 0.22 + state.trickCharge * .28 - state.maneuverLift * .22,
@@ -3043,29 +3151,29 @@ function PremiumSurferBody({
 
     pose(
       "UpperArm.L",
-      wipeout ? 1.04 + wipeoutWave * .48 : paddle ? THREE.MathUtils.lerp(stroke * 1.18 * (1 - state.duckDive) - state.duckDive * .72, -.82, takeoffPlant) : riding ? THREE.MathUtils.lerp(leftRideArmX, -.82, popPlant) : walking ? THREE.MathUtils.lerp(step * .56 + shoulderBreath * .42, leftCarryArmX, carryGrip) : 0,
-      riding ? -0.12 + state.rail * 0.12 : 0,
-      riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.03 + state.maneuver * 0.32 + state.slip * .16, .58, popPlant), .46, rideSettle) : paddle ? THREE.MathUtils.lerp(.14 + paddleRoll * .22, .58, takeoffPlant) : walking ? THREE.MathUtils.lerp(.08, leftCarryArmZ, carryGrip) : wipeout ? .34 : .08,
+      wipeout ? 1.04 + wipeoutWave * .48 : driving ? -.7 - driveSteer * .16 : paddle ? THREE.MathUtils.lerp(stroke * 1.18 * (1 - state.duckDive) - state.duckDive * .72, -.82, takeoffPlant) : riding ? THREE.MathUtils.lerp(leftRideArmX, -.82, popPlant) : walking ? THREE.MathUtils.lerp(step * .56 + shoulderBreath * .42, leftCarryArmX, carryGrip) : 0,
+      driving ? -.035 + driveSteer * .025 : riding ? -0.12 + state.rail * 0.12 : 0,
+      driving ? .69 + driveSteer * .11 : riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.03 + state.maneuver * 0.32 + state.slip * .16, .58, popPlant), .46, rideSettle) : paddle ? THREE.MathUtils.lerp(.14 + paddleRoll * .22, .58, takeoffPlant) : walking ? THREE.MathUtils.lerp(.08, leftCarryArmZ, carryGrip) : wipeout ? .34 : .08,
       9,
     );
     pose(
       "UpperArm.R",
-      wipeout ? -1.02 + wipeoutWave * .42 : paddle ? THREE.MathUtils.lerp(-stroke * 1.18 * (1 - state.duckDive) + state.duckDive * .72, .82, takeoffPlant) : riding ? THREE.MathUtils.lerp(rightRideArmX, .82, popPlant) : walking ? THREE.MathUtils.lerp(-step * .56 - shoulderBreath * .42, rightCarryArmX, carryGrip) : 0,
-      riding ? 0.12 + state.rail * 0.12 : 0,
-      riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(-1.03 - state.maneuver * 0.32 - state.slip * .16, -.58, popPlant), -.46, rideSettle) : paddle ? THREE.MathUtils.lerp(-.14 + paddleRoll * .22, -.58, takeoffPlant) : walking ? THREE.MathUtils.lerp(-.08, rightCarryArmZ, carryGrip) : wipeout ? -.34 : -.08,
+      wipeout ? -1.02 + wipeoutWave * .42 : driving ? .7 - driveSteer * .16 : paddle ? THREE.MathUtils.lerp(-stroke * 1.18 * (1 - state.duckDive) + state.duckDive * .72, .82, takeoffPlant) : riding ? THREE.MathUtils.lerp(rightRideArmX, .82, popPlant) : walking ? THREE.MathUtils.lerp(-step * .56 - shoulderBreath * .42, rightCarryArmX, carryGrip) : 0,
+      driving ? .035 + driveSteer * .025 : riding ? 0.12 + state.rail * 0.12 : 0,
+      driving ? -.69 + driveSteer * .11 : riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(-1.03 - state.maneuver * 0.32 - state.slip * .16, -.58, popPlant), -.46, rideSettle) : paddle ? THREE.MathUtils.lerp(-.14 + paddleRoll * .22, -.58, takeoffPlant) : walking ? THREE.MathUtils.lerp(-.08, rightCarryArmZ, carryGrip) : wipeout ? -.34 : -.08,
       9,
     );
-    pose("LowerArm.L", paddle ? THREE.MathUtils.lerp(-leftPull * .82 + Math.max(0, stroke) * .16 - state.duckDive * .42, -.72, takeoffPlant) : riding ? THREE.MathUtils.lerp(-.42, -.72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.08, .28, boardGuide) : wipeout ? .72 - wipeoutWave * .28 : 0, paddle ? leftPull * .08 * (1 - takeoffPlant) : 0, riding ? .12 : walking ? carryGrip * .08 : 0, 10);
-    pose("LowerArm.R", paddle ? THREE.MathUtils.lerp(rightPull * .82 - Math.max(0, -stroke) * .16 + state.duckDive * .42, .72, takeoffPlant) : riding ? THREE.MathUtils.lerp(.42, .72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.62, .44, boardGuide) : wipeout ? -.72 - wipeoutWave * .28 : 0, paddle ? -rightPull * .08 * (1 - takeoffPlant) : 0, riding ? -.12 : walking ? carryGrip * -.1 : 0, 10);
-    pose("Hand.L", paddle ? leftPull * -.12 : 0, riding ? -.16 : walking ? carryGrip * -.05 : 0, riding ? .08 : walking ? carryGrip * .06 : 0, 10);
-    pose("Hand.R", paddle ? rightPull * .12 : walking ? .08 * carryGrip : 0, riding ? .16 : walking ? .08 * carryGrip : 0, riding ? -.08 : walking ? -.12 * carryGrip : 0, 10);
+    pose("LowerArm.L", driving ? -.9 + driveSteer * .24 : paddle ? THREE.MathUtils.lerp(-leftPull * .82 + Math.max(0, stroke) * .16 - state.duckDive * .42, -.72, takeoffPlant) : riding ? THREE.MathUtils.lerp(-.42, -.72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.08, .28, boardGuide) : wipeout ? .72 - wipeoutWave * .28 : 0, driving ? -.04 : paddle ? leftPull * .08 * (1 - takeoffPlant) : 0, driving ? .08 : riding ? .12 : walking ? carryGrip * .08 : 0, 10);
+    pose("LowerArm.R", driving ? .9 + driveSteer * .24 : paddle ? THREE.MathUtils.lerp(rightPull * .82 - Math.max(0, -stroke) * .16 + state.duckDive * .42, .72, takeoffPlant) : riding ? THREE.MathUtils.lerp(.42, .72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.62, .44, boardGuide) : wipeout ? -.72 - wipeoutWave * .28 : 0, driving ? .04 : paddle ? -rightPull * .08 * (1 - takeoffPlant) : 0, driving ? -.08 : riding ? -.12 : walking ? carryGrip * -.1 : 0, 10);
+    pose("Hand.L", driving ? -.08 - driveSteer * .08 : paddle ? leftPull * -.12 : 0, driving ? -.16 : riding ? -.16 : walking ? carryGrip * -.05 : 0, driving ? .08 : riding ? .08 : walking ? carryGrip * .06 : 0, 10);
+    pose("Hand.R", driving ? .08 - driveSteer * .08 : paddle ? rightPull * .12 : walking ? .08 * carryGrip : 0, driving ? .16 : riding ? .16 : walking ? .08 * carryGrip : 0, driving ? -.08 : riding ? -.08 : walking ? -.12 * carryGrip : 0, 10);
 
-    pose("UpperLeg.L", riding ? THREE.MathUtils.lerp(-0.74 - state.stance * .12 - rideCompression * .24, -.34, popPlant) : walking ? step * .62 * stepLift : paddle ? -.08 : wipeout ? .48 + wipeoutWave * .32 : 0, 0, riding ? .17 + state.rail * .04 : wipeout ? .16 : 0, 8);
-    pose("UpperLeg.R", riding ? THREE.MathUtils.lerp(.6 - state.stance * .12 + rideCompression * .22, .3, popPlant) : walking ? -step * .62 * stepLift : paddle ? .08 : wipeout ? -.44 + wipeoutWave * .28 : 0, 0, riding ? -.17 + state.rail * .04 : wipeout ? -.16 : 0, 8);
-    pose("LowerLeg.L", riding ? THREE.MathUtils.lerp(1.02 + rideCompression * .24, 1.28, popPlant) : walking ? Math.max(0, -step) * .56 * stepLift : paddle ? .08 : wipeout ? .74 - wipeoutWave * .34 : 0, 0, wipeout ? -.08 : 0, 9);
-    pose("LowerLeg.R", riding ? THREE.MathUtils.lerp(-.92 - rideCompression * .24, -1.18, popPlant) : walking ? Math.max(0, step) * -.56 * stepLift : paddle ? -.08 : wipeout ? -.7 - wipeoutWave * .34 : 0, 0, wipeout ? .08 : 0, 9);
-    pose("Foot.L", riding ? -.18 : walking ? -step * .08 : wipeout ? -.24 + wipeoutWave * .12 : 0, riding ? .08 : 0, riding ? -.08 : wipeout ? -.12 : 0, 9);
-    pose("Foot.R", riding ? .18 : walking ? step * .08 : wipeout ? .24 + wipeoutWave * .12 : 0, riding ? -.08 : 0, riding ? .08 : wipeout ? .12 : 0, 9);
+    pose("UpperLeg.L", driving ? -1.08 + driveLongitudinalG * .04 : riding ? THREE.MathUtils.lerp(-0.74 - state.stance * .12 - rideCompression * .24, -.34, popPlant) : walking ? step * .62 * stepLift : paddle ? -.08 : wipeout ? .48 + wipeoutWave * .32 : 0, driving ? -.04 : 0, driving ? .1 : riding ? .17 + state.rail * .04 : wipeout ? .16 : 0, 8);
+    pose("UpperLeg.R", driving ? 1.04 - driveThrottle * .045 : riding ? THREE.MathUtils.lerp(.6 - state.stance * .12 + rideCompression * .22, .3, popPlant) : walking ? -step * .62 * stepLift : paddle ? .08 : wipeout ? -.44 + wipeoutWave * .28 : 0, driving ? .04 : 0, driving ? -.1 : riding ? -.17 + state.rail * .04 : wipeout ? -.16 : 0, 8);
+    pose("LowerLeg.L", driving ? 1.24 - (driveBrake ? .08 : 0) : riding ? THREE.MathUtils.lerp(1.02 + rideCompression * .24, 1.28, popPlant) : walking ? Math.max(0, -step) * .56 * stepLift : paddle ? .08 : wipeout ? .74 - wipeoutWave * .34 : 0, 0, wipeout ? -.08 : 0, 9);
+    pose("LowerLeg.R", driving ? -1.16 + driveThrottle * .07 : riding ? THREE.MathUtils.lerp(-.92 - rideCompression * .24, -1.18, popPlant) : walking ? Math.max(0, step) * -.56 * stepLift : paddle ? -.08 : wipeout ? -.7 - wipeoutWave * .34 : 0, 0, wipeout ? .08 : 0, 9);
+    pose("Foot.L", driving ? -.22 + (driveBrake ? .12 : 0) : riding ? -.18 : walking ? -step * .08 : wipeout ? -.24 + wipeoutWave * .12 : 0, driving ? .035 : riding ? .08 : 0, driving ? -.03 : riding ? -.08 : wipeout ? -.12 : 0, 9);
+    pose("Foot.R", driving ? .18 - driveThrottle * .12 : riding ? .18 : walking ? step * .08 : wipeout ? .24 + wipeoutWave * .12 : 0, driving ? -.035 : riding ? -.08 : 0, driving ? .03 : riding ? .08 : wipeout ? .12 : 0, 9);
   });
 
   useEffect(() => () => {
@@ -7922,11 +8030,84 @@ function prepareVanScene(source: THREE.Group) {
   return model;
 }
 
-function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionState>; darkness: number }) {
+function VanDriver({
+  playerMotion,
+  vehicleMotion,
+  accent,
+  thermalKit,
+}: {
+  playerMotion: MutableRefObject<MotionState>;
+  vehicleMotion: MutableRefObject<VehicleMotionState>;
+  accent: string;
+  thermalKit: ThermalKit;
+}) {
+  const root = useRef<THREE.Group>(null);
+  const ankleJointRef = useRef<THREE.Object3D | null>(null);
+
+  useFrame((_, delta) => {
+    if (!root.current) return;
+    const driving = playerMotion.current.phase === "driving";
+    const vehicle = vehicleMotion.current;
+    root.current.visible = driving;
+    root.current.position.y = THREE.MathUtils.damp(
+      root.current.position.y,
+      .72 + vehicle.suspension * .018,
+      11,
+      delta,
+    );
+    root.current.position.z = THREE.MathUtils.damp(
+      root.current.position.z,
+      -1.45 + vehicle.longitudinalG * .018,
+      9,
+      delta,
+    );
+    root.current.rotation.x = dampAngle(
+      root.current.rotation.x,
+      vehicle.longitudinalG * -.035,
+      8,
+      delta,
+    );
+    root.current.rotation.y = dampAngle(root.current.rotation.y, -Math.PI / 2, 12, delta);
+    root.current.rotation.z = dampAngle(
+      root.current.rotation.z,
+      vehicle.lateralG * -.075 - vehicle.slip * Math.sign(vehicle.steer || 1) * .025,
+      vehicle.traction < .72 ? 5.5 : 8,
+      delta,
+    );
+  });
+
+  return (
+    <group ref={root} position={[-.72, .72, -1.45]} rotation={[0, -Math.PI / 2, 0]} scale={.91} visible={false}>
+      <PremiumSurferBody
+        motion={playerMotion}
+        vehicleMotion={vehicleMotion}
+        accent={accent}
+        ankleJointRef={ankleJointRef}
+        thermalKit={thermalKit}
+      />
+    </group>
+  );
+}
+
+function SurfVan({
+  motion,
+  playerMotion,
+  darkness,
+  accent,
+  thermalKit,
+}: {
+  motion: MutableRefObject<VehicleMotionState>;
+  playerMotion: MutableRefObject<MotionState>;
+  darkness: number;
+  accent: string;
+  thermalKit: ThermalKit;
+}) {
   const { scene } = useGLTF(VAN_MODEL_URL);
   const model = useMemo(() => prepareVanScene(scene), [scene]);
   const body = useRef<THREE.Object3D | null>(null);
   const bodyRest = useRef({ y: 0, rotationX: 0, rotationZ: 0 });
+  const steeringWheel = useRef<THREE.Object3D | null>(null);
+  const steeringWheelRest = useRef(0);
   const steerLeft = useRef<THREE.Object3D | null>(null);
   const steerRight = useRef<THREE.Object3D | null>(null);
   const wheels = useRef<THREE.Object3D[]>([]);
@@ -7936,6 +8117,7 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
 
   useEffect(() => {
     body.current = namedModelObject(model, "VanBody") ?? null;
+    steeringWheel.current = namedModelObject(model, "SteeringWheel") ?? null;
     steerLeft.current = namedModelObject(model, "Steer.FL") ?? null;
     steerRight.current = namedModelObject(model, "Steer.FR") ?? null;
     wheels.current = ["Wheel.FL", "Wheel.FR", "Wheel.RL", "Wheel.RR"]
@@ -7949,6 +8131,7 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
         rotationZ: body.current.rotation.z,
       };
     }
+    steeringWheelRest.current = steeringWheel.current?.rotation.z ?? 0;
 
     const nextBrakeMaterials: THREE.MeshStandardMaterial[] = [];
     namedModelObject(model, "BrakeLights")?.traverse((object) => {
@@ -7985,6 +8168,14 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
     });
     if (steerLeft.current) steerLeft.current.rotation.y = THREE.MathUtils.damp(steerLeft.current.rotation.y, state.steer * 0.42, 9, delta);
     if (steerRight.current) steerRight.current.rotation.y = THREE.MathUtils.damp(steerRight.current.rotation.y, state.steer * 0.42, 9, delta);
+    if (steeringWheel.current) {
+      steeringWheel.current.rotation.z = dampAngle(
+        steeringWheel.current.rotation.z,
+        steeringWheelRest.current - state.steer * 1.08,
+        11,
+        delta,
+      );
+    }
     if (body.current) {
       const roadPulse = state.driving
         ? state.suspension * (.012 + speedRatio * .018 + state.offRoad * .028)
@@ -8021,6 +8212,12 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
   return (
     <group>
       <primitive object={model} />
+      <VanDriver
+        playerMotion={playerMotion}
+        vehicleMotion={motion}
+        accent={accent}
+        thermalKit={thermalKit}
+      />
       <pointLight ref={(light) => { headLights.current[0] = light; }} position={[-1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.08} distance={11} decay={1.8} />
       <pointLight ref={(light) => { headLights.current[1] = light; }} position={[1.05, 1.12, -3.28]} color="#ffe6ad" intensity={0.08} distance={11} decay={1.8} />
     </group>
@@ -11275,10 +11472,17 @@ function Simulation({
       // lookYaw is an unrestricted angle. Keeping it independent of camera mode
       // gives every phase a true 360-degree freelook instead of a narrow offset.
       cameraOrbit.current.theta += state.lookYaw * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
+      const maximumOrbitPhi = submersion < .08
+        ? Math.PI * .5 - THREE.MathUtils.lerp(
+          .035,
+          .095,
+          Math.max(motion.current.shorebreak, riding ? motion.current.setEnergy : 0),
+        )
+        : Math.PI - .18;
       cameraOrbit.current.phi = THREE.MathUtils.clamp(
         cameraOrbit.current.phi + state.lookPitch * .82 * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress),
         .18,
-        Math.PI - .18,
+        maximumOrbitPhi,
       );
       cameraOffset.current.setFromSpherical(cameraOrbit.current);
       cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
@@ -11307,11 +11511,11 @@ function Simulation({
     if (submersion < .08) {
       const cameraCoastalZ = cameraPosition.current.z - tideShift;
       const waterClearance = cameraMode === "pov"
-        ? .3
-        : riding ? .52
-        : paddling ? .46
-        : .38;
-      const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
+        ? .36
+        : riding ? .62
+        : paddling ? .56
+        : .48;
+      const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 4.75
         ? cameraWaterEnvelopeAt(
           cameraPosition.current.x,
           cameraPosition.current.z,
@@ -11320,7 +11524,9 @@ function Simulation({
           character,
         ) + waterClearance + Math.min(.16, settings.waveHeight * .04)
         : .18;
-      cameraPosition.current.y = Math.max(cameraPosition.current.y, cameraFloor);
+      const cameraLift = Math.max(0, cameraFloor - cameraPosition.current.y);
+      cameraPosition.current.y += cameraLift;
+      cameraTarget.current.y += cameraLift * .72;
     } else {
       const bedKind = seabedKind(character);
       const cameraFloor = -seabedDepthAt(cameraPosition.current.x, cameraPosition.current.z, bedKind) + .18;
@@ -11359,11 +11565,11 @@ function Simulation({
     if (submersion < .08) {
       const cameraCoastalZ = camera.position.z - tideShift;
       const waterClearance = cameraMode === "pov"
-        ? .28
-        : riding ? .48
-        : paddling ? .42
-        : .34;
-      const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
+        ? .34
+        : riding ? .58
+        : paddling ? .52
+        : .44;
+      const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 4.75
         ? cameraWaterEnvelopeAt(
           camera.position.x,
           camera.position.z,
@@ -11372,11 +11578,9 @@ function Simulation({
           character,
         ) + waterClearance + Math.min(.14, settings.waveHeight * .035)
         : .16;
-      camera.position.set(
-        camera.position.x,
-        Math.max(camera.position.y, cameraFloor),
-        camera.position.z,
-      );
+      const cameraLift = Math.max(0, cameraFloor - camera.position.y);
+      camera.position.set(camera.position.x, camera.position.y + cameraLift, camera.position.z);
+      cameraLookTarget.current.y += cameraLift * .72;
     } else {
       const bedKind = seabedKind(character);
       const cameraFloor = -seabedDepthAt(camera.position.x, camera.position.z, bedKind) + .16;
@@ -11757,7 +11961,13 @@ function Simulation({
         />
       </group>
       <group ref={van}>
-        <SurfVan motion={vanMotion} darkness={vanDarkness} />
+        <SurfVan
+          motion={vanMotion}
+          playerMotion={motion}
+          darkness={vanDarkness}
+          accent={beach.palette[0]}
+          thermalKit={thermalKit}
+        />
       </group>
       {weather.kind === "none" && !weather.fog && !weather.storm && (
         <>
