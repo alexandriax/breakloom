@@ -55,7 +55,7 @@ import {
   type SessionSettings,
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
-import type { CameraMode, ControlState } from "./SurfScene";
+import type { CameraMode, ControlState, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 import TideSparkline from "./TideSparkline";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
@@ -317,13 +317,14 @@ function roundedCardRect(
   context.closePath();
 }
 
-function rideCardFile({
+async function rideCardFile({
   ride,
   beach,
   zone,
   board,
   waveHeight,
   wavePeriod,
+  sceneFrame,
 }: {
   ride: RideToast;
   beach: Beach;
@@ -331,12 +332,13 @@ function rideCardFile({
   board: string;
   waveHeight: number;
   wavePeriod: number;
+  sceneFrame?: Blob | null;
 }) {
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
   canvas.height = 630;
   const context = canvas.getContext("2d");
-  if (!context) return Promise.resolve<File | null>(null);
+  if (!context) return null;
 
   const accent = beach.palette[0];
   const sand = beach.palette[1];
@@ -347,6 +349,39 @@ function rideCardFile({
   context.fillStyle = background;
   context.fillRect(0, 0, 1200, 630);
 
+  let capturedImage: ImageBitmap | null = null;
+  if (sceneFrame && typeof createImageBitmap === "function") {
+    try {
+      capturedImage = await createImageBitmap(sceneFrame);
+      const sourceAspect = capturedImage.width / capturedImage.height;
+      const targetAspect = 1200 / 630;
+      const sourceWidth = sourceAspect > targetAspect ? capturedImage.height * targetAspect : capturedImage.width;
+      const sourceHeight = sourceAspect > targetAspect ? capturedImage.height : capturedImage.width / targetAspect;
+      const sourceX = (capturedImage.width - sourceWidth) * .5;
+      const sourceY = (capturedImage.height - sourceHeight) * .5;
+      context.drawImage(capturedImage, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, 1200, 630);
+    } catch {
+      capturedImage = null;
+    }
+  }
+
+  if (capturedImage) {
+    const leftShade = context.createLinearGradient(0, 0, 860, 0);
+    leftShade.addColorStop(0, "rgba(1,9,14,.86)");
+    leftShade.addColorStop(.48, "rgba(2,14,20,.48)");
+    leftShade.addColorStop(1, "rgba(3,18,24,.08)");
+    context.fillStyle = leftShade;
+    context.fillRect(0, 0, 940, 630);
+    const lowerShade = context.createLinearGradient(0, 270, 0, 630);
+    lowerShade.addColorStop(0, "rgba(1,10,15,0)");
+    lowerShade.addColorStop(.58, "rgba(1,10,15,.54)");
+    lowerShade.addColorStop(1, "rgba(1,8,13,.93)");
+    context.fillStyle = lowerShade;
+    context.fillRect(0, 250, 1200, 380);
+    context.fillStyle = "rgba(2,12,18,.25)";
+    context.fillRect(820, 0, 380, 630);
+  }
+
   const glow = context.createRadialGradient(900, 145, 12, 900, 145, 470);
   glow.addColorStop(0, `${accent}70`);
   glow.addColorStop(.42, `${accent}1c`);
@@ -354,7 +389,7 @@ function rideCardFile({
   context.fillStyle = glow;
   context.fillRect(0, 0, 1200, 630);
 
-  context.globalAlpha = .18;
+  context.globalAlpha = capturedImage ? .075 : .18;
   context.strokeStyle = accent;
   context.lineWidth = 2;
   for (let index = 0; index < 7; index += 1) {
@@ -376,7 +411,13 @@ function rideCardFile({
   context.fillText("S U R F S C A P E", 94, 92);
   context.font = "700 14px Arial, sans-serif";
   context.fillStyle = "rgba(218,247,242,.58)";
-  context.fillText(ride.result === "clean" ? "CLEAN LINE  /  RIDE RECORD" : "WIPEOUT  /  RIDE RECORD", 94, 128);
+  context.fillText(
+    capturedImage
+      ? ride.result === "clean" ? "CLEAN LINE  /  CINEMATIC RIDE FRAME" : "WIPEOUT  /  CINEMATIC RIDE FRAME"
+      : ride.result === "clean" ? "CLEAN LINE  /  RIDE RECORD" : "WIPEOUT  /  RIDE RECORD",
+    94,
+    128,
+  );
 
   let zoneSize = 68;
   do {
@@ -446,6 +487,7 @@ function rideCardFile({
   context.fillText("SURF THE WORLD  ·  SURFSCAPE.ALEXANDRIA.CHATGPT.SITE", 64, 566);
   context.fillStyle = accent;
   context.fillRect(64, 588, 1070, 3);
+  capturedImage?.close();
 
   return new Promise<File | null>((resolve) => {
     canvas.toBlob((blob) => {
@@ -485,12 +527,20 @@ export default function SurfscapeApp() {
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
   const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
+  const [captureRequest, setCaptureRequest] = useState<RideCaptureRequest | null>(null);
+  const [rideFrameVersion, setRideFrameVersion] = useState(0);
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
   const [wetLens, setWetLens] = useState<WetLensEvent | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const rideCard = useRef<File | null>(null);
+  const rideFrame = useRef<RideFrameCapture | null>(null);
+  const captureSequence = useRef(0);
+  const activeRideCaptureId = useRef(0);
+  const requestedCaptureQuality = useRef(0);
+  const maneuverCaptureCount = useRef(0);
+  const previousBarrelCaptureBand = useRef(0);
   const wakeLock = useRef<WakeLockSentinelLike | null>(null);
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
@@ -558,6 +608,25 @@ export default function SurfscapeApp() {
       intensity: THREEClamp(intensity, .12, 1),
       duration: THREEClamp(duration, 2.2, 7.2),
     });
+  }, []);
+
+  const requestRideFrame = useCallback((quality: number) => {
+    const nextQuality = THREEClamp(quality, 0, 1);
+    if (activeRideCaptureId.current <= 0 || nextQuality <= requestedCaptureQuality.current + .045) return;
+    requestedCaptureQuality.current = nextQuality;
+    captureSequence.current += 1;
+    setCaptureRequest({
+      id: captureSequence.current,
+      rideId: activeRideCaptureId.current,
+      quality: nextQuality,
+    });
+  }, []);
+
+  const handleRideFrameCapture = useCallback((capture: RideFrameCapture) => {
+    if (capture.rideId !== activeRideCaptureId.current) return;
+    if (rideFrame.current && capture.quality < rideFrame.current.quality) return;
+    rideFrame.current = capture;
+    setRideFrameVersion((version) => version + 1);
   }, []);
 
   useEffect(() => {
@@ -929,6 +998,13 @@ export default function SurfscapeApp() {
     const from = previousPhase.current;
     if (from !== stats.phase) {
       if (stats.phase === "riding") {
+        activeRideCaptureId.current += 1;
+        requestedCaptureQuality.current = 0;
+        maneuverCaptureCount.current = 0;
+        previousBarrelCaptureBand.current = 0;
+        rideFrame.current = null;
+        rideCard.current = null;
+        requestRideFrame(.38 + stats.takeoffQuality * .18);
         audio.current?.effect("catch");
         haptic([14, 24, 28]);
       }
@@ -1025,7 +1101,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [effectiveFaceHeight, paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [effectiveFaceHeight, paused, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1122,12 +1198,29 @@ export default function SurfscapeApp() {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
       previousManeuverId.current = stats.maneuverId;
       setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore, quality: stats.maneuverQuality });
+      const captureQuality = .62 + stats.maneuverQuality * .23 + Math.min(.08, stats.maneuverScore / 12000);
+      if (maneuverCaptureCount.current < 2 && captureQuality > requestedCaptureQuality.current + .045) {
+        maneuverCaptureCount.current += 1;
+        requestRideFrame(captureQuality);
+      }
       audio.current?.effect("turn");
       haptic(stats.maneuverQuality >= .82 ? [9, 16, 24] : 12);
       const timer = window.setTimeout(() => setManeuverToast(null), 1800);
       return () => window.clearTimeout(timer);
     }
-  }, [stats.maneuver, stats.maneuverId, stats.maneuverQuality, stats.maneuverScore]);
+  }, [requestRideFrame, stats.maneuver, stats.maneuverId, stats.maneuverQuality, stats.maneuverScore]);
+
+  useEffect(() => {
+    if (stats.phase !== "riding") {
+      previousBarrelCaptureBand.current = 0;
+      return;
+    }
+    const band = stats.barrelIntensity >= .78 ? 2 : stats.barrelIntensity >= .48 ? 1 : 0;
+    if (band > previousBarrelCaptureBand.current) {
+      previousBarrelCaptureBand.current = band;
+      requestRideFrame(.72 + stats.barrelIntensity * .24);
+    }
+  }, [requestRideFrame, stats.barrelIntensity, stats.phase]);
 
   useEffect(() => {
     const from = previousTakeoffPhase.current;
@@ -1172,13 +1265,16 @@ export default function SurfscapeApp() {
       beach,
       zone: zoneLabel,
       board: BOARD_SPECS[settings.board].name,
-      waveHeight: settings.waveHeight,
+      waveHeight: effectiveFaceHeight,
       wavePeriod: settings.wavePeriod,
+      sceneFrame: rideFrame.current?.rideId === activeRideCaptureId.current
+        ? rideFrame.current.blob
+        : null,
     }).then((file) => {
       if (!disposed) rideCard.current = file;
     });
     return () => { disposed = true; };
-  }, [beach, rideToast, settings.board, settings.waveHeight, settings.wavePeriod, zoneLabel]);
+  }, [beach, effectiveFaceHeight, rideFrameVersion, rideToast, settings.board, settings.wavePeriod, zoneLabel]);
 
   const chooseBeach = (next: Beach) => {
     const startingZone = next.zones[Math.min(1, next.zones.length - 1)];
@@ -1220,6 +1316,16 @@ export default function SurfscapeApp() {
     if (joystickKnob.current) joystickKnob.current.style.transform = "translate3d(-50%, -50%, 0)";
   }
 
+  function resetRideCapture() {
+    activeRideCaptureId.current += 1;
+    requestedCaptureQuality.current = 0;
+    maneuverCaptureCount.current = 0;
+    previousBarrelCaptureBand.current = 0;
+    rideFrame.current = null;
+    rideCard.current = null;
+    setCaptureRequest(null);
+  }
+
   const startSession = async () => {
     if (!audio.current) audio.current = new SurfscapeAudio();
     await audio.current.start();
@@ -1232,6 +1338,7 @@ export default function SurfscapeApp() {
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
+    resetRideCapture();
     setStats(INITIAL_STATS);
     trainingStepValue.current = 0;
     setTrainingStep(0);
@@ -1255,6 +1362,7 @@ export default function SurfscapeApp() {
     audio.current?.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
+    resetRideCapture();
     setWetLens(null);
     setScreen("launch");
     setPaused(false);
@@ -1454,6 +1562,19 @@ export default function SurfscapeApp() {
       haptic(7);
     };
     try {
+      if (!rideCard.current) {
+        rideCard.current = await rideCardFile({
+          ride,
+          beach,
+          zone: zoneLabel,
+          board: BOARD_SPECS[settings.board].name,
+          waveHeight: effectiveFaceHeight,
+          wavePeriod: settings.wavePeriod,
+          sceneFrame: rideFrame.current?.rideId === activeRideCaptureId.current
+            ? rideFrame.current.blob
+            : null,
+        });
+      }
       if (navigator.share) {
         const shareData: ShareData = { title: `Surfscape · ${zoneLabel} · ${ride.grade}`, text, url };
         if (rideCard.current && navigator.canShare?.({ files: [rideCard.current] })) shareData.files = [rideCard.current];
@@ -1665,6 +1786,8 @@ export default function SurfscapeApp() {
           cameraMode={cameraMode}
           controls={controls}
           active={screen === "game" && !paused}
+          captureRequest={captureRequest}
+          onCapture={handleRideFrameCapture}
           onStats={handleStats}
           onReady={handleSceneReady}
         />
@@ -2347,7 +2470,7 @@ export default function SurfscapeApp() {
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}

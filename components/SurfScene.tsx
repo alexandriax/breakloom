@@ -34,6 +34,14 @@ export type ControlState = {
 };
 
 export type CameraMode = "follow" | "pov" | "immersive" | "cinematic";
+export type RideCaptureRequest = {
+  id: number;
+  rideId: number;
+  quality: number;
+};
+export type RideFrameCapture = RideCaptureRequest & {
+  blob: Blob;
+};
 type RenderQuality = "reduced" | "balanced" | "high";
 
 const RenderQualityContext = createContext<RenderQuality>("high");
@@ -157,6 +165,8 @@ type SurfSceneProps = {
   cameraMode: CameraMode;
   controls: MutableRefObject<ControlState>;
   active: boolean;
+  captureRequest: RideCaptureRequest | null;
+  onCapture: (capture: RideFrameCapture) => void;
   onStats: (stats: GameStats) => void;
   onReady: () => void;
 };
@@ -3222,7 +3232,7 @@ function SurferModel({
       <group ref={rig}>
         <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
         <SurferRunoffEffects motion={motion} />
-        <group ref={body} position={[0, 1.02, 0]} visible={cameraMode !== "pov"}>
+        <group ref={body} name="SurferVisualBody" position={[0, 1.02, 0]} visible={cameraMode !== "pov"}>
           <PremiumSurferBody motion={motion} accent={accent} ankleJointRef={ankleJointRef} thermalKit={thermalKit} />
         </group>
       </group>
@@ -7729,6 +7739,110 @@ function KinematicContactShadows({
   );
 }
 
+function CinematicFrameCapture({
+  request,
+  onCapture,
+  focusPosition,
+  motion,
+  settings,
+  character,
+}: {
+  request: RideCaptureRequest | null;
+  onCapture: (capture: RideFrameCapture) => void;
+  focusPosition: MutableRefObject<THREE.Vector3>;
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+}) {
+  const { gl, scene } = useThree();
+  const quality = useRenderQuality();
+  const handledRequest = useRef(0);
+  const captureCallback = useRef(onCapture);
+  const captureCamera = useRef(new THREE.PerspectiveCamera(52, 1200 / 630, .08, 650));
+  const lookTarget = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    captureCallback.current = onCapture;
+  }, [onCapture]);
+
+  useFrame(({ clock }) => {
+    if (!request || request.id <= handledRequest.current) return;
+    handledRequest.current = request.id;
+    const width = quality === "high" ? 1200 : quality === "balanced" ? 1040 : 840;
+    const height = Math.round(width * 630 / 1200);
+    const focus = focusPosition.current;
+    const transport = primaryWaveVelocityAt(focus.x, focus.z, clock.elapsedTime, settings, character);
+    const normalX = transport.x / Math.max(.001, transport.speed);
+    const normalZ = transport.z / Math.max(.001, transport.speed);
+    const tangentX = normalZ;
+    const tangentZ = -normalX;
+    const lineSide = motion.current.lineSide || (character.peel === 0 ? 1 : Math.sign(character.peel));
+    const surfaceY = waveHeightAt(focus.x, focus.z, clock.elapsedTime, settings, character);
+    const shoulderOffset = 4.4 + settings.waveHeight * .42;
+    const shorewardOffset = 6.2 + settings.waveHeight * .68;
+    captureCamera.current.aspect = width / height;
+    captureCamera.current.fov = THREE.MathUtils.clamp(54 - settings.waveHeight * 1.2, 47, 53);
+    captureCamera.current.position.set(
+      focus.x + normalX * shorewardOffset + tangentX * lineSide * shoulderOffset,
+      surfaceY + 2.75 + settings.waveHeight * .24,
+      focus.z + normalZ * shorewardOffset + tangentZ * lineSide * shoulderOffset,
+    );
+    lookTarget.current.set(
+      focus.x - normalX * .6 + tangentX * lineSide * .7,
+      surfaceY + .92 + motion.current.maneuverLift * .18,
+      focus.z - normalZ * .6 + tangentZ * lineSide * .7,
+    );
+    captureCamera.current.lookAt(lookTarget.current);
+    captureCamera.current.updateProjectionMatrix();
+    captureCamera.current.updateMatrixWorld(true);
+
+    const target = new THREE.WebGLRenderTarget(width, height, {
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    target.texture.colorSpace = THREE.SRGBColorSpace;
+    const previousTarget = gl.getRenderTarget();
+    const surferVisual = scene.getObjectByName("SurferVisualBody");
+    const previousSurferVisibility = surferVisual?.visible;
+    const pixels = new Uint8Array(width * height * 4);
+    try {
+      if (surferVisual) surferVisual.visible = true;
+      gl.setRenderTarget(target);
+      gl.clear(true, true, true);
+      gl.render(scene, captureCamera.current);
+      gl.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+    } catch {
+      target.dispose();
+      gl.setRenderTarget(previousTarget);
+      if (surferVisual && previousSurferVisibility !== undefined) surferVisual.visible = previousSurferVisibility;
+      return;
+    }
+    gl.setRenderTarget(previousTarget);
+    if (surferVisual && previousSurferVisibility !== undefined) surferVisual.visible = previousSurferVisibility;
+    target.dispose();
+
+    const flipped = new Uint8ClampedArray(pixels.length);
+    const rowLength = width * 4;
+    for (let row = 0; row < height; row += 1) {
+      const sourceOffset = (height - row - 1) * rowLength;
+      flipped.set(pixels.subarray(sourceOffset, sourceOffset + rowLength), row * rowLength);
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.putImageData(new ImageData(flipped, width, height), 0, 0);
+    canvas.toBlob((blob) => {
+      if (blob) captureCallback.current({ ...request, blob });
+    }, "image/jpeg", .92);
+  });
+
+  return null;
+}
+
 function Simulation({
   beach,
   zoneName,
@@ -7744,6 +7858,8 @@ function Simulation({
   cameraMode,
   controls,
   active,
+  captureRequest,
+  onCapture,
   onStats,
   onReady,
 }: SurfSceneProps) {
@@ -10055,6 +10171,14 @@ function Simulation({
         solarElevation={solarElevation}
         mobile={mobileRenderer}
         reducedMotion={reducedMotion}
+      />
+      <CinematicFrameCapture
+        request={captureRequest}
+        onCapture={onCapture}
+        focusPosition={worldFocus}
+        motion={motion}
+        settings={settings}
+        character={character}
       />
     </>
   );
