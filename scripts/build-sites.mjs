@@ -8,7 +8,9 @@ const dist = resolve(root, "dist");
 await rm(dist, { recursive: true, force: true });
 await mkdir(resolve(dist, "server"), { recursive: true });
 await mkdir(resolve(dist, "client"), { recursive: true });
+await mkdir(resolve(dist, ".openai"), { recursive: true });
 await cp(output, resolve(dist, "client"), { recursive: true });
+await cp(resolve(root, ".openai", "hosting.json"), resolve(dist, ".openai", "hosting.json"));
 
 const worker = `
 export default {
