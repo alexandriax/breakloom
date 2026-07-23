@@ -3354,33 +3354,147 @@ function WeatherEffects({ weatherCode, windSpeed, windDirection, coastHeading }:
   );
 }
 
-function Bird({ offset, speed }: { offset: number; speed: number }) {
+function gullWingGeometry(side: -1 | 1, tip = false) {
+  const points = tip
+    ? [
+        [side * .82, .014, -.24],
+        [side * 1.62, -.008, -.05],
+        [side * 1.34, -.022, .3],
+        [side * .88, -.012, .36],
+      ]
+    : [
+        [0, 0, -.22],
+        [side * .58, .036, -.34],
+        [side * 1.62, -.008, -.05],
+        [side * 1.34, -.022, .3],
+        [side * .52, -.014, .48],
+        [0, 0, .34],
+      ];
+  const indices = tip
+    ? [0, 1, 3, 1, 2, 3]
+    : [0, 1, 5, 1, 4, 5, 1, 2, 4, 2, 3, 4];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points.flat(), 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function Seabird({
+  offset,
+  speed,
+  variant,
+  wind,
+  reducedMotion,
+}: {
+  offset: number;
+  speed: number;
+  variant: number;
+  wind: number;
+  reducedMotion: boolean;
+}) {
   const group = useRef<THREE.Group>(null);
-  const left = useRef<THREE.Mesh>(null);
-  const right = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
+  const leftWing = useRef<THREE.Group>(null);
+  const rightWing = useRef<THREE.Group>(null);
+  const tail = useRef<THREE.Group>(null);
+  const previousPosition = useRef(new THREE.Vector3());
+  const leftWingGeometry = useMemo(() => gullWingGeometry(-1), []);
+  const rightWingGeometry = useMemo(() => gullWingGeometry(1), []);
+  const leftTipGeometry = useMemo(() => gullWingGeometry(-1, true), []);
+  const rightTipGeometry = useMemo(() => gullWingGeometry(1, true), []);
+
+  useEffect(() => () => {
+    leftWingGeometry.dispose();
+    rightWingGeometry.dispose();
+    leftTipGeometry.dispose();
+    rightTipGeometry.dispose();
+  }, [leftTipGeometry, leftWingGeometry, rightTipGeometry, rightWingGeometry]);
+
+  useFrame(({ clock }, delta) => {
     if (!group.current) return;
     const t = clock.elapsedTime * speed + offset;
-    group.current.position.set(Math.sin(t * 0.21) * 58, 14 + Math.sin(t * 0.37) * 4, -38 + Math.cos(t * 0.21) * 44);
-    group.current.rotation.y = -t * 0.21;
-    const flap = Math.sin(t * 5) * 0.48;
-    if (left.current) left.current.rotation.z = 0.2 + flap;
-    if (right.current) right.current.rotation.z = -0.2 - flap;
+    const orbit = t * (.168 + variant * .007);
+    const radiusX = 48 + variant * 5.5;
+    const radiusZ = 36 + variant * 4;
+    const gust = Math.sin(t * .29 + variant * 1.7) * Math.min(1, wind / 18);
+    const nextX = Math.sin(orbit) * radiusX + Math.sin(t * .071 + offset) * 7;
+    const nextY = 9.4 + variant * 2.2 + Math.sin(t * .31 + variant) * 2.7 + gust * 1.1;
+    const nextZ = -41 + Math.cos(orbit) * radiusZ + Math.sin(t * .097 + offset * .4) * 5;
+    const previous = previousPosition.current;
+    if (previous.lengthSq() < .001) previous.set(nextX - .1, nextY, nextZ - .1);
+    const travelX = nextX - previous.x;
+    const travelY = nextY - previous.y;
+    const travelZ = nextZ - previous.z;
+    const targetYaw = Math.atan2(-travelX, -travelZ);
+    const targetPitch = THREE.MathUtils.clamp(Math.atan2(travelY, Math.hypot(travelX, travelZ)), -.22, .22);
+    const turnBank = .13 + Math.sin(orbit) * .035 + gust * .045;
+    group.current.position.set(nextX, nextY, nextZ);
+    group.current.rotation.y = dampAngle(group.current.rotation.y, targetYaw, 4.2, delta);
+    group.current.rotation.x = THREE.MathUtils.damp(group.current.rotation.x, targetPitch, 3.8, delta);
+    group.current.rotation.z = THREE.MathUtils.damp(group.current.rotation.z, turnBank, 3.6, delta);
+    previous.set(nextX, nextY, nextZ);
+
+    const flightCycle = (t + variant * 1.31) % 7.2;
+    const burst = reducedMotion ? 0 : 1 - THREE.MathUtils.smoothstep(flightCycle, 1.1, 2.2);
+    const flap = reducedMotion
+      ? .08
+      : Math.sin(t * (7.8 + variant * .45)) * (.08 + burst * .54) - burst * .03;
+    if (leftWing.current) leftWing.current.rotation.z = THREE.MathUtils.damp(leftWing.current.rotation.z, -.055 - flap, 13, delta);
+    if (rightWing.current) rightWing.current.rotation.z = THREE.MathUtils.damp(rightWing.current.rotation.z, .055 + flap, 13, delta);
+    if (tail.current) tail.current.rotation.y = THREE.MathUtils.damp(tail.current.rotation.y, -gust * .12 - Math.sin(orbit) * .045, 4, delta);
   });
+
+  const birdScale = .62 + variant * .055;
   return (
-    <group ref={group} scale={0.6}>
-      <mesh>
-        <sphereGeometry args={[0.17, 8, 6]} />
-        <meshStandardMaterial color="#d8e1dc" />
+    <group ref={group} scale={birdScale}>
+      <mesh scale={[.3, .22, .76]} castShadow>
+        <sphereGeometry args={[1, 14, 9]} />
+        <meshStandardMaterial color="#e8ece7" roughness={.82} />
       </mesh>
-      <mesh ref={left} position={[-0.34, 0, 0]} rotation={[0, 0, 0.2]}>
-        <boxGeometry args={[0.72, 0.035, 0.2]} />
-        <meshStandardMaterial color="#c3d0cc" />
+      <mesh position={[0, -.13, .06]} scale={[.255, .115, .56]}>
+        <sphereGeometry args={[1, 12, 8]} />
+        <meshStandardMaterial color="#f5f2e8" roughness={.9} />
       </mesh>
-      <mesh ref={right} position={[0.34, 0, 0]} rotation={[0, 0, -0.2]}>
-        <boxGeometry args={[0.72, 0.035, 0.2]} />
-        <meshStandardMaterial color="#c3d0cc" />
+      <mesh position={[0, .08, -.67]} scale={[.25, .24, .29]}>
+        <sphereGeometry args={[1, 12, 9]} />
+        <meshStandardMaterial color="#f1f2ec" roughness={.78} />
       </mesh>
+      <mesh position={[0, .065, -.95]} rotation={[-Math.PI / 2, 0, 0]}>
+        <coneGeometry args={[.075, .28, 7]} />
+        <meshStandardMaterial color="#e0a344" roughness={.7} />
+      </mesh>
+      <mesh position={[-.205, .135, -.76]} scale={[.028, .036, .025]}>
+        <sphereGeometry args={[1, 7, 5]} />
+        <meshStandardMaterial color="#101517" roughness={.36} />
+      </mesh>
+      <mesh position={[.205, .135, -.76]} scale={[.028, .036, .025]}>
+        <sphereGeometry args={[1, 7, 5]} />
+        <meshStandardMaterial color="#101517" roughness={.36} />
+      </mesh>
+      <group ref={leftWing} position={[-.04, .06, -.04]}>
+        <mesh geometry={leftWingGeometry} castShadow>
+          <meshStandardMaterial color="#dce2df" roughness={.86} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh geometry={leftTipGeometry} position={[0, .012, 0]}>
+          <meshStandardMaterial color="#49545a" roughness={.9} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+      <group ref={rightWing} position={[.04, .06, -.04]}>
+        <mesh geometry={rightWingGeometry} castShadow>
+          <meshStandardMaterial color="#dce2df" roughness={.86} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh geometry={rightTipGeometry} position={[0, .012, 0]}>
+          <meshStandardMaterial color="#49545a" roughness={.9} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+      <group ref={tail} position={[0, .01, .72]}>
+        {[-1, 0, 1].map((side) => (
+          <mesh key={side} position={[side * .095, 0, .13]} rotation={[0, side * .13, 0]}>
+            <boxGeometry args={[.13, .025, .5]} />
+            <meshStandardMaterial color={side === 0 ? "#e5e8e3" : "#ced6d3"} roughness={.9} />
+          </mesh>
+        ))}
+      </group>
     </group>
   );
 }
@@ -6117,9 +6231,9 @@ function Simulation({
       </group>
       {weather.kind === "none" && !weather.fog && !weather.storm && (
         <>
-          {birdCount >= 1 && <Bird offset={0} speed={1 + settings.windSpeed * 0.008} />}
-          {birdCount >= 2 && <Bird offset={7} speed={0.82 + settings.windSpeed * 0.006} />}
-          {birdCount >= 3 && <Bird offset={15} speed={1.15 + settings.windSpeed * 0.007} />}
+          {birdCount >= 1 && <Seabird offset={0} speed={1 + settings.windSpeed * .008} variant={0} wind={settings.windSpeed} reducedMotion={reducedMotion} />}
+          {birdCount >= 2 && <Seabird offset={7} speed={.82 + settings.windSpeed * .006} variant={1} wind={settings.windSpeed} reducedMotion={reducedMotion} />}
+          {birdCount >= 3 && <Seabird offset={15} speed={1.15 + settings.windSpeed * .007} variant={2} wind={settings.windSpeed} reducedMotion={reducedMotion} />}
         </>
       )}
       {sunHeight < 0.22 && (
