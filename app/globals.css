@@ -1129,6 +1129,26 @@ input:focus-visible {
 }
 .game-actions svg { width: 14px; }
 .game-actions .camera-button { color: #b8fff5; border-color: rgba(113, 225, 211, 0.3); box-shadow: inset 0 0 12px rgba(113, 225, 211, 0.07); }
+.controller-chip {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(113, 225, 211, .38);
+  background: linear-gradient(110deg, rgba(23, 72, 75, .72), rgba(4, 20, 25, .68));
+  color: #b8fff5;
+  box-shadow: inset 0 0 14px rgba(113, 225, 211, .08), 0 0 18px rgba(113, 225, 211, .06);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+.controller-chip svg { width: 15px; filter: drop-shadow(0 0 6px rgba(113, 225, 211, .42)); }
+.controller-chip span { font-size: 6px; font-weight: 900; letter-spacing: .16em; }
+.controller-chip::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: #71e1d3; box-shadow: 0 0 7px rgba(113, 225, 211, .9); animation: controller-online 2.2s ease-in-out infinite; }
+
+@keyframes controller-online {
+  50% { opacity: .42; box-shadow: 0 0 3px rgba(113, 225, 211, .45); }
+}
 
 .score-panel {
   position: absolute;
@@ -1539,6 +1559,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .coach-progress small { display: none; }
   .game-actions button:first-child { display: none; }
   .game-actions button { width: 42px; height: 42px; border-radius: 50%; }
+  .controller-chip { width: 42px; height: 42px; justify-content: center; padding: 0; border-radius: 50%; }
+  .controller-chip span, .controller-chip::after { display: none; }
   .score-panel { top: calc(112px + env(safe-area-inset-top)); right: 11px; width: 124px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.12); border-right: 2px solid var(--spot-accent); border-left: 0; background: linear-gradient(100deg, rgba(3, 13, 18, 0.3), rgba(3, 13, 18, 0.78)); border-radius: 3px; }
   .score-panel > strong { font-size: 25px; }
   .score-panel > small { font-size: 6px; }

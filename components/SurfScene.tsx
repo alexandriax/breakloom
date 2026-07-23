@@ -20,6 +20,13 @@ export type ControlState = {
   moveX: number;
   moveY: number;
   balance: number;
+  gamepadConnected: boolean;
+  gamepadActive: boolean;
+  gamepadMoveX: number;
+  gamepadMoveY: number;
+  gamepadBalance: number;
+  gamepadAction: boolean;
+  gamepadSprint: boolean;
   lookYaw: number;
   lookPitch: number;
 };
@@ -4567,8 +4574,9 @@ function Simulation({
       : THREE.MathUtils.smootherstep(t, .12, 3.25);
     const state = controls.current;
     const currentPhase = phase.current;
-    const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX, -1, 1);
-    const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY, -1, 1);
+    const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
+    const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY + state.gamepadMoveY, -1, 1);
+    const balanceInput = state.gamepadActive ? state.gamepadBalance : state.balance;
     const inputLength = Math.min(1, Math.hypot(steer, move));
     camera.getWorldDirection(cameraForward.current);
     cameraForward.current.y = 0;
@@ -4582,8 +4590,8 @@ function Simulation({
       movementX = (cameraRight.current.x * steer + cameraForward.current.x * move) * inputScale;
       movementZ = (cameraRight.current.z * steer + cameraForward.current.z * move) * inputScale;
     }
-    const analogMagnitude = Math.min(1, Math.hypot(state.moveX, state.moveY));
-    const wantsRun = state.sprint || (analogMagnitude > .82 && inputLength > .72);
+    const analogMagnitude = Math.min(1, Math.max(Math.hypot(state.moveX, state.moveY), Math.hypot(state.gamepadMoveX, state.gamepadMoveY)));
+    const wantsRun = state.sprint || state.gamepadSprint || (analogMagnitude > .82 && inputLength > .72);
     const modeDifficulty = settings.mode === "advanced" ? 1.12 : settings.mode === "training" ? 0.62 : 0.86;
     const relativeWindAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
     const windExposure = THREE.MathUtils.clamp(settings.windSpeed / 32, 0, 1.4);
@@ -4619,9 +4627,10 @@ function Simulation({
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
     const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
 
-    const actionPressed = state.action && !actionLatch.current;
-    const actionReleased = !state.action && actionLatch.current;
-    actionLatch.current = state.action;
+    const actionDown = state.action || state.gamepadAction;
+    const actionPressed = actionDown && !actionLatch.current;
+    const actionReleased = !actionDown && actionLatch.current;
+    actionLatch.current = actionDown;
 
     if (!active) {
       landVelocity.current.x = THREE.MathUtils.damp(landVelocity.current.x, 0, 12, delta);
@@ -5024,7 +5033,7 @@ function Simulation({
           maneuverAirborne = attempt.family === "air" && lift > .18;
           maneuverPhase = maneuverProgress < .2 ? "release" : maneuverAirborne && maneuverProgress < .72 ? "air" : "land";
         }
-        const balanceError = Math.abs(state.balance - balanceTarget);
+        const balanceError = Math.abs(balanceInput - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.08 : settings.mode === "advanced" ? 0.64 : 0.82) * Math.sqrt(boardSpec.stability);
         unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
         unstableFor.current += sectionPressure * delta * (settings.mode === "training" ? .12 : settings.mode === "advanced" ? .5 : .3);
@@ -5058,7 +5067,7 @@ function Simulation({
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
         }
         if (attempt && maneuverProgress >= 1) {
-          const landingError = Math.abs(state.balance - landingTarget);
+          const landingError = Math.abs(balanceInput - landingTarget);
           const recoveryAssist = settings.mode === "training" ? 1.35 : mobileRenderer ? 1.12 : 1;
           const landed = landingError <= landingWindow * recoveryAssist && railSlip.current < .88;
           if (landed) {
@@ -5143,7 +5152,7 @@ function Simulation({
           maneuverScore.current = 0;
           maneuverQuality.current = 0;
           lastManeuverAt.current = t;
-          const side = steer || (state.balance >= 0 ? 1 : -1);
+          const side = steer || (balanceInput >= 0 ? 1 : -1);
           const baseDuration = family === "air" ? 1.04 : name === "Nose Ride" ? .92 : name === "Foam Floater" ? .8 : family === "carve" ? .78 : .7;
           const timingScale = settings.mode === "training" ? 1.12 : settings.mode === "advanced" ? .94 : 1;
           activeManeuver.current = {
@@ -5217,7 +5226,7 @@ function Simulation({
         if (finishAt.current >= 0) {
           const finishElapsed = t - finishAt.current;
           unstableFor.current = 0;
-          balanceTarget = state.balance;
+          balanceTarget = balanceInput;
           railSlip.current = THREE.MathUtils.damp(railSlip.current, 0, 7, delta);
           prompt = finishElapsed < .55 ? "Hold the exit — clean line" : "Line complete — returning to shore";
           if (finishElapsed > 1.08) {
@@ -5269,13 +5278,13 @@ function Simulation({
     player.current.rotation.y = dampAngle(player.current.rotation.y, targetPlayerHeading, 7, delta);
     player.current.rotation.z = THREE.MathUtils.damp(
       player.current.rotation.z,
-      phase.current === "riding" ? -state.balance * 0.17 : 0,
+      phase.current === "riding" ? -balanceInput * 0.17 : 0,
       7,
       delta,
     );
 
     motion.current.phase = phase.current;
-    motion.current.balance = state.balance;
+    motion.current.balance = balanceInput;
     motion.current.steer = steer;
     motion.current.speed = Math.abs(speed);
     if (phase.current !== "riding") trickCharge.current = 0;
@@ -5574,7 +5583,7 @@ function Simulation({
         pocketDistance: Number(pocketDistance.current.toFixed(1)),
         speed: Math.max(0, speed),
         paddleEffort: motion.current.paddleEffort,
-        balance: state.balance,
+        balance: balanceInput,
         balanceTarget,
         waveQuality,
         linePosition: motion.current.linePosition,

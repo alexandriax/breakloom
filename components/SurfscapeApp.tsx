@@ -12,6 +12,7 @@ import {
   CloudSun,
   Crosshair,
   Gauge,
+  Gamepad2,
   LoaderCircle,
   MapPin,
   Maximize2,
@@ -72,6 +73,14 @@ type RideToast = {
 };
 type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
+type DualRumbleActuator = {
+  playEffect: (type: "dual-rumble", parameters: {
+    duration: number;
+    startDelay: number;
+    strongMagnitude: number;
+    weakMagnitude: number;
+  }) => Promise<unknown>;
+};
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
@@ -90,7 +99,27 @@ function nextCameraMode(current: CameraMode) {
 }
 
 function haptic(pattern: number | number[]) {
-  if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern);
+  if (typeof navigator === "undefined") return;
+  if (navigator.vibrate) navigator.vibrate(pattern);
+  const beats = Array.isArray(pattern) ? pattern : [pattern];
+  const duration = Math.min(260, Math.max(28, beats.reduce((total, beat) => total + beat, 0)));
+  const intensity = Math.min(1, .22 + Math.max(...beats) / 64);
+  const gamepad = Array.from(navigator.getGamepads?.() ?? []).find((candidate) => candidate?.connected);
+  const actuator = (gamepad as (Gamepad & { vibrationActuator?: DualRumbleActuator }) | null)?.vibrationActuator;
+  if (actuator) {
+    void actuator.playEffect("dual-rumble", {
+      duration,
+      startDelay: 0,
+      strongMagnitude: intensity * .72,
+      weakMagnitude: intensity,
+    }).catch(() => undefined);
+  }
+}
+
+function gamepadAxis(value = 0, deadzone = .14) {
+  const magnitude = Math.abs(value);
+  if (magnitude <= deadzone) return 0;
+  return Math.sign(value) * Math.min(1, (magnitude - deadzone) / (1 - deadzone));
 }
 
 const MODES: Array<{ id: GameMode; name: string; kicker: string; description: string }> = [
@@ -151,6 +180,13 @@ const EMPTY_CONTROLS: ControlState = {
   moveX: 0,
   moveY: 0,
   balance: 0,
+  gamepadConnected: false,
+  gamepadActive: false,
+  gamepadMoveX: 0,
+  gamepadMoveY: 0,
+  gamepadBalance: 0,
+  gamepadAction: false,
+  gamepadSprint: false,
   lookYaw: 0,
   lookPitch: 0,
 };
@@ -430,6 +466,7 @@ export default function SurfscapeApp() {
   const [sceneReady, setSceneReady] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [gamepadConnected, setGamepadConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [trainingStep, setTrainingStep] = useState(0);
@@ -611,6 +648,7 @@ export default function SurfscapeApp() {
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (screen !== "game") return;
+      controls.current.gamepadActive = false;
       const key = event.key.toLowerCase();
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
@@ -648,6 +686,113 @@ export default function SurfscapeApp() {
   }, [screen]);
 
   useEffect(() => {
+    if (screen !== "game" || !navigator.getGamepads) {
+      return;
+    }
+    let frame = 0;
+    let lastFrame = performance.now();
+    let connected = false;
+    let cameraButton = false;
+    let pauseButton = false;
+    let centerButton = false;
+
+    const clearGamepad = () => {
+      controls.current.gamepadConnected = false;
+      controls.current.gamepadActive = false;
+      controls.current.gamepadMoveX = 0;
+      controls.current.gamepadMoveY = 0;
+      controls.current.gamepadBalance = 0;
+      controls.current.gamepadAction = false;
+      controls.current.gamepadSprint = false;
+    };
+
+    const poll = (now: number) => {
+      const delta = Math.min(.05, Math.max(0, (now - lastFrame) / 1000));
+      lastFrame = now;
+      const gamepads = Array.from(navigator.getGamepads());
+      const gamepad = gamepads.find((candidate) => candidate?.connected && candidate.mapping === "standard")
+        ?? gamepads.find((candidate) => candidate?.connected)
+        ?? null;
+      const nextConnected = Boolean(gamepad);
+      if (nextConnected !== connected) {
+        connected = nextConnected;
+        setGamepadConnected(nextConnected);
+        if (nextConnected) haptic([6, 14, 9]);
+      }
+      if (!gamepad) {
+        clearGamepad();
+        frame = window.requestAnimationFrame(poll);
+        return;
+      }
+
+      const axisX = gamepadAxis(gamepad.axes[0]);
+      const axisY = -gamepadAxis(gamepad.axes[1]);
+      const dpadX = (gamepad.buttons[15]?.pressed ? 1 : 0) - (gamepad.buttons[14]?.pressed ? 1 : 0);
+      const dpadY = (gamepad.buttons[12]?.pressed ? 1 : 0) - (gamepad.buttons[13]?.pressed ? 1 : 0);
+      const moveX = Math.abs(axisX) > .01 ? axisX : dpadX;
+      const moveY = Math.abs(axisY) > .01 ? axisY : dpadY;
+      const lookX = gamepadAxis(gamepad.axes[2], .18);
+      const lookY = gamepadAxis(gamepad.axes[3], .18);
+      const leftTrigger = gamepad.buttons[6]?.value ?? 0;
+      const rightTrigger = gamepad.buttons[7]?.value ?? 0;
+      const balance = THREEClamp(rightTrigger - leftTrigger, -1, 1);
+      const action = Boolean(gamepad.buttons[0]?.pressed || gamepad.buttons[2]?.pressed);
+      const sprint = Boolean(gamepad.buttons[4]?.pressed || gamepad.buttons[10]?.pressed);
+      const hasActivity = Math.max(
+        Math.abs(moveX),
+        Math.abs(moveY),
+        Math.abs(lookX),
+        Math.abs(lookY),
+        Math.abs(balance),
+        action ? 1 : 0,
+        sprint ? 1 : 0,
+      ) > .025;
+
+      controls.current.gamepadConnected = true;
+      controls.current.gamepadMoveX = moveX;
+      controls.current.gamepadMoveY = moveY;
+      controls.current.gamepadBalance = balance;
+      controls.current.gamepadAction = action;
+      controls.current.gamepadSprint = sprint;
+      if (hasActivity) controls.current.gamepadActive = true;
+      if (Math.abs(lookX) > .01 || Math.abs(lookY) > .01) {
+        controls.current.lookYaw = THREEClamp(controls.current.lookYaw - lookX * delta * 1.32, -1, 1);
+        controls.current.lookPitch = THREEClamp(controls.current.lookPitch + lookY * delta * 1.08, -1, 1);
+      }
+
+      const nextCameraButton = Boolean(gamepad.buttons[5]?.pressed);
+      if (nextCameraButton && !cameraButton) {
+        controls.current.lookYaw = 0;
+        controls.current.lookPitch = 0;
+        setCameraMode((current) => nextCameraMode(current));
+        haptic(7);
+      }
+      cameraButton = nextCameraButton;
+      const nextCenterButton = Boolean(gamepad.buttons[11]?.pressed);
+      if (nextCenterButton && !centerButton) {
+        controls.current.lookYaw = 0;
+        controls.current.lookPitch = 0;
+        haptic(4);
+      }
+      centerButton = nextCenterButton;
+      const nextPauseButton = Boolean(gamepad.buttons[9]?.pressed);
+      if (nextPauseButton && !pauseButton) {
+        setPaused((current) => !current);
+        haptic(6);
+      }
+      pauseButton = nextPauseButton;
+      frame = window.requestAnimationFrame(poll);
+    };
+
+    frame = window.requestAnimationFrame(poll);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      clearGamepad();
+      setGamepadConnected(false);
+    };
+  }, [screen]);
+
+  useEffect(() => {
     const releaseAllControls = () => {
       controls.current.forward = false;
       controls.current.back = false;
@@ -657,6 +802,12 @@ export default function SurfscapeApp() {
       controls.current.action = false;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
+      controls.current.gamepadActive = false;
+      controls.current.gamepadMoveX = 0;
+      controls.current.gamepadMoveY = 0;
+      controls.current.gamepadBalance = 0;
+      controls.current.gamepadAction = false;
+      controls.current.gamepadSprint = false;
       joystickPointer.current = null;
       joystickBounds.current = null;
       balancePointer.current = null;
@@ -980,6 +1131,7 @@ export default function SurfscapeApp() {
     name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">,
   ) => {
     event.preventDefault();
+    controls.current.gamepadActive = false;
     event.currentTarget.setPointerCapture(event.pointerId);
     setControl(name, true);
     if (name === "action") haptic(9);
@@ -996,6 +1148,7 @@ export default function SurfscapeApp() {
     if (paused) return;
     event.preventDefault();
     if (event.type === "pointerdown") {
+      controls.current.gamepadActive = false;
       if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
       joystickPointer.current = event.pointerId;
       joystickBounds.current = event.currentTarget.getBoundingClientRect();
@@ -1030,6 +1183,7 @@ export default function SurfscapeApp() {
   const updateBalance = (event: ReactPointerEvent<HTMLElement>) => {
     if (screen !== "game" || paused) return;
     if (event.pointerType === "mouse" && event.buttons === 0) {
+      controls.current.gamepadActive = false;
       controls.current.balance = THREEClamp((event.clientX / window.innerWidth - 0.5) * 2, -1, 1);
     }
   };
@@ -1037,6 +1191,7 @@ export default function SurfscapeApp() {
   const updateTouchBalance = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     if (event.type === "pointerdown") {
+      controls.current.gamepadActive = false;
       if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
       balancePointer.current = event.pointerId;
       balanceBounds.current = event.currentTarget.getBoundingClientRect();
@@ -1058,6 +1213,7 @@ export default function SurfscapeApp() {
   const beginCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (paused) return;
     event.preventDefault();
+    controls.current.gamepadActive = false;
     event.currentTarget.setPointerCapture(event.pointerId);
     event.currentTarget.classList.add("is-dragging");
     lookGesture.current = {
@@ -1552,7 +1708,7 @@ export default function SurfscapeApp() {
             onDoubleClick={centerCameraLook}
             onContextMenu={(event) => event.preventDefault()}
           >
-            <span>{stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
+            <span>{gamepadConnected ? "RIGHT STICK VIEW · LT/RT BALANCE" : stats.phase === "riding" ? "DRAG VIEW / MOUSE BALANCE" : "FREELOOK · DRAG VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
           </div>
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
@@ -1604,6 +1760,7 @@ export default function SurfscapeApp() {
             </div>
             <div className="game-actions">
               <button onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
+              {gamepadConnected && <div className="controller-chip" role="status" aria-label="Game controller connected"><Gamepad2 /><span>PAD</span></div>}
               {fullscreenAvailable && (
                 <button onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
                   {isFullscreen ? <Minimize2 /> : <Maximize2 />}
@@ -1747,7 +1904,15 @@ export default function SurfscapeApp() {
           </div>
 
           <div className="desktop-controls">
-            {stats.vehicleMode ? (
+            {gamepadConnected ? (
+              <>
+                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : stats.phase === "riding" ? "rail / stance" : "move"}</span>
+                <span><kbd>LT</kbd><kbd>RT</kbd> balance</span>
+                <span><kbd>A</kbd> {stats.phase === "riding" ? "hold / release trick" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : "context action"}</span>
+                <span><kbd>RS</kbd> freelook</span>
+                <span><kbd>RB</kbd> camera · <kbd>START</kbd> pause</span>
+              </>
+            ) : stats.vehicleMode ? (
               <>
                 <span><kbd>W</kbd><kbd>S</kbd> throttle / brake</span>
                 <span><kbd>A</kbd><kbd>D</kbd> steer</span>
