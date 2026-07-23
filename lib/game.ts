@@ -594,15 +594,15 @@ function breakingWaveProfile(phase: number, nonlinearity: number) {
   // A continuous, crest-focused profile. The harmonics sharpen the forward
   // wall while the powered positive half-wave gives the crest a real ridge
   // instead of leaving the ocean as a gently tinted sine plane.
-  const shape = Math.max(0, Math.min(.78, nonlinearity));
+  const shape = Math.max(0, Math.min(.9, nonlinearity));
   const fundamental = Math.sin(phase);
   const crestRidge = Math.pow(Math.max(0, fundamental), 5);
   const troughDraw = Math.pow(Math.max(0, -fundamental), 2);
   return fundamental
-    - shape * .42 * Math.cos(phase * 2)
-    - shape * .18 * Math.sin(phase * 3)
-    + shape * .5 * crestRidge
-    - shape * .08 * troughDraw;
+    - shape * .48 * Math.cos(phase * 2)
+    - shape * .22 * Math.sin(phase * 3)
+    + shape * .72 * crestRidge
+    - shape * .12 * troughDraw;
 }
 
 export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
@@ -649,7 +649,7 @@ export function waveHeightAt(
   const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
   const peel = character?.peel ?? 0;
   const variability = (character?.variability ?? .4) * tideResponse.variabilityScale;
-  const amplitude = Math.max(0.12, settings.waveHeight * 0.62) * power * tideResponse.faceScale;
+  const amplitude = Math.max(0.12, settings.waveHeight * 0.78) * power * tideResponse.faceScale;
   const period = Math.max(4, settings.wavePeriod);
   const speed = (Math.PI * 2) / period;
   const coastalZ = z - shorelineShiftForTide(settings.tide);
@@ -683,10 +683,10 @@ export function waveHeightAt(
     x * normalizedSwellX + coastalZ * normalizedSwellZ
   ) * (Math.PI * 2 / swellWavelength) - elapsed * (Math.PI * 2 / swellPeriod) + 1.7;
   const swellShoaling = .84 + smoothstep(-85, 8, breakZ) * .24;
-  const swellAmplitude = Math.max(
-    0,
-    Math.min(settings.swellHeight, settings.waveHeight * 1.35) * .16,
-  );
+  // Marine swell height is crest-to-trough height, so its physical mesh
+  // amplitude is half that value. It is independent of the local breaking
+  // face control in Wave Lab.
+  const swellAmplitude = Math.max(0, settings.swellHeight * .5);
 
   const currentBend = Math.max(0, Math.min(1, settings.currentStrength / 4));
   const crossCurrentWeight = .12 + currentBend * .12;
@@ -710,13 +710,15 @@ export function waveHeightAt(
     x * windDirectionX / windDirectionLength
     + coastalZ * windDirectionZ / windDirectionLength
   ) * (Math.PI * 2 / windWavelength) - elapsed * (1.7 + windChop * 1.2) + 2.4;
-  return (
+  const rawHeight = (
     settings.tide * 0.3 +
     amplitude * setLift * shoreBoost * primaryProfile * 0.64 +
     swellAmplitude * swellShoaling * Math.sin(swellPhase) +
     amplitude * Math.sin(crossPhase) * 0.11 +
     (.035 + windChop * .065) * Math.sin(windPhase)
   );
+  const shoreEdgeAnchor = smoothstep(-18, 8, coastalZ);
+  return rawHeight + (settings.tide * .3 - rawHeight) * shoreEdgeAnchor;
 }
 
 export function waveSurfaceFrameAt(
@@ -773,7 +775,7 @@ export function primaryWavePhaseAt(
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
   const shoaling = smoothstep(-108, 9, breakZ);
-  const shallowScale = .5 + (.32 - .5) * Math.max(0, Math.min(1, steepness));
+  const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
   const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
   const directionZ = Math.max(.45, Math.cos(waveAngle));
@@ -801,7 +803,7 @@ export function primaryWaveVelocityAt(
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
   const shoaling = smoothstep(-108, 9, breakZ);
-  const shallowScale = .5 + (.32 - .5) * Math.max(0, Math.min(1, steepness));
+  const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
   const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
   const directionZ = Math.max(.45, Math.cos(waveAngle));

@@ -4420,13 +4420,24 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 }
 
 /*
- * Live HUD compositing
+ * Live HUD paint stability
  *
- * Safari and several mobile Chromium GPUs intermittently drop backdrop-filter
- * layers when a WebGL canvas and the filtered DOM layer both repaint. Gameplay
- * telemetry is intentionally rendered on solid translucent surfaces instead,
- * and each instrument owns a stable paint layer.
+ * Persistent instruments stay in one ordinary DOM paint layer above WebGL.
+ * No containment, backdrop sampling, back-face layer promotion, or animated
+ * mount/unmount is used here: those paths can intermittently drop a whole HUD
+ * surface while the canvas is under load.
  */
+.hud-persistent-layer {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  contain: none;
+  isolation: auto;
+  transform: none;
+  will-change: auto;
+  pointer-events: none;
+}
+
 .game-topbar,
 .hud-vitals,
 .hud-drawer,
@@ -4446,9 +4457,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .action-button {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  isolation: isolate;
+  -webkit-backface-visibility: visible;
+  backface-visibility: visible;
+  isolation: auto;
 }
 
 .game-topbar,
@@ -4461,7 +4472,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .shorebreak-toast,
 .ride-recap,
 .hold-down-instrument {
-  contain: layout style paint;
+  contain: none;
+  will-change: auto;
 }
 
 .game-topbar {
@@ -4493,6 +4505,108 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 
 .touch-context {
   background: linear-gradient(180deg, rgba(5, 20, 27, .94), rgba(3, 13, 18, .97));
+}
+
+.hud-event-slot {
+  position: absolute;
+  z-index: 5;
+  top: 105px;
+  left: 50%;
+  width: min(360px, calc(100vw - 28px));
+  min-height: 58px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.hud-event-toast {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  padding: 11px 15px 11px 12px;
+  border: 1px solid rgba(157, 255, 238, .34);
+  border-radius: 14px;
+  background: linear-gradient(105deg, rgba(3, 15, 21, .97), rgba(7, 28, 32, .95));
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .34), inset 0 -2px #71e1d3;
+  opacity: 0;
+  transform: translateY(10px) scale(.975);
+  transition: opacity .3s ease, transform .34s cubic-bezier(.2, .75, .25, 1);
+}
+
+.hud-event-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.hud-event-toast > svg {
+  grid-row: 1 / 3;
+  width: 21px;
+  color: #a6fff2;
+}
+
+.hud-event-toast span {
+  color: #71e1d3;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+
+.hud-event-toast strong {
+  overflow: hidden;
+  font-size: 12px;
+  letter-spacing: .03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-event-toast b {
+  grid-row: 1 / 3;
+  grid-column: 3;
+  color: #a6fff2;
+  font-family: Impact, sans-serif;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: .05em;
+}
+
+.hud-event-toast.is-warning {
+  border-color: rgba(255, 174, 120, .44);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .34), inset 0 -2px #e88855;
+}
+
+.hud-event-toast.is-warning > svg,
+.hud-event-toast.is-warning span,
+.hud-event-toast.is-warning b { color: #ffc08d; }
+
+.hud-event-toast.is-accent {
+  border-color: rgba(255, 196, 129, .38);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .34), inset 0 -2px #e9a968;
+}
+
+.hud-event-toast.is-accent > svg,
+.hud-event-toast.is-accent span,
+.hud-event-toast.is-accent b { color: #f0bb7d; }
+
+@media (max-width: 720px) {
+  .hud-event-slot {
+    top: calc(max(7px, env(safe-area-inset-top)) + 126px);
+    width: min(330px, calc(100vw - 22px));
+  }
+
+  .hud-event-toast {
+    min-height: 52px;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    padding: 9px 12px 9px 10px;
+    border-radius: 12px;
+  }
+
+  .hud-event-toast > svg { width: 18px; }
+  .hud-event-toast span { font-size: 5px; }
+  .hud-event-toast strong { font-size: 10px; }
+  .hud-event-toast b { font-size: 15px; }
 }
 
 .motion-balance-toggle {

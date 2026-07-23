@@ -142,6 +142,14 @@ type WetLensEvent = {
   intensity: number;
   duration: number;
 };
+type HudEventToast = {
+  key: string;
+  kind: "shorebreak" | "takeoff" | "maneuver";
+  tone: "clean" | "warning" | "accent";
+  eyebrow: string;
+  title: string;
+  value: string;
+};
 type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
 type PhotoStatus = "idle" | "capturing" | "ready" | "shared" | "saved" | "error";
 type PhotoGuide = "thirds" | "center" | "clean";
@@ -892,6 +900,7 @@ export default function SurfscapeApp() {
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
   const [showHowTo, setShowHowTo] = useState(false);
+  const [qaScenario, setQaScenario] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
   const [recordsReady, setRecordsReady] = useState(false);
@@ -901,6 +910,8 @@ export default function SurfscapeApp() {
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
   const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
+  const [hudEventToast, setHudEventToast] = useState<HudEventToast | null>(null);
+  const [hudEventVisible, setHudEventVisible] = useState(false);
   const [captureRequest, setCaptureRequest] = useState<RideCaptureRequest | null>(null);
   const [rideFrameVersion, setRideFrameVersion] = useState(0);
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
@@ -931,6 +942,8 @@ export default function SurfscapeApp() {
   const wetLensSequence = useRef(0);
   const previousSprayHit = useRef(false);
   const shorebreakToastTimer = useRef<number | null>(null);
+  const hudEventToastRef = useRef<HudEventToast | null>(null);
+  const hudEventTransitionTimer = useRef<number | null>(null);
   const previousBalanceLock = useRef(false);
   const lastBalanceHapticAt = useRef(0);
   const previousGripWarning = useRef(false);
@@ -968,6 +981,39 @@ export default function SurfscapeApp() {
     () => conditions.forecast.find((point) => point.time === selectedForecastTime) ?? null,
     [conditions.forecast, selectedForecastTime],
   );
+
+  useEffect(() => {
+    const enabled = new URLSearchParams(window.location.search).get("qa") === "surf";
+    if (!enabled) return;
+    let startTimer: number | null = null;
+    const configureTimer = window.setTimeout(() => {
+      setQaScenario(true);
+      setSettings((current) => ({
+        ...current,
+        mode: "playground",
+        waveHeight: 2,
+        wavePeriod: 8,
+        swellHeight: 2,
+        swellPeriod: 10,
+        windSpeed: 5,
+        tide: .1,
+        timeOfDay: 16,
+      }));
+      setCameraMode("cinematic");
+      setStats(INITIAL_STATS);
+      setPaused(false);
+      setPhotoMode(false);
+      setReplayActive(false);
+      startTimer = window.setTimeout(() => {
+        setSessionKey((value) => value + 1);
+        setScreen("game");
+      }, 1200);
+    }, 0);
+    return () => {
+      window.clearTimeout(configureTimer);
+      if (startTimer !== null) window.clearTimeout(startTimer);
+    };
+  }, []);
   const sessionConditions = useMemo(() => conditionsAtForecast(conditions, selectedForecast), [conditions, selectedForecast]);
   const availableForecastWindows = useMemo(() => forecastWindows(conditions), [conditions]);
   const sessionWeatherCode = settings.weatherCode;
@@ -3041,7 +3087,86 @@ export default function SurfscapeApp() {
   const landingLabel = maneuverToast
     ? maneuverToast.quality >= .82 ? "STOMPED" : maneuverToast.quality >= .48 ? "LANDED" : "RECOVERED"
     : "LANDED";
-  const sessionIntroActive = stats.sessionIntro < .999;
+  const hudEventCandidate = useMemo<HudEventToast | null>(() => {
+    if (rideToast) return null;
+    if (maneuverToast) {
+      return {
+        key: `maneuver-${maneuverToast.id}`,
+        kind: "maneuver",
+        tone: maneuverToast.quality >= .82 ? "clean" : maneuverToast.quality >= .48 ? "accent" : "warning",
+        eyebrow: `${landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`,
+        title: maneuverToast.name,
+        value: `+${maneuverToast.points.toLocaleString()}`,
+      };
+    }
+    if (takeoffToast) {
+      return {
+        key: `takeoff-${Math.round(takeoffToast.quality * 100)}-${takeoffToast.label}`,
+        kind: "takeoff",
+        tone: takeoffToast.quality >= .8 ? "clean" : "accent",
+        eyebrow: "TAKEOFF",
+        title: takeoffToast.label,
+        value: `${Math.round(takeoffToast.quality * 100)}%`,
+      };
+    }
+    if (shorebreakToast) {
+      const clean = shorebreakToast.result === "clean";
+      return {
+        key: `shorebreak-${shorebreakToast.id}`,
+        kind: "shorebreak",
+        tone: clean ? "clean" : "warning",
+        eyebrow: clean ? "CLEAN DIVE" : "WHITEWATER HIT",
+        title: clean ? "PUNCHED THROUGH" : "WASHED SHOREWARD",
+        value: `${Math.round(shorebreakToast.quality * 100)}%`,
+      };
+    }
+    return null;
+  }, [landingLabel, maneuverToast, rideToast, shorebreakToast, takeoffToast]);
+
+  useEffect(() => {
+    if (hudEventTransitionTimer.current !== null) {
+      window.clearTimeout(hudEventTransitionTimer.current);
+      hudEventTransitionTimer.current = null;
+    }
+    const reveal = (toast: HudEventToast) => {
+      hudEventToastRef.current = toast;
+      setHudEventToast(toast);
+      setHudEventVisible(false);
+      hudEventTransitionTimer.current = window.setTimeout(() => {
+        setHudEventVisible(true);
+        hudEventTransitionTimer.current = null;
+      }, 34);
+    };
+    const current = hudEventToastRef.current;
+    if (!hudEventCandidate) {
+      if (!current) return;
+      setHudEventVisible(false);
+      hudEventTransitionTimer.current = window.setTimeout(() => {
+        hudEventToastRef.current = null;
+        setHudEventToast(null);
+        hudEventTransitionTimer.current = null;
+      }, 360);
+      return;
+    }
+    if (!current || current.key === hudEventCandidate.key) {
+      if (!current) reveal(hudEventCandidate);
+      else {
+        hudEventToastRef.current = hudEventCandidate;
+        setHudEventToast(hudEventCandidate);
+        setHudEventVisible(true);
+      }
+      return;
+    }
+    setHudEventVisible(false);
+    hudEventTransitionTimer.current = window.setTimeout(() => {
+      reveal(hudEventCandidate);
+    }, 220);
+  }, [hudEventCandidate]);
+
+  useEffect(() => () => {
+    if (hudEventTransitionTimer.current !== null) window.clearTimeout(hudEventTransitionTimer.current);
+  }, []);
+  const sessionIntroActive = !qaScenario && stats.sessionIntro < .999;
   const sessionIntroOpacity = stats.sessionIntro < .09
     ? stats.sessionIntro / .09
     : stats.sessionIntro > .72
@@ -3074,6 +3199,7 @@ export default function SurfscapeApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
+          qaScenario={qaScenario}
           active={screen === "game" && !paused && !photoMode && !replayActive && heatAllowsGameplay}
           renderActive={screen === "game" && !paused}
           qualityLocked={photoMode || replayActive || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout"}
@@ -3457,7 +3583,12 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
+        <section
+          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""}`}
+          style={gameUiStyle}
+          data-qa-scenario={qaScenario ? "surf" : undefined}
+          data-qa-phase={stats.phase}
+        >
           <div
             ref={cameraLookSurface}
             className={`camera-look-surface ${pointerLocked ? "is-locked" : ""}`}
@@ -3713,6 +3844,7 @@ export default function SurfscapeApp() {
               <small><i /> {sessionFormat === "heat" ? "HEAT HORN ARMED · BEST TWO WAVES COUNT" : "OCEAN MODEL LOCKED · CONTROLS LIVE"}</small>
             </div>
           )}
+          <div className="hud-persistent-layer">
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
@@ -3806,6 +3938,7 @@ export default function SurfscapeApp() {
               <strong>{stats.phase === "riding" ? `${Math.round(stats.railGrip * 100)}%` : `${stats.stamina}%`}</strong>
             </div>
             <div><Waves /><span>{stats.setActive ? "Set" : "Next set"}</span><strong>{stats.setActive ? `${stats.setWaveIndex}/${stats.setWaveCount}` : `${Math.ceil(stats.nextSetSeconds)}s`}</strong></div>
+          </div>
           </div>
 
           <aside id="surf-computer" className="hud-drawer" aria-hidden={!hudMenuOpen}>
@@ -3958,32 +4091,17 @@ export default function SurfscapeApp() {
             </div>
           </div>
 
-          {shorebreakToast && !takeoffToast && !maneuverToast && !rideToast && (
-            <div className={`shorebreak-toast is-${shorebreakToast.result}`} key={shorebreakToast.id}>
-              <Waves />
-              <span>{shorebreakToast.result === "clean" ? "CLEAN DIVE" : "WHITEWATER HIT"}</span>
-              <strong>{shorebreakToast.result === "clean" ? "PUNCHED THROUGH" : "WASHED SHOREWARD"}</strong>
-              <b>{Math.round(shorebreakToast.quality * 100)}%</b>
+          <div className="hud-event-slot" aria-live="polite" aria-atomic="true">
+            <div
+              className={`hud-event-toast is-${hudEventToast?.tone ?? "accent"} ${hudEventVisible ? "is-visible" : ""}`}
+              data-event-key={hudEventToast?.key}
+            >
+              {hudEventToast?.kind === "maneuver" ? <Sparkles /> : <Waves />}
+              <span>{hudEventToast?.eyebrow ?? ""}</span>
+              <strong>{hudEventToast?.title ?? ""}</strong>
+              <b>{hudEventToast?.value ?? ""}</b>
             </div>
-          )}
-
-          {maneuverToast && !rideToast && (
-            <div className={`maneuver-toast quality-${maneuverToast.quality >= .82 ? "stomped" : maneuverToast.quality >= .48 ? "clean" : "recovered"}`} key={maneuverToast.id}>
-              <Sparkles />
-              <span>{landingLabel} · {Math.round(maneuverToast.quality * 100)}%</span>
-              <strong>{maneuverToast.name}</strong>
-              <b>+{maneuverToast.points.toLocaleString()}</b>
-            </div>
-          )}
-
-          {takeoffToast && !maneuverToast && !rideToast && (
-            <div className={`takeoff-toast ${takeoffToast.quality >= .8 ? "is-clean" : ""}`}>
-              <Waves />
-              <span>TAKEOFF</span>
-              <strong>{takeoffToast.label}</strong>
-              <b>{Math.round(takeoffToast.quality * 100)}%</b>
-            </div>
-          )}
+          </div>
 
           {rideToast && (
             <div className={`ride-recap is-${rideToast.result}`} key={rideToast.id}>
