@@ -162,6 +162,7 @@ export type GameStats = {
   shorebreakResult: "" | "clean" | "hit";
   takeoffAlignment: number;
   takeoffQuality: number;
+  takeoffCommitProgress: number;
   prompt: string;
 };
 
@@ -238,6 +239,7 @@ export const INITIAL_STATS: GameStats = {
   shorebreakResult: "",
   takeoffAlignment: 0,
   takeoffQuality: 0,
+  takeoffCommitProgress: 0,
   prompt: "Walk toward the water · or find the van",
 };
 

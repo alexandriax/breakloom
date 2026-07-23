@@ -1324,6 +1324,8 @@ input:focus-visible {
 .takeoff-window > i b { display: block; height: 100%; background: linear-gradient(90deg, #527d86, #91e7d8); transition: width .06s linear; }
 .takeoff-window.is-open > span, .takeoff-window.is-open > strong { color: #c4fff7; text-shadow: 0 0 8px rgba(113, 225, 211, .7); }
 .takeoff-window.is-open > i b { background: #a9fff3; box-shadow: 0 0 9px #71e1d3; }
+.takeoff-window.is-committed > span, .takeoff-window.is-committed > strong { color: #d9fff8; text-shadow: 0 0 9px rgba(126, 241, 220, .72); }
+.takeoff-window.is-committed > i b { background: linear-gradient(90deg, #4eaaa7, #d5fff4); box-shadow: 0 0 11px rgba(126, 241, 220, .74); }
 .takeoff-window.is-dive > span, .takeoff-window.is-dive > strong { color: #ffe1ae; text-shadow: 0 0 9px rgba(255, 190, 103, .68); }
 .takeoff-window.is-dive > i b { background: linear-gradient(90deg, #da7b48, #ffd99a); box-shadow: 0 0 10px rgba(255, 187, 91, .66); }
 .offshore-readout { margin: -1px 0 11px; padding: 8px 9px 7px; border: 1px solid rgba(113, 225, 211, .18); background: linear-gradient(105deg, rgba(27, 92, 95, .17), rgba(3, 16, 22, .08)); }

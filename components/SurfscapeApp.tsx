@@ -160,7 +160,7 @@ const TRAINING_STEPS = [
   { title: "Punch through", detail: "Tap Dive just before the shorebreak reaches you." },
   { title: "Reach the lineup", detail: "Paddle beyond the breaking waves." },
   { title: "Read the crest", detail: "Turn toward shore and wait for the takeoff window." },
-  { title: "Commit to the drop", detail: "Catch the wave when the shoulder appears." },
+  { title: "Commit to the drop", detail: "Catch the open shoulder, then drive through the final strokes and pop-up." },
   { title: "Track the pocket", detail: "Steer into the power zone and hold it for 15 metres." },
   { title: "Set the rail", detail: "Load a turn and land your first maneuver." },
   { title: "Finish clean", detail: "Stay composed through the inside section." },
@@ -173,7 +173,7 @@ function reachedTrainingStep(stats: GameStats) {
   if (waterPhase) reached = 1;
   if (stats.shorebreakId > 0 || stats.inLineup || hasRidden) reached = 2;
   if (stats.inLineup || hasRidden) reached = 3;
-  if (stats.catchReady || hasRidden) reached = 4;
+  if (stats.catchReady || stats.takeoffCommitProgress > 0 || hasRidden) reached = 4;
   if (hasRidden) reached = 5;
   const hasTrackedPocket = stats.pocketDistance >= 15;
   if (hasTrackedPocket) reached = 6;
@@ -507,6 +507,7 @@ export default function SurfscapeApp() {
   const previousChargeBand = useRef(0);
   const previousRideResultId = useRef(0);
   const previousCatchReady = useRef(false);
+  const previousTakeoffCommit = useRef(false);
   const previousDuckDiveReady = useRef(false);
   const leashTaut = useRef(false);
   const previousShorebreakId = useRef(0);
@@ -933,6 +934,12 @@ export default function SurfscapeApp() {
     }
     if (stats.catchReady && !previousCatchReady.current) haptic([7, 24, 13]);
     previousCatchReady.current = stats.catchReady;
+    const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
+    if (takeoffCommitted && !previousTakeoffCommit.current) {
+      audio.current?.effect("release");
+      haptic([8, 18, 8, 24, 12]);
+    }
+    previousTakeoffCommit.current = takeoffCommitted;
     if (stats.phase === "wipeout" && stats.leashTension >= .64 && !leashTaut.current) {
       audio.current?.effect("leash");
       haptic([9, 24, 15]);
@@ -1006,7 +1013,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1518,7 +1525,8 @@ export default function SurfscapeApp() {
   const coastPosition = `${Math.abs(stats.coastDistance).toFixed(0)} m ${coastBearing}`;
   const vehicleGrip = Math.round(stats.vehicleTraction * 100);
   const ridingOut = stats.phase === "riding" && stats.rideOutProgress > .02;
-  const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady || stats.duckDiveReady;
+  const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
+  const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || takeoffCommitted || stats.catchReady || stats.duckDiveReady;
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
     : stats.nearVan
@@ -1529,6 +1537,8 @@ export default function SurfscapeApp() {
           : stats.maneuverActive
           ? stats.maneuverPhase === "air" ? "SPOT IT" : "LAND"
           : stats.trickCharge > .04 ? `RELEASE ${Math.round(stats.trickCharge * 100)}` : "HOLD TRICK"
+        : takeoffCommitted
+          ? stats.takeoffCommitProgress > .74 ? "POP UP" : "COMMITTED"
         : stats.duckDiveReady
           ? "DIVE"
         : stats.catchReady
@@ -1553,7 +1563,12 @@ export default function SurfscapeApp() {
                 : "Settling onto the board beyond the foam",
             }
         : stats.phase === "paddling"
-          ? stats.duckDiveActive
+          ? takeoffCommitted
+            ? {
+                title: stats.takeoffCommitProgress < .48 ? "MATCH THE CREST" : stats.takeoffCommitProgress < .82 ? "HANDS PLANTED" : "POP UP",
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% · wave momentum is loading the board`,
+              }
+          : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
             : stats.duckDiveReady
               ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · tap DIVE and punch through` }
@@ -2048,10 +2063,10 @@ export default function SurfscapeApp() {
             </div>
             {stats.phase === "paddling" && (
               <>
-                <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
-                  <span>{stats.inLineup ? "TAKEOFF" : "SHOREBREAK"}</span>
-                  <i><b style={{ width: `${stats.inLineup ? Math.round(stats.takeoffQuality * 100) : shorebreakTiming}%` }} /></i>
-                  <strong>{stats.duckDiveReady ? "DIVE" : stats.catchReady ? "GO" : stats.inLineup ? `${Math.round(stats.takeoffQuality * 100)}%` : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 3 ? `${stats.shorebreakSeconds.toFixed(1)}s` : "READ"}</strong>
+                <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${takeoffCommitted ? "is-committed" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
+                  <span>{takeoffCommitted ? "CREST MATCH" : stats.inLineup ? "TAKEOFF" : "SHOREBREAK"}</span>
+                  <i><b style={{ width: `${takeoffCommitted ? Math.round(stats.takeoffCommitProgress * 100) : stats.inLineup ? Math.round(stats.takeoffQuality * 100) : shorebreakTiming}%` }} /></i>
+                  <strong>{takeoffCommitted ? stats.takeoffCommitProgress > .74 ? "POP" : "DRIVE" : stats.duckDiveReady ? "DIVE" : stats.catchReady ? "GO" : stats.inLineup ? `${Math.round(stats.takeoffQuality * 100)}%` : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 3 ? `${stats.shorebreakSeconds.toFixed(1)}s` : "READ"}</strong>
                 </div>
                 <div className={`offshore-readout ${stats.inLineup ? "is-lineup" : ""}`}>
                   <div><MapPin /><span>OFFSHORE</span><strong>{Math.round(stats.offshoreDistance)} m</strong></div>
@@ -2285,7 +2300,7 @@ export default function SurfscapeApp() {
             >
               {stats.phase === "riding" && !stats.maneuverActive && stats.trickCharge > .02 && <i className="action-charge" aria-hidden="true" />}
               <span>{mobileActionLabel}</span>
-              {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" ? <Sparkles /> : <Waves />}
+              {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" || takeoffCommitted ? <Sparkles /> : <Waves />}
             </button>
             {stats.phase === "riding" && !ridingOut && (
               <div className={`touch-ride-telemetry ${stats.sectionPressure > .48 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Line ${lineLabel}. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>
@@ -2321,7 +2336,7 @@ export default function SurfscapeApp() {
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board and walk through the shallows. Click the scene to lock a 360° mouse view, or swipe on touch; use C or the camera button to frame your line.</p></article>
-              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and watch each wall approach. Tap Dive or Space just before impact to punch through, then turn shoreward and read the tightening catch pulse.</p></article>
+              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and watch each wall approach. Turn shoreward, read the tightening catch pulse, then commit; the surfer drives through final strokes, plants both hands, and carries the pop-up into the drop.</p></article>
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>Set a rail, hold Trick or Space to compress, then release into a move. Stance, speed, wave position, and load decide what you throw; reconnect inside the gold zone to bank it.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
