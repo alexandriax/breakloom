@@ -20,6 +20,7 @@ import {
   Play,
   RotateCcw,
   Settings2,
+  Share2,
   Sparkles,
   Target,
   Volume2,
@@ -69,6 +70,7 @@ type RideToast = {
   barrelTime: number;
   grade: GameStats["grade"];
 };
+type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
@@ -254,6 +256,165 @@ function playgroundCloudCover(code: number) {
   return 82;
 }
 
+function roundedCardRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const edge = Math.min(radius, width * .5, height * .5);
+  context.beginPath();
+  context.moveTo(x + edge, y);
+  context.lineTo(x + width - edge, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + edge);
+  context.lineTo(x + width, y + height - edge);
+  context.quadraticCurveTo(x + width, y + height, x + width - edge, y + height);
+  context.lineTo(x + edge, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - edge);
+  context.lineTo(x, y + edge);
+  context.quadraticCurveTo(x, y, x + edge, y);
+  context.closePath();
+}
+
+function rideCardFile({
+  ride,
+  beach,
+  zone,
+  board,
+  waveHeight,
+  wavePeriod,
+}: {
+  ride: RideToast;
+  beach: Beach;
+  zone: string;
+  board: string;
+  waveHeight: number;
+  wavePeriod: number;
+}) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 630;
+  const context = canvas.getContext("2d");
+  if (!context) return Promise.resolve<File | null>(null);
+
+  const accent = beach.palette[0];
+  const sand = beach.palette[1];
+  const background = context.createLinearGradient(0, 0, 1200, 630);
+  background.addColorStop(0, "#020c12");
+  background.addColorStop(.56, "#06242d");
+  background.addColorStop(1, "#0a3f45");
+  context.fillStyle = background;
+  context.fillRect(0, 0, 1200, 630);
+
+  const glow = context.createRadialGradient(900, 145, 12, 900, 145, 470);
+  glow.addColorStop(0, `${accent}70`);
+  glow.addColorStop(.42, `${accent}1c`);
+  glow.addColorStop(1, "transparent");
+  context.fillStyle = glow;
+  context.fillRect(0, 0, 1200, 630);
+
+  context.globalAlpha = .18;
+  context.strokeStyle = accent;
+  context.lineWidth = 2;
+  for (let index = 0; index < 7; index += 1) {
+    const baseline = 330 + index * 35;
+    context.beginPath();
+    context.moveTo(-70, baseline);
+    context.bezierCurveTo(210, baseline - 85 - index * 2, 410, baseline + 68, 690, baseline - 22);
+    context.bezierCurveTo(880, baseline - 82, 1040, baseline + 42, 1270, baseline - 34);
+    context.stroke();
+  }
+  context.globalAlpha = 1;
+
+  context.fillStyle = "rgba(255,255,255,.09)";
+  context.fillRect(64, 60, 5, 108);
+  context.fillStyle = accent;
+  context.fillRect(64, 60, 5, 42);
+  context.font = "800 25px Arial, sans-serif";
+  context.fillStyle = "#f2fffb";
+  context.fillText("S U R F S C A P E", 94, 92);
+  context.font = "700 14px Arial, sans-serif";
+  context.fillStyle = "rgba(218,247,242,.58)";
+  context.fillText(ride.result === "clean" ? "CLEAN LINE  /  RIDE RECORD" : "WIPEOUT  /  RIDE RECORD", 94, 128);
+
+  let zoneSize = 68;
+  do {
+    context.font = `900 ${zoneSize}px Impact, Haettenschweiler, Arial Narrow, sans-serif`;
+    zoneSize -= 2;
+  } while (context.measureText(zone.toUpperCase()).width > 715 && zoneSize > 42);
+  context.fillStyle = "#f7fffc";
+  context.fillText(zone.toUpperCase(), 64, 248);
+  context.font = "700 19px Arial, sans-serif";
+  context.fillStyle = "rgba(222,248,243,.64)";
+  context.fillText(`${beach.name.toUpperCase()}  ·  ${beach.country.toUpperCase()}`, 68, 286);
+
+  roundedCardRect(context, 850, 54, 284, 246, 20);
+  context.fillStyle = "rgba(1,12,18,.52)";
+  context.fill();
+  context.strokeStyle = `${accent}82`;
+  context.lineWidth = 2;
+  context.stroke();
+  context.font = "800 14px Arial, sans-serif";
+  context.fillStyle = accent;
+  context.fillText("S E S S I O N   G R A D E", 900, 94);
+  context.font = "900 132px Impact, Haettenschweiler, Arial Narrow, sans-serif";
+  context.fillStyle = ride.result === "clean" ? "#d9fff3" : "#ffb39f";
+  context.fillText(ride.grade, 944, 230);
+  context.font = "900 28px Impact, Haettenschweiler, Arial Narrow, sans-serif";
+  context.fillStyle = "#ffffff";
+  context.fillText(`${ride.score.toLocaleString("en-US")} PTS`, 914, 276);
+
+  const metrics = [
+    ["L I N E", `${ride.distance.toFixed(0)} M`],
+    ["P O C K E T", `${ride.pocketDistance.toFixed(0)} M`],
+    ["M O V E S", `${ride.maneuvers}`],
+    ["B A R R E L", `${ride.barrelTime.toFixed(1)} S`],
+  ];
+  metrics.forEach(([label, value], index) => {
+    const x = 64 + index * 208;
+    roundedCardRect(context, x, 354, 188, 112, 13);
+    context.fillStyle = "rgba(3,20,27,.67)";
+    context.fill();
+    context.strokeStyle = index === 0 ? `${accent}78` : "rgba(255,255,255,.14)";
+    context.stroke();
+    context.font = "800 12px Arial, sans-serif";
+    context.fillStyle = "rgba(211,243,238,.5)";
+    context.fillText(label, x + 18, 384);
+    context.font = "900 34px Impact, Haettenschweiler, Arial Narrow, sans-serif";
+    context.fillStyle = "#f2fffb";
+    context.fillText(value, x + 18, 437);
+  });
+
+  roundedCardRect(context, 900, 354, 234, 112, 13);
+  context.fillStyle = "rgba(3,20,27,.67)";
+  context.fill();
+  context.strokeStyle = `${sand}76`;
+  context.stroke();
+  context.font = "800 12px Arial, sans-serif";
+  context.fillStyle = "rgba(211,243,238,.5)";
+  context.fillText("O C E A N  /  B O A R D", 918, 384);
+  context.font = "800 19px Arial, sans-serif";
+  context.fillStyle = "#f2fffb";
+  context.fillText(`${waveHeight.toFixed(1)}M  ·  ${wavePeriod.toFixed(0)}S`, 918, 417);
+  context.font = "700 14px Arial, sans-serif";
+  context.fillStyle = sand;
+  context.fillText(board.toUpperCase(), 918, 443);
+
+  context.fillStyle = "rgba(216,247,242,.52)";
+  context.font = "700 13px Arial, sans-serif";
+  context.fillText("SURF THE WORLD  ·  SURFSCAPE.ALEXANDRIA.CHATGPT.SITE", 64, 566);
+  context.fillStyle = accent;
+  context.fillRect(64, 588, 1070, 3);
+
+  return new Promise<File | null>((resolve) => {
+    canvas.toBlob((blob) => {
+      resolve(blob ? new File([blob], "surfscape-ride.png", { type: "image/png" }) : null);
+    }, "image/png");
+  });
+}
+
 export default function SurfscapeApp() {
   const [screen, setScreen] = useState<Screen>("launch");
   const [beach, setBeach] = useState<Beach>(DEFAULT_BEACH);
@@ -282,9 +443,11 @@ export default function SurfscapeApp() {
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
   const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
+  const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
+  const rideCard = useRef<File | null>(null);
   const wakeLock = useRef<WakeLockSentinelLike | null>(null);
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
@@ -690,10 +853,28 @@ export default function SurfscapeApp() {
         barrelTime: stats.barrelTime,
         grade: stats.rideGrade,
       });
-      const timer = window.setTimeout(() => setRideToast(null), 3600);
+      setShareStatus("idle");
+      const timer = window.setTimeout(() => setRideToast(null), 8200);
       return () => window.clearTimeout(timer);
     }
   }, [stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
+
+  useEffect(() => {
+    let disposed = false;
+    rideCard.current = null;
+    if (!rideToast) return () => { disposed = true; };
+    void rideCardFile({
+      ride: rideToast,
+      beach,
+      zone: zoneLabel,
+      board: BOARD_SPECS[settings.board].name,
+      waveHeight: settings.waveHeight,
+      wavePeriod: settings.wavePeriod,
+    }).then((file) => {
+      if (!disposed) rideCard.current = file;
+    });
+    return () => { disposed = true; };
+  }, [beach, rideToast, settings.board, settings.waveHeight, settings.wavePeriod, zoneLabel]);
 
   const chooseBeach = (next: Beach) => {
     const startingZone = next.zones[Math.min(1, next.zones.length - 1)];
@@ -752,6 +933,7 @@ export default function SurfscapeApp() {
     previousRideResultId.current = 0;
     setManeuverToast(null);
     setRideToast(null);
+    setShareStatus("idle");
     setSessionKey((value) => value + 1);
     setPaused(false);
     setScreen("game");
@@ -914,6 +1096,40 @@ export default function SurfscapeApp() {
     centerCameraLook();
     setCameraMode((current) => nextCameraMode(current));
     haptic(7);
+  };
+
+  const shareRide = async (ride: RideToast) => {
+    if (shareStatus === "working") return;
+    setShareStatus("working");
+    const url = window.location.origin;
+    const text = `I scored ${ride.score.toLocaleString()} points on a ${ride.distance.toFixed(0)}m line at ${zoneLabel}, ${beach.name}. Grade ${ride.grade} in Surfscape. #Surfscape`;
+    const copyLink = async () => {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setShareStatus("copied");
+      haptic(7);
+    };
+    try {
+      if (navigator.share) {
+        const shareData: ShareData = { title: `Surfscape · ${zoneLabel} · ${ride.grade}`, text, url };
+        if (rideCard.current && navigator.canShare?.({ files: [rideCard.current] })) shareData.files = [rideCard.current];
+        await navigator.share(shareData);
+        setShareStatus("shared");
+        haptic([7, 18, 12]);
+        return;
+      }
+      await copyLink();
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setShareStatus("idle");
+        return;
+      }
+      try {
+        await copyLink();
+      } catch {
+        setShareStatus("error");
+      }
+    }
   };
 
   const toggleFullscreen = async () => {
@@ -1468,6 +1684,17 @@ export default function SurfscapeApp() {
                 <strong>{rideToast.score.toLocaleString()} PTS</strong>
                 <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel</small>
               </div>
+              <button
+                type="button"
+                className={`ride-share is-${shareStatus}`}
+                onClick={() => void shareRide(rideToast)}
+                onPointerDown={(event) => event.stopPropagation()}
+                disabled={shareStatus === "working"}
+                aria-label="Share this Surfscape ride"
+              >
+                {shareStatus === "shared" || shareStatus === "copied" ? <CircleCheck /> : <Share2 />}
+                <span>{shareStatus === "working" ? "OPENING SHARE" : shareStatus === "shared" ? "SHARED" : shareStatus === "copied" ? "LINK COPIED" : shareStatus === "error" ? "TRY AGAIN" : "SHARE RIDE"}</span>
+              </button>
             </div>
           )}
 

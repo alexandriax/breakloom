@@ -1236,16 +1236,16 @@ input:focus-visible {
   position: absolute;
   top: 101px;
   left: 50%;
-  min-width: 360px;
+  min-width: 468px;
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 72px minmax(0, 1fr) 96px;
   transform: translateX(-50%);
   border: 1px solid rgba(157, 255, 238, 0.3);
   border-bottom: 2px solid #71e1d3;
   background: linear-gradient(105deg, rgba(3, 17, 23, 0.91), rgba(4, 20, 27, 0.72));
   backdrop-filter: blur(14px);
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
-  animation: ride-recap 3.6s ease both;
+  animation: ride-recap 8.2s ease both;
 }
 .ride-recap.is-wipeout { border-color: rgba(242, 100, 78, 0.38); border-bottom-color: var(--coral); }
 .ride-grade { min-height: 74px; display: grid; place-items: center; align-content: center; gap: 3px; border-right: 1px solid rgba(255, 255, 255, 0.12); background: rgba(113, 225, 211, 0.08); }
@@ -1258,6 +1258,15 @@ input:focus-visible {
 .ride-recap-copy > span { color: var(--muted); font-size: 5px; letter-spacing: 0.18em; }
 .ride-recap-copy > strong { margin: 4px 0 3px; font-family: Impact, sans-serif; font-size: 20px; letter-spacing: 0.07em; }
 .ride-recap-copy > small { color: rgba(255, 255, 255, 0.58); font-size: 7px; letter-spacing: 0.04em; }
+.ride-share { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 9px; border: 0; border-left: 1px solid rgba(255, 255, 255, .12); background: linear-gradient(180deg, rgba(113, 225, 211, .08), rgba(3, 18, 24, .42)); color: #bdfff5; cursor: pointer; }
+.ride-share:hover { background: linear-gradient(180deg, rgba(113, 225, 211, .17), rgba(3, 18, 24, .52)); }
+.ride-share:active { background: rgba(113, 225, 211, .2); }
+.ride-share:disabled { cursor: progress; opacity: .68; }
+.ride-share svg { width: 20px; filter: drop-shadow(0 0 8px rgba(113, 225, 211, .46)); }
+.ride-share span { max-width: 78px; font-size: 6px; font-weight: 900; letter-spacing: .12em; line-height: 1.25; text-align: center; }
+.ride-share.is-shared, .ride-share.is-copied { color: #c6ffdb; background: rgba(95, 219, 168, .12); }
+.ride-share.is-error { color: #ffc1a8; background: rgba(228, 102, 74, .1); }
+.is-wipeout .ride-share { color: #ffd1c5; background: linear-gradient(180deg, rgba(242, 100, 78, .1), rgba(3, 18, 24, .42)); }
 
 @keyframes maneuver-pop {
   0% { opacity: 0; transform: translateX(-50%) translateY(14px) scale(0.94); }
@@ -1267,7 +1276,7 @@ input:focus-visible {
 
 @keyframes ride-recap {
   0% { opacity: 0; transform: translateX(-50%) translateY(18px) scale(0.95); }
-  9%, 78% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  5%, 91% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
   100% { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(0.98); }
 }
 
@@ -1540,11 +1549,14 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .maneuver-toast, .takeoff-toast, .shorebreak-toast { top: 198px; min-width: 194px; padding: 9px 12px 9px 9px; }
   .maneuver-toast strong, .takeoff-toast strong, .shorebreak-toast strong { font-size: 10px; }
   .maneuver-toast b, .takeoff-toast b, .shorebreak-toast b { font-size: 15px; }
-  .ride-recap { top: 194px; min-width: min(330px, calc(100vw - 30px)); grid-template-columns: 62px 1fr; }
+  .ride-recap { top: 194px; width: min(348px, calc(100vw - 24px)); min-width: 0; grid-template-columns: 62px minmax(0, 1fr); }
   .ride-grade { min-height: 66px; }
   .ride-grade strong { font-size: 28px; }
   .ride-recap-copy { padding: 9px 12px; }
   .ride-recap-copy > strong { font-size: 17px; }
+  .ride-share { grid-column: 1 / -1; min-height: 38px; flex-direction: row; border-top: 1px solid rgba(255, 255, 255, .11); border-left: 0; }
+  .ride-share svg { width: 16px; }
+  .ride-share span { max-width: none; font-size: 6px; }
   .balance-instrument { width: calc(100vw - 30px); bottom: calc(200px + env(safe-area-inset-bottom)); padding: 11px 13px; }
   .balance-label em { max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .stance-track > span { font-size: 4px; }
