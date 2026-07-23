@@ -699,7 +699,7 @@ input:focus-visible {
   bottom: 92px;
   width: min(1180px, calc(100vw - 80px));
   display: grid;
-  grid-template-columns: 1.1fr repeat(5, 1fr);
+  grid-template-columns: 1.1fr repeat(7, 1fr);
   gap: 1px;
   transform: translateX(-50%);
   border: 1px solid var(--line);
@@ -1675,7 +1675,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .readout-location { display: none; }
   .current-readout { grid-template-columns: repeat(3, 1fr); }
   .planner-inner { padding-left: 24px; padding-right: 24px; }
-  .wave-lab-panel { width: calc(100vw - 48px); grid-template-columns: 1.1fr repeat(5, 1fr); }
+  .wave-lab-panel { width: calc(100vw - 48px); grid-template-columns: 1.1fr repeat(7, 1fr); }
   .lab-title { grid-row: span 2; }
   .game-conditions > div { min-width: 82px; }
   .desktop-controls { flex-direction: column; align-items: flex-end; gap: 4px; }

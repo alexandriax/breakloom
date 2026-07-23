@@ -295,6 +295,9 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uTime;
   uniform float uHeight;
   uniform float uPeriod;
+  uniform float uSwellHeight;
+  uniform float uSwellPeriod;
+  uniform float uSwellDirection;
   uniform float uCurrent;
   uniform float uWaveDirection;
   uniform float uCurrentDirection;
@@ -367,6 +370,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vec3 p = position;
     float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
     vec2 waveDir = coastalVector(uWaveDirection);
+    vec2 swellDir = coastalVector(uSwellDirection);
     vec2 currentDir = coastalVector(uCurrentDirection);
     vec2 windDir = coastalVector(uWindDirection);
     float section = sin(surfaceOrigin.x * .07 + uTime * .05) * uVariability * 2.3;
@@ -379,6 +383,10 @@ const OCEAN_VERTEX = /* glsl */ `
     float setEnergy = setEnvelope();
     float setLift = .78 + setEnergy * .34;
     float amplitude = max(.12, uHeight * .62) * uPower;
+    float swellPeriod = max(4.0, uSwellPeriod);
+    float swellWavelength = clamp(1.56 * swellPeriod * swellPeriod, 64.0, 520.0);
+    float swellAmplitude = max(0.0, min(uSwellHeight, uHeight * 1.35) * .16);
+    float swellShoaling = .84 + smoothstep(-85.0, 8.0, breakCoord) * .24;
     float windChop = clamp(uWind / 24.0, .12, 1.45);
     float currentBend = clamp(uCurrent / 4.0, 0.0, 1.0);
 
@@ -392,14 +400,14 @@ const OCEAN_VERTEX = /* glsl */ `
       angularSpeed,
       0.0
     );
-    float secondary = gerstner(
+    float liveSwell = gerstner(
       p,
       surfaceOrigin,
-      normalize(vec2(waveDir.x * .58 - .16, max(.35, waveDir.y))),
-      20.3,
-      amplitude * .22,
-      .58,
-      angularSpeed * 7.1,
+      normalize(vec2(swellDir.x, max(.28, swellDir.y))),
+      swellWavelength,
+      swellAmplitude * swellShoaling,
+      clamp(.28 + uSteepness * .08, .3, .42),
+      PI * 2.0 / swellPeriod,
       1.7
     );
     float crossSwell = gerstner(
@@ -430,7 +438,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vCrest = primary * shore;
     float breakerThreshold = mix(.58, .4, uHollow);
     vBreaker = smoothstep(-18.0, 12.0, breakCoord) * smoothstep(breakerThreshold, .96, primary * .5 + .5) * setLift * (.72 + uHollow * .34);
-    vChop = abs(secondary) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
+    vChop = abs(liveSwell) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
     vSurface = surfaceOrigin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -617,17 +625,20 @@ function Ocean({
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uHeight: { value: 1 },
-      uPeriod: { value: 8 },
-      uCurrent: { value: 0 },
-      uWaveDirection: { value: 0 },
-      uCurrentDirection: { value: 0 },
-      uWindDirection: { value: 0 },
-      uCoastHeading: { value: 0 },
-      uTide: { value: 0 },
+      uHeight: { value: settings.waveHeight },
+      uPeriod: { value: settings.wavePeriod },
+      uSwellHeight: { value: settings.swellHeight },
+      uSwellPeriod: { value: settings.swellPeriod },
+      uSwellDirection: { value: settings.swellDirection },
+      uCurrent: { value: settings.currentStrength },
+      uWaveDirection: { value: settings.waveDirection },
+      uCurrentDirection: { value: settings.currentDirection },
+      uWindDirection: { value: settings.windDirection },
+      uCoastHeading: { value: settings.coastHeading },
+      uTide: { value: settings.tide },
       uLight: { value: 1 },
       uCloud: { value: 0 },
-      uWind: { value: 0 },
+      uWind: { value: settings.windSpeed },
       uRain: { value: 0 },
       uVisibility: { value: 240 },
       uPeel: { value: character.peel },
@@ -640,7 +651,7 @@ function Ocean({
       uSunColor: { value: new THREE.Color("#fff0ca") },
       uHazeColor: { value: new THREE.Color("#78979c") },
     }),
-    [character],
+    [character, settings],
   );
 
   const tideShift = shorelineShiftForTide(settings.tide);
@@ -655,6 +666,9 @@ function Ocean({
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
     values.uPeriod.value = settings.wavePeriod;
+    values.uSwellHeight.value = THREE.MathUtils.lerp(values.uSwellHeight.value, settings.swellHeight, .025);
+    values.uSwellPeriod.value = settings.swellPeriod;
+    values.uSwellDirection.value = settings.swellDirection;
     values.uCurrent.value = settings.currentStrength;
     values.uWaveDirection.value = settings.waveDirection;
     values.uCurrentDirection.value = settings.currentDirection;

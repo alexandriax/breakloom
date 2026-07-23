@@ -203,18 +203,6 @@ const EMPTY_CONTROLS: ControlState = {
   lookPitch: 0,
 };
 
-function qualityLabel(conditions: Pick<SessionSettings, "waveHeight" | "wavePeriod" | "windSpeed" | "windDirection" | "coastHeading">) {
-  const energy = conditions.waveHeight * Math.max(conditions.wavePeriod - 4, 1);
-  const windAlignment = Math.cos(((conditions.windDirection - conditions.coastHeading) * Math.PI) / 180);
-  if (energy > 28) return "Heavy water";
-  if (windAlignment < -.35 && conditions.windSpeed < 24) return "Offshore groomed";
-  if (conditions.wavePeriod >= 13 && conditions.windSpeed < 16) return "Glassy lines";
-  if (conditions.waveHeight < 0.45) return "Small & clean";
-  if (conditions.windSpeed > 25 && windAlignment > -.15) return "Onshore chop";
-  if (conditions.windSpeed > 25) return "Wind affected";
-  return "Rideable peaks";
-}
-
 function formatHourValue(value: number) {
   const wrapped = ((value % 24) + 24) % 24;
   const hour = Math.floor(wrapped);
@@ -982,6 +970,10 @@ export default function SurfscapeApp() {
       stats.sectionPressure,
       settings.waveHeight,
       settings.wavePeriod,
+      settings.waveDirection,
+      settings.swellHeight,
+      settings.swellPeriod,
+      settings.swellDirection,
       screen === "game" && !paused,
       stats.cameraHeading,
     );
@@ -1013,7 +1005,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1215,7 +1207,7 @@ export default function SurfscapeApp() {
     audio.current.setMusicEnabled(musicEnabled);
     audio.current.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
     audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, .34, sessionWeatherCode);
-    audio.current.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, true, 0);
+    audio.current.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, true, 0);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -1237,7 +1229,7 @@ export default function SurfscapeApp() {
   const leaveSession = () => {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
-    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, false, 0);
+    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, false, 0);
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
     audio.current?.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
@@ -1266,6 +1258,10 @@ export default function SurfscapeApp() {
         stats.sectionPressure,
         settings.waveHeight,
         settings.wavePeriod,
+        settings.waveDirection,
+        settings.swellHeight,
+        settings.swellPeriod,
+        settings.swellDirection,
         screen === "game" && !paused,
         stats.cameraHeading,
       );
@@ -1472,7 +1468,6 @@ export default function SurfscapeApp() {
 
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
-  const conditionQuality = qualityLabel(settings);
   const breakCharacter = getBreakCharacter(beach.id, zoneLabel);
   const trainingComplete = trainingStep >= TRAINING_STEPS.length;
   const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
@@ -1708,12 +1703,12 @@ export default function SurfscapeApp() {
                 <div className="readout-metric primary">
                   <span>Wave</span>
                   <strong>{settings.waveHeight.toFixed(1)}<small>m</small></strong>
-                  <em>{degrees(settings.waveDirection)}</em>
+                  <em>{settings.wavePeriod.toFixed(1)}s · {degrees(settings.waveDirection)}</em>
                 </div>
                 <div className="readout-metric">
-                  <span>Period</span>
-                  <strong>{settings.wavePeriod.toFixed(1)}<small>s</small></strong>
-                  <em>{conditionQuality}</em>
+                  <span>Dominant swell</span>
+                  <strong>{settings.swellHeight.toFixed(1)}<small>m</small></strong>
+                  <em>{settings.swellPeriod.toFixed(1)}s · {degrees(settings.swellDirection)}</em>
                 </div>
                 <div className="readout-metric tide-readout">
                   <span>Tide · {settings.mode === "playground" ? "custom" : sessionConditions.tideTrend}</span>
@@ -1864,6 +1859,9 @@ export default function SurfscapeApp() {
               <PlaygroundSlider label="Face height" value={settings.waveHeight} min={0.3} max={6} step={0.1} unit="m" onChange={(waveHeight) => setSettings((value) => ({ ...value, waveHeight }))} />
               <PlaygroundSlider label="Period" value={settings.wavePeriod} min={5} max={22} step={0.5} unit="s" onChange={(wavePeriod) => setSettings((value) => ({ ...value, wavePeriod }))} />
               <PlaygroundSlider label="Wave bearing" value={settings.waveDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(waveDirection) => setSettings((value) => ({ ...value, waveDirection }))} />
+              <PlaygroundSlider label="Swell height" value={settings.swellHeight} min={0} max={6} step={0.1} unit="m" onChange={(swellHeight) => setSettings((value) => ({ ...value, swellHeight }))} />
+              <PlaygroundSlider label="Swell period" value={settings.swellPeriod} min={5} max={24} step={0.5} unit="s" onChange={(swellPeriod) => setSettings((value) => ({ ...value, swellPeriod }))} />
+              <PlaygroundSlider label="Swell bearing" value={settings.swellDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(swellDirection) => setSettings((value) => ({ ...value, swellDirection }))} />
               <PlaygroundSlider label="Current" value={settings.currentStrength} min={0} max={4} step={0.1} unit="km/h" onChange={(currentStrength) => setSettings((value) => ({ ...value, currentStrength }))} />
               <PlaygroundSlider label="Current bearing" value={settings.currentDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(currentDirection) => setSettings((value) => ({ ...value, currentDirection }))} />
               <PlaygroundSlider label="Wind" value={settings.windSpeed} min={0} max={45} step={1} unit="km/h" onChange={(windSpeed) => setSettings((value) => ({ ...value, windSpeed }))} />
@@ -1975,7 +1973,7 @@ export default function SurfscapeApp() {
                 <p>{beach.name} · {beach.region}</p>
                 <div>
                   <strong><Waves /> {settings.waveHeight.toFixed(1)} m</strong>
-                  <strong><Wind /> {settings.wavePeriod.toFixed(1)} s</strong>
+                  <strong><Waves /> {settings.swellHeight.toFixed(1)} m @ {settings.swellPeriod.toFixed(1)} s</strong>
                   <strong><ArrowRight /> {breakCharacter.line}</strong>
                 </div>
               </div>
@@ -2180,7 +2178,7 @@ export default function SurfscapeApp() {
 
           <div className="game-conditions">
             <div><Waves /><span>FACE</span><strong>{settings.waveHeight.toFixed(1)} m</strong></div>
-            <div><Wind /><span>PERIOD</span><strong>{settings.wavePeriod.toFixed(1)} s</strong></div>
+            <div><Wind /><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)}m · {settings.swellPeriod.toFixed(0)}s</strong></div>
             <div><ArrowRight /><span>BREAK LINE</span><strong>{activeLine}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div>

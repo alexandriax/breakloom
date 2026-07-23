@@ -73,6 +73,9 @@ export type SessionSettings = {
   waveHeight: number;
   wavePeriod: number;
   waveDirection: number;
+  swellHeight: number;
+  swellPeriod: number;
+  swellDirection: number;
   currentStrength: number;
   currentDirection: number;
   windSpeed: number;
@@ -297,6 +300,9 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
     waveHeight: conditions.waveHeight,
     wavePeriod: conditions.wavePeriod,
     waveDirection: conditions.waveDirection,
+    swellHeight: conditions.swellHeight,
+    swellPeriod: conditions.swellPeriod,
+    swellDirection: conditions.swellDirection,
     currentStrength: conditions.currentVelocity,
     currentDirection: conditions.currentDirection,
     windSpeed: conditions.windSpeed,
@@ -327,18 +333,60 @@ export function waveHeightAt(
   const coastalZ = z - shorelineShiftForTide(settings.tide);
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = coastalZ + x * peel * .16 + section;
-  const shoreBoost = 0.72 + Math.max(0, Math.min(1, (breakZ + 90) / 98)) * (.58 + steepness * .24);
+  const shoreBoost = .72 + smoothstep(-85, 8, breakZ) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-  const waveAlong = x * Math.sin(relativeWaveAngle) + coastalZ * Math.max(.35, Math.cos(relativeWaveAngle));
-  const waveCross = x * Math.cos(relativeWaveAngle) - coastalZ * Math.sin(relativeWaveAngle);
-  const p2 = waveAlong * 0.31 - waveCross * 0.05 - elapsed * speed * 7.1 + 1.7;
-  const p3 = waveAlong * 0.09 + waveCross * 0.13 - elapsed * speed * 2.7;
+  const relativeSwellAngle = ((settings.swellDirection - settings.coastHeading) * Math.PI) / 180;
+  const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
+  const relativeWindAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
+  const waveDirectionX = Math.sin(relativeWaveAngle);
+  const waveDirectionZ = Math.cos(relativeWaveAngle);
+  const currentDirectionX = Math.sin(relativeCurrentAngle);
+  const currentDirectionZ = Math.cos(relativeCurrentAngle);
+  const swellDirectionX = Math.sin(relativeSwellAngle);
+  const swellDirectionZ = Math.max(.28, Math.cos(relativeSwellAngle));
+  const swellDirectionLength = Math.hypot(swellDirectionX, swellDirectionZ);
+  const normalizedSwellX = swellDirectionX / swellDirectionLength;
+  const normalizedSwellZ = swellDirectionZ / swellDirectionLength;
+  const swellPeriod = Math.max(4, settings.swellPeriod);
+  const swellWavelength = Math.max(64, Math.min(520, 1.56 * swellPeriod * swellPeriod));
+  const swellPhase = (
+    x * normalizedSwellX + coastalZ * normalizedSwellZ
+  ) * (Math.PI * 2 / swellWavelength) - elapsed * (Math.PI * 2 / swellPeriod) + 1.7;
+  const swellShoaling = .84 + smoothstep(-85, 8, breakZ) * .24;
+  const swellAmplitude = Math.max(
+    0,
+    Math.min(settings.swellHeight, settings.waveHeight * 1.35) * .16,
+  );
+
+  const currentBend = Math.max(0, Math.min(1, settings.currentStrength / 4));
+  const crossCurrentWeight = .12 + currentBend * .12;
+  const crossDirectionX = waveDirectionX
+    + waveDirectionZ * .62
+    + currentDirectionX * crossCurrentWeight;
+  const crossDirectionZ = Math.max(.28, waveDirectionZ - waveDirectionX * .62)
+    + currentDirectionZ * crossCurrentWeight;
+  const crossDirectionLength = Math.hypot(crossDirectionX, crossDirectionZ);
+  const crossPhase = (
+    x * crossDirectionX / crossDirectionLength
+    + coastalZ * crossDirectionZ / crossDirectionLength
+  ) * (Math.PI * 2 / 47.5) - elapsed * speed * 2.7;
+
+  const windChop = Math.max(.12, Math.min(1.45, settings.windSpeed / 24));
+  const windDirectionX = Math.sin(relativeWindAngle);
+  const windDirectionZ = Math.cos(relativeWindAngle) + .15;
+  const windDirectionLength = Math.hypot(windDirectionX, windDirectionZ);
+  const windWavelength = 8.5 + (5.4 - 8.5) * (windChop / 1.45);
+  const windPhase = (
+    x * windDirectionX / windDirectionLength
+    + coastalZ * windDirectionZ / windDirectionLength
+  ) * (Math.PI * 2 / windWavelength) - elapsed * (1.7 + windChop * 1.2) + 2.4;
   return (
     settings.tide * 0.3 +
     amplitude * setLift * shoreBoost * Math.sin(p1) * 0.64 +
-    amplitude * Math.sin(p2) * 0.22 +
-    amplitude * Math.sin(p3) * 0.11
+    swellAmplitude * swellShoaling * Math.sin(swellPhase) +
+    amplitude * Math.sin(crossPhase) * 0.11 +
+    (.035 + windChop * .065) * Math.sin(windPhase)
   );
 }
 

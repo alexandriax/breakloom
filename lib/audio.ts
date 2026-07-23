@@ -399,6 +399,10 @@ export class SurfscapeAudio {
     sectionPressure: number,
     waveHeight: number,
     wavePeriod: number,
+    waveDirection: number,
+    swellHeight: number,
+    swellPeriod: number,
+    swellDirection: number,
     active: boolean,
     cameraHeading = 0,
   ) {
@@ -416,6 +420,12 @@ export class SurfscapeAudio {
     const shorebreak = Math.min(1, Math.max(0, shorebreakIntensity));
     const pressure = Math.min(1, Math.max(0, sectionPressure));
     const face = Math.min(1.45, Math.max(.12, waveHeight) / 2.4);
+    const swell = Math.min(1.45, Math.max(0, swellHeight) / 2.4);
+    const crossingAngle = Math.abs(Math.sin((swellDirection - waveDirection) * Math.PI / 180));
+    const crossingPresence = swell * (.22 + crossingAngle * .78);
+    const waveFrequency = 1 / Math.max(4, wavePeriod);
+    const swellFrequency = 1 / Math.max(4, swellPeriod);
+    const crossingBeat = .5 + Math.sin(now * Math.PI * 2 * Math.abs(waveFrequency - swellFrequency)) * .5;
     const phasePresence = phase === "shore"
       ? .58
       : phase === "wading"
@@ -429,11 +439,13 @@ export class SurfscapeAudio {
       ? (.006 + risingSet * .047 + shorebreak * .072 + (catchReady ? .016 : 0) + pressure * .026)
         * (.68 + face * .32)
         * phasePresence
+        + crossingPresence * (.004 + crossingBeat * .008) * phasePresence
       : 0;
     const washLevel = audible
       ? (.005 + risingSet * .038 + shorebreak * .086 + (catchReady ? .021 : 0) + pressure * .038)
         * (.64 + face * .36)
         * phasePresence
+        + crossingPresence * (.003 + (1 - crossingBeat) * .006) * phasePresence
       : 0;
     const sourceHeading = phase === "riding"
       ? Math.sign(lineSide || 1) * Math.PI / 2
@@ -453,9 +465,9 @@ export class SurfscapeAudio {
 
     ramp(this.breakerRumbleGain.gain, rumbleLevel, now, rumbleLevel > this.breakerRumbleGain.gain.value ? .24 : .7);
     ramp(this.breakerWashGain.gain, washLevel, now, washLevel > this.breakerWashGain.gain.value ? .2 : .58);
-    ramp(this.breakerRumbleFilter.frequency, 205 + risingSet * 280 + shorebreak * 190 + face * 115, now, .45);
-    ramp(this.breakerRumbleFilter.Q, .82 + risingSet * .68 + pressure * .3, now, .45);
-    ramp(this.breakerWashFilter.frequency, 920 + risingSet * 940 + shorebreak * 720 + pressure * 610, now, .38);
+    ramp(this.breakerRumbleFilter.frequency, 205 + risingSet * 280 + shorebreak * 190 + face * 115 + crossingPresence * crossingBeat * 72, now, .45);
+    ramp(this.breakerRumbleFilter.Q, .82 + risingSet * .68 + pressure * .3 + crossingPresence * .18, now, .45);
+    ramp(this.breakerWashFilter.frequency, 920 + risingSet * 940 + shorebreak * 720 + pressure * 610 + crossingPresence * (1 - crossingBeat) * 180, now, .38);
     ramp(this.breakerWashFilter.Q, .5 + shorebreak * .34 + pressure * .42, now, .4);
     const sourceX = Math.sin(sourceBearing) * sourceDistance;
     const sourceY = .18 + face * .14;
