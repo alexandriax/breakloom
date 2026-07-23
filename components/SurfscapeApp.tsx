@@ -40,7 +40,7 @@ import {
   X,
 } from "lucide-react";
 import { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BEACHES, DEFAULT_BEACH, getBreakCharacter, type Beach } from "@/lib/beaches";
+import { BEACHES, DEFAULT_BEACH, getBreakCharacter, getCoastBiome, type Beach } from "@/lib/beaches";
 import {
   fallbackConditions,
   fetchMarineConditions,
@@ -971,6 +971,7 @@ export default function SurfscapeApp() {
     () => getBreakCharacter(beach.id, zoneLabel),
     [beach.id, zoneLabel],
   );
+  const coastBiome = useMemo(() => getCoastBiome(beach.id), [beach.id]);
   const tideResponse = useMemo(
     () => tideResponseForBreak(settings.tide, breakCharacter),
     [breakCharacter, settings.tide],
@@ -1809,6 +1810,15 @@ export default function SurfscapeApp() {
       paused ? 0.34 : screen === "game" ? .4 + stats.sessionIntro * .6 : .42,
       sessionWeatherCode,
     );
+    audio.current?.setCoastSoundscape(
+      coastBiome,
+      stats.phase,
+      stats.offshoreDistance,
+      settings.windSpeed,
+      settings.timeOfDay,
+      sessionWeatherCode,
+      screen === "game" && !paused,
+    );
     audio.current?.setSubmersion(
       paused
         ? 0
@@ -1831,7 +1841,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [effectiveFaceHeight, paused, photoMode, replayActive, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.stamina, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [coastBiome, effectiveFaceHeight, paused, photoMode, replayActive, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.offshoreDistance, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.stamina, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     const phase = replayActive ? "riding" : stats.phase;
@@ -2305,6 +2315,7 @@ export default function SurfscapeApp() {
     audio.current.setMusicEnabled(musicEnabled);
     audio.current.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
     audio.current.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, .34, sessionWeatherCode);
+    audio.current.setCoastSoundscape(coastBiome, "shore", 0, settings.windSpeed, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setWaveField("shore", 0, 0, false, 1, 0, effectiveFaceHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, true, 0);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
@@ -2339,6 +2350,7 @@ export default function SurfscapeApp() {
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
     audio.current?.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, 0.42, sessionWeatherCode);
+    audio.current?.setCoastSoundscape(coastBiome, stats.phase, stats.offshoreDistance, settings.windSpeed, settings.timeOfDay, sessionWeatherCode, false);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     resetRideCapture();
@@ -2387,6 +2399,15 @@ export default function SurfscapeApp() {
     if (next) {
       audio.current.setPerspective(stats.cameraHeading, settings.windDirection, settings.coastHeading, stats.phase);
       audio.current.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
+      audio.current.setCoastSoundscape(
+        coastBiome,
+        stats.phase,
+        stats.offshoreDistance,
+        settings.windSpeed,
+        settings.timeOfDay,
+        sessionWeatherCode,
+        screen === "game" && !paused,
+      );
       audio.current.setWaveField(
         stats.phase,
         stats.setEnergy,

@@ -1,4 +1,5 @@
 import type { GamePhase } from "./game";
+import type { CoastBiome } from "./beaches";
 
 type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "leash" | "wipeout" | "finish" | "coach" | "door";
 
@@ -13,6 +14,98 @@ const MELODIC_PATTERNS = [
   [0, 1, 3, 2, 1, 2, 0, 3, 2, 3, 1, 0, 2, 1, 3, 2],
   [0, 3, 2, 1, 3, 1, 2, 0, 2, 3, 0, 1, 3, 2, 1, 0],
 ] as const;
+
+type CoastSoundProfile = {
+  bedRate: number;
+  bedFilter: BiquadFilterType;
+  bedFrequency: number;
+  bedQ: number;
+  bedGain: number;
+  windResponse: number;
+  nightGain: number;
+  cueBase: number;
+  cueVariance: number;
+};
+
+const COAST_SOUND_PROFILES = {
+  urban: {
+    bedRate: .54,
+    bedFilter: "lowpass",
+    bedFrequency: 245,
+    bedQ: .82,
+    bedGain: .018,
+    windResponse: .16,
+    nightGain: .72,
+    cueBase: 9,
+    cueVariance: 9,
+  },
+  tropical: {
+    bedRate: 1.18,
+    bedFilter: "bandpass",
+    bedFrequency: 4100,
+    bedQ: .36,
+    bedGain: .0065,
+    windResponse: .46,
+    nightGain: 1.42,
+    cueBase: 8,
+    cueVariance: 10,
+  },
+  dune: {
+    bedRate: .86,
+    bedFilter: "bandpass",
+    bedFrequency: 1580,
+    bedQ: .48,
+    bedGain: .011,
+    windResponse: .72,
+    nightGain: .66,
+    cueBase: 11,
+    cueVariance: 12,
+  },
+  rugged: {
+    bedRate: .48,
+    bedFilter: "bandpass",
+    bedFrequency: 390,
+    bedQ: 1.12,
+    bedGain: .017,
+    windResponse: 1,
+    nightGain: .82,
+    cueBase: 12,
+    cueVariance: 10,
+  },
+  cold: {
+    bedRate: .64,
+    bedFilter: "bandpass",
+    bedFrequency: 620,
+    bedQ: .72,
+    bedGain: .013,
+    windResponse: .86,
+    nightGain: .7,
+    cueBase: 13,
+    cueVariance: 13,
+  },
+  volcanic: {
+    bedRate: .78,
+    bedFilter: "bandpass",
+    bedFrequency: 980,
+    bedQ: .56,
+    bedGain: .011,
+    windResponse: .66,
+    nightGain: .74,
+    cueBase: 10,
+    cueVariance: 11,
+  },
+  desert: {
+    bedRate: .95,
+    bedFilter: "highpass",
+    bedFrequency: 2100,
+    bedQ: .34,
+    bedGain: .0075,
+    windResponse: .92,
+    nightGain: .52,
+    cueBase: 12,
+    cueVariance: 14,
+  },
+} satisfies Record<CoastBiome, CoastSoundProfile>;
 
 function precipitationLevel(weatherCode: number) {
   if ([51, 56, 61, 66, 80].includes(weatherCode)) return .42;
@@ -49,6 +142,13 @@ export class SurfscapeAudio {
   private windPanner: StereoPannerNode | null = null;
   private rainGain: GainNode | null = null;
   private rainFilter: BiquadFilterNode | null = null;
+  private coastBed: AudioBufferSourceNode | null = null;
+  private coastBedGain: GainNode | null = null;
+  private coastBedFilter: BiquadFilterNode | null = null;
+  private coastBedPanner: StereoPannerNode | null = null;
+  private coastBiome: CoastBiome = "dune";
+  private coastLandwardPan = 0;
+  private nextCoastCueAt = 0;
 
   private surf: AudioBufferSourceNode | null = null;
   private surfGain: GainNode | null = null;
@@ -212,6 +312,20 @@ export class SurfscapeAudio {
     this.rainFilter = rainFilter;
     this.rainGain = rainGain;
 
+    const coastBed = this.loopNoise(COAST_SOUND_PROFILES.dune.bedRate, 6.32);
+    const coastBedFilter = context.createBiquadFilter();
+    const coastBedGain = context.createGain();
+    const coastBedPanner = context.createStereoPanner();
+    coastBedFilter.type = COAST_SOUND_PROFILES.dune.bedFilter;
+    coastBedFilter.frequency.value = COAST_SOUND_PROFILES.dune.bedFrequency;
+    coastBedFilter.Q.value = COAST_SOUND_PROFILES.dune.bedQ;
+    coastBedGain.gain.value = 0;
+    coastBed.connect(coastBedFilter).connect(coastBedGain).connect(coastBedPanner).connect(worldGain);
+    this.coastBed = coastBed;
+    this.coastBedFilter = coastBedFilter;
+    this.coastBedGain = coastBedGain;
+    this.coastBedPanner = coastBedPanner;
+
     const surf = this.loopNoise(1.16, 3.12);
     const surfFilter = context.createBiquadFilter();
     const surfGain = context.createGain();
@@ -297,6 +411,7 @@ export class SurfscapeAudio {
     this.nextAthleteBreathAt = context.currentTime + 1.4;
     this.nextHeartbeatAt = context.currentTime + .8;
     this.nextGaspAt = context.currentTime + .5;
+    this.nextCoastCueAt = context.currentTime + 3.2;
     this.nextMusicStepAt = context.currentTime + .12;
   }
 
@@ -379,6 +494,11 @@ export class SurfscapeAudio {
     if (this.windPanner) {
       ramp(this.windPanner.pan, Math.sin(windBearing) * .5, now, .2);
     }
+    if (this.coastBedPanner) {
+      const landwardBearing = relativeBearing(0);
+      this.coastLandwardPan = Math.sin(landwardBearing) * .56;
+      ramp(this.coastBedPanner.pan, this.coastLandwardPan, now, .24);
+    }
   }
 
   setEnvironment(windSpeed: number, waveHeight: number, cloudCover: number, intensity = 1, weatherCode = 0) {
@@ -403,6 +523,80 @@ export class SurfscapeAudio {
       this.gull(now);
       this.nextGullAt = now + 8 + Math.random() * 11;
     }
+  }
+
+  setCoastSoundscape(
+    biome: CoastBiome,
+    phase: GamePhase,
+    offshoreDistance: number,
+    windSpeed: number,
+    timeOfDay: number,
+    weatherCode: number,
+    active: boolean,
+  ) {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    const profile = COAST_SOUND_PROFILES[biome];
+    const biomeChanged = biome !== this.coastBiome;
+    this.coastBiome = biome;
+    if (biomeChanged) this.nextCoastCueAt = now + 2.4 + Math.random() * 2.8;
+
+    const wind = Math.min(1.35, Math.max(0, windSpeed) / 24);
+    const rain = precipitationLevel(weatherCode);
+    const night = timeOfDay < 6 || timeOfDay > 19.25;
+    const distance = Math.max(0, offshoreDistance);
+    const shoreProximity = 1 - Math.min(1, Math.max(0, (distance - 8) / 260));
+    const phasePresence = phase === "driving" || phase === "shore"
+      ? 1
+      : phase === "wading"
+        ? .86
+        : phase === "paddling"
+          ? .58
+          : phase === "riding"
+            ? .34
+            : .2;
+    const weatherPresence = 1 - rain * .42;
+    const targetGain = active
+      ? profile.bedGain
+        * shoreProximity
+        * phasePresence
+        * weatherPresence
+        * (night ? profile.nightGain : 1)
+        * (.7 + wind * profile.windResponse)
+      : 0;
+
+    if (this.coastBedGain) ramp(this.coastBedGain.gain, targetGain, now, biomeChanged ? .9 : .52);
+    if (this.coastBedFilter) {
+      this.coastBedFilter.type = profile.bedFilter;
+      ramp(
+        this.coastBedFilter.frequency,
+        profile.bedFrequency * (.9 + wind * .28) * (night ? .92 : 1),
+        now,
+        biomeChanged ? .82 : .7,
+      );
+      ramp(this.coastBedFilter.Q, profile.bedQ + wind * .12, now, .7);
+    }
+    if (this.coastBed) {
+      ramp(this.coastBed.playbackRate, profile.bedRate * (.94 + wind * .12), now, biomeChanged ? .84 : .65);
+    }
+
+    const cueAllowed = this.enabled
+      && active
+      && shoreProximity > .28
+      && rain < .55
+      && phase !== "riding"
+      && phase !== "wipeout";
+    if (!cueAllowed) {
+      this.nextCoastCueAt = Math.max(this.nextCoastCueAt, now + .9);
+      return;
+    }
+    if (now < this.nextCoastCueAt) return;
+
+    const cueIntensity = shoreProximity * phasePresence * (1 - rain * .55);
+    this.coastCue(now, biome, wind, night, cueIntensity);
+    const weatherSpacing = 1 + wind * .18 + rain * .5;
+    this.nextCoastCueAt = now
+      + (profile.cueBase + Math.random() * profile.cueVariance) * weatherSpacing;
   }
 
   setVehicle(speed: number, active: boolean, throttle = 0, offRoad = 0, slip = 0, braking = false) {
@@ -1032,6 +1226,189 @@ export class SurfscapeAudio {
     oscillator.stop(now + duration + .03);
   }
 
+  private coastCue(
+    now: number,
+    biome: CoastBiome,
+    wind: number,
+    night: boolean,
+    intensity: number,
+  ) {
+    const presence = Math.min(1, Math.max(.08, intensity));
+    const cuePan = Math.max(
+      -.86,
+      Math.min(.86, this.coastLandwardPan * 1.34 + (Math.random() - .5) * .28),
+    );
+    const alongshoreTravel = Math.random() < .5 ? -.24 : .24;
+    if (biome === "urban") {
+      this.coastNoiseSweep(
+        now,
+        1.35 + wind * .45,
+        220 + wind * 150,
+        .72,
+        (.008 + presence * .012) * (night ? .72 : 1),
+        "bandpass",
+        cuePan + alongshoreTravel,
+        cuePan - alongshoreTravel,
+        .58 + wind * .16,
+      );
+      if (!night && Math.random() > .68) {
+        this.coastTone(now + .48, 238, 224, .22, .0024 * presence, "sine", cuePan * .72);
+      }
+      return;
+    }
+    if (biome === "tropical") {
+      if (night) {
+        for (let pulse = 0; pulse < 4; pulse += 1) {
+          this.coastTone(
+            now + pulse * .12,
+            2780 + pulse * 120,
+            3180 + pulse * 145,
+            .07,
+            (.0017 + presence * .0022) * (1 - pulse * .1),
+            "sine",
+            cuePan * (1 - pulse * .06),
+          );
+        }
+      } else {
+        this.coastTone(now, 1820, 2580, .2, .0038 * presence, "sine", cuePan);
+        this.coastTone(now + .24, 2380, 1960, .24, .0032 * presence, "sine", cuePan * .92);
+        this.coastNoiseSweep(now + .04, .52, 3750, .38, .003 * presence, "highpass", cuePan * .86, cuePan * .66, 1.22);
+      }
+      return;
+    }
+    if (biome === "dune") {
+      this.coastNoiseSweep(
+        now,
+        .82 + wind * .4,
+        1380 + wind * 520,
+        .46,
+        (.004 + wind * .006) * presence,
+        "bandpass",
+        cuePan,
+        cuePan * .58,
+        .9 + wind * .18,
+      );
+      if (!night) {
+        this.coastTone(now + .16, 1540, 2240, .18, .0032 * presence, "sine", cuePan);
+        this.coastTone(now + .42, 1880, 1460, .2, .0025 * presence, "sine", cuePan * .9);
+      }
+      return;
+    }
+    if (biome === "rugged") {
+      this.coastNoiseSweep(
+        now,
+        1.7 + wind * .65,
+        330 + wind * 310,
+        1.14,
+        (.009 + wind * .014) * presence,
+        "bandpass",
+        cuePan,
+        cuePan * .36,
+        .46 + wind * .12,
+      );
+      this.coastTone(now + .3, 104, 76, .82, .0038 * presence, "sine", cuePan * .62);
+      return;
+    }
+    if (biome === "cold") {
+      this.coastNoiseSweep(
+        now,
+        1.1 + wind * .5,
+        560 + wind * 410,
+        .74,
+        (.006 + wind * .008) * presence,
+        "bandpass",
+        cuePan,
+        cuePan * .52,
+        .68 + wind * .12,
+      );
+      if (!night) {
+        this.coastTone(now + .12, 780, 535, .38, .0035 * presence, "triangle", cuePan);
+        this.coastTone(now + .52, 620, 470, .29, .0024 * presence, "triangle", cuePan * .9);
+      }
+      return;
+    }
+    if (biome === "volcanic") {
+      this.coastNoiseSweep(now, .76, 930 + wind * 420, .58, .0048 * presence, "bandpass", cuePan, cuePan * .62, .8);
+      if (!night) {
+        this.coastTone(now + .06, 2120, 2140, .24, .0036 * presence, "sine", cuePan);
+        this.coastTone(now + .32, 2660, 2580, .18, .003 * presence, "sine", cuePan * .92);
+        this.coastTone(now + .57, 1810, 2320, .2, .0028 * presence, "sine", cuePan * .84);
+      }
+      return;
+    }
+    this.coastNoiseSweep(
+      now,
+      .48 + wind * .38,
+      2450 + wind * 1450,
+      .36,
+      (.004 + wind * .007) * presence,
+      "highpass",
+      cuePan,
+      cuePan * .42,
+      1.08 + wind * .16,
+    );
+    if (!night) {
+      this.coastTone(now + .1, 1340, 1840, .22, .0026 * presence, "sine", cuePan);
+    }
+  }
+
+  private coastNoiseSweep(
+    now: number,
+    duration: number,
+    frequency: number,
+    q: number,
+    gainValue: number,
+    filterType: BiquadFilterType,
+    fromPan: number,
+    toPan: number,
+    playbackRate: number,
+  ) {
+    if (!this.context || !this.noiseBuffer || !this.worldGain) return;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    const panner = this.context.createStereoPanner();
+    source.buffer = this.noiseBuffer;
+    source.playbackRate.value = playbackRate;
+    filter.type = filterType;
+    filter.frequency.value = frequency;
+    filter.Q.value = q;
+    panner.pan.setValueAtTime(Math.max(-1, Math.min(1, fromPan)), now);
+    panner.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, toPan)), now + duration);
+    gain.gain.setValueAtTime(.0001, now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0002, gainValue), now + Math.min(.18, duration * .22));
+    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    source.connect(filter).connect(gain).connect(panner).connect(this.worldGain);
+    const maxOffset = Math.max(0, this.noiseBuffer.duration - duration - .05);
+    source.start(now, Math.random() * maxOffset, duration + .02);
+    source.stop(now + duration + .04);
+  }
+
+  private coastTone(
+    now: number,
+    from: number,
+    to: number,
+    duration: number,
+    gainValue: number,
+    type: OscillatorType,
+    pan: number,
+  ) {
+    if (!this.context || !this.worldGain) return;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+    const panner = this.context.createStereoPanner();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(Math.max(1, from), now);
+    oscillator.frequency.exponentialRampToValueAtTime(Math.max(1, to), now + duration);
+    gain.gain.setValueAtTime(.0001, now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0002, gainValue), now + Math.min(.025, duration * .2));
+    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    oscillator.connect(gain).connect(panner).connect(this.worldGain);
+    oscillator.start(now);
+    oscillator.stop(now + duration + .03);
+  }
+
   private footstep(now: number, side: number) {
     this.noiseBurst(now, .12, 560 + Math.random() * 150, .9, .052, "bandpass", side * .32, .015);
     this.tone(now, 84, 62, .1, .018, "sine", side * .28, .01);
@@ -1070,8 +1447,11 @@ export class SurfscapeAudio {
   }
 
   private gull(now: number) {
-    const pan = Math.random() * 1.5 - .75;
-    this.tone(now, 980 + Math.random() * 120, 1450 + Math.random() * 180, .34, .009, "sine", pan, .46);
-    this.tone(now + .29, 1320, 900, .29, .006, "sine", pan * .8, .5);
+    const pan = Math.max(
+      -.86,
+      Math.min(.86, this.coastLandwardPan * 1.24 + (Math.random() - .5) * .42),
+    );
+    this.coastTone(now, 980 + Math.random() * 120, 1450 + Math.random() * 180, .34, .009, "sine", pan);
+    this.coastTone(now + .29, 1320, 900, .29, .006, "sine", pan * .8);
   }
 }
