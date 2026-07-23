@@ -74,6 +74,23 @@ const WATER_SIDE_LIMIT = COAST_PLAYABLE_HALF_WIDTH;
 const OCEAN_PLANE_DEPTH = 1250;
 const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z - OCEAN_PLANE_DEPTH * .5;
 
+function cameraWaterEnvelopeAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character: BreakCharacter,
+) {
+  const radius = THREE.MathUtils.clamp(.68 + settings.waveHeight * .11, .72, 1.18);
+  return Math.max(
+    waveHeightAt(x, z, elapsed, settings, character),
+    waveHeightAt(x - radius, z, elapsed, settings, character),
+    waveHeightAt(x + radius, z, elapsed, settings, character),
+    waveHeightAt(x, z - radius, elapsed, settings, character),
+    waveHeightAt(x, z + radius, elapsed, settings, character),
+  );
+}
+
 function useRenderQuality() {
   return useContext(RenderQualityContext);
 }
@@ -687,15 +704,25 @@ const OCEAN_FRAGMENT = /* glsl */ `
       float ceilingCells = noise(vSurface * vec2(.52, .21) + vec2(uTime * .18, -uTime * .11));
       float ceilingVeins = noise(vSurface * vec2(1.42, .62) + vec2(-uTime * .34, uTime * .19));
       float undersideFresnel = pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 3.4);
+      float surfaceFacing = max(.08, abs(dot(surfaceNormal, viewDirection)));
+      float opticalThickness = (
+        .16
+        + abs(vHeight) * .34
+        + vBreaker * .76
+        + foam * .42
+      ) / surfaceFacing;
+      float volumeAbsorption = 1.0 - exp(-opticalThickness * .72);
       float sunThrough = pow(max(0.0, normalize(uSunDirection).y), 1.6) * (1.0 - uCloud * .72);
       float waveLens = pow(max(0.0, ceilingVeins * .72 + ceilingCells * .38 - .58), 3.2);
       vec3 undersideDeep = mix(vec3(.008, .11, .145), vec3(.018, .25, .235), uLight);
       vec3 undersideGlow = mix(vec3(.08, .34, .34), vec3(.38, .83, .68), uLight);
+      vec3 bodyColor = mix(vec3(.003, .055, .082), vec3(.012, .18, .17), uLight * .72);
       vec3 underside = mix(undersideDeep, undersideGlow, (.14 + waveLens * .58) * sunThrough);
       underside += uSunColor * waveLens * sunThrough * (.08 + uLight * .38);
+      underside = mix(underside, bodyColor, volumeAbsorption * (.24 + (1.0 - uLight) * .22));
       underside = mix(underside, vec3(.006, .052, .076), undersideFresnel * .68);
       underside = mix(underside, foamColor * (.52 + uLight * .22), foam * (.5 + ceilingCells * .28));
-      underside *= .78 + ceilingCells * .14 + ceilingVeins * .08;
+      underside *= .76 + ceilingCells * .14 + ceilingVeins * .08 + (1.0 - volumeAbsorption) * .05;
       color = underside;
     }
 
@@ -8076,6 +8103,13 @@ function Simulation({
   const rideGrade = useRef<GameStats["rideGrade"]>("C");
   const rideResult = useRef<"" | "clean" | "wipeout">("");
   const rideResultId = useRef(0);
+  const rideTakeoffQuality = useRef(0);
+  const rideAnalysisDuration = useRef(0);
+  const rideLineIntegral = useRef(0);
+  const rideControlIntegral = useRef(0);
+  const ridePowerIntegral = useRef(0);
+  const rideMaxSpeed = useRef(0);
+  const rideMaxCombo = useRef(1);
   const stamina = useRef(100);
   const maxCombo = useRef(1);
   const maneuver = useRef("");
@@ -8753,6 +8787,13 @@ function Simulation({
           catchQuality.current = committedQuality;
           combo.current = .85 + committedQuality * .95;
           maxCombo.current = Math.max(maxCombo.current, combo.current);
+          rideTakeoffQuality.current = committedQuality;
+          rideAnalysisDuration.current = 0;
+          rideLineIntegral.current = 0;
+          rideControlIntegral.current = 0;
+          ridePowerIntegral.current = 0;
+          rideMaxSpeed.current = catchTransport.speed;
+          rideMaxCombo.current = combo.current;
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
           score.current += Math.round(70 + committedQuality * 420 + setState.energy * 80);
@@ -9039,6 +9080,23 @@ function Simulation({
         barrelIntensity = inBarrel
           ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + tideHollow) + controlQuality * .16, 0, 1)
           : 0;
+        if (!finishing) {
+          const analysisStep = Math.min(delta, .05);
+          const powerQuality = THREE.MathUtils.clamp(
+            setState.energy * .2
+              + waveQuality * .28
+              + Math.min(1, speed / 18) * .24
+              + Math.abs(railLoad) * .14
+              + barrelIntensity * .14,
+            0,
+            1,
+          );
+          rideAnalysisDuration.current += analysisStep;
+          rideLineIntegral.current += lineControl * analysisStep;
+          rideControlIntegral.current += THREE.MathUtils.clamp(controlQuality * (1 - railSlip.current * .12), 0, 1) * analysisStep;
+          ridePowerIntegral.current += powerQuality * analysisStep;
+          rideMaxSpeed.current = Math.max(rideMaxSpeed.current, speed);
+        }
         if (inBarrel && !finishing) {
           barrelTime.current += delta;
           combo.current = Math.min(8, combo.current + delta * 0.23);
@@ -9079,6 +9137,7 @@ function Simulation({
           activeManeuver.current = null;
           trickCharge.current = 0;
         }
+        if (!finishing) rideMaxCombo.current = Math.max(rideMaxCombo.current, combo.current);
         const wantsRelease = !attempt && actionReleased;
         if (!finishing && wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
           const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
@@ -10135,8 +10194,19 @@ function Simulation({
     cameraPosition.current.y += verticalVibration;
     if (submersion < .08) {
       const cameraCoastalZ = cameraPosition.current.z - tideShift;
+      const waterClearance = cameraMode === "pov"
+        ? .3
+        : riding ? .52
+        : paddling ? .46
+        : .38;
       const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
-        ? waveHeightAt(cameraPosition.current.x, cameraPosition.current.z, t, settings, character) + .14
+        ? cameraWaterEnvelopeAt(
+          cameraPosition.current.x,
+          cameraPosition.current.z,
+          t,
+          settings,
+          character,
+        ) + waterClearance + Math.min(.16, settings.waveHeight * .04)
         : .18;
       cameraPosition.current.y = Math.max(cameraPosition.current.y, cameraFloor);
     } else {
@@ -10176,8 +10246,19 @@ function Simulation({
     }
     if (submersion < .08) {
       const cameraCoastalZ = camera.position.z - tideShift;
+      const waterClearance = cameraMode === "pov"
+        ? .28
+        : riding ? .48
+        : paddling ? .42
+        : .34;
       const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
-        ? waveHeightAt(camera.position.x, camera.position.z, t, settings, character) + .12
+        ? cameraWaterEnvelopeAt(
+          camera.position.x,
+          camera.position.z,
+          t,
+          settings,
+          character,
+        ) + waterClearance + Math.min(.14, settings.waveHeight * .035)
         : .16;
       camera.position.set(
         camera.position.x,
@@ -10313,6 +10394,18 @@ function Simulation({
         rideGrade: rideGrade.current,
         rideResult: rideResult.current,
         rideResultId: rideResultId.current,
+        rideTakeoffQuality: rideTakeoffQuality.current,
+        rideLineQuality: rideAnalysisDuration.current > .001
+          ? rideLineIntegral.current / rideAnalysisDuration.current
+          : 0,
+        rideControlQuality: rideAnalysisDuration.current > .001
+          ? rideControlIntegral.current / rideAnalysisDuration.current
+          : 0,
+        ridePowerQuality: rideAnalysisDuration.current > .001
+          ? ridePowerIntegral.current / rideAnalysisDuration.current
+          : 0,
+        rideMaxSpeed: rideMaxSpeed.current,
+        rideMaxCombo: rideMaxCombo.current,
         rideOutProgress,
         vehicleMode: phase.current === "driving",
         vehicleGear: phase.current !== "driving" || (Math.abs(vanSpeed.current) < .35 && Math.abs(vanThrottle.current) < .08)

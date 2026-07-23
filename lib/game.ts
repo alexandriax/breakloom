@@ -386,6 +386,12 @@ export type GameStats = {
   rideGrade: SessionGrade;
   rideResult: "" | "clean" | "wipeout";
   rideResultId: number;
+  rideTakeoffQuality: number;
+  rideLineQuality: number;
+  rideControlQuality: number;
+  ridePowerQuality: number;
+  rideMaxSpeed: number;
+  rideMaxCombo: number;
   rideOutProgress: number;
   vehicleMode: boolean;
   vehicleGear: "P" | "D" | "R";
@@ -463,6 +469,12 @@ export const INITIAL_STATS: GameStats = {
   rideGrade: "C",
   rideResult: "",
   rideResultId: 0,
+  rideTakeoffQuality: 0,
+  rideLineQuality: 0,
+  rideControlQuality: 0,
+  ridePowerQuality: 0,
+  rideMaxSpeed: 0,
+  rideMaxCombo: 1,
   rideOutProgress: 0,
   vehicleMode: false,
   vehicleGear: "P",

@@ -99,9 +99,28 @@ type RideToast = {
   pocketDistance: number;
   maneuvers: number;
   barrelTime: number;
+  takeoffQuality: number;
+  lineQuality: number;
+  controlQuality: number;
+  powerQuality: number;
+  maxSpeed: number;
+  maxCombo: number;
   grade: GameStats["grade"];
 };
 type HeatWave = RideToast & { judgeScore: number };
+type RideAnalysisKey = "entry" | "line" | "control" | "power" | "variety";
+type RideAnalysisCategory = {
+  key: RideAnalysisKey;
+  label: string;
+  value: number;
+};
+type RideAnalysis = {
+  categories: RideAnalysisCategory[];
+  strongest: RideAnalysisKey;
+  focus: RideAnalysisKey;
+  headline: string;
+  detail: string;
+};
 type PassportAward = { level: number; label: string };
 type WetLensEvent = {
   id: number;
@@ -218,13 +237,93 @@ function formatHeatClock(seconds: number) {
 }
 
 function judgeHeatWave(ride: RideToast) {
-  const execution = Math.min(4.1, Math.log1p(Math.max(0, ride.score)) / Math.log(12001) * 4.1);
-  const line = Math.min(1.8, ride.distance / 70 * 1.8);
+  const execution = Math.min(2.8, Math.log1p(Math.max(0, ride.score)) / Math.log(12001) * 2.8);
+  const entry = THREEClamp(ride.takeoffQuality, 0, 1) * .4;
+  const control = THREEClamp(ride.controlQuality, 0, 1) * .9;
+  const power = THREEClamp(ride.powerQuality, 0, 1) * .7;
+  const line = Math.min(1.5, ride.distance / 70 * 1.5);
   const pocket = Math.min(1.1, ride.pocketDistance / 30 * 1.1);
-  const variety = Math.min(1.2, ride.maneuvers * .42);
-  const barrel = Math.min(1.35, ride.barrelTime * .42);
-  const completion = ride.result === "clean" ? .45 : -.68;
-  return Math.round(THREEClamp(execution + line + pocket + variety + barrel + completion, .2, 10) * 100) / 100;
+  const variety = Math.min(1, ride.maneuvers * .36);
+  const barrel = Math.min(1.1, ride.barrelTime * .36);
+  const completion = ride.result === "clean" ? .4 : -.62;
+  return Math.round(THREEClamp(execution + entry + control + power + line + pocket + variety + barrel + completion, .2, 10) * 100) / 100;
+}
+
+function rideAnalysisFor(ride: RideToast, board: BoardType): RideAnalysis {
+  const percent = (value: number) => Math.round(THREEClamp(value, 0, 1) * 100);
+  const variety = THREEClamp(
+    Math.min(1, ride.maneuvers / 3) * .62
+      + Math.min(1, ride.barrelTime / 3) * .23
+      + Math.min(1, Math.max(0, ride.maxCombo - 1) / 3) * .15,
+    0,
+    1,
+  );
+  const categories: RideAnalysisCategory[] = [
+    { key: "entry", label: "ENTRY", value: percent(ride.takeoffQuality) },
+    { key: "line", label: "LINE", value: percent(ride.lineQuality) },
+    { key: "control", label: "CONTROL", value: percent(ride.controlQuality) },
+    { key: "power", label: "POWER", value: percent(ride.powerQuality) },
+    { key: "variety", label: "VARIETY", value: percent(variety) },
+  ];
+  const strongest = categories.reduce((best, category) => category.value > best.value ? category : best);
+  const focus = categories.reduce((weakest, category) => category.value < weakest.value ? category : weakest);
+  const powerDetail = board === "longboard"
+    ? "Trim forward through soft water, then step back before the turn so the long rail can redirect without stalling."
+    : board === "fish"
+      ? "Keep the twin-fin moving through the soft section, then load one clean arc instead of forcing a tight pivot."
+      : "Build speed with nose pressure, shift to the tail, then release one committed rail turn through the steepest section.";
+  const varietyDetail = board === "longboard"
+    ? "Link high-line trim, nose time, and one clean cutback so the line changes rhythm without losing glide."
+    : board === "fish"
+      ? "Mix a high line with a roundhouse or tail release; use the fish's carry to connect the sections."
+      : "Hold through compression and release at the lip; connect two different move families before the inside.";
+  const coaching: Record<RideAnalysisKey, { headline: string; detail: string }> = {
+    entry: {
+      headline: "READ THE CREST LONGER",
+      detail: "Finish turning shoreward and let the catch pulse tighten above 70%, then commit through the final strokes.",
+    },
+    line: {
+      headline: "FOLLOW THE POWER SEAM",
+      detail: "Use the caustic seam as your reference: too deep closes the section, while too wide drops the board off power.",
+    },
+    control: {
+      headline: "QUIET THE CORRECTIONS",
+      detail: "Make smaller balance inputs and unwind the rail when grip falls below 50% before loading another move.",
+    },
+    power: {
+      headline: "CREATE SPEED BEFORE RISK",
+      detail: powerDetail,
+    },
+    variety: {
+      headline: "BUILD A SECOND IDEA",
+      detail: varietyDetail,
+    },
+  };
+  const average = categories.reduce((total, category) => total + category.value, 0) / categories.length;
+  if (ride.result === "clean" && average >= 78) {
+    return {
+      categories,
+      strongest: strongest.key,
+      focus: focus.key,
+      headline: "COMPLETE PERFORMANCE",
+      detail: `${strongest.label.toLowerCase()} led the ride at ${strongest.value}%. Keep the same rhythm and add risk only where the wall steepens.`,
+    };
+  }
+  if (ride.result === "wipeout") {
+    return {
+      categories,
+      strongest: strongest.key,
+      focus: focus.key,
+      headline: "BANK THE FINISH",
+      detail: `${coaching[focus.key].detail} When the section turns white, release the rail and settle the ride-out.`,
+    };
+  }
+  return {
+    categories,
+    strongest: strongest.key,
+    focus: focus.key,
+    ...coaching[focus.key],
+  };
 }
 
 function coastMasteryLabel(mastery: number) {
@@ -1809,6 +1908,12 @@ export default function SurfscapeApp() {
         pocketDistance: stats.pocketDistance,
         maneuvers: stats.rideManeuvers,
         barrelTime: stats.barrelTime,
+        takeoffQuality: stats.rideTakeoffQuality,
+        lineQuality: stats.rideLineQuality,
+        controlQuality: stats.rideControlQuality,
+        powerQuality: stats.ridePowerQuality,
+        maxSpeed: stats.rideMaxSpeed,
+        maxCombo: stats.rideMaxCombo,
         grade: stats.rideGrade,
       };
       setRideToast(completedRide);
@@ -1820,13 +1925,13 @@ export default function SurfscapeApp() {
           }, 0)
         : null;
       setShareStatus("idle");
-      const timer = window.setTimeout(() => setRideToast(null), 8200);
+      const timer = window.setTimeout(() => setRideToast(null), 10800);
       return () => {
         if (heatScoreTimer !== null) window.clearTimeout(heatScoreTimer);
         window.clearTimeout(timer);
       };
     }
-  }, [heatComplete, sessionFormat, stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore]);
+  }, [heatComplete, sessionFormat, stats.barrelTime, stats.pocketDistance, stats.rideControlQuality, stats.rideDistance, stats.rideGrade, stats.rideLineQuality, stats.rideManeuvers, stats.rideMaxCombo, stats.rideMaxSpeed, stats.ridePowerQuality, stats.rideResult, stats.rideResultId, stats.rideScore, stats.rideTakeoffQuality]);
 
   useEffect(() => {
     if (sessionFormat !== "heat" || !heatExpired || heatComplete) return;
@@ -1876,6 +1981,12 @@ export default function SurfscapeApp() {
       pocketDistance: stats.pocketDistance,
       maneuvers: stats.rideManeuvers,
       barrelTime: stats.barrelTime,
+      takeoffQuality: stats.rideTakeoffQuality,
+      lineQuality: stats.rideLineQuality,
+      controlQuality: stats.rideControlQuality,
+      powerQuality: stats.ridePowerQuality,
+      maxSpeed: stats.rideMaxSpeed,
+      maxCombo: stats.rideMaxCombo,
       grade: stats.rideGrade,
     };
     const previousRecord = passport[beach.id] ?? EMPTY_COAST_RECORD;
@@ -1909,7 +2020,7 @@ export default function SurfscapeApp() {
         haptic(nextMastery >= 3 ? [14, 24, 14, 32, 24, 42] : [10, 20, 14, 26]);
       }, 0);
     }
-  }, [beach.id, passport, settings.mode, stats.barrelTime, stats.pocketDistance, stats.rideDistance, stats.rideGrade, stats.rideManeuvers, stats.rideResult, stats.rideResultId, stats.rideScore, zoneLabel]);
+  }, [beach.id, passport, settings.mode, stats.barrelTime, stats.pocketDistance, stats.rideControlQuality, stats.rideDistance, stats.rideGrade, stats.rideLineQuality, stats.rideManeuvers, stats.rideMaxCombo, stats.rideMaxSpeed, stats.ridePowerQuality, stats.rideResult, stats.rideResultId, stats.rideScore, stats.rideTakeoffQuality, zoneLabel]);
 
   useEffect(() => {
     let disposed = false;
@@ -2506,6 +2617,7 @@ export default function SurfscapeApp() {
   const heatWaveForToast = rideToast
     ? heatWaves.find((wave) => wave.id === rideToast.id) ?? { ...rideToast, judgeScore: judgeHeatWave(rideToast) }
     : null;
+  const rideAnalysis = rideToast ? rideAnalysisFor(rideToast, settings.board) : null;
   const heatWaveNumber = rideToast
     ? Math.max(1, heatWaves.findIndex((wave) => wave.id === rideToast.id) + 1 || heatWaves.length + 1)
     : heatWaves.length;
@@ -3450,7 +3562,29 @@ export default function SurfscapeApp() {
               <div className="ride-recap-copy">
                 <span>{sessionFormat === "heat" ? `HEAT WAVE ${String(heatWaveNumber).padStart(2, "0")} · ${rideToast.result === "clean" ? "MADE" : "INCOMPLETE"}` : rideToast.result === "clean" ? "WAVE COMPLETE" : "WIPEOUT / RESET"}</span>
                 <strong>{sessionFormat === "heat" ? `${heatWaveForToast?.judgeScore.toFixed(2)} / 10` : `${rideToast.score.toLocaleString()} PTS`}</strong>
-                <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel{sessionFormat === "heat" ? ` · ${rideToast.score.toLocaleString()} raw` : ""}</small>
+                <small>{rideToast.distance.toFixed(0)} m line · {rideToast.pocketDistance.toFixed(0)} m pocket · {rideToast.maneuvers} moves · {rideToast.barrelTime.toFixed(1)}s barrel · {rideToast.maxSpeed.toFixed(1)} m/s peak · {rideToast.maxCombo.toFixed(1)}× flow{sessionFormat === "heat" ? ` · ${rideToast.score.toLocaleString()} raw` : ""}</small>
+                {rideAnalysis && (
+                  <div className="ride-analysis">
+                    <div className="ride-analysis-bars" aria-label="Physics-based ride analysis">
+                      {rideAnalysis.categories.map((category, index) => (
+                        <article
+                          key={category.key}
+                          className={`${category.key === rideAnalysis.strongest ? "is-strength" : ""} ${category.key === rideAnalysis.focus ? "is-focus" : ""}`}
+                          aria-label={`${category.label} ${category.value} percent`}
+                        >
+                          <span>{category.label}</span>
+                          <strong>{category.value}</strong>
+                          <i><b style={{ width: `${category.value}%`, animationDelay: `${.16 + index * .08}s` }} /></i>
+                        </article>
+                      ))}
+                    </div>
+                    <p>
+                      <span>COACH CALL</span>
+                      <strong>{rideAnalysis.headline}</strong>
+                      <small>{rideAnalysis.detail}</small>
+                    </p>
+                  </div>
+                )}
                 {passportAward && (
                   <em className={`passport-award level-${passportAward.level}`}>
                     <Trophy />
