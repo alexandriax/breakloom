@@ -7192,6 +7192,221 @@ function RoadSurface({ weatherCode, light }: { weatherCode: number; light: numbe
   );
 }
 
+const WET_SAND_VERTEX = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vUv = uv;
+    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const WET_SAND_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform sampler2D uSandMap;
+  uniform vec2 uTextureRepeat;
+  uniform float uTime;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uRain;
+  uniform float uWeatherWetness;
+  uniform float uWind;
+  uniform float uShorelineZ;
+  uniform vec2 uWindVector;
+  uniform vec3 uBaseColor;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  float fbm(vec2 p) {
+    float value = noise(p) * .56;
+    value += noise(p * 2.03 + vec2(7.2, -3.8)) * .29;
+    value += noise(p * 4.11 + vec2(-11.3, 6.1)) * .15;
+    return value;
+  }
+
+  void main() {
+    vec2 world = vWorldPosition.xz;
+    vec2 windDirection = normalize(uWindVector + vec2(.0001));
+    vec2 windTangent = vec2(-windDirection.y, windDirection.x);
+    vec2 windSpace = vec2(dot(world, windDirection), dot(world, windTangent));
+    float shoreDistance = max(0.0, vWorldPosition.z - uShorelineZ);
+    float tideSaturation = 1.0 - smoothstep(5.5, 24.0, shoreDistance);
+    float runup = sin(uTime * .31 + world.x * .021) * .5 + .5;
+    float runupBand = 1.0 - smoothstep(
+      2.6,
+      10.8,
+      abs(shoreDistance - (7.2 + runup * 3.8 + sin(world.x * .047 + uTime * .13) * .75))
+    );
+    float broadPools = fbm(world * vec2(.038, .11) + vec2(uTime * .006, 0.0));
+    float puddles = smoothstep(.5, .73, broadPools + tideSaturation * .17 + uWeatherWetness * .23);
+    float drainageNoise = fbm(vec2(world.x * .19, world.z * .058 - uTime * .032));
+    float drainage = smoothstep(.66, .84, drainageNoise);
+    drainage *= smoothstep(4.0, 18.0, shoreDistance) * (1.0 - smoothstep(18.0, 26.0, shoreDistance));
+    float film = clamp(
+      tideSaturation * (.46 + puddles * .46)
+      + runupBand * .32
+      + drainage * .16
+      + uWeatherWetness * (.22 + puddles * .34),
+      0.0,
+      1.0
+    );
+
+    vec3 sandTexture = texture2D(uSandMap, vUv * uTextureRepeat).rgb;
+    float grain = dot(sandTexture, vec3(.26, .57, .17));
+    vec3 drySand = uBaseColor * mix(.7, 1.18, grain);
+    drySand *= .91 + fbm(world * vec2(.42, .7)) * .14;
+    vec3 saturatedSand = drySand * vec3(.42, .49, .47);
+    saturatedSand = mix(saturatedSand, vec3(.055, .09, .087), puddles * .22 + drainage * .08);
+
+    float rippleStrength = (.012 + uWind * .023) * film;
+    float rippleA = sin(windSpace.x * 2.2 + windSpace.y * .47 - uTime * (1.2 + uWind * .72));
+    float rippleB = sin(windSpace.x * 4.7 - windSpace.y * .82 - uTime * (1.8 + uWind));
+    float microX = dFdx(grain) * 9.0 + windTangent.x * (rippleA + rippleB * .38) * rippleStrength;
+    float microZ = dFdy(grain) * 9.0 + windTangent.y * (rippleA + rippleB * .38) * rippleStrength;
+    vec3 surfaceNormal = normalize(vec3(-microX, 1.0, -microZ));
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    float fresnel = .025 + .975 * pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 5.0);
+    float grazing = pow(1.0 - abs(viewDirection.y), 2.5);
+
+    vec3 skyReflection = mix(vec3(.085, .19, .205), vec3(.37, .59, .58), uLight);
+    skyReflection = mix(skyReflection, vec3(.16, .2, .22), uCloud * .58);
+    float reflectionBreakup = .72 + noise(windSpace * vec2(.72, 1.64) + vec2(-uTime * .08, uTime * .025)) * .28;
+    vec3 color = mix(drySand, saturatedSand, film);
+    color = mix(
+      color,
+      skyReflection * reflectionBreakup,
+      film * (fresnel * (.48 + puddles * .3) + grazing * puddles * .16)
+    );
+
+    vec3 reflectedSun = reflect(-normalize(uSunDirection), surfaceNormal);
+    float sunPath = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(58.0, 112.0, 1.0 - uWind * .34));
+    float sunBreakup = smoothstep(.38, .83, noise(vec2(world.x * .34 - uTime * .05, world.z * .58)));
+    sunPath *= sunBreakup * film * (1.0 - uCloud * .82);
+    color += uSunColor * sunPath * (.24 + uLight * 1.22);
+
+    if (uRain > .01) {
+      vec2 rainUv = world * 1.12;
+      vec2 rainCell = floor(rainUv);
+      vec2 rainPoint = fract(rainUv) - .5;
+      float rainPhase = fract(uTime * 1.52 + hash(rainCell) * 1.91);
+      float rainRing = 1.0 - smoothstep(.022, .07, abs(length(rainPoint) - rainPhase * .58));
+      rainRing *= (1.0 - rainPhase) * uRain * film;
+      color += vec3(.24, .43, .44) * rainRing * (.08 + uLight * .16);
+    }
+
+    float mica = smoothstep(.965, .994, hash(floor(world * 6.7))) * (1.0 - film * .76);
+    color += uSunColor * mica * (.025 + uLight * .075);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+function WetSandSurface({
+  texture,
+  color,
+  windSpeed,
+  windDirection,
+  coastHeading,
+  tide,
+  weatherCode,
+  light,
+  cloudCover,
+  sunPosition,
+  sunColor,
+  reduced,
+}: {
+  texture: THREE.Texture;
+  color: string;
+  windSpeed: number;
+  windDirection: number;
+  coastHeading: number;
+  tide: number;
+  weatherCode: number;
+  light: number;
+  cloudCover: number;
+  sunPosition: [number, number, number];
+  sunColor: string;
+  reduced: boolean;
+}) {
+  const surface = useRef<THREE.Mesh>(null);
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const profile = useMemo(() => weatherProfile(weatherCode), [weatherCode]);
+  const targetWindVector = useMemo(() => new THREE.Vector2(), []);
+  const uniforms = useMemo(() => ({
+    uSandMap: { value: texture },
+    uTextureRepeat: { value: texture.repeat.clone() },
+    uTime: { value: 0 },
+    uLight: { value: 1 },
+    uCloud: { value: 0 },
+    uRain: { value: 0 },
+    uWeatherWetness: { value: 0 },
+    uWind: { value: 0 },
+    uShorelineZ: { value: SHORELINE_REFERENCE_Z },
+    uWindVector: { value: new THREE.Vector2(0, 1) },
+    uBaseColor: { value: new THREE.Color(color) },
+    uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
+    uSunColor: { value: new THREE.Color("#fff0ca") },
+  }), [color, texture]);
+  const tideShift = shorelineShiftForTide(tide);
+
+  useFrame(({ clock }, delta) => {
+    if (surface.current) {
+      surface.current.position.z = THREE.MathUtils.damp(surface.current.position.z, 21 + tideShift, 2.8, delta);
+    }
+    if (!material.current) return;
+    const values = material.current.uniforms;
+    const relativeWind = THREE.MathUtils.degToRad(windDirection - coastHeading);
+    targetWindVector.set(Math.sin(relativeWind), Math.cos(relativeWind));
+    values.uTime.value = clock.elapsedTime;
+    values.uLight.value = THREE.MathUtils.damp(values.uLight.value, light, 3, delta);
+    values.uCloud.value = THREE.MathUtils.damp(values.uCloud.value, cloudCover / 100, 2.2, delta);
+    values.uRain.value = THREE.MathUtils.damp(values.uRain.value, profile.kind === "rain" ? profile.intensity : 0, 3, delta);
+    values.uWeatherWetness.value = THREE.MathUtils.damp(values.uWeatherWetness.value, weatherWetness(weatherCode), 2.2, delta);
+    values.uWind.value = THREE.MathUtils.damp(values.uWind.value, THREE.MathUtils.clamp(windSpeed / 24, 0, 1.45), 3, delta);
+    values.uShorelineZ.value = THREE.MathUtils.damp(values.uShorelineZ.value, SHORELINE_REFERENCE_Z + tideShift, 2.8, delta);
+    values.uWindVector.value.lerp(targetWindVector, 1 - Math.exp(-delta * 3));
+    values.uBaseColor.value.set(color);
+    values.uSunDirection.value.set(...sunPosition).normalize();
+    values.uSunColor.value.set(sunColor);
+  });
+
+  return (
+    <mesh ref={surface} position={[0, -.43, 21 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[COAST_GEOMETRY_WIDTH, 18]} />
+      {reduced ? (
+        <meshStandardMaterial color={color} map={texture} bumpMap={texture} bumpScale={.025} roughness={.76} metalness={.04} />
+      ) : (
+        <shaderMaterial
+          ref={material}
+          uniforms={uniforms}
+          vertexShader={WET_SAND_VERTEX}
+          fragmentShader={WET_SAND_FRAGMENT}
+        />
+      )}
+    </mesh>
+  );
+}
+
 type VisitorActivity = "walk" | "watch" | "photo" | "relax";
 
 type VisitorPalette = {
@@ -7849,6 +8064,9 @@ function BeachLife({
   coastHeading,
   weatherCode,
   light,
+  cloudCover,
+  sunPosition,
+  sunColor,
   tide,
   playerPosition,
 }: {
@@ -7859,6 +8077,9 @@ function BeachLife({
   coastHeading: number;
   weatherCode: number;
   light: number;
+  cloudCover: number;
+  sunPosition: [number, number, number];
+  sunColor: string;
   tide: number;
   playerPosition: MutableRefObject<THREE.Vector3>;
 }) {
@@ -7866,7 +8087,6 @@ function BeachLife({
   const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const quality = useRenderQuality();
-  const wetSand = useRef<THREE.Mesh>(null);
   const initialChunkIndex = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN);
   const [coastChunkIndex, setCoastChunkIndex] = useState(initialChunkIndex);
   const coastChunkIndexRef = useRef(initialChunkIndex);
@@ -7896,9 +8116,7 @@ function BeachLife({
     volcanic: ["#454744", "#252b2a"],
     desert: ["#c08c62", "#725a49"],
   }[biome];
-  const tideShift = shorelineShiftForTide(tide);
-  useFrame((_, delta) => {
-    if (wetSand.current) wetSand.current.position.z = THREE.MathUtils.damp(wetSand.current.position.z, 21 + tideShift, 2.8, delta);
+  useFrame(() => {
     const nextChunkIndex = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN);
     if (nextChunkIndex !== coastChunkIndexRef.current) {
       coastChunkIndexRef.current = nextChunkIndex;
@@ -7911,10 +8129,20 @@ function BeachLife({
         <planeGeometry args={[COAST_GEOMETRY_WIDTH, 125, 64, 20]} />
         <meshStandardMaterial color={surface[0]} map={sandTexture} bumpMap={sandTexture} bumpScale={0.045} roughness={0.93} metalness={0} />
       </mesh>
-      <mesh ref={wetSand} position={[0, -0.43, 21 + tideShift]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[COAST_GEOMETRY_WIDTH, 18]} />
-        <meshStandardMaterial color={surface[1]} map={wetSandTexture} bumpMap={wetSandTexture} bumpScale={0.025} roughness={0.76} metalness={0.04} />
-      </mesh>
+      <WetSandSurface
+        texture={wetSandTexture}
+        color={surface[1]}
+        windSpeed={windSpeed}
+        windDirection={windDirection}
+        coastHeading={coastHeading}
+        tide={tide}
+        weatherCode={weatherCode}
+        light={light}
+        cloudCover={cloudCover}
+        sunPosition={sunPosition}
+        sunColor={sunColor}
+        reduced={mobileRenderer && quality === "reduced"}
+      />
       <group position={[0, 0, 78]}>
         <RoadSurface weatherCode={weatherCode} light={light} />
         <mesh position={[0, -0.31, -6.5]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -12029,6 +12257,9 @@ function Simulation({
         coastHeading={settings.coastHeading}
         weatherCode={weatherCode}
         light={light}
+        cloudCover={cloudCover}
+        sunPosition={oceanSunPosition}
+        sunColor={sunLightColor}
         tide={settings.tide}
         playerPosition={worldFocus}
       />
