@@ -879,6 +879,7 @@ export default function SurfscapeApp() {
   const previousVehicleSlipWarning = useRef(false);
   const previousPocketLock = useRef(false);
   const previousFaceZone = useRef(0);
+  const previousHydrodynamicLoad = useRef(false);
   const previousResurface = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
   const heatRemainingValue = useRef(HEAT_DURATION_SECONDS);
@@ -1737,6 +1738,8 @@ export default function SurfscapeApp() {
       stats.railGrip,
       stats.trickCharge,
       stats.facePosition,
+      stats.acceleration,
+      stats.lateralForce,
     );
     audio.current?.setWaveField(
       stats.phase,
@@ -1782,7 +1785,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [effectiveFaceHeight, paused, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [effectiveFaceHeight, paused, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1808,6 +1811,14 @@ export default function SurfscapeApp() {
     }
     previousFaceZone.current = faceZone;
   }, [stats.facePosition, stats.phase]);
+
+  useEffect(() => {
+    const loaded = stats.phase === "riding"
+      && Math.abs(stats.lateralForce) > .68
+      && stats.railGrip > .42;
+    if (loaded && !previousHydrodynamicLoad.current) haptic([5, 10, 7]);
+    previousHydrodynamicLoad.current = loaded;
+  }, [stats.lateralForce, stats.phase, stats.railGrip]);
 
   useEffect(() => {
     if (stats.shorebreakId <= 0 || stats.shorebreakId === previousShorebreakId.current) return;
@@ -2500,7 +2511,7 @@ export default function SurfscapeApp() {
     setReplayRequest((request) => request + 1);
     setCameraMode("cinematic");
     audio.current?.effect("coach");
-    audio.current?.setSurf(Math.max(10, stats.speed), true, stats.setEnergy, Math.max(.28, stats.barrelIntensity), stats.railLoad, stats.railGrip, 0, stats.facePosition);
+    audio.current?.setSurf(Math.max(10, stats.speed), true, stats.setEnergy, Math.max(.28, stats.barrelIntensity), stats.railLoad, stats.railGrip, 0, stats.facePosition, stats.acceleration, stats.lateralForce);
     audio.current?.setScore("riding", stats.setEnergy, Math.max(.28, stats.barrelIntensity), settings.timeOfDay, sessionWeatherCode, true);
     haptic([8, 18, 12]);
   };
@@ -2736,6 +2747,11 @@ export default function SurfscapeApp() {
         { label: "Earn A · 25 m pocket · 2 moves or 2s tube", done: currentCoastRecord.mastery >= 3 || liveMasteryThree },
       ];
   const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
+  const hydrodynamicLoadLabel = Math.abs(stats.lateralForce) > .52
+    ? `${stats.lateralForce > 0 ? "RIGHT" : "LEFT"} RAIL LOADED`
+    : Math.max(0, stats.acceleration) > .48
+      ? "BOARD DRIVING"
+      : stanceLabel;
   const faceLabel = stats.facePosition > .56
     ? "LIP LINE"
     : stats.facePosition < -.56
@@ -2849,7 +2865,13 @@ export default function SurfscapeApp() {
       } as CSSProperties
     : undefined;
   const velocityIntensity = stats.phase === "riding"
-    ? Math.min(.34, Math.max(0, stats.speed - 8.5) * .026 + stats.barrelIntensity * .11)
+    ? Math.min(
+      .4,
+      Math.max(0, stats.speed - 8.5) * .026
+        + stats.barrelIntensity * .11
+        + Math.max(0, stats.acceleration) * .065
+        + Math.abs(stats.lateralForce) * .045,
+    )
     : 0;
   const cinemaBeat = rideToast?.result ?? (maneuverToast ? "maneuver" : takeoffToast ? "takeoff" : null);
   const cinemaBeatKey = rideToast?.id ?? maneuverToast?.id ?? (takeoffToast ? Math.round(takeoffToast.quality * 100) : 0);
@@ -3728,7 +3750,7 @@ export default function SurfscapeApp() {
 
           <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""} ${ridingOut ? "is-exit" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
-              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : stanceLabel}</em></span>
+              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : hydrodynamicLoadLabel}</em></span>
               <strong>{ridingOut ? `${Math.round(stats.rideOutProgress * 100)}%` : `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%`}</strong>
             </div>
             <div className="balance-track">
