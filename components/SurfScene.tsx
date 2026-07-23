@@ -461,6 +461,8 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 color = mix(deep, lagoon, crestLight * .48);
     vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
+    bool underwaterSide = !gl_FrontFacing;
+    if (underwaterSide) surfaceNormal *= -1.0;
     float wind = clamp(uWind / 24.0, .0, 1.45);
     float windAngle = radians(uWindDirection - uCoastHeading);
     vec2 windDir = vec2(sin(windAngle), cos(windAngle));
@@ -528,6 +530,22 @@ const OCEAN_FRAGMENT = /* glsl */ `
     color = mix(color, foamColor, foam);
     color = mix(color, vec3(.018, .041, .065), uCloud * .2);
     color *= .91 + noise(vSurface * 3.1 + uTime * .08) * .09;
+
+    if (underwaterSide) {
+      float ceilingCells = noise(vSurface * vec2(.52, .21) + vec2(uTime * .18, -uTime * .11));
+      float ceilingVeins = noise(vSurface * vec2(1.42, .62) + vec2(-uTime * .34, uTime * .19));
+      float undersideFresnel = pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 3.4);
+      float sunThrough = pow(max(0.0, normalize(uSunDirection).y), 1.6) * (1.0 - uCloud * .72);
+      float waveLens = pow(max(0.0, ceilingVeins * .72 + ceilingCells * .38 - .58), 3.2);
+      vec3 undersideDeep = mix(vec3(.008, .11, .145), vec3(.018, .25, .235), uLight);
+      vec3 undersideGlow = mix(vec3(.08, .34, .34), vec3(.38, .83, .68), uLight);
+      vec3 underside = mix(undersideDeep, undersideGlow, (.14 + waveLens * .58) * sunThrough);
+      underside += uSunColor * waveLens * sunThrough * (.08 + uLight * .38);
+      underside = mix(underside, vec3(.006, .052, .076), undersideFresnel * .68);
+      underside = mix(underside, foamColor * (.52 + uLight * .22), foam * (.5 + ceilingCells * .28));
+      underside *= .78 + ceilingCells * .14 + ceilingVeins * .08;
+      color = underside;
+    }
 
     float cameraDistance = length(cameraPosition - vWorldPosition);
     float hazeStart = max(24.0, uVisibility * .18);
@@ -638,6 +656,393 @@ function Ocean({
         side={THREE.DoubleSide}
       />
     </mesh>
+  );
+}
+
+function seabedKind(character: BreakCharacter) {
+  if (character.kind === "canyon") return 3;
+  if (character.kind === "slab") return 2;
+  if (character.kind === "reef" || character.kind === "point") return 1;
+  return 0;
+}
+
+function seabedDepthAt(x: number, coastalZ: number, kind: number) {
+  const offshore = Math.max(0, SHORELINE_REFERENCE_Z - coastalZ);
+  const baseDepth = .55
+    + Math.min(6.2, offshore * .066)
+    + Math.min(25, Math.max(0, -coastalZ - 74) * .033);
+  const shallowMask = THREE.MathUtils.smoothstep(coastalZ, -115, 4);
+  const sandbar = Math.sin(coastalZ * .46 + Math.sin(x * .12) * 1.8) * .14 * shallowMask;
+  const reefMask = kind >= 1 && kind < 3 ? 1 : 0;
+  const reefRelief = reefMask
+    * Math.sin(x * .19 + coastalZ * .07)
+    * Math.cos(x * .083 - coastalZ * .11)
+    * .32
+    * shallowMask;
+  const slabShelf = kind === 2
+    ? THREE.MathUtils.smoothstep(coastalZ, -68, -24) * 1.05
+    : 0;
+  const canyonCut = kind === 3
+    ? Math.exp(-(x * x) / 230) * THREE.MathUtils.smoothstep(coastalZ, -150, -28) * 6.4
+    : 0;
+  return Math.max(.38, baseDepth - sandbar - reefRelief - slabShelf + canyonCut);
+}
+
+const SEABED_VERTEX = /* glsl */ `
+  uniform float uKind;
+  varying vec2 vSurface;
+  varying float vDepth;
+  varying float vRelief;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    vec2 origin = position.xy;
+    vec2 surface = vec2(origin.x, -origin.y + ${OCEAN_CENTER_Z.toFixed(1)});
+    float offshore = max(0.0, ${SHORELINE_REFERENCE_Z.toFixed(1)} - surface.y);
+    float baseDepth = .55
+      + min(6.2, offshore * .066)
+      + min(25.0, max(0.0, -surface.y - 74.0) * .033);
+    float shallowMask = smoothstep(-115.0, 4.0, surface.y);
+    float sandbar = sin(surface.y * .46 + sin(surface.x * .12) * 1.8) * .14 * shallowMask;
+    float reefMask = step(.5, uKind) * (1.0 - step(2.5, uKind));
+    float reefRelief = reefMask
+      * sin(surface.x * .19 + surface.y * .07)
+      * cos(surface.x * .083 - surface.y * .11)
+      * .32
+      * shallowMask;
+    float slabShelf = step(1.5, uKind) * (1.0 - step(2.5, uKind))
+      * smoothstep(-68.0, -24.0, surface.y)
+      * 1.05;
+    float canyonCut = step(2.5, uKind)
+      * exp(-(surface.x * surface.x) / 230.0)
+      * smoothstep(-150.0, -28.0, surface.y)
+      * 6.4;
+    float depth = max(.38, baseDepth - sandbar - reefRelief - slabShelf + canyonCut);
+    vec3 p = position;
+    p.z = -depth;
+    vSurface = surface;
+    vDepth = depth;
+    vRelief = reefRelief + slabShelf - canyonCut * .12;
+    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+
+const SEABED_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uOpacity;
+  uniform float uKind;
+  uniform float uWaveDirection;
+  uniform float uCurrentDirection;
+  uniform float uCoastHeading;
+  uniform float uCurrent;
+  uniform vec3 uSandColor;
+  uniform vec3 uFogColor;
+  varying vec2 vSurface;
+  varying float vDepth;
+  varying float vRelief;
+  varying vec3 vWorldPosition;
+
+  float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * .1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float noise(vec2 p) {
+    vec2 cell = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(cell);
+    float b = hash(cell + vec2(1.0, 0.0));
+    float c = hash(cell + vec2(0.0, 1.0));
+    float d = hash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  }
+
+  void main() {
+    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    if (normal.y < 0.0) normal *= -1.0;
+    float waveAngle = radians(uWaveDirection - uCoastHeading);
+    float currentAngle = radians(uCurrentDirection - uCoastHeading);
+    vec2 waveDir = vec2(sin(waveAngle), cos(waveAngle));
+    vec2 currentDir = vec2(sin(currentAngle), cos(currentAngle));
+    vec2 tangent = vec2(-waveDir.y, waveDir.x);
+    vec2 flowUv = vec2(dot(vSurface, tangent), dot(vSurface, waveDir));
+    flowUv += currentDir * uTime * (.08 + uCurrent * .035);
+
+    float cellA = 1.0 - abs(sin(flowUv.x * .72 + sin(flowUv.y * .31 - uTime * .72) * 1.35));
+    float cellB = 1.0 - abs(sin(flowUv.y * .57 - cos(flowUv.x * .26 + uTime * .51) * 1.2));
+    float caustic = pow(max(0.0, cellA * cellB), 4.2);
+    caustic *= exp(-vDepth * .115) * (1.0 - uCloud * .68) * (.28 + uLight * .72);
+
+    float grains = noise(vSurface * 3.7);
+    float coarse = noise(vSurface * .46 + vec2(17.0, -9.0));
+    float ripple = sin(dot(vSurface, normalize(waveDir + currentDir * .22)) * 3.2 + coarse * 1.8);
+    float reefMask = step(.5, uKind);
+    vec3 sand = mix(uSandColor * .34, uSandColor * .68 + vec3(.025, .045, .025), grains);
+    vec3 reef = mix(vec3(.055, .105, .095), vec3(.18, .225, .17), coarse);
+    vec3 color = mix(sand, reef, reefMask * (.42 + smoothstep(-.2, .45, vRelief) * .32));
+    color *= .78 + ripple * .045 * (1.0 - reefMask * .65);
+    color += vec3(.21, .64, .49) * caustic * (.45 + uLight * .8);
+
+    float topLight = .32 + max(0.0, normal.y) * (.35 + uLight * .34);
+    color *= topLight;
+    float cameraDistance = length(cameraPosition - vWorldPosition);
+    float waterHaze = 1.0 - exp(-cameraDistance * (.055 + vDepth * .0025));
+    color = mix(color, uFogColor, clamp(waterHaze, 0.0, .94));
+    gl_FragColor = vec4(color, uOpacity);
+  }
+`;
+
+function UnderwaterWorld({
+  motion,
+  settings,
+  character,
+  sandColor,
+  light,
+  cloudCover,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+  sandColor: string;
+  light: number;
+  cloudCover: number;
+  mobile: boolean;
+}) {
+  const quality = useRenderQuality();
+  const floor = useRef<THREE.Mesh>(null);
+  const floorMaterial = useRef<THREE.ShaderMaterial>(null);
+  const rocks = useRef<THREE.InstancedMesh>(null);
+  const rockMaterial = useRef<THREE.MeshStandardMaterial>(null);
+  const opacity = useRef(0);
+  const kind = seabedKind(character);
+  const crossSegments = mobile
+    ? quality === "reduced" ? 30 : quality === "high" ? 48 : 38
+    : quality === "reduced" ? 52 : quality === "balanced" ? 68 : 82;
+  const offshoreSegments = mobile
+    ? quality === "reduced" ? 72 : quality === "high" ? 116 : 92
+    : quality === "reduced" ? 112 : quality === "balanced" ? 148 : 184;
+  const rockCount = mobile
+    ? quality === "reduced" ? 18 : quality === "high" ? 34 : 26
+    : quality === "reduced" ? 34 : quality === "balanced" ? 52 : 68;
+  const bedColor = useMemo(
+    () => new THREE.Color(sandColor).lerp(new THREE.Color(kind >= 1 ? "#315750" : "#6a6952"), kind >= 1 ? .58 : .38),
+    [kind, sandColor],
+  );
+  const fogColor = useMemo(
+    () => new THREE.Color("#074c59").lerp(new THREE.Color("#168074"), light * .28),
+    [light],
+  );
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uLight: { value: light },
+    uCloud: { value: cloudCover / 100 },
+    uOpacity: { value: 0 },
+    uKind: { value: kind },
+    uWaveDirection: { value: settings.waveDirection },
+    uCurrentDirection: { value: settings.currentDirection },
+    uCoastHeading: { value: settings.coastHeading },
+    uCurrent: { value: settings.currentStrength },
+    uSandColor: { value: bedColor.clone() },
+    uFogColor: { value: fogColor.clone() },
+  }), [bedColor, cloudCover, fogColor, kind, light, settings.coastHeading, settings.currentDirection, settings.currentStrength, settings.waveDirection]);
+  const rockMatrices = useMemo(() => {
+    const dummy = new THREE.Object3D();
+    const matrices: THREE.Matrix4[] = [];
+    for (let index = 0; index < rockCount; index += 1) {
+      const x = (seededRandom(index, 1111) - .5) * 252;
+      const z = -7 - seededRandom(index, 1112) * 116;
+      const reefScale = kind >= 1 ? 1.45 : .72;
+      const width = (.16 + seededRandom(index, 1113) * .52) * reefScale;
+      const height = (.11 + seededRandom(index, 1114) * .42) * reefScale;
+      const length = (.18 + seededRandom(index, 1115) * .62) * reefScale;
+      dummy.position.set(x, -seabedDepthAt(x, z, kind) + height * .36, z);
+      dummy.rotation.set(
+        seededRandom(index, 1116) * .42,
+        seededRandom(index, 1117) * Math.PI,
+        (seededRandom(index, 1118) - .5) * .38,
+      );
+      dummy.scale.set(width, height, length);
+      dummy.updateMatrix();
+      matrices.push(dummy.matrix.clone());
+    }
+    return matrices;
+  }, [kind, rockCount]);
+
+  useEffect(() => {
+    if (!rocks.current) return;
+    rockMatrices.forEach((matrix, index) => rocks.current?.setMatrixAt(index, matrix));
+    rocks.current.instanceMatrix.needsUpdate = true;
+    rocks.current.computeBoundingSphere();
+  }, [rockMatrices]);
+
+  useFrame(({ clock }, delta) => {
+    const target = THREE.MathUtils.smoothstep(motion.current.submersion, .015, .24);
+    opacity.current = THREE.MathUtils.damp(opacity.current, target, target > opacity.current ? 12 : 6, delta);
+    const visible = opacity.current > .004 || target > .004;
+    if (floor.current) floor.current.visible = visible;
+    if (rocks.current) rocks.current.visible = visible;
+    if (floorMaterial.current) {
+      const values = floorMaterial.current.uniforms;
+      values.uTime.value = clock.elapsedTime;
+      values.uLight.value = light;
+      values.uCloud.value = cloudCover / 100;
+      values.uOpacity.value = opacity.current;
+      values.uKind.value = kind;
+      values.uWaveDirection.value = settings.waveDirection;
+      values.uCurrentDirection.value = settings.currentDirection;
+      values.uCoastHeading.value = settings.coastHeading;
+      values.uCurrent.value = settings.currentStrength;
+      values.uSandColor.value.copy(bedColor);
+      values.uFogColor.value.copy(fogColor);
+    }
+    if (rockMaterial.current) {
+      rockMaterial.current.opacity = opacity.current * .96;
+      rockMaterial.current.emissiveIntensity = causticRockGlow(clock.elapsedTime, light, cloudCover);
+    }
+  });
+
+  return (
+    <>
+      <mesh
+        ref={floor}
+        visible={false}
+        position={[0, 0, OCEAN_CENTER_Z]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <planeGeometry args={[280, OCEAN_PLANE_DEPTH, crossSegments, offshoreSegments]} />
+        <shaderMaterial
+          ref={floorMaterial}
+          uniforms={uniforms}
+          vertexShader={SEABED_VERTEX}
+          fragmentShader={SEABED_FRAGMENT}
+          transparent
+          depthWrite
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <instancedMesh ref={rocks} args={[undefined, undefined, rockCount]} visible={false} receiveShadow>
+        <icosahedronGeometry args={[1, 1]} />
+        <meshStandardMaterial
+          ref={rockMaterial}
+          color={bedColor}
+          emissive="#1b675c"
+          emissiveIntensity={0}
+          roughness={.94}
+          metalness={0}
+          transparent
+          opacity={0}
+        />
+      </instancedMesh>
+    </>
+  );
+}
+
+function causticRockGlow(elapsed: number, light: number, cloudCover: number) {
+  const pulse = .5 + Math.sin(elapsed * 1.08) * .22 + Math.sin(elapsed * 1.71 + 1.4) * .14;
+  return Math.max(0, pulse) * light * (1 - cloudCover / 135) * .12;
+}
+
+const UNDERWATER_SHAFT_VERTEX = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const UNDERWATER_SHAFT_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform float uSeed;
+  varying vec2 vUv;
+
+  void main() {
+    float edge = 1.0 - smoothstep(.08, .5, abs(vUv.x - .5));
+    float vertical = smoothstep(.0, .16, vUv.y) * (1.0 - smoothstep(.76, 1.0, vUv.y));
+    float drift = sin(vUv.y * 13.0 - uTime * .72 + uSeed * 9.0) * .5 + .5;
+    float breakup = smoothstep(.16, .92, drift) * .34 + .66;
+    vec3 color = mix(vec3(.05, .43, .39), vec3(.35, .91, .72), vUv.y);
+    gl_FragColor = vec4(color, edge * vertical * breakup * uOpacity);
+  }
+`;
+
+function UnderwaterLightShafts({
+  motion,
+  light,
+  cloudCover,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  light: number;
+  cloudCover: number;
+  mobile: boolean;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const quality = useRenderQuality();
+  const rayCount = mobile
+    ? quality === "reduced" ? 2 : 3
+    : quality === "reduced" ? 3 : quality === "balanced" ? 4 : 5;
+  const rays = useMemo(() => Array.from({ length: rayCount }, (_, index) => {
+    const height = 5.2 + seededRandom(index, 1211) * 3.4;
+    const x = (seededRandom(index, 1212) - .5) * 11;
+    const z = (seededRandom(index, 1213) - .5) * 9;
+    const width = .72 + seededRandom(index, 1214) * 1.3;
+    const heading = seededRandom(index, 1215) * Math.PI;
+    return { height, x, z, width, heading, seed: seededRandom(index, 1216) };
+  }), [rayCount]);
+  const uniforms = useMemo(
+    () => rays.flatMap((ray) => [0, 1].map(() => ({
+      uTime: { value: 0 },
+      uOpacity: { value: 0 },
+      uSeed: { value: ray.seed },
+    }))),
+    [rays],
+  );
+
+  useFrame(({ clock }, delta) => {
+    const depth = THREE.MathUtils.smoothstep(motion.current.submersion, .06, .72);
+    const target = depth * (.055 + light * .12) * (1 - cloudCover / 155);
+    let visible = target > .002;
+    uniforms.forEach((values) => {
+      values.uTime.value = clock.elapsedTime;
+      values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, target, target > values.uOpacity.value ? 9 : 4.5, delta);
+      visible ||= values.uOpacity.value > .002;
+    });
+    if (group.current) group.current.visible = visible;
+  });
+
+  return (
+    <group ref={group} visible={false} renderOrder={4.6}>
+      {rays.flatMap((ray, index) => [0, 1].map((cross) => (
+        <mesh
+          key={`${index}-${cross}`}
+          position={[ray.x, -ray.height * .5 + .3, ray.z]}
+          rotation={[0, ray.heading + cross * Math.PI / 2, (seededRandom(index, 1217 + cross) - .5) * .16]}
+          renderOrder={4.6}
+        >
+          <planeGeometry args={[ray.width, ray.height]} />
+          <shaderMaterial
+            uniforms={uniforms[index * 2 + cross]}
+            vertexShader={UNDERWATER_SHAFT_VERTEX}
+            fragmentShader={UNDERWATER_SHAFT_FRAGMENT}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        </mesh>
+      )))}
+    </group>
   );
 }
 
@@ -7626,6 +8031,12 @@ function Simulation({
         ? waveHeightAt(cameraPosition.current.x, cameraPosition.current.z, t, settings, character) + .14
         : .18;
       cameraPosition.current.y = Math.max(cameraPosition.current.y, cameraFloor);
+    } else {
+      const bedKind = seabedKind(character);
+      const cameraFloor = -seabedDepthAt(cameraPosition.current.x, cameraPosition.current.z, bedKind) + .18;
+      const targetFloor = -seabedDepthAt(cameraTarget.current.x, cameraTarget.current.z, bedKind) + .1;
+      cameraPosition.current.y = Math.max(cameraPosition.current.y, cameraFloor);
+      cameraTarget.current.y = Math.max(cameraTarget.current.y, targetFloor);
     }
     const cameraResponse = sessionIntroProgress < 1
       ? 5.4
@@ -7652,6 +8063,20 @@ function Simulation({
         camera.position.x,
         Math.max(camera.position.y, cameraFloor),
         camera.position.z,
+      );
+    } else {
+      const bedKind = seabedKind(character);
+      const cameraFloor = -seabedDepthAt(camera.position.x, camera.position.z, bedKind) + .16;
+      const targetFloor = -seabedDepthAt(cameraLookTarget.current.x, cameraLookTarget.current.z, bedKind) + .08;
+      camera.position.set(
+        camera.position.x,
+        Math.max(camera.position.y, cameraFloor),
+        camera.position.z,
+      );
+      cameraLookTarget.current.set(
+        cameraLookTarget.current.x,
+        Math.max(cameraLookTarget.current.y, targetFloor),
+        cameraLookTarget.current.z,
       );
     }
     camera.lookAt(cameraLookTarget.current);
@@ -7878,6 +8303,15 @@ function Simulation({
         hazeColor={fogColor}
         mobile={mobileRenderer}
       />
+      <UnderwaterWorld
+        motion={motion}
+        settings={settings}
+        character={character}
+        sandColor={beach.palette[1]}
+        light={light}
+        cloudCover={cloudCover}
+        mobile={mobileRenderer}
+      />
       <Ocean
         settings={settings}
         character={character}
@@ -7925,6 +8359,7 @@ function Simulation({
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
+        <UnderwaterLightShafts motion={motion} light={light} cloudCover={cloudCover} mobile={mobileRenderer} />
         <UnderwaterSuspendedMatter motion={motion} settings={settings} mobile={mobileRenderer} />
         <SurferModel
           motion={motion}
