@@ -1121,23 +1121,62 @@ const SURFER_JOINT_NAMES = [
 
 type SurferJointName = (typeof SURFER_JOINT_NAMES)[number];
 
-function prepareSurferScene(source: THREE.Group) {
+function prepareSurferScene(source: THREE.Group, accent: string) {
   const model = source.clone(true);
+  const accentColor = new THREE.Color(accent);
   model.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true;
       object.receiveShadow = true;
       object.frustumCulled = true;
+      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      const materials = sourceMaterials.map((sourceMaterial) => {
+        const next = sourceMaterial.clone();
+        if (next instanceof THREE.MeshStandardMaterial) {
+          next.userData.surfscapeBaseRoughness = next.roughness;
+          next.userData.surfscapeBaseEnv = next.envMapIntensity;
+          if (next instanceof THREE.MeshPhysicalMaterial) {
+            next.userData.surfscapeBaseClearcoat = next.clearcoat;
+            next.userData.surfscapeBaseClearcoatRoughness = next.clearcoatRoughness;
+          }
+          const name = next.name.toLowerCase();
+          if (name.includes("liquid sealed") || name.includes("reflective")) {
+            next.color.copy(accentColor).lerp(new THREE.Color("#8ef3df"), name.includes("reflective") ? .36 : .12);
+          }
+        }
+        return next;
+      });
+      object.material = Array.isArray(object.material) ? materials : materials[0];
     }
   });
   return model;
 }
 
-function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }) {
+function PremiumSurferBody({
+  motion,
+  accent,
+  ankleJointRef,
+}: {
+  motion: MutableRefObject<MotionState>;
+  accent: string;
+  ankleJointRef: MutableRefObject<THREE.Object3D | null>;
+}) {
   const { scene } = useGLTF(SURFER_MODEL_URL);
-  const model = useMemo(() => prepareSurferScene(scene), [scene]);
+  const model = useMemo(() => prepareSurferScene(scene, accent), [accent, scene]);
+  const responsiveMaterials = useMemo(() => {
+    const materials = new Set<THREE.MeshStandardMaterial>();
+    model.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const next = Array.isArray(object.material) ? object.material : [object.material];
+      next.forEach((entry) => {
+        if (entry instanceof THREE.MeshStandardMaterial) materials.add(entry);
+      });
+    });
+    return [...materials];
+  }, [model]);
   const locomotionRoot = useRef<THREE.Group>(null);
   const joints = useRef<Partial<Record<SurferJointName, THREE.Object3D>>>({});
+  const wetness = useRef(0);
 
   useEffect(() => {
     const next: Partial<Record<SurferJointName, THREE.Object3D>> = {};
@@ -1146,7 +1185,11 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
       if (joint) next[name] = joint;
     });
     joints.current = next;
-  }, [model]);
+    ankleJointRef.current = next["LowerLeg.R"] ?? null;
+    return () => {
+      ankleJointRef.current = null;
+    };
+  }, [ankleJointRef, model]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
@@ -1156,6 +1199,25 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
     const wading = state.phase === "wading";
     const walking = state.phase === "shore" || wading;
     const wipeout = state.phase === "wipeout";
+    const wetTarget = paddle || riding || wading || wipeout ? 1 : .08;
+    wetness.current = THREE.MathUtils.damp(wetness.current, wetTarget, wetTarget > wetness.current ? 4.8 : .32, delta);
+    responsiveMaterials.forEach((surface) => {
+      const name = surface.name.toLowerCase();
+      const baseRoughness = Number(surface.userData.surfscapeBaseRoughness ?? surface.roughness);
+      const isSkin = name.includes("skin") || name.includes("sclera") || name.includes("lip") || name.includes("nail");
+      const isHair = name.includes("hair") || name.includes("brow");
+      const isNeoprene = name.includes("neoprene") || name.includes("stretch") || name.includes("knee") || name.includes("seam") || name.includes("cuff");
+      const wetRoughness = isHair ? .16 : isSkin ? .27 : isNeoprene ? .24 : Math.max(.2, baseRoughness * .72);
+      surface.roughness = THREE.MathUtils.damp(surface.roughness, THREE.MathUtils.lerp(baseRoughness, wetRoughness, wetness.current), 5, delta);
+      surface.envMapIntensity = THREE.MathUtils.damp(surface.envMapIntensity, THREE.MathUtils.lerp(Number(surface.userData.surfscapeBaseEnv ?? 1), isSkin ? 1.3 : 1.55, wetness.current), 4, delta);
+      if (surface instanceof THREE.MeshPhysicalMaterial) {
+        const wetClearcoat = isHair ? .78 : isSkin ? .32 : isNeoprene ? .4 : .26;
+        const baseClearcoat = Number(surface.userData.surfscapeBaseClearcoat ?? surface.clearcoat);
+        const baseClearcoatRoughness = Number(surface.userData.surfscapeBaseClearcoatRoughness ?? surface.clearcoatRoughness);
+        surface.clearcoat = THREE.MathUtils.damp(surface.clearcoat, THREE.MathUtils.lerp(baseClearcoat, Math.max(baseClearcoat, wetClearcoat), wetness.current), 4, delta);
+        surface.clearcoatRoughness = THREE.MathUtils.damp(surface.clearcoatRoughness, THREE.MathUtils.lerp(baseClearcoatRoughness, isHair ? .12 : .2, wetness.current), 4, delta);
+      }
+    });
     const stroke = paddle ? Math.sin(t * (4.2 + state.paddleEffort * 2.4)) * state.paddleEffort : 0;
     const stride = walking ? THREE.MathUtils.smoothstep(state.speed, .12, 1.3) : 0;
     const cadence = 2.5 + state.speed * (1.48 + state.run * .26);
@@ -1207,6 +1269,10 @@ function PremiumSurferBody({ motion }: { motion: MutableRefObject<MotionState> }
     pose("Foot.L", riding ? -0.18 : walking ? -step * .08 : 0, riding ? 0.08 : 0, riding ? -0.08 : 0, 9);
     pose("Foot.R", riding ? 0.18 : walking ? step * .08 : 0, riding ? -0.08 : 0, riding ? 0.08 : 0, 9);
   });
+
+  useEffect(() => () => {
+    responsiveMaterials.forEach((surface) => surface.dispose());
+  }, [responsiveMaterials]);
 
   return <group ref={locomotionRoot}><primitive object={model} scale={0.74} /></group>;
 }
@@ -1320,16 +1386,6 @@ function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
     [boardType, spec.length, spec.width],
   );
   const finGeometry = useMemo(() => createFinGeometry(), []);
-  const leashGeometry = useMemo(() => {
-    const tail = -spec.length * .5;
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, .1, tail + .09),
-      new THREE.Vector3(spec.width * .58, .035, tail - .2),
-      new THREE.Vector3(spec.width * .24, -.015, tail - .52),
-      new THREE.Vector3(-spec.width * .54, .01, tail - .82),
-    ]);
-    return new THREE.TubeGeometry(curve, 14, .012, 5, false);
-  }, [spec.length, spec.width]);
   const finXs = boardType === "performance"
     ? [-spec.width * .46, 0, spec.width * .46]
     : boardType === "fish"
@@ -1343,8 +1399,7 @@ function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
     boardGeometry.dispose();
     deckGeometry.dispose();
     finGeometry.dispose();
-    leashGeometry.dispose();
-  }, [boardGeometry, deckGeometry, finGeometry, leashGeometry]);
+  }, [boardGeometry, deckGeometry, finGeometry]);
 
   return (
     <group>
@@ -1382,9 +1437,6 @@ function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
         <ringGeometry args={[spec.width * .19, spec.width * .255, 28]} />
         <meshBasicMaterial color="#fff9eb" transparent opacity={.82} />
       </mesh>
-      <mesh geometry={leashGeometry}>
-        <meshStandardMaterial color="#101a1d" roughness={.72} />
-      </mesh>
       <mesh position={[0, thickness * 1.08, -spec.length * .43]}>
         <cylinderGeometry args={[.045, .045, .022, 12]} />
         <meshStandardMaterial color="#111b1e" roughness={.56} />
@@ -1405,10 +1457,98 @@ function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
   );
 }
 
-function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionState>; boardType: BoardType }) {
+const LEASH_SEGMENTS = 22;
+
+function SurfLeashCord({
+  motion,
+  boardType,
+  rigRef,
+  boardRef,
+  ankleJointRef,
+}: {
+  motion: MutableRefObject<MotionState>;
+  boardType: BoardType;
+  rigRef: MutableRefObject<THREE.Group | null>;
+  boardRef: MutableRefObject<THREE.Group | null>;
+  ankleJointRef: MutableRefObject<THREE.Object3D | null>;
+}) {
+  const cord = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array((LEASH_SEGMENTS + 1) * 3), 3));
+    const material = new THREE.LineBasicMaterial({
+      color: "#111b1e",
+      transparent: true,
+      opacity: .88,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(geometry, material);
+    line.frustumCulled = false;
+    line.renderOrder = 4;
+    return line;
+  }, []);
+  const cordRef = useRef<THREE.Line>(null);
+  const scratchRef = useRef({
+    start: new THREE.Vector3(),
+    end: new THREE.Vector3(),
+    point: new THREE.Vector3(),
+  });
+
+  useFrame(({ clock }) => {
+    const line = cordRef.current;
+    const rigObject = rigRef.current;
+    const boardObject = boardRef.current;
+    const ankle = ankleJointRef.current;
+    const state = motion.current;
+    const active = state.phase === "paddling" || state.phase === "riding" || state.phase === "wipeout";
+    if (!line) return;
+    line.visible = Boolean(active && rigObject && boardObject && ankle);
+    if (!line.visible || !rigObject || !boardObject || !ankle) return;
+
+    const { start, end, point } = scratchRef.current;
+    start.set(0, .13, -BOARD_SPECS[boardType].length * .43);
+    boardObject.localToWorld(start);
+    rigObject.worldToLocal(start);
+    end.set(.073, -.012, -.472);
+    ankle.localToWorld(end);
+    rigObject.worldToLocal(end);
+
+    const positions = line.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const distance = start.distanceTo(end);
+    const pulse = Math.sin(clock.elapsedTime * 5.4 + state.speed * .18);
+    for (let index = 0; index <= LEASH_SEGMENTS; index += 1) {
+      const progress = index / LEASH_SEGMENTS;
+      const arc = Math.sin(progress * Math.PI);
+      point.lerpVectors(start, end, progress);
+      point.x += arc * (state.rail * .09 + pulse * .025);
+      point.y -= arc * (.1 + distance * .045 + state.speed * .004 + state.impact * .09);
+      point.z -= arc * (.08 + state.speed * .006 + state.maneuverLift * .12);
+      positions.setXYZ(index, point.x, point.y, point.z);
+    }
+    positions.needsUpdate = true;
+  });
+
+  useEffect(() => () => {
+    cord.geometry.dispose();
+    cord.material.dispose();
+  }, [cord]);
+
+  return <primitive ref={cordRef} object={cord} />;
+}
+
+function SurferModel({
+  motion,
+  boardType,
+  accent,
+}: {
+  motion: MutableRefObject<MotionState>;
+  boardType: BoardType;
+  accent: string;
+}) {
   const rig = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const board = useRef<THREE.Group>(null);
+  const ankleJointRef = useRef<THREE.Object3D | null>(null);
+  const contact = useRef<THREE.Mesh>(null);
 
   useFrame(({ clock }, delta) => {
     if (!rig.current || !body.current || !board.current) return;
@@ -1467,16 +1607,37 @@ function SurferModel({ motion, boardType }: { motion: MutableRefObject<MotionSta
       delta,
     );
 
+    if (contact.current) {
+      const material = contact.current.material as THREE.MeshBasicMaterial;
+      const waterContact = 1 - THREE.MathUtils.smoothstep(state.maneuverLift, .08, .48);
+      const targetOpacity = paddle
+        ? (.09 + state.paddleEffort * .08) * (1 - state.duckDive * .75)
+        : riding
+          ? (.1 + Math.min(.16, state.speed * .007) + Math.abs(state.rail) * .07) * waterContact
+          : wipeout ? .08 : 0;
+      material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity, 8, delta);
+      contact.current.scale.x = THREE.MathUtils.damp(contact.current.scale.x, BOARD_SPECS[boardType].width * (.7 + Math.abs(state.rail) * .12), 8, delta);
+      contact.current.scale.y = THREE.MathUtils.damp(contact.current.scale.y, BOARD_SPECS[boardType].length * (.32 + Math.min(.12, state.speed * .004)), 8, delta);
+      contact.current.rotation.z = THREE.MathUtils.damp(contact.current.rotation.z, riding ? -state.rail * .12 : 0, 7, delta);
+    }
+
   });
 
   return (
-    <group ref={rig}>
-      <group ref={board} position={[0, 0.16, 0]}>
-        <PremiumSurfboard boardType={boardType} />
-      </group>
+    <group>
+      <mesh ref={contact} position={[0, .025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+        <circleGeometry args={[1, 30]} />
+        <meshBasicMaterial color="#05252b" transparent opacity={0} depthWrite={false} blending={THREE.MultiplyBlending} />
+      </mesh>
+      <group ref={rig}>
+        <group ref={board} position={[0, 0.16, 0]}>
+          <PremiumSurfboard boardType={boardType} />
+        </group>
+        <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
 
-      <group ref={body} position={[0, 1.02, 0]}>
-        <PremiumSurferBody motion={motion} />
+        <group ref={body} position={[0, 1.02, 0]}>
+          <PremiumSurferBody motion={motion} accent={accent} ankleJointRef={ankleJointRef} />
+        </group>
       </group>
     </group>
   );
@@ -4998,7 +5159,7 @@ function Simulation({
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
-        <SurferModel motion={motion} boardType={settings.board} />
+        <SurferModel motion={motion} boardType={settings.board} accent={beach.palette[0]} />
       </group>
       <group ref={van}>
         <SurfVan motion={vanMotion} darkness={vanDarkness} />

@@ -199,6 +199,8 @@ def build_surfer() -> bpy.types.Object:
     pupil = material("Pupil", (0.001, 0.001, 0.001, 1), 0.18, specular=0.78)
     mouth = material("Natural lip", (0.29, 0.075, 0.052, 1), 0.56, specular=0.3)
     nail = material("Fingernail", (0.54, 0.28, 0.19, 1), 0.5, specular=0.38)
+    reflective = material("Surfscape reflective mark", (0.08, 0.62, 0.58, 1), 0.24, metallic=0.18, specular=0.72, clearcoat=0.32)
+    cuff = material("Leash ankle cuff", (0.012, 0.019, 0.022, 1), 0.36, specular=0.62, clearcoat=0.16)
 
     rig = empty("SurferRig", None, (0, 0, 0))
     pelvis = empty("Pelvis", rig, (0, 0, 0))
@@ -235,11 +237,14 @@ def build_surfer() -> bpy.types.Object:
     )
     ellipsoid("Chest.panel.L", torso, (-0.235, -0.146, 0.36), (0.044, 0.013, 0.22), panel, 24, 14, rotation=(0, 0.12, -0.06))
     ellipsoid("Chest.panel.R", torso, (0.235, -0.146, 0.36), (0.044, 0.013, 0.22), panel, 24, 14, rotation=(0, -0.12, 0.06))
+    ellipsoid("Rib.flex.L", torso, (-0.268, -0.02, 0.2), (0.026, 0.126, 0.225), panel, 22, 14, rotation=(0.03, 0.02, -0.1))
+    ellipsoid("Rib.flex.R", torso, (0.268, -0.02, 0.2), (0.026, 0.126, 0.225), panel, 22, 14, rotation=(0.03, -0.02, 0.1))
     ellipsoid("Back.flex", torso, (0, 0.175, 0.35), (0.205, 0.018, 0.25), panel, 28, 16)
     torus("Collar.seam", torso, (0, 0, 0.665), 0.137, 0.011, seam)
     torus("Waist.seam", torso, (0, 0, -0.035), 0.222, 0.008, seam)
-    cube("Chest.logo", torso, (-0.11, -0.202, 0.49), (0.026, 0.008, 0.026), seam, 0.004, rotation=(0, math.pi / 4, 0))
+    cube("Chest.logo", torso, (-0.11, -0.202, 0.49), (0.026, 0.008, 0.026), reflective, 0.004, rotation=(0, math.pi / 4, 0))
     cube("Back.zip", torso, (0, 0.191, 0.43), (0.011, 0.008, 0.2), seam, 0.003)
+    cube("Back.zip.pull", torso, (0, 0.202, 0.625), (0.018, 0.011, 0.028), cuff, 0.004, rotation=(0.08, 0, 0))
 
     # Proportional neck and an anatomical face with restrained, game-readable detail.
     tapered_form("Neck.mesh", head, [(-0.17, 0.093, 0.1, 0), (-0.02, 0.105, 0.108, 0), (0.07, 0.11, 0.11, 0)], skin, 26)
@@ -285,6 +290,7 @@ def build_surfer() -> bpy.types.Object:
         ("R", upper_arm_r, lower_arm_r, hand_r, 1),
     ):
         ellipsoid(f"Deltoid.{side}", upper, (0, 0, -.032), (.076, .073, .088), wetsuit, 24, 14)
+        torus(f"Shoulder.seam.{side}", upper, (0, 0, -.095), .074, .0065, seam)
         tapered_form(f"UpperArm.mesh.{side}", upper, [(.065, .018, .019, 0), (.035, .058, .058, 0), (-.04, .078, .075, 0), (-.12, .083, .079, 0), (-.3, .075, .072, 0), (-.42, .064, .064, 0), (-.465, .043, .046, 0), (-.49, .017, .02, 0)], wetsuit, 24)
         ellipsoid(f"Arm.panel.{side}", upper, (sign * .067, -0.01, -.22), (.009, .052, .14), panel, 18, 12)
         ellipsoid(f"Elbow.{side}", lower, (0, 0, .012), (.078, .076, .082), wetsuit, 22, 14)
@@ -315,7 +321,11 @@ def build_surfer() -> bpy.types.Object:
         ellipsoid(f"Thigh.panel.{side}", upper, (sign * .085, -.075, -.29), (.02, .066, .21), panel, 20, 12)
         tapered_form(f"Shin.mesh.{side}", lower, [(0.045, .108, .112, -.008), (-.12, .115, .12, 0), (-.29, .102, .105, .008), (-.51, .067, .073, .004)], wetsuit, 26)
         ellipsoid(f"Knee.panel.{side}", lower, (0, -.105, -.035), (.068, .014, .096), knee_panel, 22, 14)
+        ellipsoid(f"Calf.flex.{side}", lower, (sign * .078, .01, -.29), (.016, .074, .145), panel, 18, 12, rotation=(0, 0, sign * .08))
         cube(f"Ankle.seam.{side}", lower, (0, -.068, -.475), (.066, .006, .008), seam, .002)
+        if side == "R":
+            torus("Leash.cuff", lower, (0, 0, -.472), .071, .014, cuff)
+            cube("Leash.cuff.tab", lower, (.073, -.012, -.472), (.025, .018, .034), reflective, .005, rotation=(0, .08, 0))
         tapered_form(f"Ankle.{side}", foot, [(.035, .064, .07, 0), (-.09, .061, .067, -.006), (-.145, .07, .075, -.025)], skin, 22)
         ellipsoid(f"Foot.mesh.{side}", foot, (0, -.12, -.14), (.078, .168, .062), skin, 28, 16, rotation=(-.06, 0, 0))
         toe_x = (-.052, -.028, -.003, .023, .047)
