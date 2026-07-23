@@ -1875,9 +1875,9 @@ export default function SurfscapeApp() {
       const foam = THREEClamp(stats.whitewaterPressure, 0, 1);
       const faceTexture = stats.setEnergy * (.2 + stats.sectionPressure * .3);
       surfaceHaptic(
-        speed * (rail * .27 + cornering * .23 + braking * .12 + stats.barrelIntensity * .06 + foam * .34),
-        speed * (.035 + rail * .18 + slip * .5 + faceTexture * .12 + drive * .08 + foam * .46),
-        Math.max(slip, rail * speed, cornering * .72, foam * .96) * speed,
+        speed * (rail * .27 + cornering * .23 + braking * .12 + stats.barrelIntensity * .18 + foam * .34),
+        speed * (.035 + rail * .18 + slip * .5 + faceTexture * .12 + drive * .08 + stats.barrelIntensity * .12 + foam * .46),
+        Math.max(slip, rail * speed, cornering * .72, stats.barrelIntensity * .52, foam * .96) * speed,
       );
       return;
     }
@@ -2868,6 +2868,8 @@ export default function SurfscapeApp() {
   const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
   const hydrodynamicLoadLabel = stats.whitewaterPressure > .35
     ? `WHITEWATER ${Math.round(stats.whitewaterPressure * 100)}%`
+    : stats.barrelIntensity > .25
+      ? `TUBE PRESSURE ${Math.round(stats.barrelIntensity * 100)}%`
     : Math.abs(stats.lateralForce) > .52
       ? `${stats.lateralForce > 0 ? "RIGHT" : "LEFT"} RAIL LOADED`
       : Math.max(0, stats.acceleration) > .48
@@ -3873,7 +3875,7 @@ export default function SurfscapeApp() {
 
           <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""} ${ridingOut ? "is-exit" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
-              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : hydrodynamicLoadLabel}</em></span>
+              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
               <strong>{ridingOut ? `${Math.round(stats.rideOutProgress * 100)}%` : `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%`}</strong>
             </div>
             <div className="balance-track">
@@ -3893,7 +3895,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · W/S moves from trough to lip`}</small>
+            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small balance corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · W/S moves from trough to lip`}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>

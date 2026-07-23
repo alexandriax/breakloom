@@ -10959,6 +10959,35 @@ function Simulation({
           whitewaterPressure,
           shoulderStall * .7 * (.7 + tideVariability * .3),
         );
+        const tubePocket = 1 - THREE.MathUtils.smoothstep(
+          Math.abs(linePosition + .18),
+          .34,
+          .92,
+        );
+        const tubeFace = THREE.MathUtils.smoothstep(
+          rideFacePosition.current,
+          -.14,
+          .58,
+        );
+        const tubeShape = THREE.MathUtils.clamp(
+          tideHollow * .58
+            + tideSteepness * .18
+            + setState.energy * .22
+            + offshoreGroom * .06
+            - onshoreChop * .2,
+          0,
+          1,
+        );
+        const tubePressure = finishing
+          ? 0
+          : THREE.MathUtils.clamp(
+            tubePocket
+              * tubeFace
+              * THREE.MathUtils.smoothstep(tubeShape, .3, .88)
+              * (1 - whitewaterPressure * .88),
+            0,
+            1,
+          );
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
         speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
         speed *= (
@@ -10969,6 +10998,13 @@ function Simulation({
           + Math.max(0, -linePosition) * .025
           + highFace * .07
           + lowFace * .035
+          + tubePressure * .032
+        );
+        stamina.current = Math.max(
+          0,
+          stamina.current - delta * tubePressure * (
+            settings.mode === "training" ? .7 : settings.mode === "advanced" ? 1.7 : 1.2
+          ),
         );
         if (whitewaterPressure > .12) {
           const foamFatigueScale = settings.mode === "training"
@@ -10987,12 +11023,17 @@ function Simulation({
         }
         const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const railDemand = Math.abs(rideSteer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + tideSteepness * .1) * (1 + highFace * .08);
+        const railDemand = Math.abs(rideSteer)
+          * (.72 + speed * .035)
+          * (1 + nosePressure * .16 - tailPressure * .12)
+          * (.92 + tideSteepness * .1)
+          * (1 + highFace * .08 + tubePressure * .1);
         const railGrip = gripBase
           + priorWaveQuality * .2
           + tailPressure * .08
           - nosePressure * .1
           - highFace * .045
+          - tubePressure * .035
           - whitewaterPressure * (.12 + onshoreChop * .045);
         const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
         const assistedSlip = settings.mode === "training" ? rawSlip * .52 : rawSlip;
@@ -11005,6 +11046,7 @@ function Simulation({
             + motion.current.maneuver * .32
             + Math.abs(motion.current.lateralForce) * .12
             + Math.max(0, -motion.current.acceleration) * .08
+            + tubePressure * .16
             + whitewaterPressure * .2,
           0,
           1,
@@ -11025,6 +11067,7 @@ function Simulation({
           * speed
           * (.56 + character.length * .026 + Math.abs(character.peel) * .08)
           * (1 - whitewaterPressure * .2)
+          + rideLineSide.current * tubePressure * (.32 + waveSpeed * .03)
           + foamShoulderShove;
         const tangentialVelocity = trimDrive + railTurn + foamCrossChop;
         const normalVelocity = Math.max(
@@ -11035,6 +11078,7 @@ function Simulation({
           + nosePressure * .025
           - tailPressure * .018
           + Math.abs(railLoad) * .012
+          + tubePressure * .018
           + whitewaterPressure * .065
         );
         const rideCurrentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
@@ -11062,7 +11106,11 @@ function Simulation({
           + rideVelocity.current.y * waveTangentZ;
         const normalResponse = finishing
           ? 6.8
-          : 5.15 + highFace * .7 + Math.abs(phaseCorrection) * .22 + whitewaterPressure * 2.8;
+          : 5.15
+            + highFace * .7
+            + Math.abs(phaseCorrection) * .22
+            + tubePressure * 1.05
+            + whitewaterPressure * 2.8;
         const outlineResponse = settings.board === "performance"
           ? 1.12
           : settings.board === "fish"
@@ -11075,6 +11123,7 @@ function Simulation({
             + Math.abs(railLoad) * 2.65
             + tailPressure * .52
             + lineControl * .34
+            + tubePressure * .58
             + whitewaterPressure * 1.25
           ) * outlineResponse * (1 - railSlip.current * .34);
         inertialNormalVelocity = THREE.MathUtils.damp(
@@ -11153,6 +11202,8 @@ function Simulation({
           Math.sin(t * 8.2) * railSlip.current * .16 +
           Math.sin(t * (5.8 + tideVariability) + position.current.x * .06) * highFace * .075 / boardSpec.stability +
           Math.sin(t * (4.7 + windExposure * 1.8) + position.current.z * .08) * onshoreChop * .13 / boardSpec.stability +
+          Math.sin(t * (10.8 + tideHollow * 2.2) + position.current.x * .14 - position.current.z * .09) * tubePressure * .075 / boardSpec.stability +
+          Math.sin(t * 17.6 + position.current.z * .12) * tubePressure * .028 / boardSpec.stability +
           Math.sin(t * (9.4 + setState.energy * 1.8) + position.current.x * .16) * whitewaterPressure * (.14 + setState.energy * .08) / boardSpec.stability +
           Math.sin(t * 16.2 - position.current.z * .11) * whitewaterPressure * .055 / boardSpec.stability +
           Math.sign(rideSteer) * railSlip.current * .1 +
@@ -11197,6 +11248,9 @@ function Simulation({
         unstableFor.current += shoulderStall * delta * (
           settings.mode === "training" ? .025 : settings.mode === "advanced" ? .12 : .075
         );
+        unstableFor.current += tubePressure * Math.max(0, balanceError - failThreshold * .58) * delta * (
+          settings.mode === "training" ? .045 : settings.mode === "advanced" ? .18 : .11
+        );
         const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
         const lineMatch = Math.abs(character.peel) < .18
           ? 1
@@ -11210,16 +11264,21 @@ function Simulation({
         );
         const controlQuality = Math.max(0, 1 - balanceError / 1.2) * (1 - railSlip.current * .36);
         const barrelThreshold = .8 - tideHollow * .18 + onshoreChop * .08 - offshoreGroom * .025;
-        const pocketBarrel = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition + .18), .34, .92);
         const inBarrel = !finishing
           && waveQuality > barrelThreshold
           && controlQuality > .72
-          && pocketBarrel > .42
+          && tubePressure > .24
           && rideFacePosition.current > -.18
           && Math.abs(rideSteer) < .68
           && stance.current > -.58;
         barrelIntensity = inBarrel
-          ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + tideHollow) + controlQuality * .16, 0, 1)
+          ? THREE.MathUtils.clamp(
+            tubePressure * (.58 + tideHollow * .2)
+              + (waveQuality - barrelThreshold + .1) * (1.18 + tideHollow * .42)
+              + controlQuality * .1,
+            0,
+            1,
+          )
           : 0;
         if (!finishing) {
           const analysisStep = Math.min(delta, .05);
@@ -11378,7 +11437,7 @@ function Simulation({
           : railSlip.current > .55
             ? "Rail releasing — soften the turn or load the tail"
           : inBarrel
-            ? `Locked in the barrel · ${barrelTime.current.toFixed(1)}s`
+            ? `Tube pressure ${Math.round(barrelIntensity * 100)}% · stay compact and hold the high line`
           : linePosition < -.72
             ? `Pocket closing · drive ${rideLineSide.current > 0 ? "right" : "left"} toward the open face`
           : linePosition > .72
@@ -11407,6 +11466,7 @@ function Simulation({
               + setState.energy * .18
               + tidePower * .09
               + Math.min(1, speed / 22) * .13
+              + barrelIntensity * .08
               + whitewaterPressure * .18
               + shoulderStall * .035
               + railSlip.current * .08,
