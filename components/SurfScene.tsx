@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
-import { MutableRefObject, useEffect, useMemo, useRef } from "react";
+import { createContext, MutableRefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
@@ -24,6 +24,103 @@ export type ControlState = {
 };
 
 export type CameraMode = "follow" | "immersive" | "cinematic";
+type RenderQuality = "reduced" | "balanced" | "high";
+
+const RenderQualityContext = createContext<RenderQuality>("high");
+
+function useRenderQuality() {
+  return useContext(RenderQualityContext);
+}
+
+function rendererLimits(mobile: boolean) {
+  const devicePixelRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  if (!mobile) return { minimum: 1, initial: Math.min(devicePixelRatio, 1.45), maximum: Math.min(devicePixelRatio, 1.7) };
+  const navigatorProfile = navigator as Navigator & { deviceMemory?: number };
+  const memory = navigatorProfile.deviceMemory ?? 6;
+  const cores = navigator.hardwareConcurrency || 6;
+  const maximum = memory <= 4 || cores <= 4
+    ? Math.min(devicePixelRatio, 1.06)
+    : memory <= 6 || cores <= 6
+      ? Math.min(devicePixelRatio, 1.16)
+      : Math.min(devicePixelRatio, 1.3);
+  return {
+    minimum: Math.min(.82, maximum),
+    initial: Math.min(maximum, memory <= 4 || cores <= 4 ? .96 : 1.1),
+    maximum,
+  };
+}
+
+function AdaptiveRenderer({
+  active,
+  mobile,
+  limits,
+  onQualityChange,
+}: {
+  active: boolean;
+  mobile: boolean;
+  limits: ReturnType<typeof rendererLimits>;
+  onQualityChange: (quality: RenderQuality) => void;
+}) {
+  const setDpr = useThree((state) => state.setDpr);
+  const currentDpr = useRef(limits.initial);
+  const currentQuality = useRef<RenderQuality>(mobile ? "balanced" : "high");
+  const sample = useRef({ elapsed: 0, frames: 0, warmup: mobile ? 1.65 : 1.1 });
+
+  useEffect(() => {
+    currentDpr.current = limits.initial;
+    currentQuality.current = mobile ? "balanced" : "high";
+    sample.current = { elapsed: 0, frames: 0, warmup: mobile ? 1.65 : 1.1 };
+    setDpr(limits.initial);
+    onQualityChange(currentQuality.current);
+  }, [limits.initial, mobile, onQualityChange, setDpr]);
+
+  useFrame((_, delta) => {
+    if (!active || (typeof document !== "undefined" && document.visibilityState !== "visible")) return;
+    const meter = sample.current;
+    if (meter.warmup > 0) {
+      meter.warmup -= Math.min(delta, .05);
+      return;
+    }
+    if (delta > .12) {
+      meter.elapsed = 0;
+      meter.frames = 0;
+      meter.warmup = .7;
+      return;
+    }
+    meter.elapsed += Math.min(delta, .05);
+    meter.frames += 1;
+    if (meter.elapsed < 2.2) return;
+
+    const averageFrame = meter.elapsed / Math.max(1, meter.frames);
+    let nextDpr = currentDpr.current;
+    if (averageFrame > .024) nextDpr -= .12;
+    else if (averageFrame > .0202) nextDpr -= .055;
+    else if (averageFrame < .0177) nextDpr += .05;
+    nextDpr = THREE.MathUtils.clamp(nextDpr, limits.minimum, limits.maximum);
+
+    const changed = Math.abs(nextDpr - currentDpr.current) >= .025;
+    if (changed) {
+      currentDpr.current = nextDpr;
+      setDpr(nextDpr);
+      meter.warmup = .9;
+    }
+    let quality: RenderQuality = averageFrame > .025 || nextDpr <= limits.minimum + .055
+      ? "reduced"
+      : averageFrame < .0183 && nextDpr >= limits.maximum - .055
+        ? "high"
+        : "balanced";
+    if (currentQuality.current === "high" && averageFrame < .0194 && nextDpr >= limits.maximum - .055) quality = "high";
+    if (currentQuality.current === "reduced" && averageFrame > .0224 && nextDpr <= limits.minimum + .12) quality = "reduced";
+    if (quality !== currentQuality.current) {
+      currentQuality.current = quality;
+      onQualityChange(quality);
+    }
+    meter.elapsed = 0;
+    meter.frames = 0;
+  });
+
+  return null;
+}
 
 type SurfSceneProps = {
   beach: Beach;
@@ -437,7 +534,11 @@ function Ocean({
   rain: number;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
-  const segments = useMemo(() => (isMobileRenderer() ? 54 : 132), []);
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const segments = mobile
+    ? quality === "reduced" ? 42 : quality === "high" ? 66 : 54
+    : quality === "reduced" ? 92 : quality === "balanced" ? 112 : 132;
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -2232,7 +2333,10 @@ function BoardTrack({
   character: BreakCharacter;
   mobile: boolean;
 }) {
-  const markCount = mobile ? 30 : CARVE_TRACK_COUNT;
+  const quality = useRenderQuality();
+  const markCount = mobile
+    ? quality === "reduced" ? 20 : quality === "high" ? 40 : 30
+    : quality === "reduced" ? 40 : quality === "balanced" ? 52 : CARVE_TRACK_COUNT;
   const trackMesh = useRef<THREE.InstancedMesh>(null);
   const rippleMesh = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -2656,7 +2760,11 @@ function CoastalAtmosphere({
 }) {
   const dome = useRef<THREE.Mesh>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
-  const segments = useMemo(() => (isMobileRenderer() ? [30, 16] : [48, 24]) as [number, number], []);
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const segments = (mobile
+    ? quality === "reduced" ? [22, 12] : quality === "high" ? [36, 18] : [30, 16]
+    : quality === "reduced" ? [32, 16] : quality === "balanced" ? [40, 20] : [48, 24]) as [number, number];
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uCloud: { value: 0 },
@@ -2758,7 +2866,11 @@ function WeatherEffects({ weatherCode, windSpeed, windDirection, coastHeading }:
   const flash = useRef(0);
   const flashIndex = useRef(0);
   const nextFlash = useRef(5.2);
-  const particleCount = useMemo(() => (isMobileRenderer() ? 150 : 320), []);
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const particleCount = mobile
+    ? quality === "reduced" ? 92 : quality === "high" ? 210 : 150
+    : quality === "reduced" ? 180 : quality === "balanced" ? 250 : 320;
   const particlePositions = useMemo(() => {
     const values = new Float32Array(particleCount * 3);
     for (let index = 0; index < particleCount; index += 1) {
@@ -3662,6 +3774,7 @@ function LifeguardStation({ wind, light }: { wind: number; light: number }) {
 }
 
 function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: boolean; weatherCode: number; observerPosition: MutableRefObject<THREE.Vector3> }) {
+  const quality = useRenderQuality();
   const weather = weatherProfile(weatherCode);
   const sheltered = weather.storm || weather.kind !== "none" || weather.fog;
   const visitors = useMemo(() => [
@@ -3670,7 +3783,10 @@ function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: bool
     { position: [-34, 0, 56] as [number, number, number], rotation: Math.PI * .84, activity: "watch" as const, phase: 4.2, palette: { skin: "#6e3e2e", shirt: "#244c5f", shorts: "#ddd4bf", hair: "#17110f" } },
     { position: [7, 0, 51] as [number, number, number], rotation: Math.PI * 1.08, activity: "relax" as const, phase: 6.4, palette: { skin: "#d2a07a", shirt: "#e87861", shorts: "#36585d", hair: "#7a4d2d" } },
   ], []);
-  const visibleVisitors = sheltered ? [] : mobile ? visitors.slice(0, 2) : visitors;
+  const visitorCount = mobile
+    ? quality === "reduced" ? 1 : quality === "high" ? 3 : 2
+    : quality === "reduced" ? 2 : visitors.length;
+  const visibleVisitors = sheltered ? [] : visitors.slice(0, visitorCount);
   return (
     <group>
       {visibleVisitors.map((visitor, index) => <BeachVisitor key={index} {...visitor} observerPosition={observerPosition} scale={index === 1 ? .94 : 1} />)}
@@ -3693,6 +3809,7 @@ function BeachLife({ beach, windSpeed, weatherCode, light, playerPosition }: { b
   const biome = getCoastBiome(beach.id);
   const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
+  const quality = useRenderQuality();
   const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
   const sandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 11), [sandTextureSource]);
   const wetSandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 2), [sandTextureSource]);
@@ -3771,7 +3888,10 @@ function BeachLife({ beach, windSpeed, weatherCode, light, playerPosition }: { b
           </mesh>
         </group>
       </group>
-      {biome !== "urban" && biome !== "rugged" && dunes.filter((dune) => dune.z > 88).map((dune, index) => (
+      {biome !== "urban" && biome !== "rugged" && dunes
+        .filter((dune) => dune.z > 88)
+        .slice(0, mobileRenderer ? quality === "reduced" ? 8 : quality === "high" ? 17 : 13 : quality === "reduced" ? 13 : 22)
+        .map((dune, index) => (
         <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, 0.8 + (index % 3) * 0.28, dune.s * 0.72]} receiveShadow>
           <sphereGeometry args={[1, 12, 8]} />
           <meshStandardMaterial color={biome === "volcanic" ? index % 2 ? "#373a36" : "#484a43" : index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
@@ -3927,7 +4047,10 @@ function VehicleSurfaceEffects({
   heading: MutableRefObject<number>;
   mobile: boolean;
 }) {
-  const particleCount = mobile ? 28 : 58;
+  const quality = useRenderQuality();
+  const particleCount = mobile
+    ? quality === "reduced" ? 18 : quality === "high" ? 38 : 28
+    : quality === "reduced" ? 36 : quality === "balanced" ? 48 : 58;
   const particles = useRef<THREE.Points>(null);
   const particleMaterial = useRef<THREE.PointsMaterial>(null);
   const tracks = useRef<THREE.InstancedMesh>(null);
@@ -4125,6 +4248,10 @@ function Simulation({
   const boardSpec = BOARD_SPECS[settings.board];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
+  const renderQuality = useRenderQuality();
+  const birdCount = mobileRenderer
+    ? renderQuality === "reduced" ? 1 : renderQuality === "high" ? 3 : 2
+    : renderQuality === "reduced" ? 2 : 3;
   const player = useRef<THREE.Group>(null);
   const van = useRef<THREE.Group>(null);
   const position = useRef(new THREE.Vector3(0, 0, 35));
@@ -5404,25 +5531,28 @@ function Simulation({
       </group>
       {weather.kind === "none" && !weather.fog && !weather.storm && (
         <>
-          <Bird offset={0} speed={1 + settings.windSpeed * 0.008} />
-          <Bird offset={7} speed={0.82 + settings.windSpeed * 0.006} />
-          <Bird offset={15} speed={1.15 + settings.windSpeed * 0.007} />
+          {birdCount >= 1 && <Bird offset={0} speed={1 + settings.windSpeed * 0.008} />}
+          {birdCount >= 2 && <Bird offset={7} speed={0.82 + settings.windSpeed * 0.006} />}
+          {birdCount >= 3 && <Bird offset={15} speed={1.15 + settings.windSpeed * 0.007} />}
         </>
       )}
       {sunHeight < 0.22 && (
-        <Sparkles count={70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={Math.max(.06, .45 * (1 - cloudFactor * .86))} color="#dcefff" />
+        <Sparkles count={renderQuality === "reduced" ? 34 : renderQuality === "balanced" ? 52 : 70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={Math.max(.06, .45 * (1 - cloudFactor * .86))} color="#dcefff" />
       )}
     </>
   );
 }
 
 export default function SurfScene(props: SurfSceneProps) {
-  const mobileRenderer = isMobileRenderer();
+  const mobileRenderer = useMemo(() => isMobileRenderer(), []);
+  const limits = useMemo(() => rendererLimits(mobileRenderer), [mobileRenderer]);
+  const [renderQuality, setRenderQuality] = useState<RenderQuality>(mobileRenderer ? "balanced" : "high");
   return (
     <Canvas
       className="surf-canvas"
       shadows={mobileRenderer ? false : "percentage"}
-      dpr={[1, mobileRenderer ? 1.2 : 1.65]}
+      dpr={limits.initial}
+      frameloop={props.active ? "always" : "demand"}
       camera={{ position: [0, 4.8, 44], fov: 58, near: 0.08, far: 650 }}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping }}
       onCreated={({ gl }) => {
@@ -5430,7 +5560,10 @@ export default function SurfScene(props: SurfSceneProps) {
         gl.toneMappingExposure = 1.08;
       }}
     >
-      <Simulation {...props} />
+      <RenderQualityContext.Provider value={renderQuality}>
+        <AdaptiveRenderer active={props.active} mobile={mobileRenderer} limits={limits} onQualityChange={setRenderQuality} />
+        <Simulation {...props} />
+      </RenderQualityContext.Provider>
     </Canvas>
   );
 }

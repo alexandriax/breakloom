@@ -14,6 +14,8 @@ import {
   Gauge,
   LoaderCircle,
   MapPin,
+  Maximize2,
+  Minimize2,
   Pause,
   Play,
   RotateCcw,
@@ -67,6 +69,7 @@ type RideToast = {
   barrelTime: number;
   grade: GameStats["grade"];
 };
+type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
@@ -264,6 +267,8 @@ export default function SurfscapeApp() {
   const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
   const [paused, setPaused] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
+  const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [trainingStep, setTrainingStep] = useState(0);
@@ -280,6 +285,7 @@ export default function SurfscapeApp() {
   const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
+  const wakeLock = useRef<WakeLockSentinelLike | null>(null);
   const previousPhase = useRef(stats.phase);
   const previousManeuverId = useRef(0);
   const previousManeuverActive = useRef(false);
@@ -348,6 +354,53 @@ export default function SurfscapeApp() {
     }, 500);
     return () => window.clearTimeout(timer);
   }, [personalBest, recordsReady]);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    const frame = window.requestAnimationFrame(() => {
+      setFullscreenAvailable(Boolean(document.fullscreenEnabled && document.documentElement.requestFullscreen));
+      syncFullscreen();
+    });
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const release = async () => {
+      const current = wakeLock.current;
+      wakeLock.current = null;
+      if (current && !current.released) await current.release().catch(() => undefined);
+    };
+    const request = async () => {
+      if (cancelled || screen !== "game" || paused || document.visibilityState !== "visible" || wakeLock.current) return;
+      const manager = (navigator as Navigator & {
+        wakeLock?: { request: (type: "screen") => Promise<WakeLockSentinelLike> };
+      }).wakeLock;
+      if (!manager) return;
+      try {
+        const sentinel = await manager.request("screen");
+        if (cancelled) await sentinel.release().catch(() => undefined);
+        else wakeLock.current = sentinel;
+      } catch {
+        // Unsupported power policies should never interrupt the session.
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void request();
+      else void release();
+    };
+    void request();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      void release();
+    };
+  }, [paused, screen]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -854,6 +907,16 @@ export default function SurfscapeApp() {
     haptic(7);
   };
 
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+      haptic(7);
+    } catch {
+      setFullscreenAvailable(false);
+    }
+  };
+
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
   const conditionQuality = qualityLabel(settings);
@@ -1270,6 +1333,11 @@ export default function SurfscapeApp() {
             </div>
             <div className="game-actions">
               <button onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
+              {fullscreenAvailable && (
+                <button onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
+                  {isFullscreen ? <Minimize2 /> : <Maximize2 />}
+                </button>
+              )}
               <button className="camera-button" onClick={cycleCamera} aria-label={`Camera: ${CAMERA_LABELS[cameraMode]}. Switch camera.`} title={`Camera: ${CAMERA_LABELS[cameraMode]}`}><Camera /></button>
               <button onClick={() => { clearAnalogMovement(); setPaused(true); }} aria-label="Pause"><Pause /></button>
             </div>
