@@ -82,6 +82,7 @@ export type SessionSettings = {
 
 export type GameStats = {
   phase: GamePhase;
+  sessionIntro: number;
   score: number;
   combo: number;
   rideDistance: number;
@@ -145,6 +146,7 @@ export type GameStats = {
 
 export const INITIAL_STATS: GameStats = {
   phase: "shore",
+  sessionIntro: 0,
   score: 0,
   combo: 1,
   rideDistance: 0,

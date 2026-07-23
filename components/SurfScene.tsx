@@ -4249,6 +4249,7 @@ function Simulation({
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const renderQuality = useRenderQuality();
+  const reducedMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const birdCount = mobileRenderer
     ? renderQuality === "reduced" ? 1 : renderQuality === "high" ? 3 : 2
     : renderQuality === "reduced" ? 2 : 3;
@@ -4378,6 +4379,9 @@ function Simulation({
   useFrame(({ clock }, delta) => {
     if (!player.current || !van.current) return;
     const t = clock.elapsedTime;
+    const sessionIntroProgress = reducedMotion
+      ? THREE.MathUtils.smootherstep(t, .04, .58)
+      : THREE.MathUtils.smootherstep(t, .12, 3.25);
     const state = controls.current;
     const currentPhase = phase.current;
     const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX, -1, 1);
@@ -5284,7 +5288,27 @@ function Simulation({
         );
       }
     }
-    const lookScale = cameraMode === "cinematic" ? .18 : cameraMode === "immersive" ? (riding ? .24 : .58) : riding ? .34 : driving ? .76 : 1;
+    if (currentPhase === "shore" && sessionIntroProgress < 1) {
+      const revealSide = character.peel < 0 ? 1 : -1;
+      const normalCameraX = cameraPosition.current.x;
+      const normalCameraY = cameraPosition.current.y;
+      const normalCameraZ = cameraPosition.current.z;
+      const normalTargetX = cameraTarget.current.x;
+      const normalTargetY = cameraTarget.current.y;
+      const normalTargetZ = cameraTarget.current.z;
+      cameraPosition.current.set(
+        THREE.MathUtils.lerp(position.current.x + revealSide * 23, normalCameraX, sessionIntroProgress),
+        THREE.MathUtils.lerp(14.8, normalCameraY, sessionIntroProgress),
+        THREE.MathUtils.lerp(position.current.z + 25, normalCameraZ, sessionIntroProgress),
+      );
+      cameraTarget.current.set(
+        THREE.MathUtils.lerp(position.current.x + revealSide * 5.5, normalTargetX, sessionIntroProgress),
+        THREE.MathUtils.lerp(.48, normalTargetY, sessionIntroProgress),
+        THREE.MathUtils.lerp(-20, normalTargetZ, sessionIntroProgress),
+      );
+    }
+    const lookScale = (cameraMode === "cinematic" ? .18 : cameraMode === "immersive" ? (riding ? .24 : .58) : riding ? .34 : driving ? .76 : 1)
+      * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
     cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
     cameraOrbit.current.setFromVector3(cameraOffset.current);
     cameraOrbit.current.theta += state.lookYaw * 1.68 * lookScale;
@@ -5302,13 +5326,20 @@ function Simulation({
     const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
     cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
     cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
-    const cameraResponse = cameraMode === "cinematic"
+    const cameraResponse = sessionIntroProgress < 1
+      ? 5.4
+      : cameraMode === "cinematic"
       ? 2.15 + motion.current.maneuver * 1.9 + motion.current.takeoff * .8
       : cameraMode === "immersive"
         ? 4.35 + motion.current.maneuver * 1.35
         : driving ? 3.8 : riding ? 3.1 + motion.current.maneuver * 1.2 : 2.4;
-    camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
-    cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (cameraMode === "cinematic" ? 2.45 : 4.8)));
+    if (sessionIntroProgress < .035) {
+      camera.position.copy(cameraPosition.current);
+      cameraLookTarget.current.copy(cameraTarget.current);
+    } else {
+      camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
+      cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (sessionIntroProgress < 1 ? 5 : cameraMode === "cinematic" ? 2.45 : 4.8)));
+    }
     camera.lookAt(cameraLookTarget.current);
     const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
     camera.rotateZ((riding
@@ -5317,7 +5348,7 @@ function Simulation({
         ? -vanMotion.current.lateralG * .034 - Math.sign(vanMotion.current.steer || 1) * vanMotion.current.slip * .012
         : 0) * rollScale);
     if (camera instanceof THREE.PerspectiveCamera) {
-      const targetFov = cameraMode === "cinematic"
+      const gameplayFov = cameraMode === "cinematic"
         ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : 51
         : cameraMode === "immersive"
           ? driving
@@ -5330,6 +5361,7 @@ function Simulation({
             : riding
               ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 3.1 + motion.current.takeoff * 1.2 - motion.current.finish * 2.5
               : paddling ? 56 + motion.current.shorebreak * 2.5 - motion.current.duckDive * 1.6 : 58;
+      const targetFov = THREE.MathUtils.lerp(67, gameplayFov, sessionIntroProgress);
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {
         const focalLength = 0.5 * camera.getFilmHeight() / Math.tan(THREE.MathUtils.degToRad(nextFov * 0.5));
@@ -5341,6 +5373,7 @@ function Simulation({
       lastStatsAt.current = t;
       onStats({
         phase: phase.current,
+        sessionIntro: sessionIntroProgress,
         score: Math.round(score.current),
         combo: Number(combo.current.toFixed(1)),
         rideDistance: Number(rideDistance.current.toFixed(1)),

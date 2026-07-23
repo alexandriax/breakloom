@@ -794,6 +794,54 @@ input:focus-visible {
   pointer-events: none;
 }
 
+.session-intro {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  overflow: hidden;
+  color: #f5fbf8;
+  text-shadow: 0 3px 22px rgba(0, 0, 0, .78);
+  pointer-events: none;
+  transition: opacity .12s linear;
+}
+.session-intro::before,
+.session-intro::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  height: var(--intro-bar, 0dvh);
+  background: linear-gradient(180deg, #010507, rgba(1, 5, 7, .96));
+  box-shadow: 0 0 26px rgba(0, 0, 0, .48);
+  transition: height .14s linear;
+}
+.session-intro::before { top: 0; }
+.session-intro::after { bottom: 0; transform: rotate(180deg); }
+.session-intro-title {
+  position: absolute;
+  top: 24%;
+  left: clamp(24px, 7vw, 112px);
+  max-width: min(660px, 76vw);
+  padding-left: 15px;
+  border-left: 2px solid var(--spot-accent);
+}
+.session-intro-title > span { color: var(--spot-accent); font-size: 7px; font-weight: 900; letter-spacing: .22em; }
+.session-intro-title h2 { margin: 8px 0 1px; font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif; font-size: clamp(52px, 7vw, 104px); font-weight: 400; letter-spacing: .025em; line-height: .9; text-transform: uppercase; }
+.session-intro-title p { margin: 9px 0 15px; color: rgba(234, 250, 247, .7); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+.session-intro-title > div { display: flex; align-items: center; gap: 18px; }
+.session-intro-title strong { display: flex; align-items: center; gap: 6px; font-size: 8px; letter-spacing: .1em; }
+.session-intro-title strong svg { width: 13px; color: var(--spot-accent); }
+.session-intro > small { position: absolute; right: clamp(24px, 5vw, 78px); bottom: calc(var(--intro-bar, 0dvh) + 18px); display: flex; align-items: center; gap: 8px; color: rgba(223, 249, 244, .62); font-size: 6px; font-weight: 900; letter-spacing: .18em; transition: bottom .14s linear; }
+.session-intro > small i { width: 5px; height: 5px; border-radius: 50%; background: #78e6d3; box-shadow: 0 0 9px rgba(120, 230, 211, .82); }
+.game-ui.is-intro .game-topbar,
+.game-ui.is-intro .score-panel,
+.game-ui.is-intro .set-panel,
+.game-ui.is-intro .game-conditions,
+.game-ui.is-intro .desktop-controls,
+.game-ui.is-intro .mobile-controls,
+.game-ui.is-intro .camera-look-surface > span { opacity: var(--intro-hud, 0); transition: opacity .18s linear; }
+
 .barrel-lens {
   position: absolute;
   z-index: 2;
@@ -1372,6 +1420,14 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .launch-button { width: 100%; max-width: none; padding-left: 23px; }
 
   .game-topbar { height: calc(62px + env(safe-area-inset-top)); grid-template-columns: 1fr auto; padding: env(safe-area-inset-top) 14px 0; }
+  .session-intro-title { top: 21%; left: 18px; max-width: calc(100vw - 36px); padding-left: 11px; }
+  .session-intro-title > span { font-size: 6px; }
+  .session-intro-title h2 { margin-top: 7px; font-size: clamp(38px, 12vw, 68px); }
+  .session-intro-title p { margin: 7px 0 12px; font-size: 8px; }
+  .session-intro-title > div { gap: 12px; }
+  .session-intro-title strong { gap: 4px; font-size: 6px; }
+  .session-intro-title strong svg { width: 11px; }
+  .session-intro > small { right: 14px; bottom: calc(var(--intro-bar, 0dvh) + max(11px, env(safe-area-inset-bottom))); font-size: 5px; }
   .velocity-veil { filter: none; }
   .cinema-impact { animation-name: cinema-impact-mobile; }
   .game-brand span { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

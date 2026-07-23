@@ -555,7 +555,7 @@ export default function SurfscapeApp() {
       settings.windSpeed,
       settings.waveHeight,
       sessionCloudCover,
-      paused ? 0.34 : 1,
+      paused ? 0.34 : screen === "game" ? .4 + stats.sessionIntro * .6 : .42,
       sessionWeatherCode,
     );
     const movementSpeed = stats.phase === "paddling" ? stats.speed * stats.paddleEffort : stats.speed;
@@ -564,7 +564,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sessionIntro, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -731,7 +731,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
     audio.current.setMusicEnabled(musicEnabled);
-    audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 1, sessionWeatherCode);
+    audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, .34, sessionWeatherCode);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -1029,6 +1029,20 @@ export default function SurfscapeApp() {
   const landingLabel = maneuverToast
     ? maneuverToast.quality >= .82 ? "STOMPED" : maneuverToast.quality >= .48 ? "LANDED" : "RECOVERED"
     : "LANDED";
+  const sessionIntroActive = stats.sessionIntro < .999;
+  const sessionIntroOpacity = stats.sessionIntro < .09
+    ? stats.sessionIntro / .09
+    : stats.sessionIntro > .72
+      ? (1 - stats.sessionIntro) / .28
+      : 1;
+  const sessionIntroHud = THREEClamp((stats.sessionIntro - .38) / .5, 0, 1);
+  const gameUiStyle = {
+    "--intro-hud": sessionIntroActive ? sessionIntroHud : 1,
+  } as CSSProperties;
+  const sessionIntroStyle = {
+    "--intro-bar": `${Math.max(0, (1 - stats.sessionIntro) * 9).toFixed(2)}dvh`,
+    opacity: THREEClamp(sessionIntroOpacity, 0, 1),
+  } as CSSProperties;
 
   return (
     <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
@@ -1288,7 +1302,7 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""}`}>
+        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
           <div
             className="camera-look-surface"
             aria-label="Drag to look around"
@@ -1310,6 +1324,21 @@ export default function SurfscapeApp() {
           </div>
           <div className={`velocity-veil ${stats.barrelIntensity > .2 ? "is-barrel" : ""}`} style={{ opacity: velocityIntensity }} aria-hidden="true" />
           {cinemaBeat && <div className={`cinema-impact is-${cinemaBeat}`} key={`${cinemaBeat}-${cinemaBeatKey}`} aria-hidden="true" />}
+          {sessionIntroActive && (
+            <div className="session-intro" style={sessionIntroStyle} aria-live="polite">
+              <div className="session-intro-title">
+                <span>{selectedForecast ? "FORECAST SESSION" : conditions.source === "live" ? "LIVE OCEAN MODEL" : "MODELED SESSION"} · {settings.mode.toUpperCase()}</span>
+                <h2>{zoneLabel}</h2>
+                <p>{beach.name} · {beach.region}</p>
+                <div>
+                  <strong><Waves /> {settings.waveHeight.toFixed(1)} m</strong>
+                  <strong><Wind /> {settings.wavePeriod.toFixed(1)} s</strong>
+                  <strong><ArrowRight /> {breakCharacter.line}</strong>
+                </div>
+              </div>
+              <small><i /> OCEAN MODEL LOCKED · CONTROLS LIVE</small>
+            </div>
+          )}
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
