@@ -2950,6 +2950,387 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   }
 }
 
+/*
+ * Session cockpit
+ *
+ * The first viewport is a compact two-part decision surface: ocean context on
+ * the left and every required choice on the right. Detailed maps, forecasts,
+ * and tour progress live below it instead of competing with the setup flow.
+ */
+.launch-content {
+  align-items: start;
+}
+
+.launch-config {
+  min-width: 0;
+  margin: 24px 0;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(185, 246, 236, .15);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--spot-accent) 14%, transparent), transparent 44%),
+    linear-gradient(155deg, rgba(7, 29, 36, .94), rgba(3, 15, 21, .92));
+  box-shadow: 0 25px 75px rgba(0, 0, 0, .25), inset 0 1px rgba(255, 255, 255, .055);
+}
+
+.launch-config-head {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 2px 14px;
+  border-bottom: 1px solid rgba(197, 246, 239, .1);
+}
+
+.launch-config-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.launch-config-head > div > span,
+.launch-config-head > div > small {
+  color: rgba(211, 241, 236, .46);
+  font-size: 6px;
+  font-weight: 850;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.launch-config-head > div > strong {
+  overflow: hidden;
+  color: #effffb;
+  font-size: 17px;
+  letter-spacing: -.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-beach-select {
+  width: min(194px, 42%);
+  height: 42px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 13px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid rgba(152, 240, 225, .23);
+  border-radius: 11px;
+  background: rgba(60, 199, 183, .07);
+  color: #eafff9;
+  cursor: pointer;
+}
+
+.config-beach-select > svg {
+  width: 13px;
+  color: var(--spot-accent);
+  pointer-events: none;
+}
+
+.config-beach-select > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.config-beach-select small {
+  color: rgba(205, 239, 233, .38);
+  font-size: 5px;
+  font-weight: 850;
+  letter-spacing: .11em;
+}
+
+.config-beach-select strong {
+  overflow: hidden;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-beach-select select {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.launch-config .mode-section {
+  margin-top: 14px;
+}
+
+.launch-config .section-label {
+  min-height: 22px;
+}
+
+.launch-config .mode-grid {
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.launch-config .mode-card {
+  min-height: 82px;
+  padding: 11px 11px 25px;
+  border-radius: 11px;
+}
+
+.launch-config .mode-card > strong {
+  margin: 5px 0 3px;
+  font-size: 12px;
+}
+
+.launch-config .mode-card > p {
+  overflow: hidden;
+  font-size: 7px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-config .mode-card > i {
+  right: 10px;
+  bottom: 8px;
+  left: 10px;
+  font-size: 5px;
+}
+
+.launch-config .quiver-picker {
+  margin-top: 9px;
+  border-color: rgba(188, 243, 235, .13);
+  background: rgba(2, 12, 17, .46);
+}
+
+.launch-config .quiver-head {
+  min-height: 29px;
+  padding: 0 10px;
+}
+
+.launch-config .quiver-grid button {
+  min-height: 57px;
+}
+
+.launch-content > .planner {
+  grid-column: 1 / -1;
+  position: static;
+  top: auto;
+  width: 100%;
+  margin: 0 0 20px;
+}
+
+.mobile-controls.is-catch-ready .action-button,
+.mobile-controls.is-dive-ready .action-button {
+  animation: none !important;
+}
+
+.action-button,
+.touch-context,
+.game-objective strong {
+  transition: border-color .18s ease, background-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+@media (min-width: 1120px) {
+  .launch-content {
+    grid-template-columns: minmax(410px, .9fr) minmax(540px, 1.1fr);
+    gap: clamp(22px, 2.8vw, 42px);
+  }
+
+  .launch-hero {
+    padding: clamp(26px, 4vh, 38px) 0 20px;
+  }
+
+  .launch-hero h1 {
+    margin: 14px 0 10px;
+    font-size: clamp(68px, 6vw, 96px);
+  }
+
+  .hero-copy {
+    max-width: 600px;
+    margin: 15px 0 17px;
+    font-size: clamp(10px, .85vw, 13px);
+  }
+
+  .current-readout {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .current-readout .readout-location {
+    display: none;
+  }
+
+  .current-readout > div {
+    min-height: 68px;
+    padding: 10px 12px;
+  }
+
+  .launch-config .mode-grid,
+  .launch-config .quiver-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .launch-content > .planner {
+    align-self: auto;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1119px) {
+  .launch-content {
+    max-width: 860px;
+  }
+
+  .launch-hero {
+    padding: 22px 0 12px;
+  }
+
+  .launch-hero h1 {
+    margin: 10px 0 8px;
+    font-size: clamp(58px, 9vw, 78px);
+  }
+
+  .hero-copy {
+    max-width: 660px;
+    margin: 12px 0;
+    font-size: 10px;
+  }
+
+  .current-readout > div {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .launch-config {
+    margin: 8px 0 16px;
+  }
+}
+
+@media (max-width: 760px) {
+  .launch-hero {
+    padding: 14px 2px 7px;
+  }
+
+  .hero-index {
+    font-size: 6px;
+  }
+
+  .launch-hero h1 {
+    margin: 8px 0 6px;
+    font-size: clamp(42px, 13vw, 56px);
+    line-height: .78;
+  }
+
+  .hero-copy {
+    max-width: 94%;
+    margin: 10px 0;
+    font-size: 8px;
+    line-height: 1.35;
+  }
+
+  .current-readout > div {
+    min-height: 51px;
+    padding: 7px 6px;
+  }
+
+  .readout-metric > strong {
+    font-size: 14px;
+  }
+
+  .launch-config {
+    width: 100%;
+    margin: 7px 0 12px;
+    padding: 10px;
+    border-radius: 15px;
+  }
+
+  .launch-config-head {
+    min-height: 43px;
+    padding-bottom: 9px;
+  }
+
+  .launch-config-head > div > strong {
+    font-size: 12px;
+  }
+
+  .launch-config-head > div > small {
+    display: none;
+  }
+
+  .config-beach-select {
+    width: min(158px, 51%);
+    height: 35px;
+    padding: 0 7px;
+  }
+
+  .config-beach-select small {
+    display: none;
+  }
+
+  .config-beach-select strong {
+    font-size: 6px;
+  }
+
+  .launch-config .mode-section {
+    margin-top: 9px;
+  }
+
+  .launch-config .section-label {
+    min-height: 18px;
+  }
+
+  .launch-config .mode-card {
+    min-height: 64px;
+    padding: 8px 6px 20px;
+  }
+
+  .launch-config .mode-card > strong {
+    margin: 3px 0;
+    font-size: 8px;
+  }
+
+  .launch-config .mode-card > p {
+    display: none;
+  }
+
+  .launch-config .mode-card > i {
+    right: 6px;
+    bottom: 6px;
+    left: 6px;
+  }
+
+  .launch-config .quiver-head {
+    min-height: 25px;
+  }
+
+  .launch-config .quiver-grid button {
+    min-height: 53px;
+    padding: 6px 4px;
+  }
+
+  .launch-content > .planner {
+    margin: 0 0 14px;
+  }
+}
+
+@media (max-height: 720px) {
+  .launch-hero h1 {
+    font-size: clamp(42px, 7vw, 76px);
+  }
+
+  .hero-copy {
+    margin-block: 8px;
+  }
+
+  .launch-config {
+    margin-top: 7px;
+  }
+}
+
 @media (max-width: 760px) and (display-mode: standalone),
   (max-width: 760px) and (display-mode: fullscreen),
   (hover: none) and (pointer: coarse) and (display-mode: standalone),

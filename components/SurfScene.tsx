@@ -820,7 +820,11 @@ const OCEAN_VERTEX = /* glsl */ `
     float curve = waveDir.x * .0019 * surfaceOrigin.x * surfaceOrigin.x;
     vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
     float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
-    float shallowCompression = mix(1.0, mix(.82, .69, uSteepness), smoothstep(-32.0, 9.0, breakCoord));
+    float shallowCompression = mix(
+      1.0,
+      mix(.50, .32, clamp(uSteepness, 0.0, 1.0)),
+      smoothstep(-108.0, 9.0, breakCoord)
+    );
     float primaryWavelength = clamp(1.56 * uPeriod * uPeriod, 48.0, 320.0) * shallowCompression;
     vec2 primaryDirection = normalize(vec2(.095 + uPeel * .075 + waveDir.x * .42 + currentDir.x * .035, max(.45, waveDir.y)));
     float primaryPhase = dot(curvedOrigin, primaryDirection) * (PI * 2.0 / primaryWavelength) - uTime * angularSpeed;
@@ -844,17 +848,21 @@ const OCEAN_VERTEX = /* glsl */ `
       angularSpeed,
       0.0
     );
-    float primaryShoaling = smoothstep(-58.0, 9.0, breakCoord);
+    float primaryShoaling = smoothstep(-96.0, 9.0, breakCoord);
     float primaryNonlinearity = clamp(
       primaryShoaling
-        * (.12 + uSteepness * .2 + uHollow * .08)
-        * (.72 + setEnergy * .28),
+        * (.18 + uSteepness * .32 + uHollow * .18)
+        * (.70 + setEnergy * .30),
       0.0,
-      .46
+      .78
     );
+    float crestRidge = pow(max(0.0, primary), 5.0);
+    float troughDraw = pow(max(0.0, -primary), 2.0);
     float shapedPrimary = primary
-      - primaryNonlinearity * cos(primaryPhase * 2.0)
-      - primaryNonlinearity * .36 * sin(primaryPhase * 3.0);
+      - primaryNonlinearity * .42 * cos(primaryPhase * 2.0)
+      - primaryNonlinearity * .18 * sin(primaryPhase * 3.0)
+      + primaryNonlinearity * .50 * crestRidge
+      - primaryNonlinearity * .08 * troughDraw;
     // gerstner() already supplied the fundamental. Add only the nonlinear
     // harmonics here so the rendered surface matches waveHeightAt() exactly.
     p.z += amplitude * .64 * shore * setLift * (shapedPrimary - primary);
@@ -1147,7 +1155,7 @@ function Ocean({
     ? quality === "reduced" ? 80 : quality === "high" ? 140 : 108
     : quality === "reduced" ? 180 : quality === "balanced" ? 224 : 280;
   const offshoreSegments = mobile
-    ? quality === "reduced" ? 96 : quality === "high" ? 150 : 120
+    ? quality === "reduced" ? 128 : quality === "high" ? 224 : 184
     : quality === "reduced" ? 190 : quality === "balanced" ? 238 : 280;
   const subsurfaceCrossShoreSegments = Math.max(48, Math.round(crossShoreSegments * .62));
   const subsurfaceOffshoreSegments = Math.max(64, Math.round(offshoreSegments * .6));
@@ -9795,7 +9803,7 @@ function AdaptiveImagePipeline({
     if (lensDeposit > lensWetness.current) {
       lensWetness.current = THREE.MathUtils.damp(lensWetness.current, lensDeposit, 13, delta);
     } else {
-      const evaporation = .038 + (1 - cloudFactor) * .02 + (weather.storm ? 0 : .012);
+      const evaporation = .28 + (1 - cloudFactor) * .1 + (weather.storm ? 0 : .08);
       lensWetness.current = Math.max(
         lensDeposit * .36,
         lensWetness.current - delta * evaporation,
@@ -10350,6 +10358,8 @@ function Simulation({
   const missedWaveUntil = useRef(0);
   const nextShorebreakAt = useRef(0);
   const duckDiveUntil = useRef(0);
+  const duckDiveWindowOpen = useRef(false);
+  const catchWindowOpen = useRef(false);
   const duckDiveQuality = useRef(0);
   const shorebreakId = useRef(0);
   const shorebreakResult = useRef<GameStats["shorebreakResult"]>("");
@@ -10472,6 +10482,7 @@ function Simulation({
   const cameraSpringOffset = useRef(new THREE.Vector3());
   const cameraSpringVelocity = useRef(new THREE.Vector3());
   const cameraWaterOcclusionLift = useRef(0);
+  const cameraSurfaceReference = useRef(0);
   const cameraBank = useRef(0);
   const cameraMotionInitialized = useRef(false);
   const cameraTrackingDriving = useRef(false);
@@ -10989,12 +11000,27 @@ function Simulation({
         const shorebreakApproach = 1 - THREE.MathUtils.smoothstep(shorebreakSeconds, .06, 2.45);
         shorebreakIntensity = shorebreakPower * shorebreakApproach;
         duckDiveActive = t < duckDiveUntil.current;
-        duckDiveReady = !inLineup && shorebreakPower > .18 && shorebreakSeconds > .035 && shorebreakSeconds < 1.08;
+        if (
+          inLineup
+          || shorebreakSeconds <= .02
+          || shorebreakSeconds > 1.65
+          || shorebreakPower < .08
+        ) {
+          duckDiveWindowOpen.current = false;
+        } else if (
+          !duckDiveActive
+          && shorebreakPower > .14
+          && shorebreakSeconds < 1.28
+        ) {
+          duckDiveWindowOpen.current = true;
+        }
+        duckDiveReady = duckDiveWindowOpen.current && !duckDiveActive;
         if (actionPressed && duckDiveReady) {
           const diveTimingWindow = settings.mode === "training" ? 1 : settings.mode === "advanced" ? .64 : mobileRenderer ? .88 : .78;
           duckDiveQuality.current = THREE.MathUtils.clamp(1 - Math.abs(shorebreakSeconds - .3) / diveTimingWindow, 0, 1);
           duckDiveUntil.current = t + 1.12;
           duckDiveActive = true;
+          duckDiveWindowOpen.current = false;
           stamina.current = Math.max(0, stamina.current - (2.4 + shorebreakPower * 1.8));
         }
         if (!inLineup && t >= nextShorebreakAt.current) {
@@ -11002,6 +11028,7 @@ function Simulation({
           const diveThreshold = settings.mode === "training" ? .24 : settings.mode === "advanced" ? .46 : .34;
           const cleanDive = duckDiveActive && duckDiveQuality.current >= diveThreshold;
           shorebreakResult.current = cleanDive ? "clean" : "hit";
+          duckDiveWindowOpen.current = false;
           shorebreakId.current += 1;
           if (cleanDive) {
             paddleVelocity.current.multiplyScalar(.86 + duckDiveQuality.current * .08);
@@ -11040,11 +11067,23 @@ function Simulation({
         const breakDemand = Math.max(0, tidePower + tideSteepness - 1.85) * .055;
         const takeoffThreshold = (settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36) + breakDemand;
         const headingThreshold = settings.mode === "training" ? .18 : settings.mode === "advanced" ? .52 : .34;
-        catchReady = !takeoffCommitting
+        const catchWindowCandidate = !takeoffCommitting
           && inLineup
           && takeoffAlignment >= headingThreshold
           && t >= missedWaveUntil.current
           && takeoffQuality >= takeoffThreshold;
+        if (
+          takeoffCommitting
+          || !inLineup
+          || t < missedWaveUntil.current
+          || takeoffAlignment < Math.max(.05, headingThreshold - .16)
+          || takeoffQuality < Math.max(.08, takeoffThreshold - .18)
+        ) {
+          catchWindowOpen.current = false;
+        } else if (catchWindowCandidate) {
+          catchWindowOpen.current = true;
+        }
+        catchReady = catchWindowOpen.current;
         const setCopy = setState.setActive && setState.setWaveIndex > 0
           ? `Wave ${setState.setWaveIndex} of ${setState.waveCount} building`
           : setState.secondsToPeak === 0
@@ -11189,9 +11228,7 @@ function Simulation({
           prompt = !inLineup
             ? duckDiveReady
               ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
-              : shorebreakIntensity > .08
-                ? `Set wall building · ${shorebreakSeconds.toFixed(1)}s to impact`
-                : "Paddle beyond the break · read the incoming walls"
+              : "Paddle beyond the break · the dive cue appears when the lip commits"
             : takeoffAlignment < headingThreshold
               ? "Turn the board toward shore · use A/D or the stick"
               : t < missedWaveUntil.current
@@ -11211,10 +11248,12 @@ function Simulation({
               rideWavePhase.current = takeoffPhase;
               stamina.current = Math.max(0, stamina.current - 2.5);
               motion.current.impact = Math.max(motion.current.impact, .22 + takeoffQuality * .18);
+              catchWindowOpen.current = false;
               catchReady = false;
             } else if (t >= missedWaveUntil.current) {
               stamina.current = Math.max(0, stamina.current - 6);
               missedWaveUntil.current = t + 1.2;
+              catchWindowOpen.current = false;
               catchReady = false;
             }
           }
@@ -12340,11 +12379,11 @@ function Simulation({
           1,
         )
       : 0;
-    const submersionTarget = Math.max(motion.current.duckDive * .94, wipeoutSubmersion);
+    const submersionTarget = Math.max(motion.current.duckDive * .86, wipeoutSubmersion);
     motion.current.submersion = THREE.MathUtils.damp(
       motion.current.submersion,
       submersionTarget,
-      submersionTarget > motion.current.submersion ? 14 : 6.5,
+      submersionTarget > motion.current.submersion ? 11 : 10,
       delta,
     );
     motion.current.paddleHeading = paddleHeading.current;
@@ -12437,6 +12476,13 @@ function Simulation({
     const paddling = phase.current === "paddling";
     const driving = phase.current === "driving" || vanMotion.current.transitionDirection !== 0;
     const submersion = motion.current.submersion;
+    cameraSurfaceReference.current = THREE.MathUtils.damp(
+      cameraSurfaceReference.current,
+      playerY,
+      paddling ? 1.25 : 5.5,
+      delta,
+    );
+    const paddleCameraWaterY = THREE.MathUtils.lerp(cameraSurfaceReference.current, playerY, .3);
     if (driving) {
       const forwardX = -Math.sin(vanHeading.current);
       const forwardZ = -Math.cos(vanHeading.current);
@@ -12510,45 +12556,45 @@ function Simulation({
       if (cameraMode === "pov") {
         cameraPosition.current.set(
           position.current.x + forwardX * .72 + rightX * .08,
-          playerY + 1.12 - submersion * 1.72 + wallBeat * .045,
+          paddleCameraWaterY + 1.12 - submersion * 1.72 + wallBeat * .045,
           position.current.z + forwardZ * .72 + rightZ * .08,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 8,
-          playerY + .64 - submersion * 1.18,
+          paddleCameraWaterY + .64 - submersion * 1.18,
           position.current.z + forwardZ * 8,
         );
       } else if (cameraMode === "immersive") {
         cameraPosition.current.set(
           position.current.x - forwardX * 4.6 + rightX * .68,
-          playerY + 2.2 - submersion * 3.35 + wallBeat * .16,
+          paddleCameraWaterY + 2.2 - submersion * 3.35 + wallBeat * .16,
           position.current.z - forwardZ * 4.6 + rightZ * .68,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 3.8,
-          playerY + .42 - submersion * .86,
+          paddleCameraWaterY + .42 - submersion * .86,
           position.current.z + forwardZ * 3.8,
         );
       } else if (cameraMode === "cinematic") {
         cameraPosition.current.set(
           position.current.x - forwardX * 3.1 + rightX * 6,
-          playerY + 3.6 - submersion * 5 + wallBeat * .22,
+          paddleCameraWaterY + 3.6 - submersion * 5 + wallBeat * .22,
           position.current.z - forwardZ * 3.1 + rightZ * 6,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 2.2,
-          playerY + .52 - submersion * .92,
+          paddleCameraWaterY + .52 - submersion * .92,
           position.current.z + forwardZ * 2.2,
         );
       } else {
         cameraPosition.current.set(
           position.current.x - forwardX * 9.5,
-          playerY + 4.9 - submersion * 6.5 + wallBeat * .2,
+          paddleCameraWaterY + 4.9 - submersion * 6.5 + wallBeat * .2,
           position.current.z - forwardZ * 9.5,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 3,
-          playerY + .9 - submersion * 1.34,
+          paddleCameraWaterY + .9 - submersion * 1.34,
           position.current.z + forwardZ * 3,
         );
       }

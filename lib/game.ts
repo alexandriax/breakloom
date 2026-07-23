@@ -591,14 +591,18 @@ export function waveSetStateAt(
 }
 
 function breakingWaveProfile(phase: number, nonlinearity: number) {
-  // A Stokes-like profile keeps the wave continuous while concentrating more
-  // of its vertical change into the front face. The extra harmonics are faded
-  // in only as the swell shoals, so the deep-water surface remains broad and
-  // the same crest becomes visibly steeper as it approaches the break.
-  const shape = Math.max(0, Math.min(.46, nonlinearity));
-  return Math.sin(phase)
-    - shape * Math.cos(phase * 2)
-    - shape * .36 * Math.sin(phase * 3);
+  // A continuous, crest-focused profile. The harmonics sharpen the forward
+  // wall while the powered positive half-wave gives the crest a real ridge
+  // instead of leaving the ocean as a gently tinted sine plane.
+  const shape = Math.max(0, Math.min(.78, nonlinearity));
+  const fundamental = Math.sin(phase);
+  const crestRidge = Math.pow(Math.max(0, fundamental), 5);
+  const troughDraw = Math.pow(Math.max(0, -fundamental), 2);
+  return fundamental
+    - shape * .42 * Math.cos(phase * 2)
+    - shape * .18 * Math.sin(phase * 3)
+    + shape * .5 * crestRidge
+    - shape * .08 * troughDraw;
 }
 
 export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
@@ -655,10 +659,10 @@ export function waveHeightAt(
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const setEnergy = waveEnergyForPhase(p1);
   const setLift = 0.78 + setEnergy * 0.34;
-  const shoaling = smoothstep(-58, 9, breakZ);
+  const shoaling = smoothstep(-96, 9, breakZ);
   const primaryNonlinearity = shoaling
-    * (.12 + steepness * .2 + (character?.hollow ?? .35) * tideResponse.hollowScale * .08)
-    * (.72 + setEnergy * .28);
+    * (.18 + steepness * .32 + (character?.hollow ?? .35) * tideResponse.hollowScale * .18)
+    * (.7 + setEnergy * .3);
   const primaryProfile = breakingWaveProfile(p1, primaryNonlinearity);
   const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const relativeSwellAngle = ((settings.swellDirection - settings.coastHeading) * Math.PI) / 180;
@@ -768,8 +772,8 @@ export function primaryWavePhaseAt(
   const coastalZ = z - shorelineShiftForTide(settings.tide);
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
-  const shoaling = smoothstep(-32, 9, breakZ);
-  const shallowScale = .82 + (.69 - .82) * steepness;
+  const shoaling = smoothstep(-108, 9, breakZ);
+  const shallowScale = .5 + (.32 - .5) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
   const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
   const directionZ = Math.max(.45, Math.cos(waveAngle));
@@ -796,8 +800,8 @@ export function primaryWaveVelocityAt(
   const coastalZ = z - shorelineShiftForTide(settings.tide);
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
-  const shoaling = smoothstep(-32, 9, breakZ);
-  const shallowScale = .82 + (.69 - .82) * steepness;
+  const shoaling = smoothstep(-108, 9, breakZ);
+  const shallowScale = .5 + (.32 - .5) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
   const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
   const directionZ = Math.max(.45, Math.cos(waveAngle));

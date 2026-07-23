@@ -2998,9 +2998,7 @@ export default function SurfscapeApp() {
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
                 ? { title: "HOLD THE LINEUP", detail: "Board is set · wait for the crest pulse" }
-                : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 2.8
-                  ? { title: "WALL APPROACHING", detail: `${stats.shorebreakSeconds.toFixed(1)}s · keep paddling and prepare to dive` }
-                  : { title: "READ THE CREST", detail: "Hold PADDLE · left stick turns" }
+                : { title: "PADDLE OUT", detail: "Hold PADDLE · steer toward open water · DIVE appears only when needed" }
           : stats.phase === "wipeout"
             ? {
                 title: stats.holdDownSeconds > .7 ? "HOLD-DOWN" : "RESURFACING",
@@ -3174,9 +3172,26 @@ export default function SurfscapeApp() {
                   {settings.mode !== "playground" && <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />}
                 </div>
               </div>
+            </div>
 
+            <div className="launch-config">
+              <div className="launch-config-head">
+                <div>
+                  <span>01 / SESSION SETUP</span>
+                  <strong>{beach.name}</strong>
+                  <small>{zoneLabel} · {beach.country}</small>
+                </div>
+                <label className="config-beach-select">
+                  <MapPin />
+                  <span><small>CHANGE COAST</small><strong>{beach.name}</strong></span>
+                  <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)} aria-label="Choose beach">
+                    {BEACHES.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.country}</option>)}
+                  </select>
+                  <ChevronDown />
+                </label>
+              </div>
               <div className="mode-section">
-                <div className="section-label"><span>01</span><p>Choose your relationship with the water</p></div>
+                <div className="section-label"><span>MODE</span><p>Choose your relationship with the water</p></div>
                 <div className="mode-grid">
                   {MODES.map((mode) => (
                     <button
@@ -3250,18 +3265,10 @@ export default function SurfscapeApp() {
               <div className="planner-inner">
                 <div className="planner-head">
                   <div>
-                    <span className="overline">02 / BUILD YOUR SESSION</span>
+                    <span className="overline">02 / EXPLORE THE BREAK</span>
                     <h2>{zoneLabel}</h2>
                     <p>{beach.name} · {beach.region}</p>
                   </div>
-                  <label className="break-select">
-                    <MapPin />
-                    <span><small>CHANGE BEACH</small><strong>{beach.name}</strong></span>
-                    <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)} aria-label="Change beach">
-                      {BEACHES.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.country}</option>)}
-                    </select>
-                    <ChevronDown />
-                  </label>
                 </div>
                 <nav className="planner-tabs" aria-label="Session planning">
                   <button type="button" className={launchPanel === "break" ? "is-active" : ""} onClick={() => setLaunchPanel("break")} aria-pressed={launchPanel === "break"}>
