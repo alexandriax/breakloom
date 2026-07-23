@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
+import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -645,20 +645,25 @@ const OCEAN_VERTEX = /* glsl */ `
     return vec2(sin(angle), cos(angle));
   }
 
-  float setEnvelope() {
-    float period = max(4.0, uPeriod);
-    float cycle = max(30.0, period * 4.8);
-    float phase = mod(uTime, cycle);
-    float firstPeak = period * .55;
-    float spacing = period * .86;
-    float pulseWidth = period * .66;
-    float firstDistance = clamp(1.0 - abs(phase - firstPeak) / pulseWidth, 0.0, 1.0);
-    float secondDistance = clamp(1.0 - abs(phase - (firstPeak + spacing)) / pulseWidth, 0.0, 1.0);
-    float thirdDistance = clamp(1.0 - abs(phase - (firstPeak + spacing * 2.0)) / pulseWidth, 0.0, 1.0);
-    float firstPulse = firstDistance * firstDistance * (3.0 - 2.0 * firstDistance) * .78;
-    float secondPulse = secondDistance * secondDistance * (3.0 - 2.0 * secondDistance);
-    float thirdPulse = thirdDistance * thirdDistance * (3.0 - 2.0 * thirdDistance) * .88;
-    return .09 + max(firstPulse, max(secondPulse, thirdPulse)) * .91;
+  float crestEnergy(float crestIndex) {
+    float ordinal = mod(-crestIndex, 9.0);
+    if (ordinal < 0.0) ordinal += 9.0;
+    if (ordinal < .5) return .10;
+    if (ordinal < 1.5) return .12;
+    if (ordinal < 2.5) return .16;
+    if (ordinal < 3.5) return .24;
+    if (ordinal < 4.5) return .72;
+    if (ordinal < 5.5) return 1.0;
+    if (ordinal < 6.5) return .86;
+    if (ordinal < 7.5) return .36;
+    return .17;
+  }
+
+  float travelingSetEnergy(float phase) {
+    float crestCoordinate = (phase - PI * .5) / (PI * 2.0);
+    float lowerCrest = floor(crestCoordinate);
+    float blend = smoothstep(0.0, 1.0, fract(crestCoordinate));
+    return mix(crestEnergy(lowerCrest), crestEnergy(lowerCrest + 1.0), blend);
   }
 
   float gerstner(
@@ -700,7 +705,9 @@ const OCEAN_VERTEX = /* glsl */ `
     float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
     float shallowCompression = mix(1.0, mix(.82, .69, uSteepness), smoothstep(-32.0, 9.0, breakCoord));
     float primaryWavelength = clamp(1.56 * uPeriod * uPeriod, 48.0, 320.0) * shallowCompression;
-    float setEnergy = setEnvelope();
+    vec2 primaryDirection = normalize(vec2(.095 + uPeel * .075 + waveDir.x * .42 + currentDir.x * .035, max(.45, waveDir.y)));
+    float primaryPhase = dot(curvedOrigin, primaryDirection) * (PI * 2.0 / primaryWavelength) - uTime * angularSpeed;
+    float setEnergy = travelingSetEnergy(primaryPhase);
     float setLift = .78 + setEnergy * .34;
     float amplitude = max(.12, uHeight * .62) * uPower * uTideFaceScale;
     float swellPeriod = max(4.0, uSwellPeriod);
@@ -713,7 +720,7 @@ const OCEAN_VERTEX = /* glsl */ `
     float primary = gerstner(
       p,
       curvedOrigin,
-      normalize(vec2(.095 + uPeel * .075 + waveDir.x * .42 + currentDir.x * .035, max(.45, waveDir.y))),
+      primaryDirection,
       primaryWavelength,
       amplitude * .64 * shore * setLift,
       clamp(.46 + uSteepness * .32, .58, .88),
@@ -8625,7 +8632,13 @@ function Simulation({
     const windExposure = THREE.MathUtils.clamp(settings.windSpeed / 32, 0, 1.4);
     const onshoreChop = Math.max(0, Math.cos(relativeWindAngle)) * windExposure;
     const offshoreGroom = Math.max(0, -Math.cos(relativeWindAngle)) * Math.min(1, windExposure);
-    const setState = waveSetState(t, settings.wavePeriod);
+    const setState = waveSetStateAt(
+      position.current.x,
+      position.current.z,
+      t,
+      settings,
+      character,
+    );
     let speed = 0;
     let balanceTarget = 0;
     let prompt = "Read the water";

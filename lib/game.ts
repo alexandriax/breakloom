@@ -8,6 +8,9 @@ export type BoardType = "performance" | "fish" | "longboard";
 export const SHORELINE_REFERENCE_Z = 8;
 export const OUTER_PADDLE_LIMIT_Z = -900;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
+const WAVE_GROUP_ENERGY = [.1, .12, .16, .24, .72, 1, .86, .36, .17] as const;
+const SET_WAVE_START = 4;
+const SET_WAVE_COUNT = 3;
 
 export const BOARD_SPECS: Record<BoardType, {
   name: string;
@@ -503,42 +506,80 @@ export const INITIAL_STATS: GameStats = {
   prompt: "Walk toward the water · or find the van",
 };
 
-export function waveSetState(elapsed: number, wavePeriod: number) {
+function positiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function waveGroupOrdinal(crestIndex: number) {
+  // A fixed observer sees crest indices decrease as the train travels shoreward.
+  // Negating the index makes the group order read lull → build → 1/2/3 → tail.
+  return positiveModulo(-crestIndex, WAVE_GROUP_ENERGY.length);
+}
+
+function crestEnergy(crestIndex: number) {
+  return WAVE_GROUP_ENERGY[waveGroupOrdinal(crestIndex)];
+}
+
+export function waveEnergyForPhase(phase: number) {
+  const crestCoordinate = (phase - Math.PI * .5) / (Math.PI * 2);
+  const lowerCrest = Math.floor(crestCoordinate);
+  const blend = crestCoordinate - lowerCrest;
+  const easedBlend = blend * blend * (3 - 2 * blend);
+  const lowerEnergy = crestEnergy(lowerCrest);
+  return lowerEnergy + (crestEnergy(lowerCrest + 1) - lowerEnergy) * easedBlend;
+}
+
+function waveSetStateForPhase(phase: number, wavePeriod: number) {
   const period = Math.max(4, wavePeriod);
-  const waveCount = 3;
-  const cycle = Math.max(30, period * 4.8);
-  const phase = ((elapsed % cycle) + cycle) % cycle;
-  const firstPeak = period * .55;
-  const spacing = period * .86;
-  const pulseWidth = period * .66;
-  let strongestPulse = 0;
-  let nearestWaveIndex = 0;
-  let futurePeak = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < waveCount; index += 1) {
-    const peak = firstPeak + index * spacing;
-    const normalized = Math.max(0, Math.min(1, 1 - Math.abs(phase - peak) / pulseWidth));
-    const eased = normalized * normalized * (3 - 2 * normalized);
-    const pulse = eased * (index === 0 ? .78 : index === 1 ? 1 : .88);
-    if (pulse > strongestPulse) {
-      strongestPulse = pulse;
-      nearestWaveIndex = index;
-    }
-    if (peak >= phase - .001 && peak < futurePeak) futurePeak = peak;
+  const angularSpeed = Math.PI * 2 / period;
+  const crestCoordinate = (phase - Math.PI * .5) / (Math.PI * 2);
+  const closestCrest = Math.round(crestCoordinate);
+  const closestOrdinal = waveGroupOrdinal(closestCrest);
+  const energy = waveEnergyForPhase(phase);
+  const setWaveIndex = closestOrdinal >= SET_WAVE_START
+    && closestOrdinal < SET_WAVE_START + SET_WAVE_COUNT
+    ? closestOrdinal - SET_WAVE_START + 1
+    : 0;
+  const setActive = setWaveIndex > 0 && energy >= .38;
+  const upcomingCrest = Math.floor(crestCoordinate + .000001);
+  const phaseToUpcoming = Math.max(
+    0,
+    phase - (Math.PI * .5 + upcomingCrest * Math.PI * 2),
+  );
+  let secondsToPeak = Number.POSITIVE_INFINITY;
+  for (let offset = 0; offset <= WAVE_GROUP_ENERGY.length; offset += 1) {
+    const candidate = upcomingCrest - offset;
+    const ordinal = waveGroupOrdinal(candidate);
+    if (ordinal < SET_WAVE_START || ordinal >= SET_WAVE_START + SET_WAVE_COUNT) continue;
+    secondsToPeak = (phaseToUpcoming + offset * Math.PI * 2) / angularSpeed;
+    break;
   }
-  const energy = Math.min(1, .09 + strongestPulse * .91);
-  const setActive = strongestPulse >= .16;
-  const setWaveIndex = setActive ? nearestWaveIndex + 1 : 0;
-  const secondsToPeak = !Number.isFinite(futurePeak)
-    ? cycle - phase + firstPeak
-    : Math.max(0, futurePeak - phase);
   return {
     energy,
     secondsToPeak: secondsToPeak < .72 ? 0 : secondsToPeak,
-    cycle,
-    waveCount,
+    cycle: period * WAVE_GROUP_ENERGY.length,
+    waveCount: SET_WAVE_COUNT,
     setWaveIndex,
     setActive,
   };
+}
+
+export function waveSetState(elapsed: number, wavePeriod: number) {
+  const period = Math.max(4, wavePeriod);
+  return waveSetStateForPhase(-elapsed * (Math.PI * 2 / period), period);
+}
+
+export function waveSetStateAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+) {
+  return waveSetStateForPhase(
+    primaryWavePhaseAt(x, z, elapsed, settings, character),
+    settings.wavePeriod,
+  );
 }
 
 export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
@@ -588,13 +629,13 @@ export function waveHeightAt(
   const amplitude = Math.max(0.12, settings.waveHeight * 0.62) * power * tideResponse.faceScale;
   const period = Math.max(4, settings.wavePeriod);
   const speed = (Math.PI * 2) / period;
-  const setEnergy = waveSetState(elapsed, period).energy;
-  const setLift = 0.78 + setEnergy * 0.34;
   const coastalZ = z - shorelineShiftForTide(settings.tide);
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
   const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
   const shoreBoost = .72 + smoothstep(-85, 8, breakZ) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
+  const setEnergy = waveEnergyForPhase(p1);
+  const setLift = 0.78 + setEnergy * 0.34;
   const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const relativeSwellAngle = ((settings.swellDirection - settings.coastHeading) * Math.PI) / 180;
   const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
