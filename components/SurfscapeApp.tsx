@@ -1517,13 +1517,16 @@ export default function SurfscapeApp() {
   const coastBearing = compassDirection(settings.coastHeading + (stats.coastDistance < 0 ? -90 : 90));
   const coastPosition = `${Math.abs(stats.coastDistance).toFixed(0)} m ${coastBearing}`;
   const vehicleGrip = Math.round(stats.vehicleTraction * 100);
+  const ridingOut = stats.phase === "riding" && stats.rideOutProgress > .02;
   const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady || stats.duckDiveReady;
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
     : stats.nearVan
       ? "DRIVE"
       : stats.phase === "riding"
-        ? stats.maneuverActive
+        ? ridingOut
+          ? "RIDE OUT"
+          : stats.maneuverActive
           ? stats.maneuverPhase === "air" ? "SPOT IT" : "LAND"
           : stats.trickCharge > .04 ? `RELEASE ${Math.round(stats.trickCharge * 100)}` : "HOLD TRICK"
         : stats.duckDiveReady
@@ -1542,6 +1545,13 @@ export default function SurfscapeApp() {
       ? { title: "BEACH TRAVERSE", detail: "Full stick runs · swipe scene to look" }
       : stats.phase === "wading"
         ? { title: "SHOREBREAK", detail: "Push through until the board floats" }
+        : ridingOut
+          ? {
+              title: "CLEAN RIDE-OUT",
+              detail: stats.offshoreDistance < 8
+                ? "Momentum is carrying you into the shallows"
+                : "Settling onto the board beyond the foam",
+            }
         : stats.phase === "paddling"
           ? stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
@@ -2114,10 +2124,10 @@ export default function SurfscapeApp() {
             </div>
           )}
 
-          <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
+          <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""} ${ridingOut ? "is-exit" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
-              <span>{stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : stanceLabel}</em></span>
-              <strong>{Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%</strong>
+              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s` : stanceLabel}</em></span>
+              <strong>{ridingOut ? `${Math.round(stats.rideOutProgress * 100)}%` : `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%`}</strong>
             </div>
             <div className="balance-track">
               {stats.maneuverActive && <i className="landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
@@ -2133,7 +2143,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · shift stance with W/S`}</small>
+            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · shift stance with W/S`}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -2227,7 +2237,7 @@ export default function SurfscapeApp() {
               <span ref={joystickKnob} className="analog-knob"><i /></span>
               <small>{stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
             </div>
-            {stats.phase === "riding" ? (
+            {stats.phase === "riding" && !ridingOut ? (
               <div
                 className={`touch-balance ${stats.maneuverActive ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
                 role="slider"
@@ -2277,7 +2287,7 @@ export default function SurfscapeApp() {
               <span>{mobileActionLabel}</span>
               {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" ? <Sparkles /> : <Waves />}
             </button>
-            {stats.phase === "riding" && (
+            {stats.phase === "riding" && !ridingOut && (
               <div className={`touch-ride-telemetry ${stats.sectionPressure > .48 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Line ${lineLabel}. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>
                 <span><small>STANCE</small><strong>{stanceLabel}</strong></span>
                 <span><small>LINE</small><strong>{lineLabel}</strong></span>

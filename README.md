@@ -36,6 +36,8 @@ Wave sets build and fade on the swell radar and in a directional breaker sound f
 
 The breaking lip also leaves a persistent world-space whitewater field rather than a board-mounted decal. Individual foam patches advect more slowly than the crest, spread into perforated lace across the shoulder, follow the live displaced surface, intensify through collapsing sections and landings, and release detached mist that responds to the actual local wind. The pool automatically scales down on mobile while preserving the same motion.
 
+Successful rides now keep that physical continuity all the way through the exit. The surfer releases steering and compression into a settled ride-out while the live crest retains control of the board; shallow finishes carry directly into a momentum-preserving step through the foam, while deeper lines transition prone at the exact offshore position instead of cutting or teleporting back to the beach.
+
 Camera motion is derived from the active subject rather than a generic shake loop. Filtered velocity and acceleration produce directional chase lag, turn anticipation, physical horizon banking, speed-sensitive focal changes, and a damped spring response to takeoffs, landings, shorebreak hits, and van weight transfer. These effects are softened on mobile and disabled when the device requests reduced motion; unrestricted mouse, touch, and gamepad free look remains layered on top.
 
 ## Live data

@@ -138,6 +138,7 @@ export type GameStats = {
   rideGrade: SessionGrade;
   rideResult: "" | "clean" | "wipeout";
   rideResultId: number;
+  rideOutProgress: number;
   vehicleMode: boolean;
   vehicleGear: "P" | "D" | "R";
   vehicleThrottle: number;
@@ -213,6 +214,7 @@ export const INITIAL_STATS: GameStats = {
   rideGrade: "C",
   rideResult: "",
   rideResultId: 0,
+  rideOutProgress: 0,
   vehicleMode: false,
   vehicleGear: "P",
   vehicleThrottle: 0,
