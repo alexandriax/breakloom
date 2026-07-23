@@ -915,6 +915,17 @@ export default function SurfscapeApp() {
       stats.railGrip,
       stats.trickCharge,
     );
+    audio.current?.setWaveField(
+      stats.phase,
+      stats.setEnergy,
+      stats.shorebreakIntensity,
+      stats.catchReady,
+      stats.lineSide,
+      stats.sectionPressure,
+      settings.waveHeight,
+      settings.wavePeriod,
+      screen === "game" && !paused,
+    );
     audio.current?.setScore(
       stats.phase,
       stats.setEnergy,
@@ -945,7 +956,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sessionIntro, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1146,6 +1157,7 @@ export default function SurfscapeApp() {
     audio.current.setEnabled(soundEnabled);
     audio.current.setMusicEnabled(musicEnabled);
     audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, .34, sessionWeatherCode);
+    audio.current.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, true);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -1167,6 +1179,7 @@ export default function SurfscapeApp() {
   const leaveSession = () => {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
+    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, false);
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
     audio.current?.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
@@ -1185,6 +1198,17 @@ export default function SurfscapeApp() {
     audio.current.setEnabled(next);
     if (next) {
       audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
+      audio.current.setWaveField(
+        stats.phase,
+        stats.setEnergy,
+        stats.shorebreakIntensity,
+        stats.catchReady,
+        stats.lineSide,
+        stats.sectionPressure,
+        settings.waveHeight,
+        settings.wavePeriod,
+        screen === "game" && !paused,
+      );
     }
   };
 

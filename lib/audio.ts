@@ -49,6 +49,15 @@ export class SurfscapeAudio {
   private surfFilter: BiquadFilterNode | null = null;
   private surfPanner: StereoPannerNode | null = null;
 
+  private breaker: AudioBufferSourceNode | null = null;
+  private breakerRumbleGain: GainNode | null = null;
+  private breakerRumbleFilter: BiquadFilterNode | null = null;
+  private breakerWashGain: GainNode | null = null;
+  private breakerWashFilter: BiquadFilterNode | null = null;
+  private breakerPanner: StereoPannerNode | null = null;
+  private previousSetEnergy = 0;
+  private nextSetBreathAt = 0;
+
   private score: OscillatorNode[] = [];
   private scoreGain: GainNode | null = null;
   private scoreFilter: BiquadFilterNode | null = null;
@@ -175,6 +184,31 @@ export class SurfscapeAudio {
     this.surfGain = surfGain;
     this.surfPanner = surfPanner;
 
+    const breaker = this.loopNoise(.74, 5.42);
+    const breakerRumbleFilter = context.createBiquadFilter();
+    const breakerRumbleGain = context.createGain();
+    const breakerWashFilter = context.createBiquadFilter();
+    const breakerWashGain = context.createGain();
+    const breakerPanner = context.createStereoPanner();
+    breakerRumbleFilter.type = "lowpass";
+    breakerRumbleFilter.frequency.value = 310;
+    breakerRumbleFilter.Q.value = 1.2;
+    breakerRumbleGain.gain.value = 0;
+    breakerWashFilter.type = "bandpass";
+    breakerWashFilter.frequency.value = 1260;
+    breakerWashFilter.Q.value = .58;
+    breakerWashGain.gain.value = 0;
+    breaker.connect(breakerRumbleFilter).connect(breakerRumbleGain).connect(breakerPanner);
+    breaker.connect(breakerWashFilter).connect(breakerWashGain).connect(breakerPanner);
+    breakerPanner.connect(master);
+    this.sendToReverb(breakerPanner, .1);
+    this.breaker = breaker;
+    this.breakerRumbleGain = breakerRumbleGain;
+    this.breakerRumbleFilter = breakerRumbleFilter;
+    this.breakerWashGain = breakerWashGain;
+    this.breakerWashFilter = breakerWashFilter;
+    this.breakerPanner = breakerPanner;
+
     const musicBus = context.createGain();
     const musicCompressor = context.createDynamicsCompressor();
     musicBus.gain.value = this.musicEnabled ? 1 : 0;
@@ -190,6 +224,7 @@ export class SurfscapeAudio {
     this.createScore();
     this.createEngine();
     this.nextGullAt = context.currentTime + 5 + Math.random() * 5;
+    this.nextSetBreathAt = context.currentTime + 1.2;
     this.nextMusicStepAt = context.currentTime + .12;
   }
 
@@ -283,6 +318,70 @@ export class SurfscapeAudio {
     ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34, now, .12);
     ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12, now, .1);
     if (this.surfPanner) ramp(this.surfPanner.pan, Math.max(-.68, Math.min(.68, railLoad * .62)), now, .1);
+  }
+
+  setWaveField(
+    phase: GamePhase,
+    setEnergy: number,
+    shorebreakIntensity: number,
+    catchReady: boolean,
+    lineSide: number,
+    sectionPressure: number,
+    waveHeight: number,
+    wavePeriod: number,
+    active: boolean,
+  ) {
+    if (
+      !this.context
+      || !this.breaker
+      || !this.breakerRumbleGain
+      || !this.breakerRumbleFilter
+      || !this.breakerWashGain
+      || !this.breakerWashFilter
+      || !this.breakerPanner
+    ) return;
+    const now = this.context.currentTime;
+    const energy = Math.min(1, Math.max(0, setEnergy));
+    const shorebreak = Math.min(1, Math.max(0, shorebreakIntensity));
+    const pressure = Math.min(1, Math.max(0, sectionPressure));
+    const face = Math.min(1.45, Math.max(.12, waveHeight) / 2.4);
+    const phasePresence = phase === "shore"
+      ? .58
+      : phase === "wading"
+        ? .76
+        : phase === "paddling"
+          ? .9
+          : 1;
+    const risingSet = Math.pow(energy, .72);
+    const audible = active && this.enabled;
+    const rumbleLevel = audible
+      ? (.006 + risingSet * .047 + shorebreak * .072 + (catchReady ? .016 : 0) + pressure * .026)
+        * (.68 + face * .32)
+        * phasePresence
+      : 0;
+    const washLevel = audible
+      ? (.005 + risingSet * .038 + shorebreak * .086 + (catchReady ? .021 : 0) + pressure * .038)
+        * (.64 + face * .36)
+        * phasePresence
+      : 0;
+    const shoulderPan = Math.max(-1, Math.min(1, lineSide || 1))
+      * (phase === "riding" ? .22 + pressure * .46 : .06 + (catchReady ? .12 : 0) + risingSet * .06);
+    const cadence = Math.min(1.15, Math.max(.64, 9.5 / Math.max(5, wavePeriod)));
+
+    ramp(this.breakerRumbleGain.gain, rumbleLevel, now, rumbleLevel > this.breakerRumbleGain.gain.value ? .24 : .7);
+    ramp(this.breakerWashGain.gain, washLevel, now, washLevel > this.breakerWashGain.gain.value ? .2 : .58);
+    ramp(this.breakerRumbleFilter.frequency, 205 + risingSet * 280 + shorebreak * 190 + face * 115, now, .45);
+    ramp(this.breakerRumbleFilter.Q, .82 + risingSet * .68 + pressure * .3, now, .45);
+    ramp(this.breakerWashFilter.frequency, 920 + risingSet * 940 + shorebreak * 720 + pressure * 610, now, .38);
+    ramp(this.breakerWashFilter.Q, .5 + shorebreak * .34 + pressure * .42, now, .4);
+    ramp(this.breakerPanner.pan, shoulderPan, now, .36);
+    ramp(this.breaker.playbackRate, cadence + face * .08 + shorebreak * .1, now, .6);
+
+    if (audible && energy >= .72 && this.previousSetEnergy < .72 && now >= this.nextSetBreathAt) {
+      this.setBreath(now, .5 + energy * .5, shoulderPan);
+      this.nextSetBreathAt = now + Math.max(5.5, wavePeriod * .48);
+    }
+    this.previousSetEnergy = energy;
   }
 
   setScore(
@@ -672,6 +771,13 @@ export class SurfscapeAudio {
   private paddle(now: number, side: number, wading: boolean) {
     this.noiseBurst(now, wading ? .28 : .22, wading ? 680 : 1280, .62, wading ? .075 : .062, "bandpass", side * .48, .05);
     this.tone(now, wading ? 112 : 176, wading ? 72 : 98, .2, .018, "sine", side * .38, .05);
+  }
+
+  private setBreath(now: number, intensity: number, pan: number) {
+    const strength = Math.min(1, Math.max(0, intensity));
+    this.noiseBurst(now, .92, 340, .68, .035 + strength * .045, "bandpass", pan, .13);
+    this.noiseBurst(now + .08, .68, 1750, .52, .018 + strength * .026, "highpass", pan * .84, .1);
+    this.tone(now, 58, 41, .74, .018 + strength * .016, "sine", pan * .42, .16);
   }
 
   private gull(now: number) {
