@@ -3778,7 +3778,166 @@ function DestinationLandmarks({
   }
 }
 
-function CoastBackdrop({ biome, wind }: { biome: CoastBiome; wind: number }) {
+const DUNE_GRASS_VERTEX = /* glsl */ `
+  attribute float aSeed;
+  uniform float uTime;
+  uniform float uWind;
+  uniform vec2 uWindDirection;
+  varying float vHeight;
+  varying float vSeed;
+  varying float vLight;
+  #include <fog_pars_vertex>
+
+  void main() {
+    float height = clamp(position.y, 0.0, 1.0);
+    float phase = uTime * (1.05 + uWind * 1.55) + aSeed * 19.7;
+    float broadSway = sin(phase) * (.08 + uWind * .28);
+    float bladeFlutter = sin(phase * 2.63 + aSeed * 31.0) * uWind * .055;
+    float bend = (broadSway + bladeFlutter) * height * height;
+    vec4 instancedPosition = instanceMatrix * vec4(position, 1.0);
+    instancedPosition.xz += uWindDirection * bend;
+    instancedPosition.xz += vec2(-uWindDirection.y, uWindDirection.x) * bladeFlutter * height * .32;
+    vec4 mvPosition = modelViewMatrix * instancedPosition;
+    gl_Position = projectionMatrix * mvPosition;
+    vHeight = height;
+    vSeed = aSeed;
+    vLight = .86 + sin(aSeed * 43.1) * .12 + dot(normalize(uWindDirection), vec2(.58, .82)) * .045;
+    #include <fog_vertex>
+  }
+`;
+
+const DUNE_GRASS_FRAGMENT = /* glsl */ `
+  precision highp float;
+  uniform float uLight;
+  varying float vHeight;
+  varying float vSeed;
+  varying float vLight;
+  #include <fog_pars_fragment>
+
+  void main() {
+    vec3 root = vec3(.22, .245, .14);
+    vec3 marram = vec3(.44, .505, .29);
+    vec3 sunDry = vec3(.61, .57, .34);
+    float dryVariation = smoothstep(.54, .96, fract(vSeed * 7.13));
+    vec3 blade = mix(marram, sunDry, dryVariation * .62);
+    vec3 color = mix(root, blade, smoothstep(0.0, .48, vHeight));
+    color = mix(color, color * vec3(.84, .9, .76), smoothstep(.72, 1.0, vHeight));
+    color *= vLight * (.62 + uLight * .5);
+    gl_FragColor = vec4(color, 1.0);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    #include <fog_fragment>
+  }
+`;
+
+function DuneGrassField({
+  mobile,
+  wind,
+  windDirection,
+  coastHeading,
+  light,
+}: {
+  mobile: boolean;
+  wind: number;
+  windDirection: number;
+  coastHeading: number;
+  light: number;
+}) {
+  const quality = useRenderQuality();
+  const reducedMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
+  const grass = useRef<THREE.InstancedMesh>(null);
+  const material = useRef<THREE.ShaderMaterial>(null);
+  const count = mobile
+    ? quality === "reduced" ? 120 : quality === "high" ? 260 : 190
+    : quality === "reduced" ? 240 : quality === "balanced" ? 360 : 520;
+  const seeds = useMemo(() => {
+    const values = new Float32Array(count);
+    for (let index = 0; index < count; index += 1) values[index] = seededRandom(index, 741);
+    return values;
+  }, [count]);
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry();
+    next.setAttribute("position", new THREE.Float32BufferAttribute([
+      -.07, 0, 0, .07, 0, 0,
+      -.055, .36, 0, .055, .36, 0,
+      -.032, .72, 0, .032, .72, 0,
+      0, 1.05, 0,
+    ], 3));
+    next.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6]);
+    next.setAttribute("aSeed", new THREE.InstancedBufferAttribute(seeds, 1));
+    next.computeVertexNormals();
+    return next;
+  }, [seeds]);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const windAngle = THREE.MathUtils.degToRad(windDirection - coastHeading);
+  const windVector = useMemo(() => new THREE.Vector2(Math.sin(windAngle), Math.cos(windAngle)).normalize(), [windAngle]);
+  const uniforms = useMemo(() => ({
+    uTime: { value: 0 },
+    uWind: { value: wind },
+    uWindDirection: { value: windVector.clone() },
+    uLight: { value: light },
+  }), [light, wind, windVector]);
+
+  useEffect(() => {
+    if (!grass.current) return;
+    for (let index = 0; index < count; index += 1) {
+      const lane = seededRandom(index, 752);
+      const cluster = seededRandom(Math.floor(index / 7), 753) - .5;
+      const x = (seededRandom(index, 754) - .5) * 242 + cluster * 7.5;
+      const z = 93 + lane * 29 + Math.sin(x * .073) * 1.4;
+      const height = .7 + seededRandom(index, 755) * 1.18;
+      const width = .72 + seededRandom(index, 756) * .72;
+      dummy.position.set(x, -.46 + seededRandom(index, 757) * .09, z);
+      dummy.rotation.set(0, seededRandom(index, 758) * Math.PI * 2, (seededRandom(index, 759) - .5) * .12);
+      dummy.scale.set(width, height, width);
+      dummy.updateMatrix();
+      grass.current.setMatrixAt(index, dummy.matrix);
+    }
+    grass.current.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    grass.current.instanceMatrix.needsUpdate = true;
+    grass.current.computeBoundingSphere();
+  }, [count, dummy]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  useFrame(({ clock }, delta) => {
+    if (!material.current) return;
+    const values = material.current.uniforms;
+    values.uTime.value = reducedMotion ? 1.85 : clock.elapsedTime;
+    values.uWind.value = THREE.MathUtils.damp(values.uWind.value, wind, 2.6, delta);
+    values.uWindDirection.value.lerp(windVector, 1 - Math.exp(-delta * 2.4)).normalize();
+    values.uLight.value = THREE.MathUtils.damp(values.uLight.value, light, 2.4, delta);
+  });
+
+  return (
+    <instancedMesh ref={grass} args={[geometry, undefined, count]} castShadow={!mobile} frustumCulled>
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={DUNE_GRASS_VERTEX}
+        fragmentShader={DUNE_GRASS_FRAGMENT}
+        side={THREE.DoubleSide}
+        fog
+      />
+    </instancedMesh>
+  );
+}
+
+function CoastBackdrop({
+  biome,
+  wind,
+  windDirection,
+  coastHeading,
+  light,
+  mobile,
+}: {
+  biome: CoastBiome;
+  wind: number;
+  windDirection: number;
+  coastHeading: number;
+  light: number;
+  mobile: boolean;
+}) {
   if (biome === "urban") {
     const buildings = Array.from({ length: 12 }, (_, index) => ({
       x: -112 + index * 20,
@@ -3839,20 +3998,7 @@ function CoastBackdrop({ biome, wind }: { biome: CoastBiome; wind: number }) {
   if (biome === "dune") {
     return (
       <group>
-        {Array.from({ length: 52 }, (_, index) => {
-          const x = -120 + ((index * 37) % 240);
-          const z = 94 + ((index * 17) % 24);
-          return (
-            <group key={index} position={[x, 0, z]} rotation={[0, index * 0.62, 0]}>
-              {[-0.24, 0, 0.24].map((blade, bladeIndex) => (
-                <mesh key={blade} position={[blade, 0.65 + bladeIndex * 0.09, 0]} rotation={[0, 0, blade * 0.55]}>
-                  <coneGeometry args={[0.035, 1.35 + bladeIndex * 0.18, 5]} />
-                  <meshStandardMaterial color={bladeIndex % 2 ? "#71815c" : "#87916a"} roughness={1} />
-                </mesh>
-              ))}
-            </group>
-          );
-        })}
+        <DuneGrassField mobile={mobile} wind={wind} windDirection={windDirection} coastHeading={coastHeading} light={light} />
       </group>
     );
   }
@@ -4303,7 +4449,23 @@ function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: bool
   );
 }
 
-function BeachLife({ beach, windSpeed, weatherCode, light, playerPosition }: { beach: Beach; windSpeed: number; weatherCode: number; light: number; playerPosition: MutableRefObject<THREE.Vector3> }) {
+function BeachLife({
+  beach,
+  windSpeed,
+  windDirection,
+  coastHeading,
+  weatherCode,
+  light,
+  playerPosition,
+}: {
+  beach: Beach;
+  windSpeed: number;
+  windDirection: number;
+  coastHeading: number;
+  weatherCode: number;
+  light: number;
+  playerPosition: MutableRefObject<THREE.Vector3>;
+}) {
   const biome = getCoastBiome(beach.id);
   const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
@@ -4407,7 +4569,14 @@ function BeachLife({ beach, windSpeed, weatherCode, light, playerPosition }: { b
       </group>
       <LifeguardStation wind={wind} light={light} />
       <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
-      <CoastBackdrop biome={biome} wind={wind} />
+      <CoastBackdrop
+        biome={biome}
+        wind={wind}
+        windDirection={windDirection}
+        coastHeading={coastHeading}
+        light={light}
+        mobile={mobileRenderer}
+      />
       <DestinationLandmarks beach={beach} mobile={mobileRenderer} light={light} />
     </group>
   );
@@ -6204,7 +6373,15 @@ function Simulation({
         visibility={fogFar}
         rain={weather.kind === "rain" ? weather.intensity : 0}
       />
-      <BeachLife beach={beach} windSpeed={settings.windSpeed} weatherCode={weatherCode} light={light} playerPosition={position} />
+      <BeachLife
+        beach={beach}
+        windSpeed={settings.windSpeed}
+        windDirection={settings.windDirection}
+        coastHeading={settings.coastHeading}
+        weatherCode={weatherCode}
+        light={light}
+        playerPosition={position}
+      />
       <ShorelineWash settings={settings} light={light} sunPosition={oceanSunPosition} sunColor={sunLightColor} />
       <FootprintTrail motion={motion} targetPosition={position} />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
