@@ -25,7 +25,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `S` while riding: step toward the tail, drop into a bottom turn, and gain tighter rail control
 - Mouse horizontal position: balance while riding
 - `Space`: commit to an open takeoff window; the surfer matches the crest through final strokes and a physical pop-up, then the same control loads maneuvers while riding
-- `Space` beside the parked van: enter; stop and press again to exit
+- `Space` at the parked van's driver door: enter; stop and press again to exit
 - `C`: cycle Follow, Surfer POV, Immersive, and Cinematic cameras
 - `P`: enter Photo Mode; frame with the same unrestricted mouse, touch, or gamepad camera, then capture and share/save a high-resolution shot
 - Photo Mode: mouse wheel or `[` / `]` changes the 24–70 mm lens, `-` / `+` changes exposure, and `G` cycles composition guides
@@ -75,7 +75,7 @@ The script exports `public/models/surfer-premium.glb` and renders separate warm-
 
 ## Vehicle asset
 
-The drivable two-tone surf expedition van is also Blender-authored. Its compact PBR GLB includes a modeled cabin and dash, all-terrain tires, detailed wheels, mirrors, lights, bumpers, awning, rear ladder and spare, plus a strapped three-board roof quiver. Entry and exit are staged through an authored hinged driver door carrying its own window, handle, mirror, and warm courtesy lamp; controls remain latched until the door closes and procedural latch/door foley completes the transition. The surfer remains visibly seated in the cabin while driving: an articulated in-vehicle pose connects both hands to a live steering wheel, works the pedals under throttle and braking, and loads the torso with acceleration, cornering, suspension travel, traction loss, and slip. Named door, steering-wheel, front-steering, wheel, body, headlight, and brake-light joints keep those details live in the driving simulation. Regenerate it with:
+The drivable two-tone surf expedition van is also Blender-authored. Its compact PBR GLB includes a modeled cabin and dash, all-terrain tires, detailed wheels, mirrors, lights, bumpers, awning, rear ladder and spare, plus a strapped three-board roof quiver. Entry and exit are staged through an authored hinged driver door carrying its own window, handle, mirror, and warm courtesy lamp. The interaction resolves at the physical driver-side opening: the surfer walks to the sill, ducks into the cabin, settles into the driving pose, and reverses that movement on exit while the camera and controls remain latched to the van until the door closes. Procedural latch/door foley completes the transition. The surfer remains visibly seated in the cabin while driving: an articulated in-vehicle pose connects both hands to a live steering wheel, works the pedals under throttle and braking, and loads the torso with acceleration, cornering, suspension travel, traction loss, and slip. Named door, steering-wheel, front-steering, wheel, body, headlight, and brake-light joints keep those details live in the driving simulation. Regenerate it with:
 
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-van-model.py

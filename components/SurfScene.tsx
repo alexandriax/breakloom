@@ -372,13 +372,13 @@ function dampAngle(current: number, target: number, responsiveness: number, delt
   return current + difference * (1 - Math.exp(-responsiveness * delta));
 }
 
-const VAN_DOOR_TRANSITION_SECONDS = 1.62;
+const VAN_DOOR_TRANSITION_SECONDS = 2.25;
 
 function vehicleDoorEnvelope(elapsed: number) {
   if (elapsed < 0 || elapsed > VAN_DOOR_TRANSITION_SECONDS) return 0;
-  if (elapsed < .42) return THREE.MathUtils.smootherstep(elapsed, .04, .42);
-  if (elapsed < .86) return 1;
-  return 1 - THREE.MathUtils.smootherstep(elapsed, .86, VAN_DOOR_TRANSITION_SECONDS);
+  if (elapsed < .48) return THREE.MathUtils.smootherstep(elapsed, .04, .48);
+  if (elapsed < 1.7) return 1;
+  return 1 - THREE.MathUtils.smootherstep(elapsed, 1.7, VAN_DOOR_TRANSITION_SECONDS);
 }
 
 function lerpAngle(from: number, to: number, alpha: number) {
@@ -593,6 +593,11 @@ type VehicleMotionState = {
   throttle: number;
   driving: boolean;
   door: number;
+  transitionDirection: -1 | 0 | 1;
+  transitionProgress: number;
+  transitionStartX: number;
+  transitionStartZ: number;
+  transitionStartHeading: number;
   brake: boolean;
   wetness: number;
   offRoad: number;
@@ -8281,43 +8286,112 @@ function VanDriver({
 }) {
   const root = useRef<THREE.Group>(null);
   const ankleJointRef = useRef<THREE.Object3D | null>(null);
+  const driverMotion = useRef<MotionState>({ ...playerMotion.current });
 
   useFrame((_, delta) => {
     if (!root.current) return;
-    const driving = playerMotion.current.phase === "driving";
     const vehicle = vehicleMotion.current;
-    root.current.visible = driving;
-    root.current.position.y = THREE.MathUtils.damp(
-      root.current.position.y,
-      .72 + vehicle.suspension * .018,
-      11,
-      delta,
-    );
-    root.current.position.z = THREE.MathUtils.damp(
-      root.current.position.z,
-      -1.45 + vehicle.longitudinalG * .018,
-      9,
-      delta,
-    );
-    root.current.rotation.x = dampAngle(
-      root.current.rotation.x,
-      vehicle.longitudinalG * -.035,
-      8,
-      delta,
-    );
-    root.current.rotation.y = dampAngle(root.current.rotation.y, -Math.PI / 2, 12, delta);
-    root.current.rotation.z = dampAngle(
-      root.current.rotation.z,
-      vehicle.lateralG * -.075 - vehicle.slip * Math.sign(vehicle.steer || 1) * .025,
-      vehicle.traction < .72 ? 5.5 : 8,
-      delta,
-    );
+    const transitionDirection = vehicle.transitionDirection;
+    const transitionProgress = vehicle.transitionProgress;
+    const transitioning = transitionDirection !== 0;
+    const driving = playerMotion.current.phase === "driving";
+    Object.assign(driverMotion.current, playerMotion.current);
+    driverMotion.current.phase = transitioning
+      ? transitionDirection > 0
+        ? transitionProgress < .38 ? "shore" : "driving"
+        : transitionProgress < .5 ? "driving" : "shore"
+      : playerMotion.current.phase;
+    driverMotion.current.speed = transitioning
+      ? transitionDirection > 0
+        ? 2.15 * (1 - THREE.MathUtils.smoothstep(transitionProgress, .18, .46))
+        : 1.82 * THREE.MathUtils.smoothstep(transitionProgress, .5, .9)
+      : playerMotion.current.speed;
+    driverMotion.current.run = 0;
+    driverMotion.current.waterDepth = 0;
+    driverMotion.current.paddleEffort = 0;
+
+    root.current.visible = driving || transitioning;
+    if (transitioning) {
+      const doorX = -2.12;
+      const doorY = .98;
+      const doorZ = -1.43;
+      const seatX = -.72;
+      const seatY = .72;
+      const seatZ = -1.45;
+      const outsideX = -3.2;
+      const outsideY = 1.02;
+      const outsideZ = 0;
+      if (transitionDirection > 0) {
+        const approach = THREE.MathUtils.smootherstep(transitionProgress, .02, .2);
+        const board = THREE.MathUtils.smootherstep(transitionProgress, .2, .66);
+        const approachX = THREE.MathUtils.lerp(vehicle.transitionStartX, doorX, approach);
+        const approachY = THREE.MathUtils.lerp(1.02, doorY, approach);
+        const approachZ = THREE.MathUtils.lerp(vehicle.transitionStartZ, doorZ, approach);
+        root.current.position.set(
+          THREE.MathUtils.lerp(approachX, seatX, board),
+          THREE.MathUtils.lerp(approachY, seatY, board) + vehicle.suspension * .01,
+          THREE.MathUtils.lerp(approachZ, seatZ, board),
+        );
+        root.current.rotation.x = Math.sin(board * Math.PI) * .16;
+        root.current.rotation.y = lerpAngle(
+          vehicle.transitionStartHeading,
+          -Math.PI / 2,
+          THREE.MathUtils.smootherstep(transitionProgress, .16, .7),
+        );
+        root.current.rotation.z = Math.sin(board * Math.PI) * -.12;
+      } else {
+        const unseat = THREE.MathUtils.smootherstep(transitionProgress, .18, .62);
+        const stepAway = THREE.MathUtils.smootherstep(transitionProgress, .54, .78);
+        const sillX = THREE.MathUtils.lerp(seatX, doorX, unseat);
+        const sillY = THREE.MathUtils.lerp(seatY, doorY, unseat);
+        const sillZ = THREE.MathUtils.lerp(seatZ, doorZ, unseat);
+        root.current.position.set(
+          THREE.MathUtils.lerp(sillX, outsideX, stepAway),
+          THREE.MathUtils.lerp(sillY, outsideY, stepAway) + vehicle.suspension * .01,
+          THREE.MathUtils.lerp(sillZ, outsideZ, stepAway),
+        );
+        root.current.rotation.x = Math.sin(unseat * Math.PI) * .14;
+        root.current.rotation.y = lerpAngle(
+          -Math.PI / 2,
+          Math.PI,
+          THREE.MathUtils.smootherstep(transitionProgress, .28, .88),
+        );
+        root.current.rotation.z = Math.sin(unseat * Math.PI) * .1;
+      }
+    } else {
+      root.current.position.x = THREE.MathUtils.damp(root.current.position.x, -.72, 12, delta);
+      root.current.position.y = THREE.MathUtils.damp(
+        root.current.position.y,
+        .72 + vehicle.suspension * .018,
+        11,
+        delta,
+      );
+      root.current.position.z = THREE.MathUtils.damp(
+        root.current.position.z,
+        -1.45 + vehicle.longitudinalG * .018,
+        9,
+        delta,
+      );
+      root.current.rotation.x = dampAngle(
+        root.current.rotation.x,
+        vehicle.longitudinalG * -.035,
+        8,
+        delta,
+      );
+      root.current.rotation.y = dampAngle(root.current.rotation.y, -Math.PI / 2, 12, delta);
+      root.current.rotation.z = dampAngle(
+        root.current.rotation.z,
+        vehicle.lateralG * -.075 - vehicle.slip * Math.sign(vehicle.steer || 1) * .025,
+        vehicle.traction < .72 ? 5.5 : 8,
+        delta,
+      );
+    }
   });
 
   return (
     <group ref={root} position={[-.72, .72, -1.45]} rotation={[0, -Math.PI / 2, 0]} scale={.91} visible={false}>
       <PremiumSurferBody
-        motion={playerMotion}
+        motion={driverMotion}
         vehicleMotion={vehicleMotion}
         accent={accent}
         ankleJointRef={ankleJointRef}
@@ -9547,6 +9621,10 @@ function Simulation({
   const vanSlip = useRef(0);
   const vanDoorStartedAt = useRef(-10);
   const vanControlLockedUntil = useRef(-10);
+  const vanTransitionDirection = useRef<-1 | 0 | 1>(0);
+  const vanTransitionStartLocalX = useRef(-2.12);
+  const vanTransitionStartLocalZ = useRef(-1.43);
+  const vanTransitionStartLocalHeading = useRef(-Math.PI / 2);
   const landVelocity = useRef(new THREE.Vector2());
   const playerHeading = useRef(0);
   const paddleHeading = useRef(0);
@@ -9691,6 +9769,11 @@ function Simulation({
     throttle: 0,
     driving: false,
     door: 0,
+    transitionDirection: 0,
+    transitionProgress: 1,
+    transitionStartX: -2.12,
+    transitionStartZ: -1.43,
+    transitionStartHeading: -Math.PI / 2,
     brake: false,
     wetness: 0,
     offRoad: 0,
@@ -9965,7 +10048,16 @@ function Simulation({
       wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
     }
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
-    const nearVan = currentPhase === "shore" && distanceToVan < 6.2;
+    const vanCos = Math.cos(vanHeading.current);
+    const vanSin = Math.sin(vanHeading.current);
+    const driverDoorWorldX = vanPosition.current.x + vanCos * -2.12 + vanSin * -1.43;
+    const driverDoorWorldZ = vanPosition.current.z - vanSin * -2.12 + vanCos * -1.43;
+    const distanceToDriverDoor = Math.hypot(
+      position.current.x - driverDoorWorldX,
+      position.current.z - driverDoorWorldZ,
+    );
+    const besideVan = currentPhase === "shore" && distanceToVan < 7.2;
+    const nearVan = currentPhase === "shore" && distanceToDriverDoor < 2.75;
     const vanTransitionActive = t < vanControlLockedUntil.current;
 
     const actionDown = state.action || state.gamepadAction;
@@ -9986,9 +10078,12 @@ function Simulation({
         const drySand = THREE.MathUtils.smoothstep(coastalZ, 22, 46) * (1 - THREE.MathUtils.smoothstep(coastalZ, 65, 74));
         const surfacePace = 1 - drySand * .12;
         const targetSpeed = (wantsRun ? 6.45 : 3.75) * surfacePace;
-        const acceleration = inputLength > .001 ? (wantsRun ? 6.4 : 8.8) : 11.5;
-        landVelocity.current.x = THREE.MathUtils.damp(landVelocity.current.x, movementX * targetSpeed, acceleration, delta);
-        landVelocity.current.y = THREE.MathUtils.damp(landVelocity.current.y, movementZ * targetSpeed, acceleration, delta);
+        const shoreMovementX = vanTransitionActive ? 0 : movementX;
+        const shoreMovementZ = vanTransitionActive ? 0 : movementZ;
+        const shoreInputLength = vanTransitionActive ? 0 : inputLength;
+        const acceleration = shoreInputLength > .001 ? (wantsRun ? 6.4 : 8.8) : 11.5;
+        landVelocity.current.x = THREE.MathUtils.damp(landVelocity.current.x, shoreMovementX * targetSpeed, acceleration, delta);
+        landVelocity.current.y = THREE.MathUtils.damp(landVelocity.current.y, shoreMovementZ * targetSpeed, acceleration, delta);
         position.current.x += landVelocity.current.x * delta;
         position.current.z += landVelocity.current.y * delta;
         position.current.z = THREE.MathUtils.clamp(position.current.z, 7.6 + tideShift, 88);
@@ -9997,14 +10092,27 @@ function Simulation({
         if (speed > .16) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), wantsRun ? 10 : 13, delta);
         prompt = nearVan
           ? vanTransitionActive
-            ? "Driver door closing"
+            ? t - vanDoorStartedAt.current < 1.7
+              ? "Stepping out of the van"
+              : "Driver door closing"
             : "DRIVE / SPACE to enter the Surfscape van"
+          : besideVan
+            ? "Walk around to the driver door"
           : position.current.z > 54
             ? "The van is parked beside the coast road"
             : cleanFinish.current
               ? "Clean finish — head back out"
               : "Walk toward the water · or head up-road to the van";
         if (actionPressed && nearVan && !vanTransitionActive) {
+          const playerDeltaX = position.current.x - vanPosition.current.x;
+          const playerDeltaZ = position.current.z - vanPosition.current.z;
+          vanTransitionStartLocalX.current = vanCos * playerDeltaX - vanSin * playerDeltaZ;
+          vanTransitionStartLocalZ.current = vanSin * playerDeltaX + vanCos * playerDeltaZ;
+          vanTransitionStartLocalHeading.current = Math.atan2(
+            Math.sin(playerHeading.current - vanHeading.current),
+            Math.cos(playerHeading.current - vanHeading.current),
+          );
+          vanTransitionDirection.current = 1;
           phase.current = "driving";
           vanDoorStartedAt.current = t;
           vanControlLockedUntil.current = t + VAN_DOOR_TRANSITION_SECONDS;
@@ -10082,7 +10190,9 @@ function Simulation({
           vanPosition.current.z = THREE.MathUtils.clamp(vanPosition.current.z, 71.8, 84.2);
         }
         if (vehicleControlsLocked) {
-          prompt = "Settle into the seat · door closing";
+          prompt = t - vanDoorStartedAt.current < 1.7
+            ? "Climb in · settle into the seat"
+            : "Driver door closing";
         } else if (Math.abs(vanPosition.current.x) > COAST_PLAYABLE_HALF_WIDTH) {
           vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -COAST_PLAYABLE_HALF_WIDTH, COAST_PLAYABLE_HALF_WIDTH);
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 8, delta);
@@ -10114,6 +10224,7 @@ function Simulation({
         score.current += Math.abs(vanSpeed.current) * delta * 0.35;
         if (actionPressed && !vehicleControlsLocked) {
           if (Math.abs(vanSpeed.current) < 0.9) {
+            vanTransitionDirection.current = -1;
             phase.current = "shore";
             vanDoorStartedAt.current = t;
             vanControlLockedUntil.current = t + VAN_DOOR_TRANSITION_SECONDS;
@@ -11225,7 +11336,11 @@ function Simulation({
       rideFacePosition.current = THREE.MathUtils.damp(rideFacePosition.current, 0, 7, delta);
     }
     player.current.position.set(position.current.x, playerY, position.current.z);
-    player.current.visible = phase.current !== "driving";
+    const vanCharacterTransitionActive = (
+      t < vanControlLockedUntil.current
+      && vanTransitionDirection.current !== 0
+    );
+    player.current.visible = phase.current !== "driving" && !vanCharacterTransitionActive;
     const targetPlayerHeading = phase.current === "riding"
       ? rideHeading.current
       : phase.current === "shore" || phase.current === "wading"
@@ -11481,12 +11596,25 @@ function Simulation({
     vanMotion.current.driving = vanDriving;
     const vanDoorElapsed = t - vanDoorStartedAt.current;
     const vanDoorTarget = vehicleDoorEnvelope(vanDoorElapsed);
+    const characterTransitionActive = (
+      vanDoorElapsed >= 0
+      && vanDoorElapsed < VAN_DOOR_TRANSITION_SECONDS
+      && vanTransitionDirection.current !== 0
+    );
+    if (!characterTransitionActive) vanTransitionDirection.current = 0;
     vanMotion.current.door = THREE.MathUtils.damp(
       vanMotion.current.door,
       vanDoorTarget,
       vanDoorTarget > vanMotion.current.door ? 16 : 10,
       delta,
     );
+    vanMotion.current.transitionDirection = characterTransitionActive ? vanTransitionDirection.current : 0;
+    vanMotion.current.transitionProgress = characterTransitionActive
+      ? THREE.MathUtils.clamp(vanDoorElapsed / VAN_DOOR_TRANSITION_SECONDS, 0, 1)
+      : 1;
+    vanMotion.current.transitionStartX = vanTransitionStartLocalX.current;
+    vanMotion.current.transitionStartZ = vanTransitionStartLocalZ.current;
+    vanMotion.current.transitionStartHeading = vanTransitionStartLocalHeading.current;
     vanMotion.current.brake = vanDriving && ((state.back && vanSpeed.current > .3) || (state.forward && vanSpeed.current < -.3));
     vanMotion.current.wetness = vanWetness;
     vanMotion.current.offRoad = vanOffRoad;
@@ -11498,14 +11626,28 @@ function Simulation({
 
     const riding = phase.current === "riding";
     const paddling = phase.current === "paddling";
-    const driving = phase.current === "driving";
+    const driving = phase.current === "driving" || vanMotion.current.transitionDirection !== 0;
     const submersion = motion.current.submersion;
     if (driving) {
       const forwardX = -Math.sin(vanHeading.current);
       const forwardZ = -Math.cos(vanHeading.current);
       const rightX = Math.cos(vanHeading.current);
       const rightZ = -Math.sin(vanHeading.current);
-      if (cameraMode === "pov") {
+      if (vanMotion.current.transitionDirection !== 0) {
+        const transitionBeat = Math.sin(vanMotion.current.transitionProgress * Math.PI);
+        const sideDistance = 6.45 - transitionBeat * .72;
+        const trailingDistance = 2.5 + transitionBeat * .48;
+        cameraPosition.current.set(
+          vanPosition.current.x - rightX * sideDistance - forwardX * trailingDistance,
+          3.15 + transitionBeat * .34,
+          vanPosition.current.z - rightZ * sideDistance - forwardZ * trailingDistance,
+        );
+        cameraTarget.current.set(
+          vanPosition.current.x - rightX * 1.18 + forwardX * .2,
+          1.34,
+          vanPosition.current.z - rightZ * 1.18 + forwardZ * .2,
+        );
+      } else if (cameraMode === "pov") {
         cameraPosition.current.set(
           vanPosition.current.x + forwardX * 2.18 + rightX * .18,
           2.42,
@@ -11869,7 +12011,11 @@ function Simulation({
       cameraSpringOffset.current.set(0, 0, 0);
       cameraSpringVelocity.current.set(0, 0, 0);
     }
-    if (cameraMode === "pov" && sessionIntroProgress >= 1) {
+    if (
+      cameraMode === "pov"
+      && vanMotion.current.transitionDirection === 0
+      && sessionIntroProgress >= 1
+    ) {
       const viewYaw = subjectHeading + state.lookYaw;
       const viewPitch = state.lookPitch;
       const horizontal = Math.cos(viewPitch);
@@ -12026,7 +12172,9 @@ function Simulation({
     );
     camera.rotateZ(cameraBank.current);
     if (camera instanceof THREE.PerspectiveCamera) {
-      const gameplayFov = cameraMode === "cinematic"
+      const gameplayFov = vanMotion.current.transitionDirection !== 0
+        ? 56
+        : cameraMode === "cinematic"
         ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : phase.current === "wipeout" ? 53 - submersion * 4 : 51
         : cameraMode === "pov"
           ? driving

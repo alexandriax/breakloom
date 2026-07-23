@@ -596,9 +596,9 @@ export class SurfscapeAudio {
     } else if (kind === "door") {
       this.noiseBurst(now, .14, 690, .78, .065, "bandpass", -.34, .02);
       this.tone(now + .015, 132, 74, .18, .042, "triangle", -.28, .055);
-      this.noiseBurst(now + 1.28, .11, 520, .82, .075, "lowpass", -.36, .025);
-      this.tone(now + 1.31, 86, 52, .16, .052, "triangle", -.3, .08);
-      this.noiseBurst(now + 1.36, .07, 1540, .9, .026, "bandpass", -.3, .01);
+      this.noiseBurst(now + 1.82, .11, 520, .82, .075, "lowpass", -.36, .025);
+      this.tone(now + 1.85, 86, 52, .16, .052, "triangle", -.3, .08);
+      this.noiseBurst(now + 1.9, .07, 1540, .9, .026, "bandpass", -.3, .01);
     } else if (kind === "finish") {
       [0, 7, 12].forEach((semitone, index) => {
         const frequency = 164.81 * Math.pow(2, semitone / 12);
