@@ -290,11 +290,14 @@ const OCEAN_FRAGMENT = /* glsl */ `
   uniform float uLight;
   uniform float uCloud;
   uniform float uWind;
+  uniform float uRain;
   uniform float uWaveDirection;
   uniform float uWindDirection;
   uniform float uCoastHeading;
+  uniform float uVisibility;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
+  uniform vec3 uHazeColor;
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
@@ -334,11 +337,30 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec2 windDir = vec2(sin(windAngle), cos(windAngle));
     vec2 windTangent = vec2(-windDir.y, windDir.x);
     vec2 windSurface = vec2(dot(vSurface, windDir), dot(vSurface, windTangent));
+    vec2 cloudDrift = windDir * uTime * (.01 + wind * .018);
+    float cloudField = noise(vSurface * .009 + cloudDrift);
+    float cloudShadow = smoothstep(mix(.9, .44, uCloud), .93, cloudField) * uCloud;
+    color *= 1.0 - cloudShadow * (.075 + uCloud * .13);
+
+    float shallowWater = 1.0 - depth;
+    float causticBands = sin(windSurface.x * 1.28 + uTime * 1.16) * cos(windSurface.y * .92 - uTime * .84);
+    float causticLight = pow(max(0.0, causticBands), 5.0) * shallowWater * shallowWater;
+    color += vec3(.16, .48, .39) * causticLight * uLight * .075;
+
     vec2 microFlow = vec2(
       sin(windSurface.x * 1.72 + windSurface.y * .63 + uTime * (1.7 + wind)),
       cos(windSurface.x * .91 - windSurface.y * 1.38 - uTime * (1.35 + wind * .7))
     );
     surfaceNormal = normalize(surfaceNormal + vec3(microFlow.x, 0.0, microFlow.y) * (.018 + wind * .024));
+    if (uRain > .01) {
+      vec2 rainUv = vSurface * 1.16;
+      vec2 rainCell = floor(rainUv);
+      vec2 rainPoint = fract(rainUv) - .5;
+      float rainPhase = fract(uTime * 1.34 + hash(rainCell) * 1.73);
+      float rainRing = 1.0 - smoothstep(.025, .075, abs(length(rainPoint) - rainPhase * .62));
+      rainRing *= (1.0 - rainPhase) * uRain;
+      surfaceNormal = normalize(surfaceNormal + vec3(rainPoint.x, 0.0, rainPoint.y) * rainRing * .16);
+    }
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float fresnel = .028 + .972 * pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 5.0);
     vec3 horizonReflection = mix(vec3(.11, .31, .39), vec3(.42, .67, .69), uLight);
@@ -351,6 +373,11 @@ const OCEAN_FRAGMENT = /* glsl */ `
     sunGlint *= smoothstep(.18, .88, brokenGlint) * (1.0 + vChop * .6);
     color += uSunColor * sunGlint * (1.1 + uLight * 3.2);
 
+    float broadGlint = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(13.0, 27.0, 1.0 - wind * .35));
+    float glintBreakup = brokenGlint * (.7 + sin(windSurface.x * 4.8 - windSurface.y * 2.2 + uTime * .72) * .3);
+    float sparkleMask = smoothstep(.52, .86, glintBreakup);
+    color += uSunColor * broadGlint * sparkleMask * (.08 + uLight * .46) * (1.0 - uCloud * .78);
+
     float forwardScatter = pow(max(0.0, dot(viewDirection, -normalize(uSunDirection))), 3.0);
     color += vec3(.05, .52, .43) * crestLight * forwardScatter * (.18 + uLight * .34);
 
@@ -362,6 +389,8 @@ const OCEAN_FRAGMENT = /* glsl */ `
     float foamBase = noise(waveSurface * vec2(.35, .12) + vec2(uTime * .48, -uTime * .08));
     float foamDetail = noise(waveSurface * vec2(1.18, .48) + vec2(-uTime * .74, uTime * .12));
     float breakerFoam = vBreaker * smoothstep(.26, .72, foamBase) * (.62 + foamDetail * .55);
+    float foamLace = smoothstep(.48, .7, foamDetail) * (1.0 - smoothstep(.78, .96, foamDetail));
+    breakerFoam += vBreaker * foamLace * (.16 + vChop * .22);
     float crestFoam = crestGate * smoothstep(.17, .76, foamDetail);
     float shorePulse = sin(vSurface.x * .2 + uTime * 1.7 + noise(vSurface * .08) * 4.0) * .5 + .5;
     float shoreFoam = smoothstep(4.2, 10.5, vSurface.y) * smoothstep(.27, .72, shorePulse) * .64;
@@ -370,6 +399,12 @@ const OCEAN_FRAGMENT = /* glsl */ `
     color = mix(color, foamColor, foam);
     color = mix(color, vec3(.018, .041, .065), uCloud * .2);
     color *= .91 + noise(vSurface * 3.1 + uTime * .08) * .09;
+
+    float cameraDistance = length(cameraPosition - vWorldPosition);
+    float hazeStart = max(24.0, uVisibility * .18);
+    float aerialPerspective = smoothstep(hazeStart, max(hazeStart + 1.0, uVisibility), cameraDistance);
+    aerialPerspective *= .56 + uCloud * .28;
+    color = mix(color, uHazeColor, aerialPerspective);
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -381,6 +416,9 @@ function Ocean({
   cloudCover,
   sunPosition,
   sunColor,
+  hazeColor,
+  visibility,
+  rain,
 }: {
   settings: SessionSettings;
   character: BreakCharacter;
@@ -388,6 +426,9 @@ function Ocean({
   cloudCover: number;
   sunPosition: [number, number, number];
   sunColor: string;
+  hazeColor: string;
+  visibility: number;
+  rain: number;
 }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const segments = useMemo(() => (isMobileRenderer() ? 54 : 132), []);
@@ -405,6 +446,8 @@ function Ocean({
       uLight: { value: 1 },
       uCloud: { value: 0 },
       uWind: { value: 0 },
+      uRain: { value: 0 },
+      uVisibility: { value: 240 },
       uPeel: { value: character.peel },
       uPower: { value: character.power },
       uSteepness: { value: character.steepness },
@@ -412,6 +455,7 @@ function Ocean({
       uVariability: { value: character.variability },
       uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
       uSunColor: { value: new THREE.Color("#fff0ca") },
+      uHazeColor: { value: new THREE.Color("#78979c") },
     }),
     [character],
   );
@@ -431,6 +475,8 @@ function Ocean({
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uWind.value = settings.windSpeed;
+    values.uRain.value = rain;
+    values.uVisibility.value = visibility;
     values.uPeel.value = THREE.MathUtils.lerp(values.uPeel.value, character.peel, .035);
     values.uPower.value = THREE.MathUtils.lerp(values.uPower.value, character.power, .035);
     values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness, .035);
@@ -438,6 +484,7 @@ function Ocean({
     values.uVariability.value = THREE.MathUtils.lerp(values.uVariability.value, character.variability, .035);
     values.uSunDirection.value.set(...sunPosition).normalize();
     values.uSunColor.value.set(sunColor);
+    values.uHazeColor.value.set(hazeColor);
   });
 
   return (
@@ -473,6 +520,8 @@ const SHORELINE_FRAGMENT = /* glsl */ `
   uniform float uTide;
   uniform float uWind;
   uniform float uLight;
+  uniform vec3 uSunDirection;
+  uniform vec3 uSunColor;
   varying vec2 vUv;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
@@ -510,16 +559,27 @@ const SHORELINE_FRAGMENT = /* glsl */ `
     float bubbles = noise(vec2(along * .78 - uTime * .46, land * 45.0 + uTime * .24));
     float foam = lace * smoothstep(.27, .72, bubbles);
 
+    float secondaryRunup = .19 + (1.0 - slowSet) * .09 + sin(along * .052 - uTime * .12) * .024 + uTide * .018;
+    float secondaryDistance = abs(land - secondaryRunup + (edgeNoise - .5) * .045);
+    float secondaryLace = 1.0 - smoothstep(.01, .046, secondaryDistance);
+    foam += secondaryLace * smoothstep(.38, .82, 1.0 - bubbles) * .32;
+
     float backwashPhase = fract((land - runup) * 10.5 + uTime * .13);
     float backwash = (1.0 - smoothstep(.0, .09, abs(backwashPhase - .5))) * wet;
     backwash *= smoothstep(.61, .89, noise(vec2(along * .32, land * 23.0 + uTime * .08))) * .24;
+    float rivulet = smoothstep(.72, .93, bubbles) * (1.0 - smoothstep(runup - .22, runup + .04, land));
+    rivulet *= smoothstep(.03, .22, wet) * .16;
 
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float grazing = pow(1.0 - abs(viewDirection.y), 3.0);
     vec3 wetColor = mix(vec3(.018, .105, .12), vec3(.075, .29, .27), uLight);
     wetColor += vec3(.18, .31, .3) * glass * grazing * (.24 + uLight * .28);
+    vec3 reflectedSun = reflect(-normalize(uSunDirection), vec3(0.0, 1.0, 0.0));
+    float sunPath = pow(max(0.0, dot(reflectedSun, viewDirection)), 34.0);
+    sunPath *= smoothstep(.18, .78, noise(vec2(along * .34 - uTime * .07, land * 13.0)));
+    wetColor += uSunColor * sunPath * glass * (.15 + uLight * .82);
     vec3 foamColor = mix(vec3(.57, .79, .76), vec3(.94, 1.0, .96), uLight);
-    float foamMask = clamp(foam + backwash, 0.0, .95);
+    float foamMask = clamp(foam + backwash + rivulet, 0.0, .95);
     vec3 color = mix(wetColor, foamColor, foamMask);
     color *= .9 + noise(vec2(along * 1.9, land * 28.0 - uTime * (.08 + wind * .06))) * .1;
 
@@ -530,13 +590,25 @@ const SHORELINE_FRAGMENT = /* glsl */ `
   }
 `;
 
-function ShorelineWash({ settings, light }: { settings: SessionSettings; light: number }) {
+function ShorelineWash({
+  settings,
+  light,
+  sunPosition,
+  sunColor,
+}: {
+  settings: SessionSettings;
+  light: number;
+  sunPosition: [number, number, number];
+  sunColor: string;
+}) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uTide: { value: 0 },
     uWind: { value: 0 },
     uLight: { value: 1 },
+    uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
+    uSunColor: { value: new THREE.Color("#fff0ca") },
   }), []);
 
   useFrame(({ clock }) => {
@@ -546,6 +618,8 @@ function ShorelineWash({ settings, light }: { settings: SessionSettings; light: 
     values.uTide.value = THREE.MathUtils.lerp(values.uTide.value, settings.tide, .025);
     values.uWind.value = settings.windSpeed;
     values.uLight.value = light;
+    values.uSunDirection.value.set(...sunPosition).normalize();
+    values.uSunColor.value.set(sunColor);
   });
 
   return (
@@ -5148,9 +5222,12 @@ function Simulation({
         cloudCover={cloudCover}
         sunPosition={oceanSunPosition}
         sunColor={sunLightColor}
+        hazeColor={fogColor}
+        visibility={fogFar}
+        rain={weather.kind === "rain" ? weather.intensity : 0}
       />
       <BeachLife beach={beach} windSpeed={settings.windSpeed} weatherCode={weatherCode} light={light} playerPosition={position} />
-      <ShorelineWash settings={settings} light={light} />
+      <ShorelineWash settings={settings} light={light} sunPosition={oceanSunPosition} sunColor={sunLightColor} />
       <FootprintTrail motion={motion} targetPosition={position} />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
