@@ -362,6 +362,7 @@ export type GameStats = {
   lineControl: number;
   lineSide: number;
   sectionPressure: number;
+  whitewaterPressure: number;
   railLoad: number;
   railGrip: number;
   stance: number;
@@ -448,6 +449,7 @@ export const INITIAL_STATS: GameStats = {
   lineControl: 1,
   lineSide: 1,
   sectionPressure: 0,
+  whitewaterPressure: 0,
   railLoad: 0,
   railGrip: 1,
   stance: 0,

@@ -429,6 +429,7 @@ export class SurfscapeAudio {
     facePosition = 0,
     acceleration = 0,
     lateralForce = 0,
+    whitewater = 0,
   ) {
     if (!this.context || !this.surfGain || !this.surfFilter || !this.surf) return;
     const now = this.context.currentTime;
@@ -441,14 +442,15 @@ export class SurfscapeAudio {
     const drive = Math.max(0, Math.min(1, acceleration));
     const deceleration = Math.max(0, Math.min(1, -acceleration));
     const cornerLoad = Math.min(1, Math.abs(lateralForce));
+    const foamLoad = Math.min(1, Math.max(0, whitewater));
     const cavitation = velocity * Math.min(1, rail * .34 + release * .76 + cornerLoad * .48);
     const targetGain = active && this.enabled
-      ? .016 + velocity * .12 + barrel * .068 + setEnergy * .02 + rail * .032 + release * .052 + loaded * .016 + lip * .018 + bottom * .008 + drive * .018 + cornerLoad * .026 + deceleration * .01 + cavitation * .028
+      ? .016 + velocity * .12 + barrel * .068 + setEnergy * .02 + rail * .032 + release * .052 + loaded * .016 + lip * .018 + bottom * .008 + drive * .018 + cornerLoad * .026 + deceleration * .01 + cavitation * .028 + foamLoad * .065
       : 0;
     ramp(this.surfGain.gain, targetGain, now, .12);
-    ramp(this.surfFilter.frequency, 820 + velocity * 1420 + barrel * 520 + rail * 620 + release * 940 + lip * 680 - bottom * 120 + drive * 260 + cornerLoad * 410 - deceleration * 90 + cavitation * 1180, now, .1);
-    ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34 + lip * .18 + cornerLoad * .25 + cavitation * .42, now, .12);
-    ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12 + lip * .06 - bottom * .025 + drive * .035 + cornerLoad * .025 + cavitation * .065, now, .1);
+    ramp(this.surfFilter.frequency, 820 + velocity * 1420 + barrel * 520 + rail * 620 + release * 940 + lip * 680 - bottom * 120 + drive * 260 + cornerLoad * 410 - deceleration * 90 + cavitation * 1180 - foamLoad * 360, now, .1);
+    ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34 + lip * .18 + cornerLoad * .25 + cavitation * .42 + foamLoad * .16, now, .12);
+    ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12 + lip * .06 - bottom * .025 + drive * .035 + cornerLoad * .025 + cavitation * .065 - foamLoad * .04, now, .1);
     if (this.surfPanner) ramp(this.surfPanner.pan, Math.max(-.72, Math.min(.72, railLoad * .57 + lateralForce * .24)), now, .1);
     if (this.barrelRoar && this.barrelRoarGain && this.barrelRoarFilter) {
       const enclosure = active ? Math.pow(Math.min(1, Math.max(0, barrel)), 1.18) : 0;

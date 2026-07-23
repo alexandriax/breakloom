@@ -2318,11 +2318,13 @@ input:focus-visible {
 .line-track > strong { color: #bceee7; text-align: right; white-space: nowrap; transition: color .16s ease, text-shadow .16s ease; }
 .line-track > i { position: relative; height: 3px; background: linear-gradient(90deg, rgba(235, 104, 76, .7), rgba(35, 105, 111, .54) 34%, rgba(96, 231, 210, .42) 50%, rgba(67, 143, 159, .48) 72%, rgba(115, 166, 178, .32)); }
 .line-track > i em { position: absolute; top: -3px; bottom: -3px; left: 39%; width: 22%; border: 1px solid rgba(133, 255, 235, .52); background: rgba(113, 225, 211, .17); box-shadow: 0 0 10px rgba(113, 225, 211, .2); }
+.line-track > i .whitewater-load { position: absolute; z-index: 1; inset: -3px auto -3px 0; min-width: 0; border-right: 1px solid rgba(255, 226, 205, .78); background: repeating-linear-gradient(108deg, rgba(255, 242, 225, .76) 0 2px, rgba(248, 145, 105, .58) 2px 4px, rgba(255, 204, 175, .28) 4px 7px); box-shadow: 4px 0 10px rgba(244, 105, 77, .32); transition: width .1s linear; }
 .line-track > i b { position: absolute; z-index: 1; top: -5px; width: 3px; height: 13px; background: white; box-shadow: 0 0 7px white; transform: translateX(-50%); transition: left .08s linear; }
 .line-track.is-locked > strong { color: #aaffef; text-shadow: 0 0 9px rgba(113, 225, 211, .72); }
 .line-track.is-locked > i em { background: rgba(113, 225, 211, .3); box-shadow: 0 0 13px rgba(113, 225, 211, .38); }
 .line-track.is-risk > strong { color: #ff9e81; text-shadow: 0 0 8px rgba(242, 100, 78, .55); }
 .line-track.is-risk > i b { background: #ffc0af; box-shadow: 0 0 8px #f2644e; }
+.line-track.is-foam > i { box-shadow: 0 0 12px rgba(244, 105, 77, .2); }
 .grip-track { display: grid; grid-template-columns: auto 1fr 27px; align-items: center; gap: 7px; margin-top: 8px; }
 .grip-track > span, .grip-track > strong { color: rgba(255, 255, 255, 0.48); font-size: 5px; font-weight: 700; letter-spacing: 0.09em; }
 .grip-track > strong { text-align: right; }

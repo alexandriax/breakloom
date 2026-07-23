@@ -115,6 +115,7 @@ const EMPTY_REPLAY_TELEMETRY: ReplayTelemetry = {
   linePosition: 0,
   railGrip: 1,
   railLoad: 0,
+  whitewater: 0,
   stance: 0,
   power: 0,
   barrel: 0,
@@ -929,6 +930,7 @@ export default function SurfscapeApp() {
   const lastBalanceHapticAt = useRef(0);
   const previousGripWarning = useRef(false);
   const previousVehicleSlipWarning = useRef(false);
+  const previousWhitewaterImpact = useRef(false);
   const previousPocketLock = useRef(false);
   const previousFaceZone = useRef(0);
   const previousHydrodynamicLoad = useRef(false);
@@ -1828,6 +1830,7 @@ export default function SurfscapeApp() {
     const barrel = replayActive ? replayTelemetry.barrel : stats.barrelIntensity;
     const railLoad = replayActive ? replayTelemetry.railLoad : stats.railLoad;
     const railGrip = replayActive ? replayTelemetry.railGrip : stats.railGrip;
+    const whitewater = replayActive ? replayTelemetry.whitewater : stats.whitewaterPressure;
     const facePosition = replayActive ? replayTelemetry.facePosition : stats.facePosition;
     const active = screen === "game" && !paused;
     audio.current?.setSurf(
@@ -1841,6 +1844,7 @@ export default function SurfscapeApp() {
       facePosition,
       replayActive ? 0 : stats.acceleration,
       replayActive ? 0 : stats.lateralForce,
+      whitewater,
     );
     audio.current?.setScore(
       phase,
@@ -1851,7 +1855,7 @@ export default function SurfscapeApp() {
       active,
     );
     audio.current?.setAcousticSpace(phase, barrel, active);
-  }, [paused, replayActive, replayTelemetry.barrel, replayTelemetry.facePosition, replayTelemetry.railGrip, replayTelemetry.railLoad, replayTelemetry.speed, screen, sessionWeatherCode, settings.timeOfDay, stats.acceleration, stats.barrelIntensity, stats.facePosition, stats.lateralForce, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge]);
+  }, [paused, replayActive, replayTelemetry.barrel, replayTelemetry.facePosition, replayTelemetry.railGrip, replayTelemetry.railLoad, replayTelemetry.speed, replayTelemetry.whitewater, screen, sessionWeatherCode, settings.timeOfDay, stats.acceleration, stats.barrelIntensity, stats.facePosition, stats.lateralForce, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge, stats.whitewaterPressure]);
 
   useEffect(() => {
     if (
@@ -1868,11 +1872,12 @@ export default function SurfscapeApp() {
       const cornering = THREEClamp(Math.abs(stats.lateralForce), 0, 1);
       const drive = THREEClamp(stats.acceleration, 0, 1);
       const braking = THREEClamp(-stats.acceleration, 0, 1);
+      const foam = THREEClamp(stats.whitewaterPressure, 0, 1);
       const faceTexture = stats.setEnergy * (.2 + stats.sectionPressure * .3);
       surfaceHaptic(
-        speed * (rail * .27 + cornering * .23 + braking * .12 + stats.barrelIntensity * .06),
-        speed * (.035 + rail * .18 + slip * .5 + faceTexture * .12 + drive * .08),
-        Math.max(slip, rail * speed, cornering * .72) * speed,
+        speed * (rail * .27 + cornering * .23 + braking * .12 + stats.barrelIntensity * .06 + foam * .34),
+        speed * (.035 + rail * .18 + slip * .5 + faceTexture * .12 + drive * .08 + foam * .46),
+        Math.max(slip, rail * speed, cornering * .72, foam * .96) * speed,
       );
       return;
     }
@@ -1886,7 +1891,7 @@ export default function SurfscapeApp() {
         looseSurface * speed,
       );
     }
-  }, [paused, photoMode, replayActive, screen, stats.acceleration, stats.barrelIntensity, stats.lateralForce, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.speed, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, photoMode, replayActive, screen, stats.acceleration, stats.barrelIntensity, stats.lateralForce, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.speed, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.whitewaterPressure]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1898,6 +1903,17 @@ export default function SurfscapeApp() {
     if (warning && !previousVehicleSlipWarning.current) haptic([8, 18, 8]);
     previousVehicleSlipWarning.current = warning;
   }, [stats.vehicleMode, stats.vehicleSlip]);
+
+  useEffect(() => {
+    if (stats.phase !== "riding" || stats.whitewaterPressure < .24) {
+      previousWhitewaterImpact.current = false;
+      return;
+    }
+    if (stats.whitewaterPressure > .56 && !previousWhitewaterImpact.current) {
+      haptic([9, 12, 16]);
+      previousWhitewaterImpact.current = true;
+    }
+  }, [stats.phase, stats.whitewaterPressure]);
 
   useEffect(() => {
     const faceZone = stats.phase === "riding"
@@ -2612,7 +2628,7 @@ export default function SurfscapeApp() {
     setReplayRequest((request) => request + 1);
     setCameraMode("cinematic");
     audio.current?.effect("coach");
-    audio.current?.setSurf(Math.max(10, stats.speed), true, stats.setEnergy, Math.max(.28, stats.barrelIntensity), stats.railLoad, stats.railGrip, 0, stats.facePosition, stats.acceleration, stats.lateralForce);
+    audio.current?.setSurf(Math.max(10, stats.speed), true, stats.setEnergy, Math.max(.28, stats.barrelIntensity), stats.railLoad, stats.railGrip, 0, stats.facePosition, stats.acceleration, stats.lateralForce, stats.whitewaterPressure);
     audio.current?.setScore("riding", stats.setEnergy, Math.max(.28, stats.barrelIntensity), settings.timeOfDay, sessionWeatherCode, true);
     haptic([8, 18, 12]);
   };
@@ -2768,7 +2784,9 @@ export default function SurfscapeApp() {
     ? heatWaves.find((wave) => wave.id === rideToast.id) ?? { ...rideToast, judgeScore: judgeHeatWave(rideToast) }
     : null;
   const rideAnalysis = rideToast ? rideAnalysisFor(rideToast, settings.board) : null;
-  const replayLineLabel = replayTelemetry.linePosition < -.34
+  const replayLineLabel = replayTelemetry.whitewater > .48
+    ? "IN THE FOAM"
+    : replayTelemetry.linePosition < -.34
     ? "DEEP"
     : replayTelemetry.linePosition > .38
       ? "SHOULDER"
@@ -2848,11 +2866,13 @@ export default function SurfscapeApp() {
         { label: "Earn A · 25 m pocket · 2 moves or 2s tube", done: currentCoastRecord.mastery >= 3 || liveMasteryThree },
       ];
   const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
-  const hydrodynamicLoadLabel = Math.abs(stats.lateralForce) > .52
-    ? `${stats.lateralForce > 0 ? "RIGHT" : "LEFT"} RAIL LOADED`
-    : Math.max(0, stats.acceleration) > .48
-      ? "BOARD DRIVING"
-      : stanceLabel;
+  const hydrodynamicLoadLabel = stats.whitewaterPressure > .35
+    ? `WHITEWATER ${Math.round(stats.whitewaterPressure * 100)}%`
+    : Math.abs(stats.lateralForce) > .52
+      ? `${stats.lateralForce > 0 ? "RIGHT" : "LEFT"} RAIL LOADED`
+      : Math.max(0, stats.acceleration) > .48
+        ? "BOARD DRIVING"
+        : stanceLabel;
   const faceLabel = stats.facePosition > .56
     ? "LIP LINE"
     : stats.facePosition < -.56
@@ -2863,7 +2883,9 @@ export default function SurfscapeApp() {
           ? "LOW FACE"
           : "MID FACE";
   const faceIndicator = (Math.max(-1, Math.min(1, stats.facePosition)) + 1) * 50;
-  const lineLabel = stats.linePosition < -.72
+  const lineLabel = stats.whitewaterPressure > .48
+    ? "IN THE FOAM"
+    : stats.linePosition < -.72
     ? "TOO DEEP"
     : stats.linePosition > .72
       ? "OPEN SHOULDER"
@@ -3458,10 +3480,10 @@ export default function SurfscapeApp() {
                     />
                   </label>
                   <small>{replayActiveMoment ? `${replayActiveMoment.label} · ${Math.round(replayActiveMoment.quality * 100)}% PHYSICS SIGNAL` : `${replayMoments.length} PHYSICS-DETECTED MOMENTS · ${replayLineLabel}`}</small>
-                  <div className="replay-mobile-telemetry" aria-label={`Replay speed ${replayTelemetry.speed.toFixed(1)} metres per second. Face position ${replayFaceLabel}. Line control ${Math.round(replayTelemetry.lineControl * 100)} percent. Rail grip ${Math.round(replayTelemetry.railGrip * 100)} percent.`}>
+                  <div className="replay-mobile-telemetry" aria-label={`Replay speed ${replayTelemetry.speed.toFixed(1)} metres per second. Face position ${replayFaceLabel}. Line control ${Math.round(replayTelemetry.lineControl * 100)} percent. Whitewater pressure ${Math.round(replayTelemetry.whitewater * 100)} percent. Rail grip ${Math.round(replayTelemetry.railGrip * 100)} percent.`}>
                     <span><small>SPEED</small><strong>{replayTelemetry.speed.toFixed(1)}<i>M/S</i></strong></span>
                     <span><small>FACE</small><strong>{replayFaceLabel}</strong></span>
-                    <span><small>LINE</small><strong>{Math.round(replayTelemetry.lineControl * 100)}<i>%</i></strong></span>
+                    <span><small>LINE</small><strong>{replayTelemetry.whitewater > .48 ? "FOAM" : Math.round(replayTelemetry.lineControl * 100)}{replayTelemetry.whitewater <= .48 && <i>%</i>}</strong></span>
                     <span><small>RAIL</small><strong>{Math.round(replayTelemetry.railGrip * 100)}<i>%</i></strong></span>
                   </div>
                 </div>
@@ -3471,7 +3493,7 @@ export default function SurfscapeApp() {
                   <span><small>RAIL GRIP</small><strong>{Math.round(replayTelemetry.railGrip * 100)}<i>%</i></strong></span>
                   <span><small>STANCE</small><strong className="is-text">{replayStanceLabel}</strong></span>
                   <span><small>POWER</small><strong>{Math.round(replayTelemetry.power * 100)}<i>%</i></strong></span>
-                  <span><small>{replayTelemetry.barrel > .2 ? "BARREL" : replayTelemetry.maneuver > .18 ? "MANEUVER" : "FACE POSITION"}</small><strong className="is-text">{replayTelemetry.barrel > .2 ? `${Math.round(replayTelemetry.barrel * 100)}%` : replayTelemetry.maneuver > .18 ? `${Math.round(replayTelemetry.maneuver * 100)}%` : replayFaceLabel}</strong></span>
+                  <span><small>{replayTelemetry.whitewater > .2 ? "WHITEWATER" : replayTelemetry.barrel > .2 ? "BARREL" : replayTelemetry.maneuver > .18 ? "MANEUVER" : "FACE POSITION"}</small><strong className="is-text">{replayTelemetry.whitewater > .2 ? `${Math.round(replayTelemetry.whitewater * 100)}%` : replayTelemetry.barrel > .2 ? `${Math.round(replayTelemetry.barrel * 100)}%` : replayTelemetry.maneuver > .18 ? `${Math.round(replayTelemetry.maneuver * 100)}%` : replayFaceLabel}</strong></span>
                 </div>
               </div>
             </div>
@@ -3865,13 +3887,13 @@ export default function SurfscapeApp() {
             <div className={`face-track ${Math.abs(stats.facePosition) > .56 ? "is-committed" : ""}`}>
               <span>TROUGH</span><i><em /><b style={{ left: `${faceIndicator}%` }} /></i><span>LIP</span><strong>{faceLabel}</strong>
             </div>
-            <div className={`line-track ${stats.sectionPressure > .42 ? "is-risk" : stats.lineControl > .76 ? "is-locked" : ""}`}>
-              <span>DEEP</span><i><em /><b style={{ left: `${lineIndicator}%` }} /></i><span>SHOULDER</span><strong>{lineLabel}</strong>
+            <div className={`line-track ${stats.whitewaterPressure > .28 ? "is-risk is-foam" : stats.sectionPressure > .48 ? "is-risk" : stats.lineControl > .76 ? "is-locked" : ""}`}>
+              <span>DEEP</span><i><em /><span className="whitewater-load" style={{ width: `${Math.min(36, stats.whitewaterPressure * 36)}%` }} aria-hidden="true" /><b style={{ left: `${lineIndicator}%` }} /></i><span>SHOULDER</span><strong>{lineLabel}</strong>
             </div>
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · W/S moves from trough to lip`}</small>
+            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · W/S moves from trough to lip`}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -4032,7 +4054,7 @@ export default function SurfscapeApp() {
               {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" || takeoffCommitted ? <Sparkles /> : <Waves />}
             </button>
             {stats.phase === "riding" && !ridingOut && (
-              <div className={`touch-ride-telemetry ${stats.sectionPressure > .48 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Face ${faceLabel}. Line ${lineLabel}. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>
+              <div className={`touch-ride-telemetry ${stats.whitewaterPressure > .28 || stats.sectionPressure > .52 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Face ${faceLabel}. Line ${lineLabel}. Whitewater pressure ${Math.round(stats.whitewaterPressure * 100)} percent. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>
                 <span><small>STANCE</small><strong>{stanceLabel}</strong></span>
                 <span><small>FACE</small><strong>{faceLabel}</strong></span>
                 <span><small>LINE</small><strong>{lineLabel}</strong></span>
