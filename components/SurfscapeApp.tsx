@@ -98,9 +98,10 @@ const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15
 
 const RECORD_KEY = "surfscape-personal-best-v1";
 const WEATHER_PRESETS = [0, 3, 63, 73, 95] as const;
-const CAMERA_MODES: CameraMode[] = ["follow", "immersive", "cinematic"];
+const CAMERA_MODES: CameraMode[] = ["follow", "pov", "immersive", "cinematic"];
 const CAMERA_LABELS: Record<CameraMode, string> = {
   follow: "Follow",
+  pov: "Surfer POV",
   immersive: "Immersive",
   cinematic: "Cinematic",
 };

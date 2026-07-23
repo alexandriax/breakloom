@@ -33,7 +33,7 @@ export type ControlState = {
   lookPitch: number;
 };
 
-export type CameraMode = "follow" | "immersive" | "cinematic";
+export type CameraMode = "follow" | "pov" | "immersive" | "cinematic";
 type RenderQuality = "reduced" | "balanced" | "high";
 
 const RenderQualityContext = createContext<RenderQuality>("high");
@@ -2861,11 +2861,13 @@ function SurferModel({
   boardType,
   accent,
   onLeashTension,
+  cameraMode,
 }: {
   motion: MutableRefObject<MotionState>;
   boardType: BoardType;
   accent: string;
   onLeashTension: (tension: number) => void;
+  cameraMode: CameraMode;
 }) {
   const root = useRef<THREE.Group>(null);
   const rig = useRef<THREE.Group>(null);
@@ -3098,7 +3100,7 @@ function SurferModel({
       <group ref={rig}>
         <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
         <SurferRunoffEffects motion={motion} />
-        <group ref={body} position={[0, 1.02, 0]}>
+        <group ref={body} position={[0, 1.02, 0]} visible={cameraMode !== "pov"}>
           <PremiumSurferBody motion={motion} accent={accent} ankleJointRef={ankleJointRef} />
         </group>
       </group>
@@ -8847,7 +8849,18 @@ function Simulation({
       const forwardZ = -Math.cos(vanHeading.current);
       const rightX = Math.cos(vanHeading.current);
       const rightZ = -Math.sin(vanHeading.current);
-      if (cameraMode === "immersive") {
+      if (cameraMode === "pov") {
+        cameraPosition.current.set(
+          vanPosition.current.x + forwardX * 2.18 + rightX * .18,
+          2.42,
+          vanPosition.current.z + forwardZ * 2.18 + rightZ * .18,
+        );
+        cameraTarget.current.set(
+          vanPosition.current.x + forwardX * 12,
+          2.15,
+          vanPosition.current.z + forwardZ * 12,
+        );
+      } else if (cameraMode === "immersive") {
         cameraPosition.current.set(
           vanPosition.current.x + forwardX * 1.5 + rightX * .34,
           2.36,
@@ -8887,7 +8900,18 @@ function Simulation({
       const rightX = Math.cos(paddleHeading.current);
       const rightZ = -Math.sin(paddleHeading.current);
       const wallBeat = motion.current.shorebreak;
-      if (cameraMode === "immersive") {
+      if (cameraMode === "pov") {
+        cameraPosition.current.set(
+          position.current.x + forwardX * .72 + rightX * .08,
+          playerY + 1.12 - submersion * 1.72 + wallBeat * .045,
+          position.current.z + forwardZ * .72 + rightZ * .08,
+        );
+        cameraTarget.current.set(
+          position.current.x + forwardX * 8,
+          playerY + .64 - submersion * 1.18,
+          position.current.z + forwardZ * 8,
+        );
+      } else if (cameraMode === "immersive") {
         cameraPosition.current.set(
           position.current.x - forwardX * 4.6 + rightX * .68,
           playerY + 2.2 - submersion * 3.35 + wallBeat * .16,
@@ -8936,7 +8960,46 @@ function Simulation({
       const wipeout = phase.current === "wipeout";
       const underwaterDriftX = Math.sin(t * 4.4) * submersion;
       const underwaterDriftZ = Math.cos(t * 3.7 + .8) * submersion;
-      if (cameraMode === "immersive") {
+      if (cameraMode === "pov") {
+        if (riding) {
+          const eyeForward = .34 + takeoffBeat * .16 - barrelCamera * .08;
+          const eyeSide = steer * -.045 + directorSide * maneuverBeat * .035;
+          cameraPosition.current.set(
+            position.current.x + rideForwardX * eyeForward + rideRightX * eyeSide,
+            playerY + 1.46 - motion.current.compression * .16 - takeoffBeat * .12 + maneuverAir * .48,
+            position.current.z + rideForwardZ * eyeForward + rideRightZ * eyeSide,
+          );
+          cameraTarget.current.set(
+            position.current.x + rideForwardX * 10,
+            playerY + .92 + maneuverAir * .58,
+            position.current.z + rideForwardZ * 10,
+          );
+        } else if (wipeout) {
+          cameraPosition.current.set(
+            position.current.x + underwaterDriftX * .22,
+            waterY + THREE.MathUtils.lerp(.92, -.54, submersion),
+            position.current.z + underwaterDriftZ * .18,
+          );
+          cameraTarget.current.set(
+            position.current.x + rideForwardX * 5,
+            waterY + THREE.MathUtils.lerp(.42, -.4, submersion),
+            position.current.z + rideForwardZ * 5,
+          );
+        } else {
+          const walkForwardX = Math.sin(playerHeading.current);
+          const walkForwardZ = Math.cos(playerHeading.current);
+          cameraPosition.current.set(
+            position.current.x + walkForwardX * .26,
+            playerY + 1.64,
+            position.current.z + walkForwardZ * .26,
+          );
+          cameraTarget.current.set(
+            position.current.x + walkForwardX * 8,
+            playerY + 1.56,
+            position.current.z + walkForwardZ * 8,
+          );
+        }
+      } else if (cameraMode === "immersive") {
         if (riding) {
           const cameraBack = 4.15 - barrelCamera * .82 - takeoffBeat * 1.12 + maneuverBeat * .42 + finishBeat * .75;
           const cameraSide = steer * -1.1 - barrelCamera * .8 + directorSide * maneuverBeat * .28;
@@ -9087,7 +9150,7 @@ function Simulation({
     cameraTrackedSpeed = Math.hypot(cameraSubjectVelocity.current.x, cameraSubjectVelocity.current.z);
     const subjectHeading = driving
       ? vanHeading.current + Math.PI
-      : riding
+      : riding || phase.current === "wipeout"
         ? rideHeading.current
         : paddling
           ? paddleHeading.current
@@ -9149,24 +9212,35 @@ function Simulation({
       cameraSpringOffset.current.set(0, 0, 0);
       cameraSpringVelocity.current.set(0, 0, 0);
     }
-    cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
-    cameraOrbit.current.setFromVector3(cameraOffset.current);
-    // lookYaw is an unrestricted angle. Keeping it independent of camera mode
-    // gives every phase a true 360-degree freelook instead of a narrow offset.
-    cameraOrbit.current.theta += state.lookYaw * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
-    cameraOrbit.current.phi = THREE.MathUtils.clamp(
-      cameraOrbit.current.phi + state.lookPitch * .82 * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress),
-      .18,
-      Math.PI - .18,
-    );
-    cameraOffset.current.setFromSpherical(cameraOrbit.current);
-    cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
+    if (cameraMode === "pov" && sessionIntroProgress >= 1) {
+      const viewYaw = subjectHeading + state.lookYaw;
+      const viewPitch = state.lookPitch;
+      const horizontal = Math.cos(viewPitch);
+      cameraTarget.current.set(
+        cameraPosition.current.x + Math.sin(viewYaw) * horizontal * 12,
+        cameraPosition.current.y + Math.sin(viewPitch) * 12,
+        cameraPosition.current.z + Math.cos(viewYaw) * horizontal * 12,
+      );
+    } else {
+      cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
+      cameraOrbit.current.setFromVector3(cameraOffset.current);
+      // lookYaw is an unrestricted angle. Keeping it independent of camera mode
+      // gives every phase a true 360-degree freelook instead of a narrow offset.
+      cameraOrbit.current.theta += state.lookYaw * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
+      cameraOrbit.current.phi = THREE.MathUtils.clamp(
+        cameraOrbit.current.phi + state.lookPitch * .82 * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress),
+        .18,
+        Math.PI - .18,
+      );
+      cameraOffset.current.setFromSpherical(cameraOrbit.current);
+      cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
+    }
     const cameraVibrationBase = riding
       ? motion.current.maneuver * .052 + motion.current.slip * .038 + motion.current.barrel * .024 + Math.max(0, cameraTrackedSpeed - 11) * .0017
       : paddling ? motion.current.shorebreak * .018
       : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * .55) * .082 : 0;
     const cameraVibration = cameraVibrationBase
-      * (cameraMode === "cinematic" ? .28 : cameraMode === "immersive" ? 1.04 : .78)
+      * (cameraMode === "cinematic" ? .28 : cameraMode === "pov" ? .9 : cameraMode === "immersive" ? 1.04 : .78)
       * cameraMotionStrength;
     const lateralVibration = (
       Math.sin(t * 23.7)
@@ -9198,6 +9272,8 @@ function Simulation({
         ? 10 + submersion * 5
       : cameraMode === "cinematic"
       ? 2.15 + motion.current.maneuver * 1.9 + motion.current.takeoff * .8
+      : cameraMode === "pov"
+        ? 11.2 + motion.current.maneuver * 1.8 + motion.current.takeoff * 1.2
       : cameraMode === "immersive"
         ? 4.35 + motion.current.maneuver * 1.35
         : driving ? 3.8 : riding ? 3.1 + motion.current.maneuver * 1.2 : 2.4;
@@ -9206,7 +9282,17 @@ function Simulation({
       cameraLookTarget.current.copy(cameraTarget.current);
     } else {
       camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
-      cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (sessionIntroProgress < 1 ? 5 : submersion > .03 ? 12 : cameraMode === "cinematic" ? 2.45 : 4.8)));
+      cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (
+        sessionIntroProgress < 1
+          ? 5
+          : submersion > .03
+            ? 12
+            : cameraMode === "pov"
+              ? 14
+              : cameraMode === "cinematic"
+                ? 2.45
+                : 4.8
+      )));
     }
     if (submersion < .08) {
       const cameraCoastalZ = camera.position.z - tideShift;
@@ -9234,7 +9320,7 @@ function Simulation({
       );
     }
     camera.lookAt(cameraLookTarget.current);
-    const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
+    const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "pov" ? .7 : cameraMode === "immersive" ? 1.16 : 1;
     const cameraBankTarget = (riding
       ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012
       : driving
@@ -9253,6 +9339,12 @@ function Simulation({
     if (camera instanceof THREE.PerspectiveCamera) {
       const gameplayFov = cameraMode === "cinematic"
         ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : phase.current === "wipeout" ? 53 - submersion * 4 : 51
+        : cameraMode === "pov"
+          ? driving
+            ? 72 + Math.min(6, Math.abs(vanSpeed.current) * .24)
+            : riding
+              ? 70 + Math.min(8, Math.max(0, speed - 7) * .64) + motion.current.maneuver * 2.4 + motion.current.takeoff * 1.2 - motion.current.finish * 1.8
+              : paddling ? 66 + motion.current.shorebreak * 2.4 - submersion * 4 : phase.current === "wipeout" ? 68 - submersion * 4.5 : 68
         : cameraMode === "immersive"
           ? driving
             ? 70 + Math.min(7, Math.abs(vanSpeed.current) * .28)
@@ -9552,6 +9644,7 @@ function Simulation({
           boardType={settings.board}
           accent={beach.palette[0]}
           onLeashTension={setLeashTension}
+          cameraMode={cameraMode}
         />
       </group>
       <group ref={van}>
