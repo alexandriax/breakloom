@@ -105,6 +105,7 @@ const CAMERA_WATER_SAMPLE_DIRECTIONS = [
   [.7071, -.7071],
   [-.7071, -.7071],
 ] as const;
+const CAMERA_SIGHTLINE_SAMPLES = [.16, .32, .48, .64, .78] as const;
 
 function cameraWaterEnvelopeAt(
   x: number,
@@ -131,6 +132,35 @@ function cameraWaterEnvelopeAt(
     );
   });
   return envelope;
+}
+
+function cameraWaterSightlineLift(
+  cameraPosition: THREE.Vector3,
+  targetPosition: THREE.Vector3,
+  elapsed: number,
+  settings: SessionSettings,
+  character: BreakCharacter,
+  tideShift: number,
+  clearance: number,
+) {
+  let requiredLift = 0;
+  CAMERA_SIGHTLINE_SAMPLES.forEach((progress) => {
+    const sampleX = THREE.MathUtils.lerp(cameraPosition.x, targetPosition.x, progress);
+    const sampleZ = THREE.MathUtils.lerp(cameraPosition.z, targetPosition.z, progress);
+    if (sampleZ - tideShift >= SHORELINE_REFERENCE_Z + 4.75) return;
+    const sightlineY = THREE.MathUtils.lerp(cameraPosition.y, targetPosition.y, progress);
+    const waterY = waveHeightAt(sampleX, sampleZ, elapsed, settings, character);
+    const remainingCameraInfluence = Math.max(.18, 1 - progress);
+    requiredLift = Math.max(
+      requiredLift,
+      (waterY + clearance - sightlineY) / remainingCameraInfluence,
+    );
+  });
+  return THREE.MathUtils.clamp(
+    requiredLift,
+    0,
+    1.6 + settings.waveHeight * .9,
+  );
 }
 
 function useRenderQuality() {
@@ -10068,6 +10098,7 @@ function Simulation({
   const cameraAcceleration = useRef(new THREE.Vector3());
   const cameraSpringOffset = useRef(new THREE.Vector3());
   const cameraSpringVelocity = useRef(new THREE.Vector3());
+  const cameraWaterOcclusionLift = useRef(0);
   const cameraBank = useRef(0);
   const cameraMotionInitialized = useRef(false);
   const cameraTrackingDriving = useRef(false);
@@ -12372,10 +12403,14 @@ function Simulation({
       // gives every phase a true 360-degree freelook instead of a narrow offset.
       cameraOrbit.current.theta += state.lookYaw * THREE.MathUtils.lerp(.24, 1, sessionIntroProgress);
       const maximumOrbitPhi = submersion < .08
-        ? Math.PI * .5 - THREE.MathUtils.lerp(
-          .035,
-          .095,
-          Math.max(motion.current.shorebreak, riding ? motion.current.setEnergy : 0),
+        ? Math.PI * .5 - (
+          driving
+            ? .12
+            : riding
+              ? .14 + motion.current.setEnergy * .035
+              : paddling
+                ? .17 + motion.current.shorebreak * .04
+                : .2
         )
         : Math.PI - .18;
       cameraOrbit.current.phi = THREE.MathUtils.clamp(
@@ -12408,6 +12443,24 @@ function Simulation({
     cameraPosition.current.z += subjectRightZ * lateralVibration;
     cameraPosition.current.y += verticalVibration;
     if (submersion < .08) {
+      const sightlineLiftTarget = cameraMode === "pov"
+        ? 0
+        : cameraWaterSightlineLift(
+          cameraPosition.current,
+          cameraTarget.current,
+          t,
+          settings,
+          character,
+          tideShift,
+          .2 + Math.min(.18, settings.waveHeight * .045),
+        );
+      cameraWaterOcclusionLift.current = THREE.MathUtils.damp(
+        cameraWaterOcclusionLift.current,
+        sightlineLiftTarget,
+        sightlineLiftTarget > cameraWaterOcclusionLift.current ? 12 : 4.5,
+        delta,
+      );
+      cameraPosition.current.y += cameraWaterOcclusionLift.current;
       const cameraCoastalZ = cameraPosition.current.z - tideShift;
       const waterClearance = cameraMode === "pov"
         ? .36
@@ -12432,6 +12485,12 @@ function Simulation({
       const targetFloor = -seabedDepthAt(cameraTarget.current.x, cameraTarget.current.z, bedKind) + .1;
       cameraPosition.current.y = Math.max(cameraPosition.current.y, cameraFloor);
       cameraTarget.current.y = Math.max(cameraTarget.current.y, targetFloor);
+      cameraWaterOcclusionLift.current = THREE.MathUtils.damp(
+        cameraWaterOcclusionLift.current,
+        0,
+        8,
+        delta,
+      );
     }
     const cameraResponse = sessionIntroProgress < 1
       ? 5.4
@@ -12480,6 +12539,22 @@ function Simulation({
       const cameraLift = Math.max(0, cameraFloor - camera.position.y);
       camera.position.set(camera.position.x, camera.position.y + cameraLift, camera.position.z);
       cameraLookTarget.current.y += cameraLift * .72;
+      if (cameraMode !== "pov") {
+        const sightlineLift = cameraWaterSightlineLift(
+          camera.position,
+          cameraLookTarget.current,
+          t,
+          settings,
+          character,
+          tideShift,
+          .16 + Math.min(.15, settings.waveHeight * .04),
+        );
+        camera.position.set(
+          camera.position.x,
+          camera.position.y + sightlineLift,
+          camera.position.z,
+        );
+      }
     } else {
       const bedKind = seabedKind(character);
       const cameraFloor = -seabedDepthAt(camera.position.x, camera.position.z, bedKind) + .16;
