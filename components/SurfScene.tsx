@@ -4640,6 +4640,7 @@ function Simulation({
   const rideOriginX = useRef(0);
   const rideOriginZ = useRef(0);
   const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
+  const rideHeading = useRef(0);
   const pocketDistance = useRef(0);
   const rideScore = useRef(0);
   const rideManeuverStart = useRef(0);
@@ -5086,6 +5087,10 @@ function Simulation({
               : Math.abs(steer) > .16
                 ? Math.sign(steer)
                 : position.current.x < 0 ? -1 : 1;
+            rideHeading.current = Math.atan2(
+              rideLineSide.current * (.56 + character.length * .026 + Math.abs(character.peel) * .08),
+              .23,
+            );
             barrelTime.current = 0;
             stance.current = 0;
             unstableFor.current = (1 - takeoffQuality) * .14;
@@ -5163,6 +5168,7 @@ function Simulation({
         const trimDrive = rideLineSide.current * speed * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
         const lateralVelocity = trimDrive + railTurn;
         const shorewardVelocity = speed * (.23 + nosePressure * .055 - tailPressure * .035 + Math.abs(railLoad) * .025);
+        rideHeading.current = dampAngle(rideHeading.current, Math.atan2(lateralVelocity, shorewardVelocity), 4.8, delta);
         position.current.x += lateralVelocity * delta;
         position.current.z += shorewardVelocity * delta;
         const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
@@ -5446,10 +5452,7 @@ function Simulation({
     player.current.position.set(position.current.x, playerY, position.current.z);
     player.current.visible = phase.current !== "driving";
     const targetPlayerHeading = phase.current === "riding"
-      ? Math.atan2(
-          rideLineSide.current * (.56 + character.length * .026 + Math.abs(character.peel) * .08) + railLoad * boardSpec.turn * .52,
-          .23 + Math.max(0, stance.current) * .055 - Math.max(0, -stance.current) * .035,
-        )
+      ? rideHeading.current
       : phase.current === "shore" || phase.current === "wading"
         ? playerHeading.current
         : phase.current === "paddling"
@@ -5635,40 +5638,70 @@ function Simulation({
       const finishBeat = riding ? motion.current.finish : 0;
       const directorSide = motion.current.maneuverSide || (character.peel < 0 ? -1 : 1);
       const speedLead = riding ? THREE.MathUtils.smoothstep(speed, 9.5, 17.5) : 0;
+      const rideForwardX = Math.sin(rideHeading.current);
+      const rideForwardZ = Math.cos(rideHeading.current);
+      const rideRightX = Math.cos(rideHeading.current);
+      const rideRightZ = -Math.sin(rideHeading.current);
       if (cameraMode === "immersive") {
-        cameraPosition.current.set(
-          position.current.x + (riding ? steer * -1.1 - barrelCamera * .8 + directorSide * maneuverBeat * .28 : .68),
-          playerY + (riding ? 1.82 - barrelCamera * .26 - takeoffBeat * .28 + maneuverBeat * .2 + maneuverAir * .48 + finishBeat * .28 : 3.05),
-          position.current.z + (riding ? -4.15 + barrelCamera * .82 + takeoffBeat * 1.12 - maneuverBeat * .42 - finishBeat * .75 : 5.8),
-        );
-        cameraTarget.current.set(
-          position.current.x + (riding ? steer * .28 + directorSide * maneuverBeat * .16 : 0),
-          playerY + (riding ? .72 + maneuverAir * .68 : 1.18),
-          position.current.z + (riding ? 4.65 + speedLead * 1.45 + finishBeat * 2.1 : -3.2),
-        );
+        if (riding) {
+          const cameraBack = 4.15 - barrelCamera * .82 - takeoffBeat * 1.12 + maneuverBeat * .42 + finishBeat * .75;
+          const cameraSide = steer * -1.1 - barrelCamera * .8 + directorSide * maneuverBeat * .28;
+          const targetLead = 4.65 + speedLead * 1.45 + finishBeat * 2.1;
+          const targetSide = steer * .28 + directorSide * maneuverBeat * .16;
+          cameraPosition.current.set(
+            position.current.x - rideForwardX * cameraBack + rideRightX * cameraSide,
+            playerY + 1.82 - barrelCamera * .26 - takeoffBeat * .28 + maneuverBeat * .2 + maneuverAir * .48 + finishBeat * .28,
+            position.current.z - rideForwardZ * cameraBack + rideRightZ * cameraSide,
+          );
+          cameraTarget.current.set(
+            position.current.x + rideForwardX * targetLead + rideRightX * targetSide,
+            playerY + .72 + maneuverAir * .68,
+            position.current.z + rideForwardZ * targetLead + rideRightZ * targetSide,
+          );
+        } else {
+          cameraPosition.current.set(position.current.x + .68, playerY + 3.05, position.current.z + 5.8);
+          cameraTarget.current.set(position.current.x, playerY + 1.18, position.current.z - 3.2);
+        }
       } else if (cameraMode === "cinematic") {
-        const side = directorSide;
-        cameraPosition.current.set(
-          position.current.x + side * (riding ? 7.2 - maneuverBeat * 2.8 - takeoffBeat * 1.45 : 5.8),
-          playerY + (riding ? 2.45 - takeoffBeat * .48 + maneuverBeat * .68 + maneuverAir * .74 + finishBeat * 1.08 : 3.1),
-          position.current.z + (riding ? -1.6 - takeoffBeat * 2.9 + maneuverBeat * .62 - finishBeat * 3.2 : 4.5),
-        );
-        cameraTarget.current.set(
-          position.current.x - side * (riding ? .5 + maneuverBeat * .58 : .16),
-          playerY + (riding ? .82 + maneuverAir * .7 : 1.02),
-          position.current.z + (riding ? 2.6 + speedLead * 1.8 + finishBeat * 3.4 : -1.8),
-        );
+        if (riding) {
+          const cameraBack = 1.6 + takeoffBeat * 2.9 - maneuverBeat * .62 + finishBeat * 3.2;
+          const cameraSide = directorSide * (7.2 - maneuverBeat * 2.8 - takeoffBeat * 1.45);
+          const targetLead = 2.6 + speedLead * 1.8 + finishBeat * 3.4;
+          const targetSide = -directorSide * (.5 + maneuverBeat * .58);
+          cameraPosition.current.set(
+            position.current.x - rideForwardX * cameraBack + rideRightX * cameraSide,
+            playerY + 2.45 - takeoffBeat * .48 + maneuverBeat * .68 + maneuverAir * .74 + finishBeat * 1.08,
+            position.current.z - rideForwardZ * cameraBack + rideRightZ * cameraSide,
+          );
+          cameraTarget.current.set(
+            position.current.x + rideForwardX * targetLead + rideRightX * targetSide,
+            playerY + .82 + maneuverAir * .7,
+            position.current.z + rideForwardZ * targetLead + rideRightZ * targetSide,
+          );
+        } else {
+          cameraPosition.current.set(position.current.x + directorSide * 5.8, playerY + 3.1, position.current.z + 4.5);
+          cameraTarget.current.set(position.current.x - directorSide * .16, playerY + 1.02, position.current.z - 1.8);
+        }
       } else {
-        cameraPosition.current.set(
-          position.current.x + (riding ? steer * -1.7 - barrelCamera * 1.1 + directorSide * maneuverBeat * .7 : 0),
-          playerY + (riding ? 3.2 - barrelCamera * .72 - takeoffBeat * .38 + maneuverBeat * .38 + maneuverAir * .58 + finishBeat * .66 : 4.9),
-          position.current.z + (riding ? -8.4 + barrelCamera * 1.45 + takeoffBeat * 2.15 - maneuverBeat * .72 - finishBeat * 1.9 : 10.5),
-        );
-        cameraTarget.current.set(
-          position.current.x + (riding ? directorSide * maneuverBeat * .18 : 0),
-          playerY + .9 - barrelCamera * .2 + maneuverAir * .72,
-          position.current.z + (riding ? 5.4 + speedLead * 1.9 + finishBeat * 3.7 : -3),
-        );
+        if (riding) {
+          const cameraBack = 8.4 - barrelCamera * 1.45 - takeoffBeat * 2.15 + maneuverBeat * .72 + finishBeat * 1.9;
+          const cameraSide = steer * -1.7 - barrelCamera * 1.1 + directorSide * maneuverBeat * .7;
+          const targetLead = 5.4 + speedLead * 1.9 + finishBeat * 3.7;
+          const targetSide = directorSide * maneuverBeat * .18;
+          cameraPosition.current.set(
+            position.current.x - rideForwardX * cameraBack + rideRightX * cameraSide,
+            playerY + 3.2 - barrelCamera * .72 - takeoffBeat * .38 + maneuverBeat * .38 + maneuverAir * .58 + finishBeat * .66,
+            position.current.z - rideForwardZ * cameraBack + rideRightZ * cameraSide,
+          );
+          cameraTarget.current.set(
+            position.current.x + rideForwardX * targetLead + rideRightX * targetSide,
+            playerY + .9 - barrelCamera * .2 + maneuverAir * .72,
+            position.current.z + rideForwardZ * targetLead + rideRightZ * targetSide,
+          );
+        } else {
+          cameraPosition.current.set(position.current.x, playerY + 4.9, position.current.z + 10.5);
+          cameraTarget.current.set(position.current.x, playerY + .9, position.current.z - 3);
+        }
       }
     }
     if (currentPhase === "shore" && sessionIntroProgress < 1) {

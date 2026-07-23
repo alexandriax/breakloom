@@ -680,7 +680,7 @@ export default function SurfscapeApp() {
       if (screen !== "game") return;
       controls.current.gamepadActive = false;
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
+      if (["w", "a", "s", "d", "q", "e", "r", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
       }
       if (key === "w" || key === "arrowup") controls.current.forward = true;
@@ -696,6 +696,11 @@ export default function SurfscapeApp() {
         controls.current.lookPitch = 0;
         setCameraMode((current) => nextCameraMode(current));
         haptic(7);
+      }
+      if (key === "r" && !event.repeat) {
+        controls.current.lookYaw = 0;
+        controls.current.lookPitch = 0;
+        haptic(4);
       }
       if (key === "escape") setPaused((value) => !value);
     };
@@ -1959,7 +1964,7 @@ export default function SurfscapeApp() {
                 <span><kbd>W</kbd><kbd>S</kbd> throttle / brake</span>
                 <span><kbd>A</kbd><kbd>D</kbd> steer</span>
                 <span><kbd>SPACE</kbd> exit when stopped</span>
-                <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
+                <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span><span className="mouse-icon" /> click to lock 360° view</span>
               </>
             ) : (
@@ -1976,7 +1981,7 @@ export default function SurfscapeApp() {
                   </>
                 )}
                 <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" && !stats.inLineup ? "duck-dive the shorebreak" : "catch wave"}</span>
-                <span><kbd>C</kbd> {CAMERA_LABELS[cameraMode]} camera</span>
+                <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{pointerLocked ? <><kbd>Q</kbd><kbd>E</kbd> balance</> : <><span className="mouse-icon" /> mouse to balance</>}</span>
               </>
             )}
