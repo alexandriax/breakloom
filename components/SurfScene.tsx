@@ -3374,6 +3374,8 @@ function WaveReadingGuide({
 const FOOTPRINT_COUNT = 36;
 const CARVE_TRACK_COUNT = 64;
 const IMPACT_RING_COUNT = 10;
+const BREAKING_FOAM_PATCH_LIMIT = 72;
+const BREAKING_MIST_LIMIT = 112;
 
 function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; mobile: boolean }) {
   const quality = useRenderQuality();
@@ -3939,6 +3941,364 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
           transparent
           opacity={0}
           alphaTest={.025}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+    </group>
+  );
+}
+
+function BreakingWhitewaterField({
+  motion,
+  settings,
+  character,
+  target,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+  target: MutableRefObject<THREE.Group | null>;
+  mobile: boolean;
+}) {
+  const quality = useRenderQuality();
+  const patchCount = mobile
+    ? quality === "reduced" ? 24 : quality === "high" ? 40 : 32
+    : quality === "reduced" ? 42 : quality === "balanced" ? 56 : BREAKING_FOAM_PATCH_LIMIT;
+  const mistCount = mobile
+    ? quality === "reduced" ? 30 : quality === "high" ? 54 : 42
+    : quality === "reduced" ? 58 : quality === "balanced" ? 82 : BREAKING_MIST_LIMIT;
+  const foamMesh = useRef<THREE.InstancedMesh>(null);
+  const mist = useRef<THREE.Points>(null);
+  const mistMaterial = useRef<THREE.PointsMaterial>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const foamColor = useMemo(() => new THREE.Color("#d8fff7"), []);
+  const foamTint = useMemo(() => new THREE.Color(), []);
+  const emission = useRef(0);
+  const patchCursor = useRef(0);
+  const mistCursor = useRef(0);
+  const wasRiding = useRef(false);
+  const previousImpact = useRef(0);
+  const patches = useRef(Array.from({ length: BREAKING_FOAM_PATCH_LIMIT }, () => ({
+    x: 0,
+    z: 0,
+    vx: 0,
+    vz: 0,
+    heading: 0,
+    width: 0,
+    length: 0,
+    age: 0,
+    maxAge: 1,
+    intensity: 0,
+    seed: 0,
+  })));
+  const mistPositions = useMemo(() => {
+    const values = new Float32Array(mistCount * 3);
+    for (let index = 0; index < mistCount; index += 1) values[index * 3 + 1] = -100;
+    return values;
+  }, [mistCount]);
+  const mistColors = useMemo(() => new Float32Array(mistCount * 3), [mistCount]);
+  const mistVelocities = useRef(new Float32Array(mistCount * 3));
+  const mistLife = useRef(new Float32Array(mistCount));
+  const mistMaxLife = useRef(new Float32Array(mistCount));
+
+  const foamTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const body = context.createLinearGradient(0, 0, 0, 128);
+      body.addColorStop(0, "rgba(224,255,249,0)");
+      body.addColorStop(.12, "rgba(236,255,252,.76)");
+      body.addColorStop(.44, "rgba(210,251,244,.9)");
+      body.addColorStop(.82, "rgba(191,244,236,.38)");
+      body.addColorStop(1, "rgba(184,237,230,0)");
+      context.fillStyle = body;
+      context.beginPath();
+      context.moveTo(7, 20);
+      for (let section = 0; section <= 16; section += 1) {
+        const x = 7 + section * 15.1;
+        const y = 15 + seededRandom(section, 711) * 24;
+        context.lineTo(x, y);
+      }
+      for (let section = 16; section >= 0; section -= 1) {
+        const x = 7 + section * 15.1;
+        const y = 95 + seededRandom(section, 712) * 22;
+        context.lineTo(x, y);
+      }
+      context.closePath();
+      context.fill();
+      context.globalCompositeOperation = "destination-out";
+      for (let hole = 0; hole < 74; hole += 1) {
+        const x = 10 + seededRandom(hole, 713) * 236;
+        const y = 18 + seededRandom(hole, 714) * 94;
+        const radiusX = 1.4 + seededRandom(hole, 715) * 8.5;
+        const radiusY = .8 + seededRandom(hole, 716) * 4.2;
+        context.beginPath();
+        context.ellipse(x, y, radiusX, radiusY, (seededRandom(hole, 717) - .5) * .7, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.globalCompositeOperation = "screen";
+      context.lineCap = "round";
+      for (let vein = 0; vein < 27; vein += 1) {
+        const x = 8 + seededRandom(vein, 718) * 240;
+        const y = 18 + seededRandom(vein, 719) * 86;
+        context.strokeStyle = `rgba(248,255,254,${(.18 + seededRandom(vein, 720) * .58).toFixed(2)})`;
+        context.lineWidth = .6 + seededRandom(vein, 721) * 2.2;
+        context.beginPath();
+        context.moveTo(x - 8 - seededRandom(vein, 722) * 18, y - 5);
+        context.quadraticCurveTo(x, y + (seededRandom(vein, 723) - .5) * 18, x + 10 + seededRandom(vein, 724) * 25, y + 7);
+        context.stroke();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    return texture;
+  }, []);
+
+  const mistTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const glow = context.createRadialGradient(29, 27, 1, 32, 32, 29);
+      glow.addColorStop(0, "rgba(255,255,255,.96)");
+      glow.addColorStop(.2, "rgba(224,255,250,.7)");
+      glow.addColorStop(.55, "rgba(183,244,237,.2)");
+      glow.addColorStop(1, "rgba(175,236,231,0)");
+      context.fillStyle = glow;
+      context.fillRect(0, 0, 64, 64);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    mistVelocities.current = new Float32Array(mistCount * 3);
+    mistLife.current = new Float32Array(mistCount);
+    mistMaxLife.current = new Float32Array(mistCount);
+    mistCursor.current = 0;
+    const mesh = foamMesh.current;
+    if (mesh) {
+      for (let index = 0; index < patchCount; index += 1) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(index, dummy.matrix);
+        mesh.setColorAt(index, foamTint.setRGB(0, 0, 0));
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+  }, [dummy, foamTint, mistCount, patchCount]);
+
+  useEffect(() => () => {
+    foamTexture.dispose();
+    mistTexture.dispose();
+  }, [foamTexture, mistTexture]);
+
+  useFrame(({ clock }, delta) => {
+    const crest = target.current;
+    const mesh = foamMesh.current;
+    const mistPoints = mist.current;
+    if (!crest || !mesh || !mistPoints) return;
+    const state = motion.current;
+    const riding = state.phase === "riding";
+    const elapsed = clock.elapsedTime;
+    const transport = primaryWaveVelocityAt(crest.position.x, crest.position.z, elapsed, settings, character);
+    const normalX = transport.x / Math.max(.001, transport.speed);
+    const normalZ = transport.z / Math.max(.001, transport.speed);
+    const tangentX = normalZ;
+    const tangentZ = -normalX;
+    const faceHeight = THREE.MathUtils.clamp(settings.waveHeight * 1.55, 1.35, 5.8) * (.78 + state.setEnergy * .32);
+    const breakEnergy = THREE.MathUtils.clamp(
+      .24 + state.waveQuality * .42 + state.sectionPressure * .26 + state.barrel * .18 + Math.abs(state.rail) * .08,
+      .18,
+      1.15,
+    );
+    const mistPositionAttribute = mistPoints.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const mistColorAttribute = mistPoints.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const activeMistPositions = mistPositionAttribute.array as Float32Array;
+    const activeMistColors = mistColorAttribute.array as Float32Array;
+
+    const emitMist = (sourceX: number, sourceZ: number, spread: number, energy: number, count: number) => {
+      for (let particle = 0; particle < count; particle += 1) {
+        const index = mistCursor.current++ % mistCount;
+        const offset = index * 3;
+        const tangentScatter = (Math.random() - .5) * spread;
+        activeMistPositions[offset] = sourceX + tangentX * tangentScatter - normalX * Math.random() * .55;
+        activeMistPositions[offset + 1] = crest.position.y + faceHeight * (.42 + Math.random() * .5);
+        activeMistPositions[offset + 2] = sourceZ + tangentZ * tangentScatter - normalZ * Math.random() * .55;
+        mistVelocities.current[offset] = normalX * transport.speed * (.14 + Math.random() * .13) + tangentX * (Math.random() - .5) * 1.3;
+        mistVelocities.current[offset + 1] = .8 + energy * 1.35 + Math.random() * 1.25;
+        mistVelocities.current[offset + 2] = normalZ * transport.speed * (.14 + Math.random() * .13) + tangentZ * (Math.random() - .5) * 1.3;
+        const lifespan = .58 + Math.random() * .78 + energy * .28;
+        mistLife.current[index] = lifespan;
+        mistMaxLife.current[index] = lifespan;
+      }
+    };
+
+    const emitPatch = (impactBoost = 0) => {
+      const patch = patches.current[patchCursor.current++ % patchCount];
+      const tangentSpread = (Math.random() - .5) * (15 + settings.waveHeight * 3.4);
+      const normalScatter = .25 + Math.random() * (1.4 + settings.waveHeight * .3);
+      patch.x = crest.position.x + tangentX * tangentSpread - normalX * normalScatter;
+      patch.z = crest.position.z + tangentZ * tangentSpread - normalZ * normalScatter;
+      const advection = transport.speed * (.34 + Math.random() * .15 + impactBoost * .035);
+      const sideDrift = state.lineSide * (.18 + state.sectionPressure * .4) + (Math.random() - .5) * .52;
+      patch.vx = normalX * advection + tangentX * sideDrift;
+      patch.vz = normalZ * advection + tangentZ * sideDrift;
+      patch.heading = Math.atan2(normalX, normalZ);
+      patch.width = 2.4 + Math.random() * 2.8 + settings.waveHeight * .34 + impactBoost * .6;
+      patch.length = 1.5 + Math.random() * 2.2 + breakEnergy * 1.25 + impactBoost * .9;
+      patch.maxAge = (mobile ? 3.5 : 4.5) + Math.random() * (mobile ? 1.7 : 2.5) + breakEnergy * .65;
+      patch.age = patch.maxAge;
+      patch.intensity = THREE.MathUtils.clamp(.46 + breakEnergy * .46 + impactBoost * .18 + Math.random() * .16, .48, 1.2);
+      patch.seed = Math.random() * Math.PI * 2;
+      emitMist(
+        patch.x,
+        patch.z,
+        1.2 + settings.waveHeight * .34,
+        breakEnergy + impactBoost,
+        mobile ? 1 : 2 + Math.round(impactBoost),
+      );
+    };
+
+    if (riding) {
+      emission.current += delta * (5.2 + breakEnergy * 7.4 + state.sectionPressure * 2.8);
+      const burstLimit = mobile ? 2 : 4;
+      let emitted = 0;
+      while (emission.current >= 1 && emitted < burstLimit) {
+        emitPatch();
+        emission.current -= 1;
+        emitted += 1;
+      }
+      if (!wasRiding.current) {
+        const takeoffBurst = mobile ? 3 : 6;
+        for (let index = 0; index < takeoffBurst; index += 1) emitPatch(.34);
+      }
+      if (state.impact > .72 && previousImpact.current <= .72) {
+        const impactBurst = mobile ? 2 : 4;
+        for (let index = 0; index < impactBurst; index += 1) emitPatch(.72);
+      }
+    } else {
+      emission.current = 0;
+    }
+    wasRiding.current = riding;
+    previousImpact.current = state.impact;
+
+    for (let index = 0; index < patchCount; index += 1) {
+      const patch = patches.current[index];
+      patch.age = Math.max(0, patch.age - delta);
+      if (patch.age <= 0) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+        foamTint.setRGB(0, 0, 0);
+      } else {
+        const progress = 1 - patch.age / Math.max(.001, patch.maxAge);
+        const rise = THREE.MathUtils.smootherstep(progress, 0, .08);
+        const fall = THREE.MathUtils.smoothstep(patch.age / patch.maxAge, 0, .34);
+        const fade = rise * fall;
+        patch.x += patch.vx * delta;
+        patch.z += patch.vz * delta;
+        patch.vx *= 1 - delta * .055;
+        patch.vz *= 1 - delta * .055;
+        const surface = waveHeightAt(patch.x, patch.z, elapsed, settings, character);
+        dummy.position.set(patch.x, surface + .06, patch.z);
+        dummy.rotation.set(-Math.PI / 2, 0, -patch.heading + Math.sin(elapsed * .44 + patch.seed) * .026);
+        dummy.scale.set(
+          patch.width * (1 + progress * .72) * fade,
+          patch.length * (1 + progress * 1.45) * fade,
+          1,
+        );
+        foamTint.copy(foamColor).multiplyScalar(fade * patch.intensity);
+      }
+      dummy.updateMatrix();
+      mesh.setMatrixAt(index, dummy.matrix);
+      mesh.setColorAt(index, foamTint);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    const relativeWind = THREE.MathUtils.degToRad(settings.windDirection - settings.coastHeading);
+    const windForce = THREE.MathUtils.clamp(settings.windSpeed / 28, 0, 1.45);
+    const windX = Math.sin(relativeWind) * windForce * .85;
+    const windZ = Math.cos(relativeWind) * windForce * .42;
+    let activeMist = 0;
+    for (let index = 0; index < mistCount; index += 1) {
+      const offset = index * 3;
+      if (mistLife.current[index] <= 0) {
+        activeMistPositions[offset + 1] = -100;
+        activeMistColors[offset] = 0;
+        activeMistColors[offset + 1] = 0;
+        activeMistColors[offset + 2] = 0;
+        continue;
+      }
+      mistLife.current[index] -= delta;
+      activeMistPositions[offset] += (mistVelocities.current[offset] + windX) * delta;
+      activeMistPositions[offset + 1] += mistVelocities.current[offset + 1] * delta;
+      activeMistPositions[offset + 2] += (mistVelocities.current[offset + 2] + windZ) * delta;
+      mistVelocities.current[offset] *= 1 - delta * .5;
+      mistVelocities.current[offset + 1] -= delta * 2.45;
+      mistVelocities.current[offset + 2] *= 1 - delta * .5;
+      const lifeFade = THREE.MathUtils.smoothstep(
+        mistLife.current[index] / Math.max(.001, mistMaxLife.current[index]),
+        0,
+        .72,
+      );
+      activeMistColors[offset] = .82 * lifeFade;
+      activeMistColors[offset + 1] = 1 * lifeFade;
+      activeMistColors[offset + 2] = .96 * lifeFade;
+      const surface = waveHeightAt(activeMistPositions[offset], activeMistPositions[offset + 2], elapsed, settings, character);
+      if (mistLife.current[index] <= 0 || activeMistPositions[offset + 1] <= surface + .02) {
+        mistLife.current[index] = 0;
+        activeMistPositions[offset + 1] = -100;
+      } else {
+        activeMist += 1;
+      }
+    }
+    mistPositionAttribute.needsUpdate = true;
+    mistColorAttribute.needsUpdate = true;
+    if (mistMaterial.current) {
+      mistMaterial.current.opacity = THREE.MathUtils.damp(mistMaterial.current.opacity, activeMist > 0 ? .72 : 0, activeMist > 0 ? 10 : 4, delta);
+      mistMaterial.current.size = THREE.MathUtils.damp(mistMaterial.current.size, .18 + breakEnergy * .1, 6, delta);
+    }
+  });
+
+  return (
+    <group>
+      <instancedMesh ref={foamMesh} args={[undefined, undefined, patchCount]} frustumCulled={false} renderOrder={3.85}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          map={foamTexture}
+          transparent
+          opacity={.72}
+          alphaTest={.018}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </instancedMesh>
+      <points ref={mist} frustumCulled={false} renderOrder={4.1}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[mistPositions, 3]} />
+          <bufferAttribute attach="attributes-color" args={[mistColors, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={mistMaterial}
+          map={mistTexture}
+          size={.2}
+          sizeAttenuation
+          vertexColors
+          transparent
+          opacity={0}
+          alphaTest={.02}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -8571,6 +8931,13 @@ function Simulation({
         sandColor={beach.palette[1]}
       />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
+      <BreakingWhitewaterField
+        motion={motion}
+        settings={settings}
+        character={character}
+        target={waveStage}
+        mobile={mobileRenderer}
+      />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <KinematicContactShadows
         motion={motion}
