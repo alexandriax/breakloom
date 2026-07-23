@@ -4,7 +4,7 @@ Surfscape is a browser-based 3D surfing game driven by current marine forecast d
 
 You can also walk up to the coast road, enter the Surfscape van, and drive between peaks with three boards on the roof rack.
 
-Those three boards form a playable quiver: the Apex performance shortboard turns fastest and scores technical surfing, the Drift Twin fish carries speed through weaker sections, and the Horizon longboard paddles easily, stabilizes balance, and unlocks stronger nose rides.
+Those three boards form a playable quiver: the Apex performance shortboard turns fastest and scores technical surfing, the Drift Twin fish carries speed through weaker sections, and the Horizon longboard paddles easily, stabilizes balance, and unlocks stronger nose rides. Their fiberglass shells flex and torsionally load under speed, stance, rail pressure, and landings before springing back on release.
 
 ## Play locally
 
@@ -67,4 +67,4 @@ The build automatically accounts for project-page paths such as `username.github
 
 ## Scope
 
-This version is a high-quality vertical slice: one detailed surfer, thirteen coastlines with urban, tropical, dune, cliff, cold-water, volcanic, and desert environments, selectable zones, synchronized hourly conditions, premium terrain materials, wind-shaped instanced dune grass, weather-reactive beach fabric, articulated coastal wildlife, a fiberglass three-board quiver with distinct silhouettes and hardware, coast-relative multi-vector Gerstner swells, a live breaking-wave face, stance/stamina/pocket/barrel/maneuver systems, wind-deflected wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.
+This version is a high-quality vertical slice: one detailed surfer, thirteen coastlines with urban, tropical, dune, cliff, cold-water, volcanic, and desert environments, selectable zones, synchronized hourly conditions, premium terrain materials, wind-shaped instanced dune grass, weather-reactive beach fabric, articulated coastal wildlife, a spring-loaded fiberglass three-board quiver with distinct silhouettes and hardware, coast-relative multi-vector Gerstner swells, a live breaking-wave face, stance/stamina/pocket/barrel/maneuver systems, wind-deflected wake and spray, cinematic ride cameras, training/advanced/playground modes, persistent scoring, a drivable surf van, adaptive procedural audio, and responsive desktop/mobile controls. It is intentionally single-player; crowds and lineup etiquette are future systems.

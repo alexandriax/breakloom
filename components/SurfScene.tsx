@@ -1707,7 +1707,58 @@ function createFinGeometry() {
   return geometry;
 }
 
-function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
+function deformSurfboardGeometry({
+  geometry,
+  basePositions,
+  length,
+  halfWidth,
+  flex,
+  twist,
+  loadCenter,
+  refreshNormals,
+}: {
+  geometry: THREE.BufferGeometry;
+  basePositions: Float32Array;
+  length: number;
+  halfWidth: number;
+  flex: number;
+  twist: number;
+  loadCenter: number;
+  refreshNormals: boolean;
+}) {
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const values = positions.array as Float32Array;
+  const halfLength = Math.max(.01, length * .5);
+  const safeHalfWidth = Math.max(.01, halfWidth);
+
+  for (let index = 0; index < values.length; index += 3) {
+    const x = basePositions[index];
+    const y = basePositions[index + 1];
+    const z = basePositions[index + 2];
+    const longitudinal = THREE.MathUtils.clamp(z / halfLength, -1, 1);
+    const distanceFromLoad = THREE.MathUtils.clamp(
+      Math.abs(z - loadCenter) / (length * .57),
+      0,
+      1,
+    );
+    const loadSpan = Math.pow(1 - THREE.MathUtils.smoothstep(distanceFromLoad, .08, 1), 1.34);
+    const tipRecoil = Math.pow(Math.abs(longitudinal), 3.15) * .17;
+    const rail = THREE.MathUtils.clamp(x / safeHalfWidth, -1, 1);
+    const torsion = twist * rail * longitudinal * (.38 + Math.abs(longitudinal) * .62);
+    values[index + 1] = y - flex * loadSpan + flex * tipRecoil + torsion;
+  }
+
+  positions.needsUpdate = true;
+  if (refreshNormals) geometry.computeVertexNormals();
+}
+
+function PremiumSurfboard({
+  boardType,
+  motion,
+}: {
+  boardType: BoardType;
+  motion: MutableRefObject<MotionState>;
+}) {
   const spec = BOARD_SPECS[boardType];
   const thickness = boardType === "longboard" ? .105 : boardType === "fish" ? .115 : .098;
   const boardGeometry = useMemo(
@@ -1718,7 +1769,17 @@ function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
     () => createSurfboardGeometry(boardType, spec.length * .84, spec.width * .76, .022, true),
     [boardType, spec.length, spec.width],
   );
+  const boardBasePositions = useMemo(
+    () => new Float32Array((boardGeometry.getAttribute("position") as THREE.BufferAttribute).array),
+    [boardGeometry],
+  );
+  const deckBasePositions = useMemo(
+    () => new Float32Array((deckGeometry.getAttribute("position") as THREE.BufferAttribute).array),
+    [deckGeometry],
+  );
   const finGeometry = useMemo(() => createFinGeometry(), []);
+  const flexSpring = useRef({ value: 0, velocity: 0, twist: 0, twistVelocity: 0, frame: 0 });
+  const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const finXs = boardType === "performance"
     ? [-spec.width * .46, 0, spec.width * .46]
     : boardType === "fish"
@@ -1727,6 +1788,73 @@ function PremiumSurfboard({ boardType }: { boardType: BoardType }) {
   const finScale = boardType === "longboard" ? 1.32 : boardType === "fish" ? 1.08 : .9;
   const tailPosition = -spec.length * .38;
   const waxPositions = boardType === "longboard" ? [-.55, -.08, .42, .88] : [-.35, .08, .48];
+
+  useFrame((_, delta) => {
+    const state = motion.current;
+    const spring = flexSpring.current;
+    const step = Math.min(delta, .04);
+    const riding = state.phase === "riding";
+    const paddling = state.phase === "paddling";
+    const waterContact = riding ? 1 - THREE.MathUtils.smoothstep(state.maneuverLift, .08, .52) : 1;
+    const speedLoad = THREE.MathUtils.smoothstep(state.speed, 4.5, 16);
+    const compliance = boardType === "longboard" ? .72 : boardType === "fish" ? .9 : 1;
+    const targetFlex = (
+      riding
+        ? (
+          .007
+          + speedLoad * .013
+          + state.compression * .022
+          + Math.abs(state.rail) * .008
+          + state.takeoff * .012
+          + state.impact * .036
+        ) * waterContact
+        : paddling
+          ? .004 + state.paddleEffort * .004 + state.duckDive * .009
+          : 0
+    ) * compliance;
+    const targetTwist = riding
+      ? (
+        state.rail * (.005 + speedLoad * .008 + state.compression * .005)
+        + state.maneuverSide * state.maneuver * .004
+      ) * waterContact * compliance
+      : 0;
+
+    spring.velocity += (targetFlex - spring.value) * 84 * step;
+    spring.velocity *= Math.exp(-10.4 * step);
+    spring.value = THREE.MathUtils.clamp(spring.value + spring.velocity * step, -.016, .074);
+    spring.twistVelocity += (targetTwist - spring.twist) * 96 * step;
+    spring.twistVelocity *= Math.exp(-12.2 * step);
+    spring.twist = THREE.MathUtils.clamp(spring.twist + spring.twistVelocity * step, -.025, .025);
+    spring.frame += 1;
+
+    const refreshNormals = spring.frame % (mobileRenderer ? 3 : 2) === 0;
+    const loadCenter = (riding ? state.stance : 0) * spec.length * .16;
+    deformSurfboardGeometry({
+      geometry: boardGeometry,
+      basePositions: boardBasePositions,
+      length: spec.length,
+      halfWidth: spec.width,
+      flex: spring.value,
+      twist: spring.twist,
+      loadCenter,
+      refreshNormals,
+    });
+    deformSurfboardGeometry({
+      geometry: deckGeometry,
+      basePositions: deckBasePositions,
+      length: spec.length * .84,
+      halfWidth: spec.width * .76,
+      flex: spring.value * .88,
+      twist: spring.twist * .76,
+      loadCenter: loadCenter * .84,
+      refreshNormals,
+    });
+  });
+
+  useEffect(() => {
+    (boardGeometry.getAttribute("position") as THREE.BufferAttribute).setUsage(THREE.DynamicDrawUsage);
+    (deckGeometry.getAttribute("position") as THREE.BufferAttribute).setUsage(THREE.DynamicDrawUsage);
+  }, [boardGeometry, deckGeometry]);
 
   useEffect(() => () => {
     boardGeometry.dispose();
@@ -1974,7 +2102,7 @@ function SurferModel({
       </mesh>
       <group ref={rig}>
         <group ref={board} position={[0, 0.16, 0]}>
-          <PremiumSurfboard boardType={boardType} />
+          <PremiumSurfboard boardType={boardType} motion={motion} />
         </group>
         <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
 
