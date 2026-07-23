@@ -4449,6 +4449,143 @@ function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: bool
   );
 }
 
+function createUmbrellaCanopyGeometry(segments = 24) {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const coral = new THREE.Color("#dd654b");
+  const coralShade = new THREE.Color("#b94738");
+  const canvas = new THREE.Color("#f1d8a7");
+  const canvasShade = new THREE.Color("#c9ad79");
+  const addVertex = (x: number, y: number, z: number, color: THREE.Color) => {
+    positions.push(x, y, z);
+    colors.push(color.r, color.g, color.b);
+  };
+  for (let segment = 0; segment < segments; segment += 1) {
+    const angleA = (segment / segments) * Math.PI * 2;
+    const angleB = ((segment + 1) / segments) * Math.PI * 2;
+    const edgeRadiusA = 2.86 + Math.sin(angleA * segments * .5) * .065;
+    const edgeRadiusB = 2.86 + Math.sin(angleB * segments * .5) * .065;
+    const middleRadius = 1.52;
+    const panel = segment % 2 ? canvas : coral;
+    const shade = segment % 2 ? canvasShade : coralShade;
+    const center = [0, .57, 0] as const;
+    const middleA = [Math.sin(angleA) * middleRadius, .31, Math.cos(angleA) * middleRadius] as const;
+    const middleB = [Math.sin(angleB) * middleRadius, .31, Math.cos(angleB) * middleRadius] as const;
+    const edgeA = [Math.sin(angleA) * edgeRadiusA, 0, Math.cos(angleA) * edgeRadiusA] as const;
+    const edgeB = [Math.sin(angleB) * edgeRadiusB, 0, Math.cos(angleB) * edgeRadiusB] as const;
+    [center, middleA, middleB, middleA, edgeA, edgeB, middleA, edgeB, middleB].forEach(([x, y, z], index) => {
+      addVertex(x, y, z, index < 3 ? panel.clone().lerp(new THREE.Color("#fff4d4"), .08) : panel);
+    });
+    const valanceDropA = -.18 - (segment % 2) * .045;
+    const valanceDropB = -.18 - ((segment + 1) % 2) * .045;
+    const lowerA = [edgeA[0] * .988, valanceDropA, edgeA[2] * .988] as const;
+    const lowerB = [edgeB[0] * .988, valanceDropB, edgeB[2] * .988] as const;
+    [edgeA, lowerA, lowerB, edgeA, lowerB, edgeB].forEach(([x, y, z]) => addVertex(x, y, z, shade));
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function BeachUmbrella({
+  wind,
+  windDirection,
+  coastHeading,
+  weatherCode,
+  mobile,
+}: {
+  wind: number;
+  windDirection: number;
+  coastHeading: number;
+  weatherCode: number;
+  mobile: boolean;
+}) {
+  const canopy = useRef<THREE.Group>(null);
+  const fabric = useRef<THREE.Mesh>(null);
+  const geometry = useMemo(() => createUmbrellaCanopyGeometry(mobile ? 16 : 24), [mobile]);
+  const basePositions = useMemo(() => (geometry.getAttribute("position").array as Float32Array).slice(), [geometry]);
+  const weather = weatherProfile(weatherCode);
+  const reducedMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
+  const windAngle = THREE.MathUtils.degToRad(windDirection - coastHeading);
+  const windVector = useMemo(() => new THREE.Vector2(Math.sin(windAngle), Math.cos(windAngle)).normalize(), [windAngle]);
+  const furled = weather.storm || weather.kind === "snow" || wind > 1.22;
+  const ribPositions = useMemo(() => {
+    const values: number[] = [];
+    const ribCount = mobile ? 8 : 12;
+    for (let index = 0; index < ribCount; index += 1) {
+      const angle = (index / ribCount) * Math.PI * 2;
+      values.push(0, .54, 0, Math.sin(angle) * 2.82, .015, Math.cos(angle) * 2.82);
+    }
+    return new Float32Array(values);
+  }, [mobile]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  useFrame(({ clock }, delta) => {
+    if (!canopy.current || !fabric.current) return;
+    const t = reducedMotion ? 1.4 : clock.elapsedTime;
+    const gust = reducedMotion ? 0 : Math.sin(t * (1.34 + wind * .72) + 1.7) * .5 + Math.sin(t * 2.73) * .22;
+    const tilt = furled ? .015 : .025 + wind * .085 + gust * wind * .018;
+    canopy.current.rotation.x = THREE.MathUtils.damp(canopy.current.rotation.x, windVector.y * tilt, 4.2, delta);
+    canopy.current.rotation.z = THREE.MathUtils.damp(canopy.current.rotation.z, -windVector.x * tilt, 4.2, delta);
+    canopy.current.rotation.y = dampAngle(canopy.current.rotation.y, windAngle + gust * .018, 2.4, delta);
+    const openScale = furled ? .17 : 1;
+    canopy.current.scale.x = THREE.MathUtils.damp(canopy.current.scale.x, openScale, 3.8, delta);
+    canopy.current.scale.z = THREE.MathUtils.damp(canopy.current.scale.z, openScale, 3.8, delta);
+    canopy.current.scale.y = THREE.MathUtils.damp(canopy.current.scale.y, furled ? 1.34 : 1, 3.8, delta);
+
+    const position = fabric.current.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const values = position.array as Float32Array;
+    const flutterStrength = reducedMotion || furled ? 0 : wind * .026;
+    for (let index = 0; index < values.length; index += 3) {
+      const x = basePositions[index];
+      const y = basePositions[index + 1];
+      const z = basePositions[index + 2];
+      const radius = Math.hypot(x, z);
+      const edge = THREE.MathUtils.smoothstep(radius, .82, 2.9);
+      const phase = Math.atan2(x, z) * 3 + radius * 1.7;
+      values[index + 1] = y + Math.sin(t * (3.4 + wind * 1.8) + phase) * flutterStrength * edge;
+    }
+    position.needsUpdate = true;
+    fabric.current.geometry.computeVertexNormals();
+  });
+
+  return (
+    <group position={[-10, 0, 50]}>
+      <mesh position={[0, 2.05, 0]} castShadow>
+        <cylinderGeometry args={[.13, .19, 4.1, 12]} />
+        <meshStandardMaterial color="#e6d9bd" roughness={.72} />
+      </mesh>
+      <mesh position={[0, .08, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <cylinderGeometry args={[.52, .34, .13, 18]} />
+        <meshStandardMaterial color="#bba57d" roughness={.96} />
+      </mesh>
+      <group ref={canopy} position={[0, 4.08, 0]}>
+        <mesh ref={fabric} geometry={geometry} castShadow={!mobile} receiveShadow>
+          <meshStandardMaterial vertexColors roughness={.78} side={THREE.DoubleSide} />
+        </mesh>
+        <lineSegments renderOrder={2}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[ribPositions, 3]} />
+          </bufferGeometry>
+          <lineBasicMaterial color="#b9b7a9" transparent opacity={.72} depthWrite={false} />
+        </lineSegments>
+        <mesh position={[0, .54, 0]}>
+          <sphereGeometry args={[.11, 10, 7]} />
+          <meshStandardMaterial color="#d2c8ae" metalness={.38} roughness={.38} />
+        </mesh>
+        <mesh position={[0, .73, 0]}>
+          <cylinderGeometry args={[.035, .055, .35, 8]} />
+          <meshStandardMaterial color="#c9bea5" metalness={.28} roughness={.46} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
 function BeachLife({
   beach,
   windSpeed,
@@ -4557,16 +4694,13 @@ function BeachLife({
           <meshStandardMaterial color={biome === "volcanic" ? index % 2 ? "#373a36" : "#484a43" : index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
         </mesh>
       ))}
-      <group position={[-10, 0, 50]}>
-        <mesh position={[0, 2.1, 0]} castShadow>
-          <cylinderGeometry args={[0.18, 0.25, 4.2, 10]} />
-          <meshStandardMaterial color="#e2d3b6" roughness={0.9} />
-        </mesh>
-        <mesh position={[0, 4.15, 0]} rotation={[0, 0, 0.04]} castShadow>
-          <coneGeometry args={[3.4, 1.25, 28, 2, false, 0, Math.PI * 2]} />
-          <meshStandardMaterial color="#e75e43" roughness={0.72} side={THREE.DoubleSide} />
-        </mesh>
-      </group>
+      <BeachUmbrella
+        wind={wind}
+        windDirection={windDirection}
+        coastHeading={coastHeading}
+        weatherCode={weatherCode}
+        mobile={mobileRenderer}
+      />
       <LifeguardStation wind={wind} light={light} />
       <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
       <CoastBackdrop
