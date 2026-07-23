@@ -6351,6 +6351,317 @@ function FootprintTrail({
   );
 }
 
+function ShallowWaterFootfalls({
+  motion,
+  targetPosition,
+  playerHeading,
+  settings,
+  character,
+}: {
+  motion: MutableRefObject<MotionState>;
+  targetPosition: MutableRefObject<THREE.Vector3>;
+  playerHeading: MutableRefObject<number>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+}) {
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const reducedMotion = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
+  const rippleCount = mobile
+    ? quality === "reduced" ? 8 : quality === "high" ? 16 : 12
+    : quality === "reduced" ? 14 : quality === "balanced" ? 18 : 24;
+  const dropletCount = mobile
+    ? quality === "reduced" ? 18 : quality === "high" ? 38 : 28
+    : quality === "reduced" ? 30 : quality === "balanced" ? 42 : 56;
+  const ripples = useRef<THREE.InstancedMesh>(null);
+  const droplets = useRef<THREE.Points>(null);
+  const dropletMaterial = useRef<THREE.PointsMaterial>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const previousPosition = useRef(new THREE.Vector3());
+  const traveled = useRef(0);
+  const footSide = useRef(-1);
+  const rippleCursor = useRef(0);
+  const dropletCursor = useRef(0);
+  const rippleData = useRef(Array.from({ length: 24 }, () => ({
+    x: 0,
+    z: 0,
+    heading: 0,
+    age: 0,
+    maxAge: 1,
+    intensity: 0,
+    depth: 0,
+    driftX: 0,
+    driftZ: 0,
+  })));
+  const rippleColor = useMemo(() => new THREE.Color("#c8fff6"), []);
+  const fadedRippleColor = useMemo(() => new THREE.Color(), []);
+  const dropletPositions = useMemo(() => {
+    const values = new Float32Array(dropletCount * 3);
+    for (let index = 0; index < dropletCount; index += 1) values[index * 3 + 1] = -100;
+    return values;
+  }, [dropletCount]);
+  const dropletVelocities = useRef(new Float32Array(dropletCount * 3));
+  const dropletLife = useRef(new Float32Array(dropletCount));
+  const dropletTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 48;
+    canvas.height = 48;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(20, 18, 1, 24, 24, 22);
+      gradient.addColorStop(0, "rgba(255,255,255,.98)");
+      gradient.addColorStop(.2, "rgba(218,255,250,.9)");
+      gradient.addColorStop(.62, "rgba(115,225,219,.3)");
+      gradient.addColorStop(1, "rgba(115,225,219,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 48, 48);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    previousPosition.current.copy(targetPosition.current);
+    traveled.current = 0;
+    rippleCursor.current = 0;
+    footSide.current = -1;
+    if (ripples.current) {
+      ripples.current.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      for (let index = 0; index < ripples.current.count; index += 1) {
+        dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
+        dummy.updateMatrix();
+        ripples.current.setMatrixAt(index, dummy.matrix);
+        ripples.current.setColorAt(index, fadedRippleColor.setRGB(0, 0, 0));
+      }
+      ripples.current.instanceMatrix.needsUpdate = true;
+      if (ripples.current.instanceColor) ripples.current.instanceColor.needsUpdate = true;
+    }
+    rippleData.current.forEach((ripple) => { ripple.age = 0; });
+  }, [dummy, fadedRippleColor, rippleCount, targetPosition]);
+
+  useEffect(() => {
+    dropletVelocities.current = new Float32Array(dropletCount * 3);
+    dropletLife.current = new Float32Array(dropletCount);
+    dropletCursor.current = 0;
+  }, [dropletCount]);
+
+  useEffect(() => () => dropletTexture.dispose(), [dropletTexture]);
+
+  useFrame(({ clock }, delta) => {
+    const state = motion.current;
+    const current = targetPosition.current;
+    const stepDistance = current.distanceTo(previousPosition.current);
+    const movementX = stepDistance > .001
+      ? (current.x - previousPosition.current.x) / stepDistance
+      : Math.sin(playerHeading.current);
+    const movementZ = stepDistance > .001
+      ? (current.z - previousPosition.current.z) / stepDistance
+      : Math.cos(playerHeading.current);
+    const activeWade = state.phase === "wading"
+      && state.speed > .25
+      && state.waterDepth > .05
+      && state.waterDepth < .96
+      && stepDistance < 2.2;
+    const positionAttribute = droplets.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const activeDroplets = positionAttribute?.array as Float32Array | undefined;
+
+    if (activeWade) {
+      traveled.current += stepDistance;
+      const spacing = THREE.MathUtils.lerp(.56, .43, state.waterDepth) + state.run * .08;
+      if (traveled.current >= spacing) {
+        traveled.current %= spacing;
+        const side = footSide.current;
+        footSide.current *= -1;
+        const heading = stepDistance > .008
+          ? Math.atan2(movementX, movementZ)
+          : playerHeading.current;
+        const rightX = Math.cos(heading);
+        const rightZ = -Math.sin(heading);
+        const lateralSpacing = THREE.MathUtils.lerp(.145, .11, state.waterDepth);
+        const footX = current.x + rightX * side * lateralSpacing - movementX * .055;
+        const footZ = current.z + rightZ * side * lateralSpacing - movementZ * .055;
+        const currentAngle = THREE.MathUtils.degToRad(
+          settings.currentDirection - settings.coastHeading,
+        );
+        const currentSpeed = settings.currentStrength / 3.6;
+        const ripple = rippleData.current[rippleCursor.current++ % rippleCount];
+        ripple.x = footX;
+        ripple.z = footZ;
+        ripple.heading = heading + side * .035;
+        ripple.maxAge = .74 + state.waterDepth * .48;
+        ripple.age = ripple.maxAge;
+        ripple.intensity = THREE.MathUtils.clamp(
+          .34 + state.speed * .14 + state.waterDepth * .42,
+          .38,
+          1,
+        );
+        ripple.depth = state.waterDepth;
+        ripple.driftX = Math.sin(currentAngle) * currentSpeed * .12;
+        ripple.driftZ = -Math.cos(currentAngle) * currentSpeed * .12 + .035;
+
+        if (activeDroplets && positionAttribute) {
+          const emissionScale = reducedMotion ? .55 : 1;
+          const emitCount = Math.max(
+            2,
+            Math.round((2 + state.speed * .72 + state.waterDepth * 4.2) * emissionScale),
+          );
+          for (let particle = 0; particle < emitCount; particle += 1) {
+            const index = dropletCursor.current++ % dropletCount;
+            const offset = index * 3;
+            const lateral = (Math.random() - .5) * (.22 + state.waterDepth * .34);
+            const kick = .22 + Math.random() * (.34 + state.speed * .08);
+            const outward = side * (.22 + Math.random() * .42);
+            activeDroplets[offset] = footX + rightX * lateral;
+            activeDroplets[offset + 1] = waveHeightAt(
+              footX,
+              footZ,
+              clock.elapsedTime,
+              settings,
+              character,
+            ) + .025 + Math.random() * .06;
+            activeDroplets[offset + 2] = footZ + rightZ * lateral;
+            dropletVelocities.current[offset] = rightX * outward - movementX * kick * .32;
+            dropletVelocities.current[offset + 1] = .38
+              + Math.random() * (.56 + state.waterDepth * .58);
+            dropletVelocities.current[offset + 2] = rightZ * outward - movementZ * kick * .32;
+            dropletLife.current[index] = .3 + Math.random() * (.3 + state.waterDepth * .22);
+          }
+          positionAttribute.needsUpdate = true;
+        }
+      }
+    } else {
+      traveled.current = 0;
+    }
+    previousPosition.current.copy(current);
+
+    if (ripples.current) {
+      for (let index = 0; index < rippleCount; index += 1) {
+        const ripple = rippleData.current[index];
+        ripple.age = Math.max(0, ripple.age - delta);
+        if (ripple.age <= 0) {
+          dummy.position.set(0, -100, 0);
+          dummy.scale.setScalar(.001);
+          fadedRippleColor.setRGB(0, 0, 0);
+        } else {
+          ripple.x += ripple.driftX * delta;
+          ripple.z += ripple.driftZ * delta;
+          const progress = 1 - ripple.age / ripple.maxAge;
+          const bloom = THREE.MathUtils.smootherstep(progress, 0, .72);
+          const fade = THREE.MathUtils.smoothstep(ripple.age, 0, ripple.maxAge * .42);
+          const surfaceY = waveHeightAt(
+            ripple.x,
+            ripple.z,
+            clock.elapsedTime,
+            settings,
+            character,
+          );
+          const width = .22 + bloom * (.72 + ripple.depth * .58);
+          const length = .16 + bloom * (.5 + ripple.depth * .38);
+          dummy.position.set(ripple.x, surfaceY + .045, ripple.z);
+          dummy.rotation.set(-Math.PI / 2, 0, -ripple.heading);
+          dummy.scale.set(width, length, 1);
+          fadedRippleColor.copy(rippleColor).multiplyScalar(
+            fade * ripple.intensity * (.74 + (1 - progress) * .26),
+          );
+        }
+        dummy.updateMatrix();
+        ripples.current.setMatrixAt(index, dummy.matrix);
+        ripples.current.setColorAt(index, fadedRippleColor);
+      }
+      ripples.current.instanceMatrix.needsUpdate = true;
+      if (ripples.current.instanceColor) ripples.current.instanceColor.needsUpdate = true;
+    }
+
+    let activeDropletStrength = 0;
+    if (activeDroplets && positionAttribute) {
+      const windAngle = THREE.MathUtils.degToRad(
+        settings.windDirection - settings.coastHeading,
+      );
+      const windStrength = THREE.MathUtils.clamp(settings.windSpeed / 28, 0, 1.2);
+      const windX = Math.sin(windAngle) * windStrength * .18;
+      const windZ = Math.cos(windAngle) * windStrength * .09;
+      for (let index = 0; index < dropletCount; index += 1) {
+        if (dropletLife.current[index] <= 0) continue;
+        const offset = index * 3;
+        dropletLife.current[index] -= delta;
+        activeDropletStrength = Math.max(activeDropletStrength, dropletLife.current[index]);
+        activeDroplets[offset] += (dropletVelocities.current[offset] + windX) * delta;
+        activeDroplets[offset + 1] += dropletVelocities.current[offset + 1] * delta;
+        activeDroplets[offset + 2] += (dropletVelocities.current[offset + 2] + windZ) * delta;
+        dropletVelocities.current[offset + 1] -= delta * 2.8;
+        dropletVelocities.current[offset] *= 1 - delta * .72;
+        dropletVelocities.current[offset + 2] *= 1 - delta * .72;
+        const surfaceY = waveHeightAt(
+          activeDroplets[offset],
+          activeDroplets[offset + 2],
+          clock.elapsedTime,
+          settings,
+          character,
+        );
+        if (dropletLife.current[index] <= 0 || activeDroplets[offset + 1] <= surfaceY) {
+          dropletLife.current[index] = 0;
+          activeDroplets[offset + 1] = -100;
+        }
+      }
+      positionAttribute.needsUpdate = true;
+    }
+    if (dropletMaterial.current) {
+      dropletMaterial.current.opacity = THREE.MathUtils.damp(
+        dropletMaterial.current.opacity,
+        activeDropletStrength > 0 ? .78 : 0,
+        activeDropletStrength > 0 ? 12 : 5,
+        delta,
+      );
+      dropletMaterial.current.size = THREE.MathUtils.damp(
+        dropletMaterial.current.size,
+        mobile ? .055 : .046,
+        7,
+        delta,
+      );
+    }
+  });
+
+  return (
+    <group>
+      <instancedMesh ref={ripples} args={[undefined, undefined, rippleCount]} frustumCulled={false} renderOrder={4.2}>
+        <ringGeometry args={[.58, 1, mobile ? 22 : 34]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          transparent
+          opacity={.62}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+          side={THREE.DoubleSide}
+        />
+      </instancedMesh>
+      <points ref={droplets} frustumCulled={false} renderOrder={4.5}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[dropletPositions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={dropletMaterial}
+          map={dropletTexture}
+          color="#cbfff8"
+          size={.05}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={.025}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </points>
+    </group>
+  );
+}
+
 const ATMOSPHERE_VERTEX = /* glsl */ `
   varying vec3 vDirection;
 
@@ -12961,6 +13272,13 @@ function Simulation({
         playerHeading={playerHeading}
         tide={settings.tide}
         sandColor={beach.palette[1]}
+      />
+      <ShallowWaterFootfalls
+        motion={motion}
+        targetPosition={position}
+        playerHeading={playerHeading}
+        settings={settings}
+        character={character}
       />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <BreakingWhitewaterField
