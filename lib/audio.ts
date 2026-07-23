@@ -37,10 +37,14 @@ export class SurfscapeAudio {
 
   private oceanGain: GainNode | null = null;
   private oceanFilter: BiquadFilterNode | null = null;
+  private oceanPanner: StereoPannerNode | null = null;
   private undertowGain: GainNode | null = null;
+  private undertowPanner: StereoPannerNode | null = null;
   private foamGain: GainNode | null = null;
+  private foamPanner: StereoPannerNode | null = null;
   private windGain: GainNode | null = null;
   private windFilter: BiquadFilterNode | null = null;
+  private windPanner: StereoPannerNode | null = null;
   private rainGain: GainNode | null = null;
   private rainFilter: BiquadFilterNode | null = null;
 
@@ -54,7 +58,7 @@ export class SurfscapeAudio {
   private breakerRumbleFilter: BiquadFilterNode | null = null;
   private breakerWashGain: GainNode | null = null;
   private breakerWashFilter: BiquadFilterNode | null = null;
-  private breakerPanner: StereoPannerNode | null = null;
+  private breakerPanner: PannerNode | null = null;
   private previousSetEnergy = 0;
   private nextSetBreathAt = 0;
 
@@ -88,6 +92,20 @@ export class SurfscapeAudio {
     const context = new window.AudioContext({ latencyHint: "interactive" });
     this.context = context;
     this.noiseBuffer = this.createCoastalNoise(context, 7);
+    if (context.listener.positionX && context.listener.forwardX && context.listener.upX) {
+      context.listener.positionX.value = 0;
+      context.listener.positionY.value = 0;
+      context.listener.positionZ.value = 0;
+      context.listener.forwardX.value = 0;
+      context.listener.forwardY.value = 0;
+      context.listener.forwardZ.value = -1;
+      context.listener.upX.value = 0;
+      context.listener.upY.value = 1;
+      context.listener.upZ.value = 0;
+    } else {
+      context.listener.setPosition(0, 0, 0);
+      context.listener.setOrientation(0, 0, -1, 0, 1, 0);
+    }
 
     const master = context.createGain();
     const compressor = context.createDynamicsCompressor();
@@ -116,46 +134,54 @@ export class SurfscapeAudio {
     const ocean = this.loopNoise(.72, 0.31);
     const oceanFilter = context.createBiquadFilter();
     const oceanGain = context.createGain();
+    const oceanPanner = context.createStereoPanner();
     oceanFilter.type = "lowpass";
     oceanFilter.frequency.value = 720;
     oceanFilter.Q.value = .55;
     oceanGain.gain.value = .24;
-    ocean.connect(oceanFilter).connect(oceanGain).connect(master);
-    this.sendToReverb(oceanFilter, .06);
+    ocean.connect(oceanFilter).connect(oceanGain).connect(oceanPanner).connect(master);
+    this.sendToReverb(oceanPanner, .06);
     this.oceanFilter = oceanFilter;
     this.oceanGain = oceanGain;
+    this.oceanPanner = oceanPanner;
 
     const undertow = this.loopNoise(.51, 2.18);
     const undertowFilter = context.createBiquadFilter();
     const undertowGain = context.createGain();
+    const undertowPanner = context.createStereoPanner();
     undertowFilter.type = "lowpass";
     undertowFilter.frequency.value = 185;
     undertowFilter.Q.value = 1.1;
     undertowGain.gain.value = .065;
-    undertow.connect(undertowFilter).connect(undertowGain).connect(master);
+    undertow.connect(undertowFilter).connect(undertowGain).connect(undertowPanner).connect(master);
     this.undertowGain = undertowGain;
+    this.undertowPanner = undertowPanner;
 
     const foam = this.loopNoise(1.34, 4.06);
     const foamFilter = context.createBiquadFilter();
     const foamGain = context.createGain();
+    const foamPanner = context.createStereoPanner();
     foamFilter.type = "highpass";
     foamFilter.frequency.value = 2750;
     foamGain.gain.value = .022;
-    foam.connect(foamFilter).connect(foamGain).connect(master);
-    this.sendToReverb(foamFilter, .025);
+    foam.connect(foamFilter).connect(foamGain).connect(foamPanner).connect(master);
+    this.sendToReverb(foamPanner, .025);
     this.foamGain = foamGain;
+    this.foamPanner = foamPanner;
 
     const wind = this.loopNoise(.87, 1.24);
     const windFilter = context.createBiquadFilter();
     const windGain = context.createGain();
+    const windPanner = context.createStereoPanner();
     windFilter.type = "bandpass";
     windFilter.frequency.value = 1280;
     windFilter.Q.value = .46;
     windGain.gain.value = .012;
-    wind.connect(windFilter).connect(windGain).connect(master);
-    this.sendToReverb(windFilter, .04);
+    wind.connect(windFilter).connect(windGain).connect(windPanner).connect(master);
+    this.sendToReverb(windPanner, .04);
     this.windFilter = windFilter;
     this.windGain = windGain;
+    this.windPanner = windPanner;
 
     const rain = this.loopNoise(1.72, 5.74);
     const rainFilter = context.createBiquadFilter();
@@ -189,7 +215,19 @@ export class SurfscapeAudio {
     const breakerRumbleGain = context.createGain();
     const breakerWashFilter = context.createBiquadFilter();
     const breakerWashGain = context.createGain();
-    const breakerPanner = context.createStereoPanner();
+    const breakerPanner = context.createPanner();
+    breakerPanner.panningModel = "HRTF";
+    breakerPanner.distanceModel = "linear";
+    breakerPanner.refDistance = 1;
+    breakerPanner.maxDistance = 14;
+    breakerPanner.rolloffFactor = .22;
+    if (breakerPanner.positionX) {
+      breakerPanner.positionX.value = 0;
+      breakerPanner.positionY.value = .2;
+      breakerPanner.positionZ.value = -3;
+    } else {
+      breakerPanner.setPosition(0, .2, -3);
+    }
     breakerRumbleFilter.type = "lowpass";
     breakerRumbleFilter.frequency.value = 310;
     breakerRumbleFilter.Q.value = 1.2;
@@ -249,6 +287,36 @@ export class SurfscapeAudio {
     ramp(this.submersionFilter.frequency, Math.max(620, cutoff), now, depth > .05 ? .12 : .34);
     ramp(this.submersionFilter.Q, .42 + depth * 1.35, now, .16);
     if (this.reverbGain) ramp(this.reverbGain.gain, .18 + depth * .27, now, depth > .05 ? .16 : .5);
+  }
+
+  setPerspective(
+    cameraHeading: number,
+    windDirection: number,
+    coastHeading: number,
+    phase: GamePhase,
+  ) {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    const relativeBearing = (sourceHeading: number) => Math.atan2(
+      Math.sin(sourceHeading - cameraHeading),
+      Math.cos(sourceHeading - cameraHeading),
+    );
+    const offshoreBearing = relativeBearing(Math.PI);
+    const windBearing = relativeBearing((windDirection - coastHeading) * Math.PI / 180);
+    const surrounded = phase === "paddling" || phase === "riding" || phase === "wipeout";
+    const oceanDirectionality = surrounded ? .58 : 1;
+    if (this.oceanPanner) {
+      ramp(this.oceanPanner.pan, Math.sin(offshoreBearing) * .31 * oceanDirectionality, now, .18);
+    }
+    if (this.undertowPanner) {
+      ramp(this.undertowPanner.pan, Math.sin(offshoreBearing) * .2 * oceanDirectionality, now, .2);
+    }
+    if (this.foamPanner) {
+      ramp(this.foamPanner.pan, Math.sin(offshoreBearing) * .43 * oceanDirectionality, now, .16);
+    }
+    if (this.windPanner) {
+      ramp(this.windPanner.pan, Math.sin(windBearing) * .5, now, .2);
+    }
   }
 
   setEnvironment(windSpeed: number, waveHeight: number, cloudCover: number, intensity = 1, weatherCode = 0) {
@@ -330,6 +398,7 @@ export class SurfscapeAudio {
     waveHeight: number,
     wavePeriod: number,
     active: boolean,
+    cameraHeading = 0,
   ) {
     if (
       !this.context
@@ -364,8 +433,20 @@ export class SurfscapeAudio {
         * (.64 + face * .36)
         * phasePresence
       : 0;
-    const shoulderPan = Math.max(-1, Math.min(1, lineSide || 1))
-      * (phase === "riding" ? .22 + pressure * .46 : .06 + (catchReady ? .12 : 0) + risingSet * .06);
+    const sourceHeading = phase === "riding"
+      ? Math.sign(lineSide || 1) * Math.PI / 2
+      : Math.PI;
+    const sourceBearing = Math.atan2(
+      Math.sin(sourceHeading - cameraHeading),
+      Math.cos(sourceHeading - cameraHeading),
+    );
+    const shoulderPan = Math.sin(sourceBearing)
+      * (phase === "riding" ? .3 + pressure * .52 : .12 + (catchReady ? .18 : 0) + risingSet * .1);
+    const sourceDistance = phase === "riding"
+      ? 2.15 + (1 - pressure) * 1.2
+      : phase === "paddling"
+        ? 3.1 + (1 - Math.max(shorebreak, energy)) * 1.8
+        : 4.4 + (1 - energy) * 1.4;
     const cadence = Math.min(1.15, Math.max(.64, 9.5 / Math.max(5, wavePeriod)));
 
     ramp(this.breakerRumbleGain.gain, rumbleLevel, now, rumbleLevel > this.breakerRumbleGain.gain.value ? .24 : .7);
@@ -374,7 +455,16 @@ export class SurfscapeAudio {
     ramp(this.breakerRumbleFilter.Q, .82 + risingSet * .68 + pressure * .3, now, .45);
     ramp(this.breakerWashFilter.frequency, 920 + risingSet * 940 + shorebreak * 720 + pressure * 610, now, .38);
     ramp(this.breakerWashFilter.Q, .5 + shorebreak * .34 + pressure * .42, now, .4);
-    ramp(this.breakerPanner.pan, shoulderPan, now, .36);
+    const sourceX = Math.sin(sourceBearing) * sourceDistance;
+    const sourceY = .18 + face * .14;
+    const sourceZ = -Math.cos(sourceBearing) * sourceDistance;
+    if (this.breakerPanner.positionX) {
+      ramp(this.breakerPanner.positionX, sourceX, now, .18);
+      ramp(this.breakerPanner.positionY, sourceY, now, .28);
+      ramp(this.breakerPanner.positionZ, sourceZ, now, .18);
+    } else {
+      this.breakerPanner.setPosition(sourceX, sourceY, sourceZ);
+    }
     ramp(this.breaker.playbackRate, cadence + face * .08 + shorebreak * .1, now, .6);
 
     if (audible && energy >= .72 && this.previousSetEnergy < .72 && now >= this.nextSetBreathAt) {

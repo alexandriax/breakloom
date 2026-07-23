@@ -9135,6 +9135,11 @@ function Simulation({
 
     if (active && t - lastStatsAt.current > 0.11) {
       lastStatsAt.current = t;
+      camera.getWorldDirection(cameraForward.current);
+      cameraForward.current.y = 0;
+      if (cameraForward.current.lengthSq() < .001) cameraForward.current.set(0, 0, -1);
+      else cameraForward.current.normalize();
+      const cameraHeading = Math.atan2(cameraForward.current.x, cameraForward.current.z);
       onStats({
         phase: phase.current,
         sessionIntro: sessionIntroProgress,
@@ -9147,6 +9152,7 @@ function Simulation({
           SHORELINE_REFERENCE_Z - (position.current.z - tideShift),
         ).toFixed(1)),
         coastDistance: Number((phase.current === "driving" ? vanPosition.current.x : position.current.x).toFixed(1)),
+        cameraHeading,
         speed: Math.max(0, speed),
         paddleEffort: motion.current.paddleEffort,
         balance: balanceInput,

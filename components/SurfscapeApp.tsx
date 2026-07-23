@@ -907,6 +907,12 @@ export default function SurfscapeApp() {
     } else if (stats.phase !== "wipeout" || stats.leashTension < .28) {
       leashTaut.current = false;
     }
+    audio.current?.setPerspective(
+      stats.cameraHeading,
+      settings.windDirection,
+      settings.coastHeading,
+      stats.phase,
+    );
     audio.current?.setVehicle(
       paused ? 0 : stats.speed,
       !paused && stats.vehicleMode,
@@ -934,6 +940,7 @@ export default function SurfscapeApp() {
       settings.waveHeight,
       settings.wavePeriod,
       screen === "game" && !paused,
+      stats.cameraHeading,
     );
     audio.current?.setScore(
       stats.phase,
@@ -961,7 +968,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1161,8 +1168,9 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(soundEnabled);
     audio.current.setMusicEnabled(musicEnabled);
+    audio.current.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
     audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, .34, sessionWeatherCode);
-    audio.current.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, true);
+    audio.current.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, true, 0);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -1184,7 +1192,7 @@ export default function SurfscapeApp() {
   const leaveSession = () => {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
-    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, false);
+    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, false, 0);
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
     audio.current?.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
@@ -1202,6 +1210,7 @@ export default function SurfscapeApp() {
     await audio.current.start();
     audio.current.setEnabled(next);
     if (next) {
+      audio.current.setPerspective(stats.cameraHeading, settings.windDirection, settings.coastHeading, stats.phase);
       audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
       audio.current.setWaveField(
         stats.phase,
@@ -1213,6 +1222,7 @@ export default function SurfscapeApp() {
         settings.waveHeight,
         settings.wavePeriod,
         screen === "game" && !paused,
+        stats.cameraHeading,
       );
     }
   };
