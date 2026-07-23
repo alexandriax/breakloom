@@ -8490,6 +8490,9 @@ const CINEMATIC_GRADE_SHADER = {
     uRefraction: { value: 0 },
     uSurfacePulse: { value: 0 },
     uFlow: { value: new THREE.Vector2(0, 1) },
+    uLensWetness: { value: 0 },
+    uRain: { value: 0 },
+    uAspect: { value: 16 / 9 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -8516,6 +8519,9 @@ const CINEMATIC_GRADE_SHADER = {
     uniform float uRefraction;
     uniform float uSurfacePulse;
     uniform vec2 uFlow;
+    uniform float uLensWetness;
+    uniform float uRain;
+    uniform float uAspect;
     varying vec2 vUv;
 
     float luminance(vec3 color) {
@@ -8524,6 +8530,54 @@ const CINEMATIC_GRADE_SHADER = {
 
     float interleavedGradientNoise(vec2 pixel, float frame) {
       return fract(52.9829189 * fract(dot(pixel + frame * vec2(.067, .113), vec2(.06711056, .00583715))));
+    }
+
+    float dropletHash(vec2 p) {
+      vec3 p3 = fract(vec3(p.xyx) * .1031);
+      p3 += dot(p3, p3.yzx + 33.33);
+      return fract((p3.x + p3.y) * p3.z);
+    }
+
+    vec3 lensDropletLayer(vec2 uv, float time, float scale, float seed) {
+      vec2 aspect = vec2(max(.56, uAspect), 1.0);
+      vec2 p = uv * aspect * scale;
+      p.y += time * mix(.12, .31, uRain) + seed * 9.7;
+      p.x += sin(time * .19 + seed * 5.3) * (.055 + uRain * .045);
+      vec2 cell = floor(p);
+      vec2 local = fract(p) - .5;
+      float random = dropletHash(cell + seed * 13.7);
+      vec2 center = vec2(
+        (dropletHash(cell + vec2(7.1, 2.8) + seed) - .5) * .62,
+        (dropletHash(cell + vec2(3.7, 9.2) - seed) - .5) * .54
+      );
+      center.y += sin(time * (.42 + random * .16) + random * 6.283) * .035;
+      vec2 offset = local - center;
+      vec2 shaped = offset * vec2(1.0, 1.18);
+      float radius = mix(.075, .205, pow(random, 2.15));
+      float bodyDistance = length(shaped);
+      float body = smoothstep(radius, radius * .58, bodyDistance);
+
+      float trailRandom = dropletHash(cell + vec2(13.2, 4.6) + seed);
+      float trailLength = mix(.11, .46, trailRandom) * (.48 + uRain * .75);
+      float trailWidth = radius * mix(.12, .26, trailRandom);
+      float aboveDrop = max(0.0, offset.y - radius * .18);
+      float trail = smoothstep(trailWidth, trailWidth * .18, abs(offset.x) + aboveDrop * .11);
+      trail *= 1.0 - smoothstep(trailLength * .28, trailLength, aboveDrop);
+      trail *= smoothstep(-radius * .18, radius * .12, offset.y);
+      trail *= .38 + uRain * .42;
+
+      float satellite = smoothstep(
+        radius * .42,
+        radius * .17,
+        length((local - center - vec2(radius * 1.25, radius * .72)) * vec2(1.0, 1.28))
+      ) * smoothstep(.31, .86, random);
+      float mask = clamp(max(body, max(trail, satellite * .56)), 0.0, 1.0);
+      vec2 normal = bodyDistance > .0001
+        ? normalize(shaped) * body
+        : vec2(0.0);
+      normal += vec2(sign(offset.x), -.18) * trail * .3;
+      normal += normalize(vec2(offset.x + .001, offset.y + .001)) * satellite * .34;
+      return vec3(normal * mask, mask);
     }
 
     void main() {
@@ -8540,15 +8594,37 @@ const CINEMATIC_GRADE_SHADER = {
         + crossFlow * (crossWave * .46 - longWave * .12);
       float refractionMask = belowSurface * (.34 + uUnderwater * .42)
         + surfaceBand * (1.08 + uSurfacePulse * .72);
+      float lensVisibility = uLensWetness * (1.0 - smoothstep(.035, .42, uUnderwater));
+      float dropletMask = 0.0;
+      vec2 dropletNormal = vec2(0.0);
+      vec2 lensRefraction = vec2(0.0);
+      if (lensVisibility > .002) {
+        vec3 largeDrops = lensDropletLayer(vUv, uOceanTime, 5.4, 1.7);
+        vec3 middleDrops = lensDropletLayer(vUv + vec2(.071, -.043), uOceanTime * 1.13, 8.6, 4.9);
+        vec3 fineDrops = uRain > .035
+          ? lensDropletLayer(vUv + vec2(-.039, .057), uOceanTime * 1.31, 13.2, 8.3)
+          : vec3(0.0);
+        dropletMask = clamp(
+          max(largeDrops.z, max(middleDrops.z * .92, fineDrops.z * (.52 + uRain * .32))),
+          0.0,
+          1.0
+        ) * lensVisibility;
+        dropletNormal = (
+          largeDrops.xy
+          + middleDrops.xy * .72
+          + fineDrops.xy * (.3 + uRain * .16)
+        ) * lensVisibility;
+        lensRefraction = dropletNormal * (.0021 + lensVisibility * .0044 + uRain * .0012);
+      }
       vec2 refractedUv = clamp(
-        vUv + refractionVector * uRefraction * refractionMask,
+        vUv + refractionVector * uRefraction * refractionMask + lensRefraction,
         vec2(.002),
         vec2(.998)
       );
       float chromaticOffset = uRefraction * (
         belowSurface * .18
         + surfaceBand * (.48 + uSurfacePulse * .54)
-      );
+      ) + dropletMask * lensVisibility * .00042;
       vec2 chromaticVector = normalize(refractionVector + vec2(.001)) * chromaticOffset;
       vec4 source;
       if (uRefraction > .00001) {
@@ -8592,6 +8668,15 @@ const CINEMATIC_GRADE_SHADER = {
       float sprayVeil = uSpray * (1.0 - initialLuma) * .032;
       color += vec3(.80, .94, .98) * sprayVeil;
 
+      float dropletRim = smoothstep(.075, .34, dropletMask)
+        * (1.0 - smoothstep(.58, .94, dropletMask));
+      float dropletBody = smoothstep(.28, .9, dropletMask);
+      float flowGlint = .5 + .5 * dot(normalize(dropletNormal + vec2(.001)), normalize(flow + vec2(.18, .34)));
+      color *= 1.0 - dropletBody * (.018 + lensVisibility * .025);
+      color += vec3(.73, .91, .96)
+        * dropletRim
+        * (.018 + initialLuma * .026 + flowGlint * (.014 + uSurfacePulse * .018));
+
       vec2 centered = vUv * 2.0 - 1.0;
       float edge = smoothstep(.2, 1.34, dot(centered, centered));
       color *= 1.0 - edge * uVignette;
@@ -8628,6 +8713,7 @@ function AdaptiveImagePipeline({
   const exposure = useRef(1.08);
   const previousDepth = useRef(0);
   const surfacePulse = useRef(0);
+  const lensWetness = useRef(0);
   const targets = useRef({
     contrast: 1,
     saturation: 1,
@@ -8641,10 +8727,12 @@ function AdaptiveImagePipeline({
     waterline: -.16,
     refraction: 0,
     surfacePulse: 0,
+    lensWetness: 0,
+    rain: 0,
   });
   const gradeEnabled = !(mobile && quality === "reduced");
 
-  useFrame(({ clock, gl: renderer }, delta) => {
+  useFrame(({ clock, gl: renderer, size }, delta) => {
     const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
     const depthStep = Math.max(.001, Math.min(delta, .05));
     const depthVelocity = (depth - previousDepth.current) / depthStep;
@@ -8673,6 +8761,26 @@ function AdaptiveImagePipeline({
       0,
       1,
     );
+    const rain = weather.kind === "rain" ? weather.intensity : 0;
+    const lensDeposit = THREE.MathUtils.clamp(
+      Math.max(
+        spray * .88,
+        surfacePulse.current * .96,
+        rain * .72,
+        depth > .24 ? .92 : depth * 1.9,
+      ),
+      0,
+      1,
+    );
+    if (lensDeposit > lensWetness.current) {
+      lensWetness.current = THREE.MathUtils.damp(lensWetness.current, lensDeposit, 13, delta);
+    } else {
+      const evaporation = .038 + (1 - cloudFactor) * .02 + (weather.storm ? 0 : .012);
+      lensWetness.current = Math.max(
+        lensDeposit * .36,
+        lensWetness.current - delta * evaporation,
+      );
+    }
     const targetExposure = 1.055
       + night * .19
       + goldenHour * .045
@@ -8705,6 +8813,8 @@ function AdaptiveImagePipeline({
       + surfacePulse.current * .008
       + motion.current.wipeoutPower * depth * .0015
     ) * (mobile ? .72 : 1);
+    values.lensWetness = lensWetness.current;
+    values.rain = rain;
 
     const uniforms = pass.current?.uniforms;
     if (!uniforms) return;
@@ -8737,6 +8847,14 @@ function AdaptiveImagePipeline({
       values.surfacePulse > uniforms.uSurfacePulse.value ? 18 : 5,
       delta,
     );
+    uniforms.uLensWetness.value = THREE.MathUtils.damp(
+      uniforms.uLensWetness.value,
+      values.lensWetness,
+      values.lensWetness > uniforms.uLensWetness.value ? 12 : 1.4,
+      delta,
+    );
+    uniforms.uRain.value = THREE.MathUtils.damp(uniforms.uRain.value, values.rain, 3.5, delta);
+    uniforms.uAspect.value = size.width / Math.max(1, size.height);
     uniforms.uFlow.value.set(Math.sin(flowAngle), Math.cos(flowAngle));
   });
 
