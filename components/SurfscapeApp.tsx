@@ -3040,6 +3040,7 @@ export default function SurfscapeApp() {
           controls={controls}
           active={screen === "game" && !paused && !photoMode && !replayActive && heatAllowsGameplay}
           renderActive={screen === "game" && !paused}
+          qualityLocked={photoMode || replayActive || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout"}
           photoMode={photoMode}
           photoFocalLength={photoFocalLength}
           photoExposure={photoExposure}

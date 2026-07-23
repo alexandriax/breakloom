@@ -189,22 +189,38 @@ function AdaptiveRenderer({
   active,
   mobile,
   limits,
+  qualityLocked,
   onQualityChange,
 }: {
   active: boolean;
   mobile: boolean;
   limits: ReturnType<typeof rendererLimits>;
+  qualityLocked: boolean;
   onQualityChange: (quality: RenderQuality) => void;
 }) {
   const setDpr = useThree((state) => state.setDpr);
   const currentDpr = useRef(limits.initial);
   const currentQuality = useRef<RenderQuality>(mobile ? "balanced" : "high");
-  const sample = useRef({ elapsed: 0, frames: 0, warmup: mobile ? 1.65 : 1.1 });
+  const sample = useRef({
+    elapsed: 0,
+    frames: 0,
+    jankFrames: 0,
+    warmup: mobile ? 1.65 : 1.1,
+    goodWindows: 0,
+    badWindows: 0,
+  });
 
   useEffect(() => {
     currentDpr.current = limits.initial;
     currentQuality.current = mobile ? "balanced" : "high";
-    sample.current = { elapsed: 0, frames: 0, warmup: mobile ? 1.65 : 1.1 };
+    sample.current = {
+      elapsed: 0,
+      frames: 0,
+      jankFrames: 0,
+      warmup: mobile ? 1.65 : 1.1,
+      goodWindows: 0,
+      badWindows: 0,
+    };
     setDpr(limits.initial);
     onQualityChange(currentQuality.current);
   }, [limits.initial, mobile, onQualityChange, setDpr]);
@@ -219,39 +235,63 @@ function AdaptiveRenderer({
     if (delta > .12) {
       meter.elapsed = 0;
       meter.frames = 0;
+      meter.jankFrames = 0;
       meter.warmup = .7;
       return;
     }
     meter.elapsed += Math.min(delta, .05);
     meter.frames += 1;
-    if (meter.elapsed < 2.2) return;
+    if (delta > .028) meter.jankFrames += 1;
+    if (meter.elapsed < 2.4) return;
 
     const averageFrame = meter.elapsed / Math.max(1, meter.frames);
+    const jankRatio = meter.jankFrames / Math.max(1, meter.frames);
+    const severePressure = averageFrame > .0295 || jankRatio > .2;
+    const slowPressure = averageFrame > .0222 || jankRatio > .085;
+    const sustainedHeadroom = averageFrame < .0183 && jankRatio < .025;
+    meter.badWindows = severePressure
+      ? Math.min(6, meter.badWindows + 2)
+      : slowPressure
+        ? Math.min(6, meter.badWindows + 1)
+        : Math.max(0, meter.badWindows - 1);
+    meter.goodWindows = sustainedHeadroom
+      ? Math.min(6, meter.goodWindows + 1)
+      : 0;
+
     let nextDpr = currentDpr.current;
-    if (averageFrame > .024) nextDpr -= .12;
-    else if (averageFrame > .0202) nextDpr -= .055;
-    else if (averageFrame < .0177) nextDpr += .05;
+    if (severePressure) nextDpr -= .13;
+    else if (meter.badWindows >= 2) nextDpr -= .055;
+    else if (!qualityLocked && meter.goodWindows >= 3) nextDpr += .04;
     nextDpr = THREE.MathUtils.clamp(nextDpr, limits.minimum, limits.maximum);
 
     const changed = Math.abs(nextDpr - currentDpr.current) >= .025;
     if (changed) {
       currentDpr.current = nextDpr;
       setDpr(nextDpr);
-      meter.warmup = .9;
+      meter.warmup = severePressure ? .72 : 1.05;
     }
-    let quality: RenderQuality = averageFrame > .025 || nextDpr <= limits.minimum + .055
-      ? "reduced"
-      : averageFrame < .0183 && nextDpr >= limits.maximum - .055
-        ? "high"
-        : "balanced";
-    if (currentQuality.current === "high" && averageFrame < .0194 && nextDpr >= limits.maximum - .055) quality = "high";
-    if (currentQuality.current === "reduced" && averageFrame > .0224 && nextDpr <= limits.minimum + .12) quality = "reduced";
+
+    const qualityOrder: RenderQuality[] = ["reduced", "balanced", "high"];
+    const currentIndex = qualityOrder.indexOf(currentQuality.current);
+    let nextIndex = currentIndex;
+    const downgradeNeeded = severePressure
+      || (meter.badWindows >= 2 && nextDpr <= limits.minimum + .16);
+    const upgradeReady = !qualityLocked
+      && meter.goodWindows >= 4
+      && nextDpr >= limits.maximum - .075;
+    if (downgradeNeeded) nextIndex = Math.max(0, currentIndex - 1);
+    else if (upgradeReady) nextIndex = Math.min(qualityOrder.length - 1, currentIndex + 1);
+    const quality = qualityOrder[nextIndex];
     if (quality !== currentQuality.current) {
       currentQuality.current = quality;
       onQualityChange(quality);
+      meter.warmup = Math.max(meter.warmup, 1.2);
+      meter.goodWindows = 0;
+      meter.badWindows = severePressure ? 1 : 0;
     }
     meter.elapsed = 0;
     meter.frames = 0;
+    meter.jankFrames = 0;
   });
 
   return null;
@@ -273,6 +313,7 @@ type SurfSceneProps = {
   controls: MutableRefObject<ControlState>;
   active: boolean;
   renderActive: boolean;
+  qualityLocked: boolean;
   photoMode: boolean;
   photoFocalLength: number;
   photoExposure: number;
@@ -13376,7 +13417,13 @@ export default function SurfScene(props: SurfSceneProps) {
       }}
     >
       <RenderQualityContext.Provider value={renderQuality}>
-        <AdaptiveRenderer active={props.renderActive} mobile={mobileRenderer} limits={limits} onQualityChange={setRenderQuality} />
+        <AdaptiveRenderer
+          active={props.renderActive}
+          mobile={mobileRenderer}
+          limits={limits}
+          qualityLocked={props.qualityLocked}
+          onQualityChange={setRenderQuality}
+        />
         <Simulation {...props} />
       </RenderQualityContext.Provider>
     </Canvas>
