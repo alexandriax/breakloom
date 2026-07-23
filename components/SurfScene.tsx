@@ -1058,6 +1058,270 @@ function Ocean({
   );
 }
 
+const LINEUP_CREST_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uFaceHeight;
+  uniform float uSpan;
+  uniform float uCurl;
+  uniform float uEnergy;
+  uniform float uSeed;
+  uniform float uCenterX;
+  uniform float uPeel;
+  uniform float uVariability;
+  uniform float uWaveAngle;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+  varying vec3 vWorldNormal;
+  varying float vSection;
+
+  void main() {
+    float across = position.x * uSpan;
+    float heightFraction = pow(clamp(uv.y, 0.0, 1.0), 1.22);
+    float lip = smoothstep(.68, 1.0, uv.y);
+    float sectionPhase = (uCenterX + across) * .07 + uTime * .05;
+    float centerPhase = uCenterX * .07 + uTime * .05;
+    float section = (sin(sectionPhase) - sin(centerPhase)) * uVariability * 2.3;
+    float worldAcross = uCenterX + across;
+    float curvedSection = sin(uWaveAngle) * .0019
+      * (worldAcross * worldAcross - uCenterX * uCenterX);
+    float feather = sin(across * .18 + uSeed * 5.7 + uTime * .55)
+      * sin(across * .061 - uSeed * 2.9 - uTime * .19);
+
+    vec3 transformed = position;
+    transformed.x = across;
+    transformed.y = heightFraction * uFaceHeight;
+    transformed.z = -(section + curvedSection + across * uPeel * .16);
+    transformed.z -= heightFraction * (.06 + uFaceHeight * .055);
+    transformed.z -= lip * lip * uCurl * (.18 + uFaceHeight * .22);
+    transformed.z += feather * (.018 + uEnergy * .035) * heightFraction;
+
+    float normalRipple = cos(across * .18 + uSeed * 5.7 + uTime * .55) * .05 * heightFraction;
+    vec3 localNormal = normalize(vec3(normalRipple, .2 + (1.0 - heightFraction) * .18, .94));
+    vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
+    vUv = uv;
+    vWorldPosition = worldPosition.xyz;
+    vWorldNormal = normalize(mat3(modelMatrix) * localNormal);
+    vSection = feather * .5 + .5;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const LINEUP_CREST_FRAGMENT = /* glsl */ `
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uEnergy;
+
+  varying vec2 vUv;
+  varying vec3 vWorldPosition;
+  varying vec3 vWorldNormal;
+  varying float vSection;
+
+  float crestNoise(vec2 point) {
+    return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  void main() {
+    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+    vec3 surfaceNormal = normalize(vWorldNormal);
+    if (!gl_FrontFacing) surfaceNormal *= -1.0;
+    float fresnel = pow(1.0 - clamp(abs(dot(surfaceNormal, viewDirection)), 0.0, 1.0), 2.2);
+    float fineNoise = crestNoise(floor(vec2(vUv.x * 190.0, vUv.y * 42.0) + uTime * vec2(.7, -.26)));
+    float feather = smoothstep(.38, .82, vSection * .68 + fineNoise * .32);
+    float foam = smoothstep(.7, .95, vUv.y + feather * .16 + uEnergy * .055);
+    foam *= .66 + fineNoise * .34;
+
+    vec3 shadowWater = mix(vec3(.016, .19, .25), vec3(.015, .31, .34), uLight);
+    vec3 bodyWater = mix(vec3(.035, .32, .39), vec3(.08, .54, .53), uLight);
+    vec3 litWater = mix(bodyWater, vec3(.22, .7, .66), fresnel * (.28 + uEnergy * .24));
+    vec3 foamColor = mix(vec3(.58, .75, .76), vec3(.91, .98, .91), uLight);
+    vec3 color = mix(shadowWater, litWater, smoothstep(.05, .9, vUv.y));
+    color = mix(color, foamColor, foam * (.58 + uLight * .3));
+    color *= 1.0 - uCloud * .17;
+
+    float sideFade = smoothstep(0.0, .07, vUv.x) * (1.0 - smoothstep(.93, 1.0, vUv.x));
+    float lowerFade = smoothstep(.015, .24, vUv.y);
+    float topFeather = 1.0 - smoothstep(.986, 1.0, vUv.y);
+    float alpha = uOpacity * sideFade * lowerFade * topFeather;
+    alpha *= .56 + fresnel * .34 + foam * .36;
+    if (alpha < .004) discard;
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+function LineupWaveSetVolume({
+  motion,
+  settings,
+  character,
+  focusPosition,
+  light,
+  cloudCover,
+}: {
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  character: BreakCharacter;
+  focusPosition: MutableRefObject<THREE.Vector3>;
+  light: number;
+  cloudCover: number;
+}) {
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const crestCount = mobile
+    ? quality === "reduced" ? 2 : 3
+    : quality === "high" ? 4 : 3;
+  const crestOffsets = useMemo(
+    () => crestCount === 2 ? [0, -1] : crestCount === 3 ? [-1, 0, 1] : [-2, -1, 0, 1],
+    [crestCount],
+  );
+  const groups = useRef<Array<THREE.Group | null>>([]);
+  const materials = useRef<Array<THREE.ShaderMaterial | null>>([]);
+  const tideResponse = useMemo(
+    () => tideResponseForBreak(settings.tide, character),
+    [character, settings.tide],
+  );
+  const uniforms = useMemo(
+    () => crestOffsets.map((_, index) => ({
+      uTime: { value: 0 },
+      uFaceHeight: { value: .5 },
+      uSpan: { value: mobile ? 86 : 124 },
+      uCurl: { value: .2 },
+      uEnergy: { value: .2 },
+      uSeed: { value: index * 1.713 + .47 },
+      uCenterX: { value: 0 },
+      uPeel: { value: character.peel },
+      uVariability: { value: character.variability * tideResponse.variabilityScale },
+      uWaveAngle: { value: ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180 },
+      uOpacity: { value: 0 },
+      uLight: { value: light },
+      uCloud: { value: cloudCover / 100 },
+    })),
+    [character.peel, character.variability, cloudCover, crestOffsets, light, mobile, settings.coastHeading, settings.waveDirection, tideResponse.variabilityScale],
+  );
+
+  useFrame(({ clock }, delta) => {
+    const elapsed = clock.elapsedTime;
+    const focus = focusPosition.current;
+    const tideShift = shorelineShiftForTide(settings.tide);
+    const anchorX = focus.x;
+    const anchorZ = Math.min(focus.z, tideShift - 3);
+    const anchorPhase = primaryWavePhaseAt(anchorX, anchorZ, elapsed, settings, character);
+    const nearestCrest = Math.round((anchorPhase - Math.PI * .5) / (Math.PI * 2));
+
+    crestOffsets.forEach((offset, index) => {
+      const group = groups.current[index];
+      const material = materials.current[index];
+      if (!group || !material) return;
+
+      const targetPhase = Math.PI * .5 + (nearestCrest + offset) * Math.PI * 2;
+      let sampleX = anchorX;
+      let sampleZ = anchorZ;
+      let transport = primaryWaveVelocityAt(sampleX, sampleZ, elapsed, settings, character);
+      let phaseError = primaryWavePhaseAt(sampleX, sampleZ, elapsed, settings, character) - targetPhase;
+      let waveNumber = (Math.PI * 2) / transport.wavelength;
+      sampleX -= transport.x / transport.speed * phaseError / waveNumber;
+      sampleZ -= transport.z / transport.speed * phaseError / waveNumber;
+
+      for (let iteration = 0; iteration < 2; iteration += 1) {
+        transport = primaryWaveVelocityAt(sampleX, sampleZ, elapsed, settings, character);
+        phaseError = primaryWavePhaseAt(sampleX, sampleZ, elapsed, settings, character) - targetPhase;
+        waveNumber = (Math.PI * 2) / transport.wavelength;
+        sampleX -= transport.x / transport.speed * phaseError / waveNumber;
+        sampleZ -= transport.z / transport.speed * phaseError / waveNumber;
+      }
+
+      transport = primaryWaveVelocityAt(sampleX, sampleZ, elapsed, settings, character);
+      const normalX = transport.x / transport.speed;
+      const normalZ = transport.z / transport.speed;
+      const setState = waveSetStateAt(sampleX, sampleZ, elapsed, settings, character);
+      const coastalZ = sampleZ - tideShift;
+      const shoaling = THREE.MathUtils.smoothstep(coastalZ, -112, -8);
+      const shoreFade = 1 - THREE.MathUtils.smoothstep(coastalZ, 4, 15);
+      const distanceToFocus = Math.hypot(sampleX - focus.x, sampleZ - focus.z);
+      const distanceFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, 275, 430);
+      const riderSuppression = motion.current.phase === "riding"
+        ? THREE.MathUtils.smoothstep(distanceToFocus, 17, 38)
+        : 1;
+      const energy = setState.energy;
+      const faceHeight = THREE.MathUtils.clamp(
+        settings.waveHeight
+          * tideResponse.faceScale
+          * character.power
+          * (.12 + shoaling * .36)
+          * (.5 + energy * .72),
+        .12,
+        2.75,
+      );
+      const targetOpacity = (.045 + energy * .19)
+        * (.3 + shoaling * .7)
+        * shoreFade
+        * distanceFade
+        * riderSuppression;
+      const surfaceY = waveHeightAt(sampleX, sampleZ, elapsed, settings, character);
+
+      group.visible = targetOpacity > .004;
+      group.position.set(sampleX, surfaceY - faceHeight * .7, sampleZ);
+      group.rotation.y = Math.atan2(normalX, normalZ);
+
+      const values = material.uniforms;
+      values.uTime.value = elapsed;
+      values.uFaceHeight.value = THREE.MathUtils.damp(values.uFaceHeight.value, faceHeight, 8, delta);
+      values.uSpan.value = THREE.MathUtils.damp(
+        values.uSpan.value,
+        (mobile ? 86 : 124) * (1 + character.variability * .12),
+        5,
+        delta,
+      );
+      values.uCurl.value = THREE.MathUtils.damp(
+        values.uCurl.value,
+        (.12 + shoaling * (.32 + character.hollow * .42)) * (.55 + energy * .45),
+        6,
+        delta,
+      );
+      values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, energy, 6, delta);
+      values.uCenterX.value = sampleX;
+      values.uPeel.value = character.peel;
+      values.uVariability.value = character.variability * tideResponse.variabilityScale;
+      values.uWaveAngle.value = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
+      values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, 7, delta);
+      values.uLight.value = light;
+      values.uCloud.value = cloudCover / 100;
+    });
+  });
+
+  const horizontalSegments = mobile ? quality === "reduced" ? 24 : 34 : quality === "high" ? 58 : 44;
+  const verticalSegments = mobile ? 7 : 10;
+
+  return (
+    <group>
+      {crestOffsets.map((_, index) => (
+        <group
+          key={`${crestCount}-${index}`}
+          ref={(node) => {
+            groups.current[index] = node;
+          }}
+        >
+          <mesh frustumCulled={false} renderOrder={2}>
+            <planeGeometry args={[1, 1, horizontalSegments, verticalSegments]} />
+            <shaderMaterial
+              ref={(node) => {
+                materials.current[index] = node;
+              }}
+              uniforms={uniforms[index]}
+              vertexShader={LINEUP_CREST_VERTEX}
+              fragmentShader={LINEUP_CREST_FRAGMENT}
+              transparent
+              depthWrite={false}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
 function seabedKind(character: BreakCharacter) {
   if (character.kind === "canyon") return 3;
   if (character.kind === "slab") return 2;
@@ -11152,6 +11416,14 @@ function Simulation({
         hazeColor={fogColor}
         visibility={fogFar}
         rain={weather.kind === "rain" ? weather.intensity : 0}
+      />
+      <LineupWaveSetVolume
+        motion={motion}
+        settings={settings}
+        character={character}
+        focusPosition={worldFocus}
+        light={light}
+        cloudCover={cloudCover}
       />
       <BeachLife
         beach={beach}
