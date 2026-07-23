@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "build:sites": "next build && node scripts/build-sites.mjs",
+    "build": "next build && node scripts/build-sites.mjs",
+    "build:sites": "npm run build",
     "start": "next dev",
     "test": "npm run build",
     "lint": "eslint . --ignore-pattern out --ignore-pattern .next --ignore-pattern dist"
