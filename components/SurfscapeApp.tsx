@@ -10,6 +10,7 @@ import {
   CarFront,
   ChevronDown,
   CircleCheck,
+  Clapperboard,
   CloudSun,
   Crosshair,
   Download,
@@ -59,7 +60,7 @@ import {
   type SessionSettings,
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
-import type { CameraMode, ControlState, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
+import type { CameraMode, ControlState, ReplayState, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 import TideSparkline from "./TideSparkline";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
@@ -634,6 +635,12 @@ export default function SurfscapeApp() {
   const [photoFocalLength, setPhotoFocalLength] = useState<number>(35);
   const [photoExposure, setPhotoExposure] = useState(0);
   const [photoGuide, setPhotoGuide] = useState<PhotoGuide>("thirds");
+  const [replayReady, setReplayReady] = useState(false);
+  const [replayActive, setReplayActive] = useState(false);
+  const [replayRequest, setReplayRequest] = useState(0);
+  const [replayProgress, setReplayProgress] = useState(0);
+  const [replayDuration, setReplayDuration] = useState(0);
+  const [replayRide, setReplayRide] = useState<RideToast | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -693,6 +700,8 @@ export default function SurfscapeApp() {
   const previousPocketLock = useRef(false);
   const previousResurface = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
+  const preReplayCameraMode = useRef<CameraMode>("follow");
+  const replayCameraCut = useRef<CameraMode | null>(null);
   const joystickKnob = useRef<HTMLSpanElement>(null);
   const joystickPointer = useRef<number | null>(null);
   const joystickBounds = useRef<DOMRect | null>(null);
@@ -776,6 +785,31 @@ export default function SurfscapeApp() {
     if (rideFrame.current && capture.quality < rideFrame.current.quality) return;
     rideFrame.current = capture;
     setRideFrameVersion((version) => version + 1);
+  }, []);
+
+  const handleReplayReady = useCallback((ready: boolean) => {
+    setReplayReady(ready);
+  }, []);
+
+  const handleReplayState = useCallback((state: ReplayState) => {
+    setReplayProgress(state.progress);
+    setReplayDuration(state.duration);
+    if (state.active) {
+      setReplayActive(true);
+      if (replayCameraCut.current !== state.cameraMode) {
+        replayCameraCut.current = state.cameraMode;
+        setCameraMode(state.cameraMode);
+        audio.current?.effect("turn");
+        haptic(4);
+      }
+      return;
+    }
+    setReplayActive(false);
+    setReplayRide(null);
+    replayCameraCut.current = null;
+    controls.current.lookYaw = 0;
+    controls.current.lookPitch = 0;
+    setCameraMode(preReplayCameraMode.current);
   }, []);
 
   const selectPhotoFocalLength = useCallback((focalLength: number) => {
@@ -1013,6 +1047,16 @@ export default function SurfscapeApp() {
       if (["w", "a", "s", "d", "q", "e", "g", "p", "r", "[", "]", "-", "=", "+", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
       }
+      if (replayActive) {
+        if (key === "escape") {
+          releaseAllControls();
+          setReplayActive(false);
+          replayCameraCut.current = null;
+          setCameraMode(preReplayCameraMode.current);
+          haptic(4);
+        }
+        return;
+      }
       if (key === "p" && !event.repeat) {
         if (paused) return;
         releaseAllControls();
@@ -1083,7 +1127,7 @@ export default function SurfscapeApp() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [cyclePhotoGuide, nudgePhotoFocalLength, paused, photoExposure, photoMode, screen, selectPhotoExposure]);
+  }, [cyclePhotoGuide, nudgePhotoFocalLength, paused, photoExposure, photoMode, replayActive, screen, selectPhotoExposure]);
 
   useEffect(() => {
     if (screen !== "game" || !navigator.getGamepads) {
@@ -1178,7 +1222,11 @@ export default function SurfscapeApp() {
       centerButton = nextCenterButton;
       const nextPauseButton = Boolean(gamepad.buttons[9]?.pressed);
       if (nextPauseButton && !pauseButton) {
-        if (photoMode) setPhotoMode(false);
+        if (replayActive) {
+          setReplayActive(false);
+          replayCameraCut.current = null;
+          setCameraMode(preReplayCameraMode.current);
+        } else if (photoMode) setPhotoMode(false);
         else setPaused((current) => !current);
         haptic(6);
       }
@@ -1192,7 +1240,7 @@ export default function SurfscapeApp() {
       clearGamepad();
       setGamepadConnected(false);
     };
-  }, [photoMode, screen]);
+  }, [photoMode, replayActive, screen]);
 
   useEffect(() => {
     const releaseAllControls = () => {
@@ -1628,6 +1676,12 @@ export default function SurfscapeApp() {
     photoFile.current = null;
     setPhotoMode(false);
     setPhotoStatus("idle");
+    setReplayReady(false);
+    setReplayActive(false);
+    setReplayProgress(0);
+    setReplayDuration(0);
+    setReplayRide(null);
+    replayCameraCut.current = null;
     setStats(INITIAL_STATS);
     trainingStepValue.current = 0;
     setTrainingStep(0);
@@ -1657,6 +1711,12 @@ export default function SurfscapeApp() {
     photoFile.current = null;
     setPhotoMode(false);
     setPhotoStatus("idle");
+    setReplayReady(false);
+    setReplayActive(false);
+    setReplayProgress(0);
+    setReplayDuration(0);
+    setReplayRide(null);
+    replayCameraCut.current = null;
     setWetLens(null);
     setScreen("launch");
     setPaused(false);
@@ -1848,6 +1908,48 @@ export default function SurfscapeApp() {
     centerCameraLook();
     setCameraMode((current) => nextCameraMode(current));
     haptic(7);
+  };
+
+  const startReplay = (ride: RideToast) => {
+    if (!replayReady || replayActive) return;
+    clearAnalogMovement();
+    controls.current = {
+      ...controls.current,
+      forward: false,
+      back: false,
+      left: false,
+      right: false,
+      sprint: false,
+      action: false,
+      gamepadMoveX: 0,
+      gamepadMoveY: 0,
+      gamepadAction: false,
+      gamepadSprint: false,
+      lookYaw: 0,
+      lookPitch: 0,
+    };
+    if (document.pointerLockElement === cameraLookSurface.current) document.exitPointerLock();
+    preReplayCameraMode.current = cameraMode;
+    replayCameraCut.current = "cinematic";
+    setPhotoMode(false);
+    setReplayRide(ride);
+    setReplayProgress(0);
+    setReplayActive(true);
+    setReplayRequest((request) => request + 1);
+    setCameraMode("cinematic");
+    audio.current?.effect("coach");
+    audio.current?.setSurf(Math.max(10, stats.speed), true, stats.setEnergy, Math.max(.28, stats.barrelIntensity), stats.railLoad, stats.railGrip, 0);
+    audio.current?.setScore("riding", stats.setEnergy, Math.max(.28, stats.barrelIntensity), settings.timeOfDay, sessionWeatherCode, true);
+    haptic([8, 18, 12]);
+  };
+
+  const stopReplay = () => {
+    setReplayActive(false);
+    replayCameraCut.current = null;
+    controls.current.lookYaw = 0;
+    controls.current.lookPitch = 0;
+    setCameraMode(preReplayCameraMode.current);
+    haptic(4);
   };
 
   const openPhotoMode = () => {
@@ -2174,13 +2276,17 @@ export default function SurfscapeApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
-          active={screen === "game" && !paused && !photoMode}
+          active={screen === "game" && !paused && !photoMode && !replayActive}
           renderActive={screen === "game" && !paused}
           photoMode={photoMode}
           photoFocalLength={photoFocalLength}
           photoExposure={photoExposure}
+          replayMode={replayActive}
+          replayRequest={replayRequest}
           captureRequest={captureRequest}
           onCapture={handleRideFrameCapture}
+          onReplayReady={handleReplayReady}
+          onReplayState={handleReplayState}
           onStats={handleStats}
           onReady={handleSceneReady}
         />
@@ -2482,7 +2588,7 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
+        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
           <div
             ref={cameraLookSurface}
             className={`camera-look-surface ${pointerLocked ? "is-locked" : ""}`}
@@ -2501,6 +2607,42 @@ export default function SurfscapeApp() {
           >
             <span>{gamepadConnected ? "RIGHT STICK · 360° VIEW" : pointerLocked ? "360° VIEW LOCKED · ESC RELEASES" : "CLICK / TOUCH · 360° VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
           </div>
+          {replayActive && replayRide && (
+            <div className="replay-mode-ui" aria-label="Surfscape instant replay">
+              <div className="replay-letterbox" aria-hidden="true" />
+              <div className="replay-mode-top">
+                <div>
+                  <Clapperboard />
+                  <span>INSTANT REPLAY</span>
+                  <strong>LIVE CREST SYNC · {CAMERA_LABELS[cameraMode].toUpperCase()}</strong>
+                </div>
+                <small>RECORDED PHYSICS · AUTO DIRECTOR · ESC / START EXITS</small>
+                <button type="button" onClick={stopReplay} aria-label="Exit instant replay"><X /></button>
+              </div>
+              <div className="replay-mode-bottom">
+                <div className="replay-score">
+                  <span>{replayRide.result === "clean" ? "CLEAN LINE" : "WIPEOUT LINE"} · GRADE {replayRide.grade}</span>
+                  <strong>{replayRide.score.toLocaleString()} PTS</strong>
+                </div>
+                <div className="replay-timeline">
+                  <span>
+                    <b>FULL LINE PLAYBACK</b>
+                    <em>{Math.max(0, replayDuration * (1 - replayProgress)).toFixed(1)} S</em>
+                  </span>
+                  <i>
+                    <b style={{ width: `${Math.round(replayProgress * 100)}%` }} />
+                    <span>{Array.from({ length: 4 }, (_, index) => <em key={index} style={{ left: `${index * 25}%` }} />)}</span>
+                  </i>
+                  <small>TAKEOFF · LINE · POWER SECTION · EXIT</small>
+                </div>
+                <div className="replay-metrics">
+                  <span><small>LINE</small><strong>{replayRide.distance.toFixed(0)} M</strong></span>
+                  <span><small>MOVES</small><strong>{replayRide.maneuvers}</strong></span>
+                  <span><small>BARREL</small><strong>{replayRide.barrelTime.toFixed(1)} S</strong></span>
+                </div>
+              </div>
+            </div>
+          )}
           {photoMode && (
             <>
               <div className="photo-mode-ui" aria-label="Surfscape photo mode">
@@ -2792,17 +2934,31 @@ export default function SurfscapeApp() {
                   </em>
                 )}
               </div>
-              <button
-                type="button"
-                className={`ride-share is-${shareStatus}`}
-                onClick={() => void shareRide(rideToast)}
-                onPointerDown={(event) => event.stopPropagation()}
-                disabled={shareStatus === "working"}
-                aria-label="Share this Surfscape ride"
-              >
-                {shareStatus === "shared" || shareStatus === "copied" ? <CircleCheck /> : <Share2 />}
-                <span>{shareStatus === "working" ? "OPENING SHARE" : shareStatus === "shared" ? "SHARED" : shareStatus === "copied" ? "LINK COPIED" : shareStatus === "error" ? "TRY AGAIN" : "SHARE RIDE"}</span>
-              </button>
+              <div className="ride-actions">
+                {replayReady && (
+                  <button
+                    type="button"
+                    className="ride-replay"
+                    onClick={() => startReplay(rideToast)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    aria-label="Watch an in-engine replay of this ride"
+                  >
+                    <Clapperboard />
+                    <span>WATCH REPLAY</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`ride-share is-${shareStatus}`}
+                  onClick={() => void shareRide(rideToast)}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  disabled={shareStatus === "working"}
+                  aria-label="Share this Surfscape ride"
+                >
+                  {shareStatus === "shared" || shareStatus === "copied" ? <CircleCheck /> : <Share2 />}
+                  <span>{shareStatus === "working" ? "OPENING SHARE" : shareStatus === "shared" ? "SHARED" : shareStatus === "copied" ? "LINK COPIED" : shareStatus === "error" ? "TRY AGAIN" : "SHARE RIDE"}</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -2988,7 +3144,7 @@ export default function SurfscapeApp() {
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); photoFile.current = null; setPhotoMode(false); setPhotoStatus("idle"); previousPhase.current = "shore"; previousTakeoffPhase.current = "shore"; previousManeuverId.current = 0; previousRideResultId.current = 0; previousPassportRideResultId.current = 0; setManeuverToast(null); setRideToast(null); setPassportAward(null); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); photoFile.current = null; setPhotoMode(false); setPhotoStatus("idle"); setReplayReady(false); setReplayActive(false); setReplayProgress(0); setReplayDuration(0); setReplayRide(null); replayCameraCut.current = null; previousPhase.current = "shore"; previousTakeoffPhase.current = "shore"; previousManeuverId.current = 0; previousRideResultId.current = 0; previousPassportRideResultId.current = 0; setManeuverToast(null); setRideToast(null); setPassportAward(null); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}

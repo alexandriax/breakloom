@@ -47,6 +47,12 @@ export type RideCaptureRequest = {
 export type RideFrameCapture = RideCaptureRequest & {
   blob: Blob;
 };
+export type ReplayState = {
+  active: boolean;
+  progress: number;
+  duration: number;
+  cameraMode: CameraMode;
+};
 type RenderQuality = "reduced" | "balanced" | "high";
 
 const RenderQualityContext = createContext<RenderQuality>("high");
@@ -174,8 +180,12 @@ type SurfSceneProps = {
   photoMode: boolean;
   photoFocalLength: number;
   photoExposure: number;
+  replayMode: boolean;
+  replayRequest: number;
   captureRequest: RideCaptureRequest | null;
   onCapture: (capture: RideFrameCapture) => void;
+  onReplayReady: (ready: boolean) => void;
+  onReplayState: (state: ReplayState) => void;
   onStats: (stats: GameStats) => void;
   onReady: () => void;
 };
@@ -229,9 +239,89 @@ type MotionState = {
   paddleHeading: number;
 };
 
+type ReplayFrame = {
+  at: number;
+  x: number;
+  z: number;
+  heading: number;
+  lineSide: number;
+  crestOffset: number;
+  motion: MotionState;
+};
+
+type ReplayRestoreState = {
+  frozenAt: number;
+  position: THREE.Vector3;
+  landVelocity: THREE.Vector2;
+  paddleVelocity: THREE.Vector2;
+  wipeoutVelocity: THREE.Vector2;
+  phase: GamePhase;
+  playerHeading: number;
+  paddleHeading: number;
+  rideHeading: number;
+  lineSide: number;
+  crestOffset: number;
+  stance: number;
+  stamina: number;
+  breath: number;
+  wipeoutPower: number;
+  wipeoutDuration: number;
+  railSlip: number;
+  unstableFor: number;
+  wipeoutAt: number;
+  nextShorebreakAt: number;
+  duckDiveUntil: number;
+  missedWaveUntil: number;
+  finishAt: number;
+  takeoffCommitAt: number;
+  motion: MotionState;
+  waterElevation: number;
+  waterVelocity: number;
+  waterEngaged: boolean;
+};
+
+type ReplayPlayback = {
+  active: boolean;
+  handledRequest: number;
+  startedAt: number;
+  duration: number;
+  rate: number;
+  timeCycleOffset: number;
+  cursor: number;
+  lastReportAt: number;
+  cameraCut: number;
+  restore: ReplayRestoreState | null;
+};
+
 function dampAngle(current: number, target: number, responsiveness: number, delta: number) {
   const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
   return current + difference * (1 - Math.exp(-responsiveness * delta));
+}
+
+function lerpAngle(from: number, to: number, alpha: number) {
+  const difference = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return from + difference * alpha;
+}
+
+function interpolateReplayMotion(from: MotionState, to: MotionState, alpha: number) {
+  const next = { ...from, phase: "riding" as GamePhase };
+  const numeric = next as unknown as Record<string, number | GamePhase>;
+  for (const key of Object.keys(next) as Array<keyof MotionState>) {
+    if (key === "phase") continue;
+    const start = from[key];
+    const end = to[key];
+    if (typeof start === "number" && typeof end === "number") {
+      numeric[key] = THREE.MathUtils.lerp(start, end, alpha);
+    }
+  }
+  return next;
+}
+
+function replayCameraForProgress(progress: number): CameraMode {
+  if (progress < .24) return "cinematic";
+  if (progress < .5) return "immersive";
+  if (progress < .76) return "follow";
+  return "cinematic";
 }
 
 function namedModelObject(root: THREE.Object3D, authoredName: string) {
@@ -7903,8 +7993,12 @@ function Simulation({
   photoMode,
   photoFocalLength,
   photoExposure,
+  replayMode,
+  replayRequest,
   captureRequest,
   onCapture,
+  onReplayReady,
+  onReplayState,
   onStats,
   onReady,
 }: SurfSceneProps) {
@@ -8052,6 +8146,23 @@ function Simulation({
     leashTension: 0,
     paddleHeading: 0,
   });
+  const replayFrames = useRef<ReplayFrame[]>([]);
+  const replayRecording = useRef(false);
+  const lastReplaySampleAt = useRef(-1);
+  const replayReadyCallback = useRef(onReplayReady);
+  const replayStateCallback = useRef(onReplayState);
+  const replayPlayback = useRef<ReplayPlayback>({
+    active: false,
+    handledRequest: 0,
+    startedAt: -1,
+    duration: 0,
+    rate: 1,
+    timeCycleOffset: 0,
+    cursor: 0,
+    lastReportAt: -1,
+    cameraCut: -1,
+    restore: null,
+  });
   const setLeashTension = useCallback((tension: number) => {
     motion.current.leashTension = tension;
   }, []);
@@ -8123,10 +8234,121 @@ function Simulation({
     onReady();
   }, [onReady]);
 
+  useEffect(() => {
+    replayReadyCallback.current = onReplayReady;
+    replayStateCallback.current = onReplayState;
+  }, [onReplayReady, onReplayState]);
+
   useFrame(({ clock, gl }, delta) => {
     if (!player.current || !van.current) return;
     gl.toneMappingExposure = photoMode ? 1.08 * Math.pow(2, photoExposure) : 1.08;
     const t = clock.elapsedTime;
+    const playback = replayPlayback.current;
+    const restoreReplay = () => {
+      const restore = playback.restore;
+      if (restore) {
+        const frozenDuration = Math.max(0, t - restore.frozenAt);
+        position.current.copy(restore.position);
+        landVelocity.current.copy(restore.landVelocity);
+        paddleVelocity.current.copy(restore.paddleVelocity);
+        wipeoutVelocity.current.copy(restore.wipeoutVelocity);
+        phase.current = restore.phase;
+        playerHeading.current = restore.playerHeading;
+        paddleHeading.current = restore.paddleHeading;
+        rideHeading.current = restore.rideHeading;
+        rideLineSide.current = restore.lineSide;
+        waveCrestOffset.current = restore.crestOffset;
+        stance.current = restore.stance;
+        stamina.current = restore.stamina;
+        breath.current = restore.breath;
+        wipeoutPower.current = restore.wipeoutPower;
+        wipeoutDuration.current = restore.wipeoutDuration;
+        railSlip.current = restore.railSlip;
+        unstableFor.current = restore.unstableFor;
+        wipeoutAt.current = restore.phase === "wipeout" ? restore.wipeoutAt + frozenDuration : restore.wipeoutAt;
+        nextShorebreakAt.current = restore.nextShorebreakAt > 0 ? restore.nextShorebreakAt + frozenDuration : restore.nextShorebreakAt;
+        duckDiveUntil.current = restore.duckDiveUntil > restore.frozenAt ? restore.duckDiveUntil + frozenDuration : restore.duckDiveUntil;
+        missedWaveUntil.current = restore.missedWaveUntil > restore.frozenAt ? restore.missedWaveUntil + frozenDuration : restore.missedWaveUntil;
+        finishAt.current = restore.finishAt >= 0 ? restore.finishAt + frozenDuration : restore.finishAt;
+        takeoffCommitAt.current = restore.takeoffCommitAt >= 0 ? restore.takeoffCommitAt + frozenDuration : restore.takeoffCommitAt;
+        motion.current = { ...restore.motion };
+        waterRide.current.elevation = restore.waterElevation;
+        waterRide.current.velocity = restore.waterVelocity;
+        waterRide.current.engaged = restore.waterEngaged;
+      }
+      const completedDuration = playback.duration;
+      playback.active = false;
+      playback.startedAt = -1;
+      playback.cursor = 0;
+      playback.cameraCut = -1;
+      playback.restore = null;
+      replayStateCallback.current({
+        active: false,
+        progress: 1,
+        duration: completedDuration,
+        cameraMode: "cinematic",
+      });
+    };
+    if (playback.active && !replayMode) restoreReplay();
+    if (replayMode && replayRequest > playback.handledRequest) {
+      playback.handledRequest = replayRequest;
+      const frames = replayFrames.current;
+      const trackDuration = frames.length > 1 ? frames[frames.length - 1].at - frames[0].at : 0;
+      if (frames.length < 12 || trackDuration < .6) {
+        replayStateCallback.current({
+          active: false,
+          progress: 0,
+          duration: 0,
+          cameraMode: "cinematic",
+        });
+      } else {
+        const duration = THREE.MathUtils.clamp(trackDuration / .82, 4.8, 13);
+        playback.active = true;
+        playback.startedAt = t;
+        playback.duration = duration;
+        playback.rate = trackDuration / duration;
+        playback.timeCycleOffset = Math.round((t - frames[0].at) / Math.max(4, settings.wavePeriod)) * Math.max(4, settings.wavePeriod);
+        playback.cursor = 0;
+        playback.lastReportAt = -1;
+        playback.cameraCut = 0;
+        playback.restore = {
+          frozenAt: t,
+          position: position.current.clone(),
+          landVelocity: landVelocity.current.clone(),
+          paddleVelocity: paddleVelocity.current.clone(),
+          wipeoutVelocity: wipeoutVelocity.current.clone(),
+          phase: phase.current,
+          playerHeading: playerHeading.current,
+          paddleHeading: paddleHeading.current,
+          rideHeading: rideHeading.current,
+          lineSide: rideLineSide.current,
+          crestOffset: waveCrestOffset.current,
+          stance: stance.current,
+          stamina: stamina.current,
+          breath: breath.current,
+          wipeoutPower: wipeoutPower.current,
+          wipeoutDuration: wipeoutDuration.current,
+          railSlip: railSlip.current,
+          unstableFor: unstableFor.current,
+          wipeoutAt: wipeoutAt.current,
+          nextShorebreakAt: nextShorebreakAt.current,
+          duckDiveUntil: duckDiveUntil.current,
+          missedWaveUntil: missedWaveUntil.current,
+          finishAt: finishAt.current,
+          takeoffCommitAt: takeoffCommitAt.current,
+          motion: { ...motion.current },
+          waterElevation: waterRide.current.elevation,
+          waterVelocity: waterRide.current.velocity,
+          waterEngaged: waterRide.current.engaged,
+        };
+        replayStateCallback.current({
+          active: true,
+          progress: 0,
+          duration,
+          cameraMode: "cinematic",
+        });
+      }
+    }
     const sessionIntroProgress = reducedMotion
       ? THREE.MathUtils.smootherstep(t, .04, .58)
       : THREE.MathUtils.smootherstep(t, .12, 3.25);
@@ -8143,9 +8365,9 @@ function Simulation({
       sunTarget.updateMatrixWorld();
     }
     const tideShift = shorelineShiftForTide(settings.tide);
-    const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
+    let steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
     const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY + state.gamepadMoveY, -1, 1);
-    const balanceInput = state.gamepadActive ? state.gamepadBalance : state.balance;
+    let balanceInput = state.gamepadActive ? state.gamepadBalance : state.balance;
     const inputLength = Math.min(1, Math.hypot(steer, move));
     camera.getWorldDirection(cameraForward.current);
     cameraForward.current.y = 0;
@@ -9108,6 +9330,67 @@ function Simulation({
       }
     }
 
+    let replayMotion: MotionState | null = null;
+    if (playback.active) {
+      const frames = replayFrames.current;
+      const first = frames[0];
+      const last = frames[frames.length - 1];
+      const elapsed = Math.max(0, t - playback.startedAt);
+      const replayProgress = THREE.MathUtils.clamp(elapsed / Math.max(.001, playback.duration), 0, 1);
+      if (!replayMode || replayProgress >= 1 || !first || !last) {
+        restoreReplay();
+      } else {
+        const replayAt = Math.min(last.at, first.at + elapsed * playback.rate);
+        while (playback.cursor < frames.length - 2 && frames[playback.cursor + 1].at < replayAt) {
+          playback.cursor += 1;
+        }
+        const from = frames[playback.cursor];
+        const to = frames[Math.min(frames.length - 1, playback.cursor + 1)];
+        const alpha = THREE.MathUtils.clamp((replayAt - from.at) / Math.max(.001, to.at - from.at), 0, 1);
+        const baseX = THREE.MathUtils.lerp(from.x, to.x, alpha);
+        const baseZ = THREE.MathUtils.lerp(from.z, to.z, alpha);
+        const transport = primaryWaveVelocityAt(baseX, baseZ, replayAt, settings, character);
+        const phaseDelta = t - replayAt - playback.timeCycleOffset;
+        position.current.set(
+          baseX + transport.x * phaseDelta,
+          0,
+          baseZ + transport.z * phaseDelta,
+        );
+        phase.current = "riding";
+        rideHeading.current = lerpAngle(from.heading, to.heading, alpha);
+        rideLineSide.current = alpha < .5 ? from.lineSide : to.lineSide;
+        waveCrestOffset.current = THREE.MathUtils.lerp(from.crestOffset, to.crestOffset, alpha);
+        replayMotion = interpolateReplayMotion(from.motion, to.motion, alpha);
+        motion.current = replayMotion;
+        stance.current = replayMotion.stance;
+        steer = replayMotion.steer;
+        balanceInput = replayMotion.balance;
+        speed = replayMotion.speed;
+        waveQuality = replayMotion.waveQuality;
+        linePosition = replayMotion.linePosition;
+        lineControl = replayMotion.lineControl;
+        sectionPressure = replayMotion.sectionPressure;
+        barrelIntensity = replayMotion.barrel;
+        railLoad = replayMotion.rail;
+        compression = replayMotion.compression;
+        maneuverProgress = replayMotion.maneuverProgress;
+        worldFocus.current.copy(position.current);
+
+        const cameraCut = replayProgress < .24 ? 0 : replayProgress < .5 ? 1 : replayProgress < .76 ? 2 : 3;
+        const cameraModeForCut = replayCameraForProgress(replayProgress);
+        if (cameraCut !== playback.cameraCut || t - playback.lastReportAt >= .1) {
+          playback.cameraCut = cameraCut;
+          playback.lastReportAt = t;
+          replayStateCallback.current({
+            active: true,
+            progress: replayProgress,
+            duration: playback.duration,
+            cameraMode: cameraModeForCut,
+          });
+        }
+      }
+    }
+
     const landRange = phase.current === "shore" || phase.current === "wading" || phase.current === "driving";
     position.current.x = THREE.MathUtils.clamp(
       position.current.x,
@@ -9348,6 +9631,38 @@ function Simulation({
     );
     motion.current.paddleHeading = paddleHeading.current;
     motion.current.breath = breath.current;
+    if (!playback.active && currentPhase === "riding") {
+      if (!replayRecording.current) {
+        replayRecording.current = true;
+        replayFrames.current = [];
+        lastReplaySampleAt.current = -1;
+        replayReadyCallback.current(false);
+      }
+      if (lastReplaySampleAt.current < 0 || t - lastReplaySampleAt.current >= 1 / 24) {
+        lastReplaySampleAt.current = t;
+        if (replayFrames.current.length < 720) {
+          replayFrames.current.push({
+            at: t,
+            x: position.current.x,
+            z: position.current.z,
+            heading: rideHeading.current,
+            lineSide: rideLineSide.current,
+            crestOffset: waveCrestOffset.current,
+            motion: { ...motion.current },
+          });
+        }
+      }
+    } else if (!playback.active && replayRecording.current) {
+      replayRecording.current = false;
+      const frames = replayFrames.current;
+      const duration = frames.length > 1 ? frames[frames.length - 1].at - frames[0].at : 0;
+      replayReadyCallback.current(frames.length >= 12 && duration >= .6);
+    }
+    if (replayMotion) {
+      motion.current = replayMotion;
+      stance.current = replayMotion.stance;
+      worldFocus.current.copy(position.current);
+    }
     const vanDriving = phase.current === "driving";
     if (!vanDriving) {
       vanSteer.current = THREE.MathUtils.damp(vanSteer.current, 0, 8, delta);
