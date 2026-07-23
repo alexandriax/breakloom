@@ -191,6 +191,11 @@ function dampAngle(current: number, target: number, responsiveness: number, delt
   return current + difference * (1 - Math.exp(-responsiveness * delta));
 }
 
+function namedModelObject(root: THREE.Object3D, authoredName: string) {
+  return root.getObjectByName(authoredName)
+    ?? root.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(authoredName));
+}
+
 type ManeuverAttempt = {
   name: string;
   family: "trim" | "carve" | "lip" | "air";
@@ -1355,6 +1360,7 @@ function PaddleOutShorebreak({ motion, settings, light, mobile }: { motion: Muta
 
 const SURFER_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surfer-premium.glb`;
 const VAN_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surf-van-premium.glb`;
+const VISITOR_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/beach-visitor-premium.glb`;
 const NEOPRENE_TEXTURE_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/neoprene-premium.webp`;
 const SURFER_JOINT_NAMES = [
   "Pelvis",
@@ -1392,8 +1398,8 @@ function prepareSurferScene(source: THREE.Group, accent: string, neopreneBump: T
     ["Leash.cuff.tab", "LowerLeg.R"],
   ] as const;
   attachments.forEach(([detailName, jointName]) => {
-    const detail = model.getObjectByName(detailName);
-    const joint = model.getObjectByName(jointName);
+    const detail = namedModelObject(model, detailName);
+    const joint = namedModelObject(model, jointName);
     if (detail && joint) joint.attach(detail);
   });
   model.updateMatrixWorld(true);
@@ -1473,7 +1479,7 @@ function PremiumSurferBody({
     const next: Partial<Record<SurferJointName, THREE.Object3D>> = {};
     const rest: Partial<Record<SurferJointName, THREE.Euler>> = {};
     SURFER_JOINT_NAMES.forEach((name) => {
-      const joint = model.getObjectByName(name);
+      const joint = namedModelObject(model, name);
       if (joint) {
         next[name] = joint;
         rest[name] = joint.rotation.clone();
@@ -1598,6 +1604,7 @@ function PremiumSurferBody({
 
 useGLTF.preload(SURFER_MODEL_URL);
 useGLTF.preload(VAN_MODEL_URL);
+useGLTF.preload(VISITOR_MODEL_URL);
 useTexture.preload(NEOPRENE_TEXTURE_URL);
 
 function boardWidthAt(boardType: BoardType, normalizedLength: number) {
@@ -3788,6 +3795,54 @@ type VisitorPalette = {
   hair: string;
 };
 
+function prepareVisitorScene(source: THREE.Group, palette: VisitorPalette, photographing: boolean) {
+  const model = cloneSkeleton(source) as THREE.Group;
+  const paletteColors = {
+    skin: new THREE.Color(palette.skin),
+    shirt: new THREE.Color(palette.shirt),
+    shorts: new THREE.Color(palette.shorts),
+    hair: new THREE.Color(palette.hair),
+    shoes: new THREE.Color(palette.shirt).lerp(new THREE.Color("#f2eadb"), .78),
+  };
+  const attachments = [
+    ["Head.details", "Head"],
+    ["Foot.L.shoe", "Foot.L"],
+    ["Foot.R.shoe", "Foot.R"],
+    ["Camera.prop", "Torso"],
+  ] as const;
+  model.updateMatrixWorld(true);
+  attachments.forEach(([detailName, jointName]) => {
+    const detail = namedModelObject(model, detailName);
+    const joint = namedModelObject(model, jointName);
+    if (detail && joint) joint.attach(detail);
+  });
+  const camera = namedModelObject(model, "Camera.prop");
+  if (camera) camera.visible = photographing;
+  model.updateMatrixWorld(true);
+  model.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.castShadow = true;
+    object.receiveShadow = false;
+    object.frustumCulled = true;
+    const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    const materials = sourceMaterials.map((sourceMaterial) => {
+      const next = sourceMaterial.clone();
+      if (next instanceof THREE.MeshStandardMaterial) {
+        const name = next.name.toLowerCase();
+        if (name.includes("visitor skin") || name.includes("visitor lip")) next.color.copy(paletteColors.skin);
+        else if (name.includes("visitor shirt")) next.color.copy(paletteColors.shirt);
+        else if (name.includes("visitor shorts")) next.color.copy(paletteColors.shorts);
+        else if (name.includes("visitor hair") || name.includes("brow")) next.color.copy(paletteColors.hair);
+        else if (name.includes("visitor shoes")) next.color.copy(paletteColors.shoes);
+        next.envMapIntensity = name.includes("camera") ? 1.3 : name.includes("skin") ? .78 : .9;
+      }
+      return next;
+    });
+    object.material = Array.isArray(object.material) ? materials : materials[0];
+  });
+  return model;
+}
+
 function BeachVisitor({
   position,
   rotation,
@@ -3805,14 +3860,40 @@ function BeachVisitor({
   observerPosition: MutableRefObject<THREE.Vector3>;
   scale?: number;
 }) {
+  const { scene } = useGLTF(VISITOR_MODEL_URL);
+  const model = useMemo(() => prepareVisitorScene(scene, palette, activity === "photo"), [activity, palette, scene]);
+  const materials = useMemo(() => {
+    const collected = new Set<THREE.Material>();
+    model.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const next = Array.isArray(object.material) ? object.material : [object.material];
+      next.forEach((material) => collected.add(material));
+    });
+    return [...collected];
+  }, [model]);
   const root = useRef<THREE.Group>(null);
-  const torso = useRef<THREE.Group>(null);
-  const head = useRef<THREE.Group>(null);
-  const upperArms = useRef<Array<THREE.Group | null>>([]);
-  const lowerArms = useRef<Array<THREE.Group | null>>([]);
-  const upperLegs = useRef<Array<THREE.Group | null>>([]);
-  const lowerLegs = useRef<Array<THREE.Group | null>>([]);
+  const joints = useRef<Partial<Record<SurferJointName, THREE.Object3D>>>({});
+  const restPose = useRef<Partial<Record<SurferJointName, THREE.Euler>>>({});
   const baseX = position[0];
+  const baseY = position[1];
+
+  useEffect(() => {
+    const next: Partial<Record<SurferJointName, THREE.Object3D>> = {};
+    const rest: Partial<Record<SurferJointName, THREE.Euler>> = {};
+    SURFER_JOINT_NAMES.forEach((name) => {
+      const joint = namedModelObject(model, name);
+      if (!joint) return;
+      next[name] = joint;
+      rest[name] = joint.rotation.clone();
+    });
+    joints.current = next;
+    restPose.current = rest;
+    return () => {
+      joints.current = {};
+      restPose.current = {};
+      materials.forEach((material) => material.dispose());
+    };
+  }, [materials, model]);
 
   useFrame(({ clock }, delta) => {
     const t = clock.elapsedTime + phase;
@@ -3823,123 +3904,49 @@ function BeachVisitor({
     const breathing = Math.sin(t * .86) * .012;
     if (root.current) {
       root.current.position.x = walking ? baseX + Math.sin(t * .24) * 5.8 : baseX;
-      root.current.position.y = relaxed ? -.26 : Math.abs(stride) * .018;
+      root.current.position.y = baseY + (relaxed ? -.24 : Math.abs(stride) * .018);
       root.current.rotation.y = THREE.MathUtils.damp(root.current.rotation.y, rotation + (walking && Math.cos(t * .24) < 0 ? Math.PI : 0), 5, delta);
     }
-    if (torso.current) {
-      torso.current.rotation.x = THREE.MathUtils.damp(torso.current.rotation.x, relaxed ? -.08 : walking ? stride * -.035 : breathing, 6, delta);
-      torso.current.rotation.z = THREE.MathUtils.damp(torso.current.rotation.z, walking ? stride * .025 : Math.sin(t * .43) * .018, 5, delta);
-    }
-    if (head.current) {
-      const currentX = root.current?.position.x ?? baseX;
-      const dx = observerPosition.current.x - currentX;
-      const dz = observerPosition.current.z - position[2];
-      const glanceDistance = Math.hypot(dx, dz);
-      const worldAngle = Math.atan2(dx, dz);
-      const rootRotation = root.current?.rotation.y ?? rotation;
-      const relativeAngle = Math.atan2(Math.sin(worldAngle - rootRotation), Math.cos(worldAngle - rootRotation));
-      const glance = glanceDistance < 14 && !photographing && !relaxed
-        ? THREE.MathUtils.clamp(relativeAngle, -.72, .72)
-        : activity === "watch" ? Math.sin(t * .34) * .28 : 0;
-      head.current.rotation.x = THREE.MathUtils.damp(head.current.rotation.x, photographing ? -.08 : relaxed ? -.14 : 0, 6, delta);
-      head.current.rotation.y = THREE.MathUtils.damp(head.current.rotation.y, glance, 4, delta);
-    }
-    upperArms.current.forEach((arm, index) => {
-      if (!arm) return;
-      const side = index ? -1 : 1;
-      const targetX = photographing ? -1.02 + side * .05 : relaxed ? -.3 : walking ? stride * side * .68 : Math.sin(t * .72 + index) * .045;
-      const targetZ = photographing ? side * -.44 : side * -.075;
-      arm.rotation.x = THREE.MathUtils.damp(arm.rotation.x, targetX, 7, delta);
-      arm.rotation.z = THREE.MathUtils.damp(arm.rotation.z, targetZ, 7, delta);
-    });
-    lowerArms.current.forEach((arm, index) => {
-      if (!arm) return;
-      const side = index ? -1 : 1;
-      arm.rotation.x = THREE.MathUtils.damp(arm.rotation.x, photographing ? -1.12 : relaxed ? -.42 : 0, 7, delta);
-      arm.rotation.z = THREE.MathUtils.damp(arm.rotation.z, photographing ? side * .34 : 0, 7, delta);
-    });
-    upperLegs.current.forEach((leg, index) => {
-      if (!leg) return;
-      const side = index ? -1 : 1;
-      leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, relaxed ? -1.38 : walking ? stride * side * .64 : 0, 8, delta);
-      leg.rotation.z = THREE.MathUtils.damp(leg.rotation.z, relaxed ? side * .12 : side * .025, 7, delta);
-    });
-    lowerLegs.current.forEach((leg, index) => {
-      if (!leg) return;
-      const side = index ? -1 : 1;
-      const bend = relaxed ? 1.08 : walking ? Math.max(0, -stride * side) * .78 : 0;
-      leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, bend, 8, delta);
-    });
+    const pose = (name: SurferJointName, x: number, y: number, z: number, responsiveness = 7) => {
+      const joint = joints.current[name];
+      if (!joint) return;
+      const rest = restPose.current[name];
+      joint.rotation.x = dampAngle(joint.rotation.x, (rest?.x ?? 0) + x, responsiveness, delta);
+      joint.rotation.y = dampAngle(joint.rotation.y, (rest?.y ?? 0) + y, responsiveness, delta);
+      joint.rotation.z = dampAngle(joint.rotation.z, (rest?.z ?? 0) + z, responsiveness, delta);
+    };
+
+    const currentX = root.current?.position.x ?? baseX;
+    const dx = observerPosition.current.x - currentX;
+    const dz = observerPosition.current.z - position[2];
+    const glanceDistance = Math.hypot(dx, dz);
+    const worldAngle = Math.atan2(dx, dz);
+    const rootRotation = root.current?.rotation.y ?? rotation;
+    const relativeAngle = Math.atan2(Math.sin(worldAngle - rootRotation), Math.cos(worldAngle - rootRotation));
+    const glance = glanceDistance < 14 && !photographing && !relaxed
+      ? THREE.MathUtils.clamp(relativeAngle, -.72, .72)
+      : activity === "watch" ? Math.sin(t * .34) * .28 : 0;
+
+    pose("Pelvis", relaxed ? -.08 : walking ? stride * .018 : 0, 0, walking ? stride * .018 : 0, 6);
+    pose("Torso", relaxed ? -.14 : walking ? stride * -.035 : breathing, photographing ? Math.sin(t * .24) * .018 : 0, walking ? stride * .025 : Math.sin(t * .43) * .018, 6);
+    pose("Head", photographing ? -.08 : relaxed ? -.14 : 0, glance, walking ? -stride * .018 : 0, 6);
+    pose("UpperArm.L", photographing ? -.94 : relaxed ? -.3 : walking ? stride * .68 : Math.sin(t * .72) * .045, 0, photographing ? .42 : relaxed ? .16 : .075, 7);
+    pose("UpperArm.R", photographing ? .94 : relaxed ? .3 : walking ? -stride * .68 : -Math.sin(t * .72 + 1) * .045, 0, photographing ? -.42 : relaxed ? -.16 : -.075, 7);
+    pose("LowerArm.L", photographing ? -.96 : relaxed ? -.42 : 0, 0, photographing ? .18 : 0, 8);
+    pose("LowerArm.R", photographing ? .96 : relaxed ? .42 : 0, 0, photographing ? -.18 : 0, 8);
+    pose("Hand.L", photographing ? -.08 : 0, photographing ? -.16 : 0, 0, 8);
+    pose("Hand.R", photographing ? .08 : 0, photographing ? .16 : 0, 0, 8);
+    pose("UpperLeg.L", relaxed ? -1.22 : walking ? stride * .64 : 0, 0, relaxed ? .12 : .025, 8);
+    pose("UpperLeg.R", relaxed ? 1.22 : walking ? -stride * .64 : 0, 0, relaxed ? -.12 : -.025, 8);
+    pose("LowerLeg.L", relaxed ? .96 : walking ? Math.max(0, -stride) * .78 : 0, 0, 0, 8);
+    pose("LowerLeg.R", relaxed ? -.96 : walking ? Math.max(0, stride) * -.78 : 0, 0, 0, 8);
+    pose("Foot.L", relaxed ? -.16 : walking ? -stride * .06 : 0, 0, 0, 8);
+    pose("Foot.R", relaxed ? .16 : walking ? stride * .06 : 0, 0, 0, 8);
   });
 
   return (
-    <group ref={root} position={position} rotation={[0, rotation, 0]} scale={scale}>
-      <group ref={torso} position={[0, 1.17, 0]}>
-        <mesh castShadow>
-          <capsuleGeometry args={[.18, .52, 5, 10]} />
-          <meshStandardMaterial color={palette.shirt} roughness={.72} />
-        </mesh>
-        <mesh position={[0, -.31, 0]} castShadow>
-          <capsuleGeometry args={[.185, .18, 4, 9]} />
-          <meshStandardMaterial color={palette.shorts} roughness={.78} />
-        </mesh>
-        <group ref={head} position={[0, .57, 0]}>
-          <mesh position={[0, -.075, 0]} castShadow>
-            <cylinderGeometry args={[.07, .08, .16, 10]} />
-            <meshStandardMaterial color={palette.skin} roughness={.66} />
-          </mesh>
-          <mesh position={[0, .13, 0]} castShadow>
-            <sphereGeometry args={[.16, 14, 10]} />
-            <meshStandardMaterial color={palette.skin} roughness={.62} />
-          </mesh>
-          <mesh position={[0, .205, .015]} scale={[1.02, .48, 1.02]} castShadow>
-            <sphereGeometry args={[.158, 12, 8, 0, Math.PI * 2, 0, Math.PI * .62]} />
-            <meshStandardMaterial color={palette.hair} roughness={.88} />
-          </mesh>
-        </group>
-        {[-1, 1].map((side, index) => (
-          <group key={`arm-${side}`} ref={(joint) => { upperArms.current[index] = joint; }} position={[side * .235, .2, 0]}>
-            <mesh position={[0, -.2, 0]} castShadow>
-              <capsuleGeometry args={[.065, .27, 4, 8]} />
-              <meshStandardMaterial color={palette.shirt} roughness={.74} />
-            </mesh>
-            <group ref={(joint) => { lowerArms.current[index] = joint; }} position={[0, -.4, 0]}>
-              <mesh position={[0, -.18, 0]} castShadow>
-                <capsuleGeometry args={[.052, .25, 4, 8]} />
-                <meshStandardMaterial color={palette.skin} roughness={.66} />
-              </mesh>
-              <mesh position={[0, -.35, 0]} scale={[.8, 1.1, .7]} castShadow>
-                <sphereGeometry args={[.068, 10, 8]} />
-                <meshStandardMaterial color={palette.skin} roughness={.64} />
-              </mesh>
-            </group>
-          </group>
-        ))}
-        {activity === "photo" && (
-          <mesh position={[0, .13, -.46]} rotation={[0, 0, Math.PI / 2]} castShadow>
-            <boxGeometry args={[.17, .025, .1]} />
-            <meshStandardMaterial color="#10171a" metalness={.58} roughness={.28} />
-          </mesh>
-        )}
-      </group>
-      {[-1, 1].map((side, index) => (
-        <group key={`leg-${side}`} ref={(joint) => { upperLegs.current[index] = joint; }} position={[side * .105, .84, 0]}>
-          <mesh position={[0, -.25, 0]} castShadow>
-            <capsuleGeometry args={[.082, .38, 4, 8]} />
-            <meshStandardMaterial color={palette.skin} roughness={.68} />
-          </mesh>
-          <group ref={(joint) => { lowerLegs.current[index] = joint; }} position={[0, -.51, 0]}>
-            <mesh position={[0, -.22, 0]} castShadow>
-              <capsuleGeometry args={[.066, .33, 4, 8]} />
-              <meshStandardMaterial color={palette.skin} roughness={.68} />
-            </mesh>
-            <mesh position={[0, -.46, -.055]} scale={[.08, .055, .16]} castShadow>
-              <sphereGeometry args={[1, 10, 7]} />
-              <meshStandardMaterial color={activity === "walk" ? "#e8e1d2" : palette.skin} roughness={.72} />
-            </mesh>
-          </group>
-        </group>
-      ))}
+    <group ref={root} position={position} rotation={[0, rotation, 0]} scale={scale * .91}>
+      <primitive object={model} />
     </group>
   );
 }
@@ -4031,10 +4038,10 @@ function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: bool
   const weather = weatherProfile(weatherCode);
   const sheltered = weather.storm || weather.kind !== "none" || weather.fog;
   const visitors = useMemo(() => [
-    { position: [-18, 0, 43] as [number, number, number], rotation: Math.PI, activity: "walk" as const, phase: .3, palette: { skin: "#9a5c3b", shirt: "#d55c48", shorts: "#203842", hair: "#21150f" } },
-    { position: [27, 0, 46] as [number, number, number], rotation: Math.PI, activity: "photo" as const, phase: 2.1, palette: { skin: "#c98d69", shirt: "#e2c15b", shorts: "#374b5d", hair: "#5b3828" } },
-    { position: [-34, 0, 56] as [number, number, number], rotation: Math.PI * .84, activity: "watch" as const, phase: 4.2, palette: { skin: "#6e3e2e", shirt: "#244c5f", shorts: "#ddd4bf", hair: "#17110f" } },
-    { position: [7, 0, 51] as [number, number, number], rotation: Math.PI * 1.08, activity: "relax" as const, phase: 6.4, palette: { skin: "#d2a07a", shirt: "#e87861", shorts: "#36585d", hair: "#7a4d2d" } },
+    { position: [-18, -.47, 43] as [number, number, number], rotation: Math.PI, activity: "walk" as const, phase: .3, palette: { skin: "#9a5c3b", shirt: "#d55c48", shorts: "#203842", hair: "#21150f" } },
+    { position: [27, -.47, 46] as [number, number, number], rotation: Math.PI, activity: "photo" as const, phase: 2.1, palette: { skin: "#c98d69", shirt: "#e2c15b", shorts: "#374b5d", hair: "#5b3828" } },
+    { position: [-34, -.47, 56] as [number, number, number], rotation: Math.PI * .84, activity: "watch" as const, phase: 4.2, palette: { skin: "#6e3e2e", shirt: "#244c5f", shorts: "#ddd4bf", hair: "#17110f" } },
+    { position: [7, -.47, 51] as [number, number, number], rotation: Math.PI * 1.08, activity: "relax" as const, phase: 6.4, palette: { skin: "#d2a07a", shirt: "#e87861", shorts: "#36585d", hair: "#7a4d2d" } },
   ], []);
   const visitorCount = mobile
     ? quality === "reduced" ? 1 : quality === "high" ? 3 : 2
@@ -4195,11 +4202,11 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
   const headLights = useRef<Array<THREE.PointLight | null>>([]);
 
   useEffect(() => {
-    body.current = model.getObjectByName("VanBody") ?? null;
-    steerLeft.current = model.getObjectByName("Steer.FL") ?? null;
-    steerRight.current = model.getObjectByName("Steer.FR") ?? null;
+    body.current = namedModelObject(model, "VanBody") ?? null;
+    steerLeft.current = namedModelObject(model, "Steer.FL") ?? null;
+    steerRight.current = namedModelObject(model, "Steer.FR") ?? null;
     wheels.current = ["Wheel.FL", "Wheel.FR", "Wheel.RL", "Wheel.RR"]
-      .map((name) => model.getObjectByName(name))
+      .map((name) => namedModelObject(model, name))
       .filter((wheel): wheel is THREE.Object3D => Boolean(wheel));
     wheelRestY.current = wheels.current.map((wheel) => wheel.position.y);
     if (body.current) {
@@ -4211,7 +4218,7 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
     }
 
     const nextBrakeMaterials: THREE.MeshStandardMaterial[] = [];
-    model.getObjectByName("BrakeLights")?.traverse((object) => {
+    namedModelObject(model, "BrakeLights")?.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       materials.forEach((material) => {

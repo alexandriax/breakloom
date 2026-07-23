@@ -2,7 +2,7 @@
 
 ## 3D Male Base Mesh
 
-Surfscape's surfer uses a modified version of "Male Base Mesh" by
+Surfscape's surfer and beach-visitor models use modified versions of "Male Base Mesh" by
 orange-juice-games, obtained from
 https://github.com/BoQsc/Godot-Male-Base-Mesh/.
 
