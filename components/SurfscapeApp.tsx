@@ -292,6 +292,7 @@ export default function SurfscapeApp() {
   const previousBalanceLock = useRef(false);
   const lastBalanceHapticAt = useRef(0);
   const previousGripWarning = useRef(false);
+  const previousVehicleSlipWarning = useRef(false);
   const previousPocketLock = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
   const joystickKnob = useRef<HTMLSpanElement>(null);
@@ -472,7 +473,14 @@ export default function SurfscapeApp() {
     }
     if (stats.catchReady && !previousCatchReady.current) haptic([7, 24, 13]);
     previousCatchReady.current = stats.catchReady;
-    audio.current?.setVehicle(paused ? 0 : stats.speed, !paused && stats.vehicleMode);
+    audio.current?.setVehicle(
+      paused ? 0 : stats.speed,
+      !paused && stats.vehicleMode,
+      stats.vehicleThrottle,
+      stats.vehicleOffRoad,
+      stats.vehicleSlip,
+      stats.vehicleMode && stats.vehicleThrottle < -.08 && stats.vehicleGear === "D",
+    );
     audio.current?.setSurf(
       paused ? 0 : stats.speed,
       !paused && stats.phase === "riding",
@@ -503,12 +511,18 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleMode]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
     previousDuckDiveReady.current = stats.duckDiveReady;
   }, [stats.duckDiveReady]);
+
+  useEffect(() => {
+    const warning = stats.vehicleMode && stats.vehicleSlip > .24;
+    if (warning && !previousVehicleSlipWarning.current) haptic([8, 18, 8]);
+    previousVehicleSlipWarning.current = warning;
+  }, [stats.vehicleMode, stats.vehicleSlip]);
 
   useEffect(() => {
     if (stats.shorebreakId <= 0 || stats.shorebreakId === previousShorebreakId.current) return;
@@ -886,6 +900,12 @@ export default function SurfscapeApp() {
   const activeLine = stats.phase === "riding" && breakCharacter.line === "A-FRAME"
     ? stats.lineSide > 0 ? "RIGHT" : "LEFT"
     : breakCharacter.line;
+  const vehicleSurfaceLabel = stats.vehicleOffRoad > .56
+    ? "LOOSE SAND"
+    : stats.vehicleOffRoad > .16
+      ? "ROAD SHOULDER"
+      : "COAST ROAD";
+  const vehicleGrip = Math.round(stats.vehicleTraction * 100);
   const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.catchReady || stats.duckDiveReady;
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
@@ -903,7 +923,10 @@ export default function SurfscapeApp() {
             ? "PADDLE"
             : "MOVE";
   const mobileContext = stats.vehicleMode
-    ? { title: "COAST RUNNER", detail: "Stick to drive · stop before exit" }
+    ? {
+        title: stats.vehicleSlip > .24 ? "SETTLE THE VAN" : vehicleSurfaceLabel,
+        detail: `${vehicleGrip}% grip · ${stats.vehicleSlip > .24 ? "unwind the stick" : "stop before exit"}`,
+      }
     : stats.phase === "shore"
       ? { title: "BEACH TRAVERSE", detail: "Full stick runs · drag scene to look" }
       : stats.phase === "wading"
@@ -1347,15 +1370,19 @@ export default function SurfscapeApp() {
             <small>{stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.sectionPressure > .42 ? "Steer back toward the illuminated power pocket" : "Track the pocket · balance with mouse or thumb · shift stance with W/S"}</small>
           </div>
 
-          <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""}`}>
+          <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
             <div className="vehicle-dial">
-              <span>{stats.speed < 0.4 ? "P" : "D"}</span>
+              <span>{stats.vehicleGear}</span>
               <strong>{Math.round(stats.speed * 3.6)}</strong>
               <small>KM/H</small>
             </div>
             <div className="vehicle-copy">
               <span>COAST RUNNER / SURF RACK 03</span>
-              <strong>{stats.speed < 0.8 ? "Ready to roam" : "Cruising the shoreline"}</strong>
+              <strong>{stats.vehicleSlip > .24 ? "Tires sliding — unwind the steering" : vehicleSurfaceLabel}</strong>
+              <div className="vehicle-grip">
+                <i><b style={{ width: `${vehicleGrip}%` }} /></i>
+                <em>{vehicleGrip}% GRIP</em>
+              </div>
               <small>W/S throttle · A/D steer · SPACE exits when stopped</small>
             </div>
           </div>

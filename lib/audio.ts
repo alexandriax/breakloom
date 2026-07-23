@@ -61,6 +61,7 @@ export class SurfscapeAudio {
   private engineGain: GainNode | null = null;
   private engineFilter: BiquadFilterNode | null = null;
   private roadGain: GainNode | null = null;
+  private roadFilter: BiquadFilterNode | null = null;
 
   private nextFoleyAt = 0;
   private nextGullAt = 0;
@@ -223,17 +224,23 @@ export class SurfscapeAudio {
     }
   }
 
-  setVehicle(speed: number, active: boolean) {
+  setVehicle(speed: number, active: boolean, throttle = 0, offRoad = 0, slip = 0, braking = false) {
     if (!this.context || !this.engineGain || !this.engineFilter || !this.roadGain) return;
     const now = this.context.currentTime;
     const revs = Math.min(1, Math.abs(speed) / 19);
     const gear = Math.min(3, Math.floor(Math.abs(speed) / 5.3));
-    ramp(this.engineGain.gain, active && this.enabled ? .018 + revs * .072 : 0, now, .1);
-    ramp(this.roadGain.gain, active && this.enabled ? .004 + Math.pow(revs, 1.3) * .078 : 0, now, .12);
-    ramp(this.engineFilter.frequency, 270 + revs * 680 + gear * 70, now, .11);
+    const load = Math.min(1, Math.abs(throttle));
+    const loose = Math.min(1, Math.max(offRoad, slip * .82));
+    ramp(this.engineGain.gain, active && this.enabled ? .015 + revs * .052 + load * .033 + (braking ? .008 : 0) : 0, now, .085);
+    ramp(this.roadGain.gain, active && this.enabled ? .004 + Math.pow(revs, 1.3) * .062 + loose * (.018 + revs * .045) : 0, now, .09);
+    ramp(this.engineFilter.frequency, 250 + revs * 610 + gear * 64 + load * 260, now, .085);
+    if (this.roadFilter) {
+      ramp(this.roadFilter.frequency, 205 + revs * 310 + offRoad * 620 + slip * 460, now, .11);
+      ramp(this.roadFilter.Q, .64 + offRoad * .45 + slip * .52, now, .12);
+    }
     this.engine.forEach((oscillator, index) => {
       const base = [43, 86, 129][index] ?? 43;
-      ramp(oscillator.frequency, base + revs * base * .92 - gear * 3.8, now, .1);
+      ramp(oscillator.frequency, base + revs * base * .82 + load * base * .2 - gear * 3.8, now, .085);
     });
   }
 
@@ -456,6 +463,7 @@ export class SurfscapeAudio {
     this.engineGain = engineGain;
     this.engineFilter = engineFilter;
     this.roadGain = roadGain;
+    this.roadFilter = roadFilter;
   }
 
   private setChord(chord: number, now: number) {

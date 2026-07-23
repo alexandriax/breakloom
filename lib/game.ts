@@ -123,6 +123,11 @@ export type GameStats = {
   rideResult: "" | "clean" | "wipeout";
   rideResultId: number;
   vehicleMode: boolean;
+  vehicleGear: "P" | "D" | "R";
+  vehicleThrottle: number;
+  vehicleTraction: number;
+  vehicleSlip: number;
+  vehicleOffRoad: number;
   nearVan: boolean;
   inLineup: boolean;
   catchReady: boolean;
@@ -181,6 +186,11 @@ export const INITIAL_STATS: GameStats = {
   rideResult: "",
   rideResultId: 0,
   vehicleMode: false,
+  vehicleGear: "P",
+  vehicleThrottle: 0,
+  vehicleTraction: 1,
+  vehicleSlip: 0,
+  vehicleOffRoad: 0,
   nearVan: false,
   inLineup: false,
   catchReady: false,

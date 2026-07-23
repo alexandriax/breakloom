@@ -100,10 +100,16 @@ type ManeuverAttempt = {
 type VehicleMotionState = {
   speed: number;
   steer: number;
+  throttle: number;
   driving: boolean;
   brake: boolean;
   wetness: number;
   offRoad: number;
+  traction: number;
+  slip: number;
+  longitudinalG: number;
+  lateralG: number;
+  suspension: number;
 };
 
 function isMobileRenderer() {
@@ -3807,9 +3813,11 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
   const { scene } = useGLTF(VAN_MODEL_URL);
   const model = useMemo(() => prepareVanScene(scene), [scene]);
   const body = useRef<THREE.Object3D | null>(null);
+  const bodyRest = useRef({ y: 0, rotationX: 0, rotationZ: 0 });
   const steerLeft = useRef<THREE.Object3D | null>(null);
   const steerRight = useRef<THREE.Object3D | null>(null);
   const wheels = useRef<THREE.Object3D[]>([]);
+  const wheelRestY = useRef<number[]>([]);
   const brakeMaterials = useRef<THREE.MeshStandardMaterial[]>([]);
   const headLights = useRef<Array<THREE.PointLight | null>>([]);
 
@@ -3820,6 +3828,14 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
     wheels.current = ["Wheel.FL", "Wheel.FR", "Wheel.RL", "Wheel.RR"]
       .map((name) => model.getObjectByName(name))
       .filter((wheel): wheel is THREE.Object3D => Boolean(wheel));
+    wheelRestY.current = wheels.current.map((wheel) => wheel.position.y);
+    if (body.current) {
+      bodyRest.current = {
+        y: body.current.position.y,
+        rotationX: body.current.rotation.x,
+        rotationZ: body.current.rotation.z,
+      };
+    }
 
     const nextBrakeMaterials: THREE.MeshStandardMaterial[] = [];
     model.getObjectByName("BrakeLights")?.traverse((object) => {
@@ -3835,22 +3851,53 @@ function SurfVan({ motion, darkness }: { motion: MutableRefObject<VehicleMotionS
   useFrame(({ clock }, delta) => {
     const state = motion.current;
     const rotationDelta = state.speed * delta / 0.55;
-    wheels.current.forEach((wheel) => {
+    const speed = Math.abs(state.speed);
+    const speedRatio = THREE.MathUtils.clamp(speed / 18.5, 0, 1);
+    const suspensionAmplitude = state.driving
+      ? (.006 + speedRatio * .009) * (1 + state.offRoad * 4.2 + state.slip * .65)
+      : 0;
+    wheels.current.forEach((wheel, index) => {
       wheel.rotation.x -= rotationDelta;
+      const axlePhase = index < 2 ? 0 : 1.55;
+      const sidePhase = index % 2 ? 2.15 : 0;
+      const primary = Math.sin(clock.elapsedTime * (4.4 + speed * .72) + axlePhase + sidePhase);
+      const chatter = Math.sin(clock.elapsedTime * (9.2 + speed * 1.08) + index * 1.71) * .38;
+      const wheelTravel = (primary + chatter) * suspensionAmplitude;
+      wheel.position.y = THREE.MathUtils.damp(
+        wheel.position.y,
+        (wheelRestY.current[index] ?? 0) + wheelTravel,
+        state.offRoad > .25 ? 11 : 16,
+        delta,
+      );
     });
     if (steerLeft.current) steerLeft.current.rotation.y = THREE.MathUtils.damp(steerLeft.current.rotation.y, state.steer * 0.42, 9, delta);
     if (steerRight.current) steerRight.current.rotation.y = THREE.MathUtils.damp(steerRight.current.rotation.y, state.steer * 0.42, 9, delta);
     if (body.current) {
-      const roadPulse = state.driving ? Math.sin(clock.elapsedTime * (5 + Math.abs(state.speed))) * Math.min(0.035, Math.abs(state.speed) * 0.002) : 0;
-      body.current.position.y = THREE.MathUtils.damp(body.current.position.y, roadPulse, 8, delta);
-      body.current.rotation.z = THREE.MathUtils.damp(body.current.rotation.z, -state.steer * Math.min(0.07, Math.abs(state.speed) * 0.004), 7, delta);
-      body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, state.brake ? -0.035 : Math.min(0.025, state.speed * 0.002), 7, delta);
+      const roadPulse = state.driving
+        ? state.suspension * (.012 + speedRatio * .018 + state.offRoad * .028)
+        : 0;
+      const loadPitch = THREE.MathUtils.clamp(state.longitudinalG * .14, -.115, .085);
+      const cornerRoll = THREE.MathUtils.clamp(state.lateralG * .18, -.13, .13);
+      const looseSurfaceWobble = state.slip * Math.sin(clock.elapsedTime * 7.4) * .018;
+      body.current.position.y = THREE.MathUtils.damp(body.current.position.y, bodyRest.current.y + roadPulse, 9, delta);
+      body.current.rotation.z = THREE.MathUtils.damp(
+        body.current.rotation.z,
+        bodyRest.current.rotationZ + cornerRoll + looseSurfaceWobble,
+        state.traction < .72 ? 5.2 : 7.4,
+        delta,
+      );
+      body.current.rotation.x = THREE.MathUtils.damp(
+        body.current.rotation.x,
+        bodyRest.current.rotationX + loadPitch,
+        state.brake ? 10.5 : 7.2,
+        delta,
+      );
     }
     const targetBrakeIntensity = state.brake ? 3.8 : 0.42;
     brakeMaterials.current.forEach((material) => {
       material.emissiveIntensity = THREE.MathUtils.damp(material.emissiveIntensity, targetBrakeIntensity, 12, delta);
     });
-    const headlightIntensity = .08 + darkness * (1.85 + state.wetness * .72);
+    const headlightIntensity = .08 + darkness * (1.85 + state.wetness * .72 + state.offRoad * .16);
     headLights.current.forEach((headlight) => {
       if (!headlight) return;
       headlight.intensity = THREE.MathUtils.damp(headlight.intensity, headlightIntensity, 5.5, delta);
@@ -3947,7 +3994,7 @@ function VehicleSurfaceEffects({
     const positionAttribute = particles.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     const particlePositions = positionAttribute?.array as Float32Array | undefined;
 
-    emission.current += delta * driveStrength * (wetSpray * 34 + dust * 24);
+    emission.current += delta * driveStrength * (wetSpray * 34 + dust * 24 + state.slip * 19);
     if (particlePositions && emission.current >= 1) {
       const count = Math.min(5, Math.floor(emission.current));
       emission.current -= count;
@@ -3959,8 +4006,8 @@ function VehicleSurfaceEffects({
         particlePositions[offset] = rearX + rightX * (side * 1.02 + scatter);
         particlePositions[offset + 1] = -.02 + Math.random() * .22;
         particlePositions[offset + 2] = rearZ + rightZ * (side * 1.02 + scatter);
-        const backwash = 1.1 + Math.random() * (dominantDust ? 2.8 : 2.1);
-        const lateral = side * (.28 + Math.random() * .72);
+        const backwash = 1.1 + Math.random() * (dominantDust ? 2.8 : 2.1) + state.slip * 1.4;
+        const lateral = side * (.28 + Math.random() * .72) + state.steer * state.slip * 1.25;
         velocities.current[offset] = -forwardX * backwash + rightX * lateral;
         velocities.current[offset + 1] = (dominantDust ? .42 : .7) + Math.random() * (dominantDust ? .72 : 1.15);
         velocities.current[offset + 2] = -forwardZ * backwash + rightZ * lateral;
@@ -3992,7 +4039,7 @@ function VehicleSurfaceEffects({
       particleMaterial.current.color.lerp(dominantDust ? dustParticleColor : wetParticleColor, 1 - Math.exp(-delta * 4));
     }
 
-    const markStrength = Math.max(state.offRoad, state.wetness * .72, state.brake ? .9 : 0);
+    const markStrength = Math.max(state.offRoad, state.wetness * .72, state.brake ? .9 : 0, state.slip * .92);
     if (state.driving && driveStrength > .08 && markStrength > .12) {
       traveled.current += distance;
       if (traveled.current > .78) {
@@ -4003,7 +4050,7 @@ function VehicleSurfaceEffects({
           mark.z = rearZ + rightZ * side * 1.02;
           mark.y = THREE.MathUtils.lerp(-.285, -.455, state.offRoad);
           mark.heading = heading.current;
-          mark.age = state.offRoad > .25 ? 11 : state.brake ? 6.5 : 8;
+          mark.age = state.offRoad > .25 ? 11 : state.brake || state.slip > .2 ? 6.5 : 8;
         }
       }
     } else if (!state.driving) {
@@ -4084,6 +4131,14 @@ function Simulation({
   const vanPosition = useRef(new THREE.Vector3(0, 0, 78));
   const vanHeading = useRef(-Math.PI / 2);
   const vanSpeed = useRef(0);
+  const vanSteer = useRef(0);
+  const vanThrottle = useRef(0);
+  const vanYawVelocity = useRef(0);
+  const vanPreviousSpeed = useRef(0);
+  const vanLongitudinalG = useRef(0);
+  const vanLateralG = useRef(0);
+  const vanTraction = useRef(1);
+  const vanSlip = useRef(0);
   const landVelocity = useRef(new THREE.Vector2());
   const playerHeading = useRef(0);
   const paddleHeading = useRef(0);
@@ -4169,7 +4224,20 @@ function Simulation({
     duckDive: 0,
     paddleHeading: 0,
   });
-  const vanMotion = useRef<VehicleMotionState>({ speed: 0, steer: 0, driving: false, brake: false, wetness: 0, offRoad: 0 });
+  const vanMotion = useRef<VehicleMotionState>({
+    speed: 0,
+    steer: 0,
+    throttle: 0,
+    driving: false,
+    brake: false,
+    wetness: 0,
+    offRoad: 0,
+    traction: 1,
+    slip: 0,
+    longitudinalG: 0,
+    lateralG: 0,
+    suspension: 0,
+  });
   const cameraTarget = useRef(new THREE.Vector3());
   const cameraLookTarget = useRef(new THREE.Vector3(0, 1, 32));
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
@@ -4272,42 +4340,103 @@ function Simulation({
         if (actionPressed && nearVan) {
           phase.current = "driving";
           vanSpeed.current = 0;
+          vanPreviousSpeed.current = 0;
+          vanThrottle.current = 0;
+          vanSteer.current = 0;
+          vanYawVelocity.current = 0;
           landVelocity.current.set(0, 0);
         }
         if (position.current.z < 8) phase.current = "wading";
       } else if (currentPhase === "driving") {
         stance.current = THREE.MathUtils.damp(stance.current, 0, 4, delta);
         stamina.current = Math.min(100, stamina.current + delta * 15);
-        const throttle = move;
-        const movingForward = vanSpeed.current > 0.4;
-        const braking = throttle < 0 && movingForward;
-        const acceleration = braking ? 17 : throttle < 0 ? 7 : 10.5;
-        if (Math.abs(throttle) > 0.01) {
-          vanSpeed.current += throttle * acceleration * delta;
+        const roadOffset = Math.abs(vanPosition.current.z - 78);
+        const offRoad = THREE.MathUtils.smoothstep(roadOffset, 3.9, 6.1);
+        const wetness = weatherWetness(weatherCode);
+        const baseTraction = THREE.MathUtils.clamp(1 - offRoad * .31 - wetness * .09, .56, 1);
+        const inputThrottle = move;
+        vanThrottle.current = THREE.MathUtils.damp(vanThrottle.current, inputThrottle, 7.8, delta);
+        vanSteer.current = THREE.MathUtils.damp(vanSteer.current, steer, 7.2, delta);
+
+        const changingDirection = (vanSpeed.current > .35 && inputThrottle < -.04)
+          || (vanSpeed.current < -.35 && inputThrottle > .04);
+        const effectiveThrottle = changingDirection ? inputThrottle : vanThrottle.current;
+        const acceleration = changingDirection ? 18.5 : effectiveThrottle < 0 ? 7.2 : 10.8;
+        if (Math.abs(inputThrottle) > 0.01) {
+          vanSpeed.current += effectiveThrottle * acceleration * (.69 + baseTraction * .31) * delta;
         } else {
-          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 1.25, delta);
+          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 1.08 + offRoad * 2.45, delta);
         }
+        const aerodynamicDrag = Math.sign(vanSpeed.current) * vanSpeed.current * vanSpeed.current * .0036 * delta;
+        vanSpeed.current -= aerodynamicDrag;
         vanSpeed.current = THREE.MathUtils.clamp(vanSpeed.current, -6.5, 18.5);
-        const steeringAuthority = THREE.MathUtils.clamp(Math.abs(vanSpeed.current) / 3.2, 0.15, 1);
-        vanHeading.current -= steer * Math.sign(vanSpeed.current || 1) * steeringAuthority * 0.72 * delta;
-        vanPosition.current.x -= Math.sin(vanHeading.current) * vanSpeed.current * delta;
-        vanPosition.current.z -= Math.cos(vanHeading.current) * vanSpeed.current * delta;
-        const roadEdge = Math.abs(vanPosition.current.z - 78);
-        if (roadEdge > 5.25) {
-          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 5.5, delta);
+
+        const speedMagnitude = Math.abs(vanSpeed.current);
+        const steeringLoad = speedMagnitude * Math.abs(vanSteer.current);
+        const wetSlip = wetness * THREE.MathUtils.smoothstep(steeringLoad, 4.6, 13.5) * .24;
+        const surfaceSlip = offRoad * THREE.MathUtils.smoothstep(steeringLoad, 3.1, 10.5) * .48;
+        const targetSlip = THREE.MathUtils.clamp(wetSlip + surfaceSlip, 0, .72);
+        vanSlip.current = THREE.MathUtils.damp(vanSlip.current, targetSlip, targetSlip > vanSlip.current ? 4.4 : 7.5, delta);
+        vanTraction.current = THREE.MathUtils.damp(
+          vanTraction.current,
+          THREE.MathUtils.clamp(baseTraction - vanSlip.current * .2, .48, 1),
+          5.4,
+          delta,
+        );
+
+        const steeringAuthority = THREE.MathUtils.clamp(speedMagnitude / 3.2, 0.1, 1);
+        const targetYawVelocity = -vanSteer.current
+          * Math.sign(vanSpeed.current || 1)
+          * steeringAuthority
+          * (.49 + vanTraction.current * .29)
+          * (1 + vanSlip.current * .22);
+        vanYawVelocity.current = THREE.MathUtils.damp(
+          vanYawVelocity.current,
+          targetYawVelocity,
+          vanTraction.current < .72 ? 3.4 : 5.8,
+          delta,
+        );
+        vanHeading.current += vanYawVelocity.current * delta;
+        const forwardX = -Math.sin(vanHeading.current);
+        const forwardZ = -Math.cos(vanHeading.current);
+        const rightX = Math.cos(vanHeading.current);
+        const rightZ = -Math.sin(vanHeading.current);
+        const lateralDrift = vanYawVelocity.current * vanSpeed.current * vanSlip.current * .2;
+        vanPosition.current.x += (forwardX * vanSpeed.current + rightX * lateralDrift) * delta;
+        vanPosition.current.z += (forwardZ * vanSpeed.current + rightZ * lateralDrift) * delta;
+
+        const nextRoadEdge = Math.abs(vanPosition.current.z - 78);
+        if (nextRoadEdge > 5.25) {
+          vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 4.7, delta);
           vanPosition.current.z = THREE.MathUtils.clamp(vanPosition.current.z, 71.8, 84.2);
         }
         if (Math.abs(vanPosition.current.x) > 116) {
           vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -116, 116);
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 8, delta);
           prompt = "Road end — steer around for another pass";
-        } else if (roadEdge > 4.3) {
-          prompt = "Ease back onto the coast road";
+        } else if (nextRoadEdge > 4.3) {
+          prompt = vanSlip.current > .25 ? "Loose shoulder — ease the wheel and find grip" : "Ease back onto the coast road";
+        } else if (vanSlip.current > .22) {
+          prompt = "Tires loading — unwind the steering to settle the van";
         } else if (Math.abs(vanSpeed.current) < 0.8) {
           prompt = mobileRenderer ? "Use the stick to drive · DRIVE to exit" : "W to drive · A/D to steer · SPACE to exit";
         } else {
           prompt = "Cruise the shoreline · stop before exiting";
         }
+        const longitudinalAcceleration = (vanSpeed.current - vanPreviousSpeed.current) / Math.max(.001, delta) / 9.81;
+        vanLongitudinalG.current = THREE.MathUtils.damp(
+          vanLongitudinalG.current,
+          THREE.MathUtils.clamp(longitudinalAcceleration, -.85, .6),
+          6.6,
+          delta,
+        );
+        vanLateralG.current = THREE.MathUtils.damp(
+          vanLateralG.current,
+          THREE.MathUtils.clamp(vanSpeed.current * vanYawVelocity.current / 9.81, -.75, .75),
+          5.8,
+          delta,
+        );
+        vanPreviousSpeed.current = vanSpeed.current;
         speed = Math.abs(vanSpeed.current);
         score.current += Math.abs(vanSpeed.current) * delta * 0.35;
         if (actionPressed) {
@@ -4871,14 +5000,35 @@ function Simulation({
     const diveEnvelope = t < duckDiveUntil.current ? Math.sin(diveProgress * Math.PI) : 0;
     motion.current.duckDive = THREE.MathUtils.damp(motion.current.duckDive, diveEnvelope, diveEnvelope > motion.current.duckDive ? 14 : 9, delta);
     motion.current.paddleHeading = paddleHeading.current;
+    const vanDriving = phase.current === "driving";
+    if (!vanDriving) {
+      vanSteer.current = THREE.MathUtils.damp(vanSteer.current, 0, 8, delta);
+      vanThrottle.current = THREE.MathUtils.damp(vanThrottle.current, 0, 8, delta);
+      vanYawVelocity.current = THREE.MathUtils.damp(vanYawVelocity.current, 0, 7, delta);
+      vanLongitudinalG.current = THREE.MathUtils.damp(vanLongitudinalG.current, 0, 7, delta);
+      vanLateralG.current = THREE.MathUtils.damp(vanLateralG.current, 0, 7, delta);
+      vanSlip.current = THREE.MathUtils.damp(vanSlip.current, 0, 7, delta);
+      vanTraction.current = THREE.MathUtils.damp(vanTraction.current, 1, 5, delta);
+      vanPreviousSpeed.current = vanSpeed.current;
+    }
+    const vanWetness = weatherWetness(weatherCode);
+    const vanOffRoad = THREE.MathUtils.smoothstep(Math.abs(vanPosition.current.z - 78), 3.9, 6.1);
+    const suspensionPrimary = Math.sin(t * (3.6 + Math.abs(vanSpeed.current) * .52) + vanPosition.current.x * .18);
+    const suspensionChatter = Math.sin(t * (8.8 + Math.abs(vanSpeed.current) * .81) + vanPosition.current.z * .43) * .34;
     van.current.position.copy(vanPosition.current);
     van.current.rotation.y = vanHeading.current;
     vanMotion.current.speed = vanSpeed.current;
-    vanMotion.current.steer = steer;
-    vanMotion.current.driving = phase.current === "driving";
-    vanMotion.current.brake = phase.current === "driving" && state.back && vanSpeed.current > 0.3;
-    vanMotion.current.wetness = weatherWetness(weatherCode);
-    vanMotion.current.offRoad = THREE.MathUtils.smoothstep(Math.abs(vanPosition.current.z - 78), 3.9, 6.1);
+    vanMotion.current.steer = vanSteer.current;
+    vanMotion.current.throttle = vanThrottle.current;
+    vanMotion.current.driving = vanDriving;
+    vanMotion.current.brake = vanDriving && ((state.back && vanSpeed.current > .3) || (state.forward && vanSpeed.current < -.3));
+    vanMotion.current.wetness = vanWetness;
+    vanMotion.current.offRoad = vanOffRoad;
+    vanMotion.current.traction = vanTraction.current;
+    vanMotion.current.slip = vanSlip.current;
+    vanMotion.current.longitudinalG = vanLongitudinalG.current;
+    vanMotion.current.lateralG = vanLateralG.current;
+    vanMotion.current.suspension = (suspensionPrimary + suspensionChatter) * (vanDriving ? 1 : .15);
 
     const riding = phase.current === "riding";
     const paddling = phase.current === "paddling";
@@ -5034,7 +5184,11 @@ function Simulation({
     cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (cameraMode === "cinematic" ? 2.45 : 4.8)));
     camera.lookAt(cameraLookTarget.current);
     const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
-    camera.rotateZ((riding ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012 : driving ? vanMotion.current.steer * -.012 : 0) * rollScale);
+    camera.rotateZ((riding
+      ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012
+      : driving
+        ? -vanMotion.current.lateralG * .034 - Math.sign(vanMotion.current.steer || 1) * vanMotion.current.slip * .012
+        : 0) * rollScale);
     if (camera instanceof THREE.PerspectiveCamera) {
       const targetFov = cameraMode === "cinematic"
         ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : 51
@@ -5101,6 +5255,13 @@ function Simulation({
         rideResult: rideResult.current,
         rideResultId: rideResultId.current,
         vehicleMode: phase.current === "driving",
+        vehicleGear: phase.current !== "driving" || (Math.abs(vanSpeed.current) < .35 && Math.abs(vanThrottle.current) < .08)
+          ? "P"
+          : vanSpeed.current < 0 || (Math.abs(vanSpeed.current) < .35 && vanThrottle.current < 0) ? "R" : "D",
+        vehicleThrottle: vanThrottle.current,
+        vehicleTraction: vanTraction.current,
+        vehicleSlip: vanSlip.current,
+        vehicleOffRoad: vanOffRoad,
         nearVan,
         inLineup,
         catchReady,

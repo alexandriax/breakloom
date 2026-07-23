@@ -1206,15 +1206,22 @@ input:focus-visible {
   transition: opacity 0.25s ease, transform 0.25s ease;
 }
 .vehicle-instrument.is-active { opacity: 1; transform: translateX(-50%) translateY(0); }
+.vehicle-instrument.is-slipping { border-color: rgba(242, 100, 78, .42); box-shadow: 0 17px 42px rgba(0, 0, 0, .28), inset 0 -2px rgba(242, 100, 78, .48); }
 .vehicle-dial { width: 58px; height: 58px; position: relative; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 50%; box-shadow: inset 0 0 18px rgba(240, 109, 80, 0.16); }
 .vehicle-dial::before { content: ""; position: absolute; inset: 4px; border: 2px solid transparent; border-top-color: var(--coral); border-right-color: var(--coral); border-radius: 50%; transform: rotate(18deg); }
 .vehicle-dial span { position: absolute; top: 4px; left: 5px; width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%; background: var(--coral); font-size: 7px; font-weight: 900; }
 .vehicle-dial strong { margin-top: -2px; font-family: Impact, sans-serif; font-size: 24px; letter-spacing: 0.04em; }
 .vehicle-dial small { position: absolute; bottom: 7px; color: var(--muted); font-size: 5px; letter-spacing: 0.09em; }
-.vehicle-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.vehicle-copy span { color: var(--coral); font-size: 6px; font-weight: 800; letter-spacing: 0.16em; }
-.vehicle-copy strong { font-size: 12px; }
-.vehicle-copy small { color: var(--muted); font-size: 7px; line-height: 1.35; }
+.vehicle-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.vehicle-copy > span { color: var(--coral); font-size: 6px; font-weight: 800; letter-spacing: 0.16em; }
+.vehicle-copy > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.vehicle-copy > small { color: var(--muted); font-size: 7px; line-height: 1.35; }
+.vehicle-grip { display: grid; grid-template-columns: minmax(72px, 1fr) auto; align-items: center; gap: 8px; }
+.vehicle-grip > i { height: 3px; overflow: hidden; border-radius: 3px; background: rgba(255, 255, 255, .12); }
+.vehicle-grip > i b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #f2644e, #e4c16e 42%, #71e1d3 76%); box-shadow: 0 0 8px rgba(113, 225, 211, .5); transition: width .1s linear; }
+.vehicle-grip > em { min-width: 46px; color: rgba(214, 255, 248, .68); font-size: 5px; font-style: normal; font-weight: 900; letter-spacing: .09em; text-align: right; }
+.vehicle-instrument.is-slipping .vehicle-grip > i b { background: #f2644e; box-shadow: 0 0 9px rgba(242, 100, 78, .78); }
+.vehicle-instrument.is-slipping .vehicle-grip > em { color: #ffad95; }
 
 .game-conditions {
   position: absolute;
@@ -1397,8 +1404,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .vehicle-instrument { width: calc(100vw - 30px); min-height: 66px; bottom: calc(200px + env(safe-area-inset-bottom)); padding: 7px 11px 7px 8px; }
   .vehicle-dial { width: 50px; height: 50px; }
   .vehicle-dial strong { font-size: 21px; }
-  .vehicle-copy strong { font-size: 10px; }
-  .vehicle-copy small { font-size: 6px; }
+  .vehicle-copy > strong { font-size: 10px; }
+  .vehicle-copy > small { display: none; }
+  .vehicle-grip > em { font-size: 4px; }
   .game-conditions { left: 10px; right: 10px; bottom: calc(122px + env(safe-area-inset-bottom)); overflow: hidden; border-radius: 3px; background: rgba(3, 13, 18, 0.68); }
   .game-conditions > div { min-width: 0; flex: 1; padding: 8px 6px; grid-template-columns: 14px 1fr; }
   .game-conditions > div:nth-child(5), .game-conditions > div:nth-child(6) { display: none; }
