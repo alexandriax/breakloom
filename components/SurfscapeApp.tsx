@@ -147,13 +147,18 @@ type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
-type DualRumbleActuator = {
-  playEffect: (type: "dual-rumble", parameters: {
+type HapticActuator = {
+  playEffect?: (type: "dual-rumble", parameters: {
     duration: number;
     startDelay: number;
     strongMagnitude: number;
     weakMagnitude: number;
   }) => Promise<unknown>;
+  pulse?: (value: number, duration: number) => Promise<unknown>;
+};
+type HapticGamepad = Gamepad & {
+  vibrationActuator?: HapticActuator;
+  hapticActuators?: HapticActuator[];
 };
 type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<"granted" | "denied">;
@@ -397,21 +402,68 @@ function normalizePassport(value: unknown): SurfPassport {
   return passport;
 }
 
+let lastDiscreteHapticAt = 0;
+let lastSurfaceHapticAt = 0;
+let lastPhoneTextureAt = 0;
+
+function hapticClock() {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
+function connectedRumbleActuator() {
+  if (typeof navigator === "undefined" || !navigator.getGamepads) return null;
+  const gamepad = Array.from(navigator.getGamepads()).find((candidate) => candidate?.connected) as HapticGamepad | undefined;
+  return gamepad?.vibrationActuator ?? gamepad?.hapticActuators?.[0] ?? null;
+}
+
 function haptic(pattern: number | number[]) {
   if (typeof navigator === "undefined") return;
+  lastDiscreteHapticAt = hapticClock();
   if (navigator.vibrate) navigator.vibrate(pattern);
   const beats = Array.isArray(pattern) ? pattern : [pattern];
   const duration = Math.min(260, Math.max(28, beats.reduce((total, beat) => total + beat, 0)));
   const intensity = Math.min(1, .22 + Math.max(...beats) / 64);
-  const gamepad = Array.from(navigator.getGamepads?.() ?? []).find((candidate) => candidate?.connected);
-  const actuator = (gamepad as (Gamepad & { vibrationActuator?: DualRumbleActuator }) | null)?.vibrationActuator;
-  if (actuator) {
+  const actuator = connectedRumbleActuator();
+  if (actuator?.playEffect) {
     void actuator.playEffect("dual-rumble", {
       duration,
       startDelay: 0,
       strongMagnitude: intensity * .72,
       weakMagnitude: intensity,
     }).catch(() => undefined);
+  } else if (actuator?.pulse) {
+    void actuator.pulse(intensity, duration).catch(() => undefined);
+  }
+}
+
+function surfaceHaptic(strongMagnitude: number, weakMagnitude: number, phoneTexture = 0) {
+  if (typeof navigator === "undefined" || typeof document === "undefined" || document.visibilityState !== "visible") return;
+  const now = hapticClock();
+  if (now - lastDiscreteHapticAt < 230 || now - lastSurfaceHapticAt < 82) return;
+  const reducedMotion = typeof window !== "undefined"
+    && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const comfortScale = reducedMotion ? .58 : 1;
+  const strong = THREEClamp(strongMagnitude * comfortScale, 0, .62);
+  const weak = THREEClamp(weakMagnitude * comfortScale, 0, .78);
+  if (strong < .025 && weak < .025) return;
+  lastSurfaceHapticAt = now;
+  const actuator = connectedRumbleActuator();
+  if (actuator?.playEffect) {
+    void actuator.playEffect("dual-rumble", {
+      duration: 96,
+      startDelay: 0,
+      strongMagnitude: strong,
+      weakMagnitude: weak,
+    }).catch(() => undefined);
+    return;
+  }
+  if (actuator?.pulse) {
+    void actuator.pulse(Math.max(strong, weak), 96).catch(() => undefined);
+    return;
+  }
+  if (navigator.vibrate && phoneTexture > .68 && now - lastPhoneTextureAt > 420) {
+    lastPhoneTextureAt = now;
+    navigator.vibrate(phoneTexture > .88 ? 5 : 3);
   }
 }
 
@@ -1789,6 +1841,41 @@ export default function SurfscapeApp() {
       !paused && !stats.vehicleMode,
     );
   }, [effectiveFaceHeight, paused, requestRideFrame, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.acceleration, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.facePosition, stats.holdDownSeconds, stats.lateralForce, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.takeoffQuality, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+
+  useEffect(() => {
+    if (
+      screen !== "game"
+      || paused
+      || photoMode
+      || replayActive
+      || stats.sessionIntro < .78
+    ) return;
+    if (stats.phase === "riding") {
+      const speed = THREEClamp((stats.speed - 5.5) / 12, 0, 1);
+      const rail = THREEClamp(Math.abs(stats.railLoad), 0, 1);
+      const slip = THREEClamp(1 - stats.railGrip, 0, 1);
+      const cornering = THREEClamp(Math.abs(stats.lateralForce), 0, 1);
+      const drive = THREEClamp(stats.acceleration, 0, 1);
+      const braking = THREEClamp(-stats.acceleration, 0, 1);
+      const faceTexture = stats.setEnergy * (.2 + stats.sectionPressure * .3);
+      surfaceHaptic(
+        speed * (rail * .27 + cornering * .23 + braking * .12 + stats.barrelIntensity * .06),
+        speed * (.035 + rail * .18 + slip * .5 + faceTexture * .12 + drive * .08),
+        Math.max(slip, rail * speed, cornering * .72) * speed,
+      );
+      return;
+    }
+    if (stats.vehicleMode) {
+      const speed = THREEClamp(stats.speed / 18.5, 0, 1);
+      const looseSurface = Math.max(stats.vehicleOffRoad, stats.vehicleSlip);
+      const engineLoad = Math.abs(stats.vehicleThrottle);
+      surfaceHaptic(
+        speed * (stats.vehicleOffRoad * .34 + stats.vehicleSlip * .44) + engineLoad * .075,
+        speed * (.045 + stats.vehicleOffRoad * .28 + stats.vehicleSlip * .46) + engineLoad * .055,
+        looseSurface * speed,
+      );
+    }
+  }, [paused, photoMode, replayActive, screen, stats.acceleration, stats.barrelIntensity, stats.lateralForce, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.speed, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
