@@ -8,7 +8,7 @@ import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.j
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { BOARD_SPECS, primaryWavePhaseAt, sessionGrade, waveHeightAt, waveSetState } from "@/lib/game";
+import { BOARD_SPECS, primaryWavePhaseAt, sessionGrade, shorelineShiftForTide, waveHeightAt, waveSetState } from "@/lib/game";
 
 export type ControlState = {
   forward: boolean;
@@ -553,6 +553,7 @@ function Ocean({
   visibility: number;
   rain: number;
 }) {
+  const ocean = useRef<THREE.Mesh>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
@@ -587,8 +588,11 @@ function Ocean({
     [character],
   );
 
-  useFrame(({ clock }) => {
+  const tideShift = shorelineShiftForTide(settings.tide);
+
+  useFrame(({ clock }, delta) => {
     if (!material.current) return;
+    if (ocean.current) ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, -157 + tideShift, 2.8, delta);
     const values = material.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
@@ -615,7 +619,7 @@ function Ocean({
   });
 
   return (
-    <mesh position={[0, -0.08, -157]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+    <mesh ref={ocean} position={[0, -0.08, -157 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[250, 330, segments, segments]} />
       <shaderMaterial
         ref={material}
@@ -728,6 +732,7 @@ function ShorelineWash({
   sunPosition: [number, number, number];
   sunColor: string;
 }) {
+  const wash = useRef<THREE.Mesh>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
@@ -738,8 +743,11 @@ function ShorelineWash({
     uSunColor: { value: new THREE.Color("#fff0ca") },
   }), []);
 
-  useFrame(({ clock }) => {
+  const tideShift = shorelineShiftForTide(settings.tide);
+
+  useFrame(({ clock }, delta) => {
     if (!material.current) return;
+    if (wash.current) wash.current.position.z = THREE.MathUtils.damp(wash.current.position.z, 20 + tideShift, 2.8, delta);
     const values = material.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uTide.value = THREE.MathUtils.lerp(values.uTide.value, settings.tide, .025);
@@ -750,7 +758,7 @@ function ShorelineWash({
   });
 
   return (
-    <mesh position={[0, -0.405, 20]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+    <mesh ref={wash} position={[0, -0.405, 20 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
       <planeGeometry args={[250, 32]} />
       <shaderMaterial
         ref={material}
@@ -3168,9 +3176,11 @@ function BoardTrack({
 function FootprintTrail({
   motion,
   targetPosition,
+  tide,
 }: {
   motion: MutableRefObject<MotionState>;
   targetPosition: MutableRefObject<THREE.Vector3>;
+  tide: number;
 }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -3224,7 +3234,9 @@ function FootprintTrail({
     const current = targetPosition.current;
     const state = motion.current;
     const stepDistance = current.distanceTo(previousPosition.current);
-    if (state.phase === "shore" && state.speed > .4 && current.z > 10 && current.z < 69) {
+    const tideShift = shorelineShiftForTide(tide);
+    const coastalZ = current.z - tideShift;
+    if (state.phase === "shore" && state.speed > .4 && coastalZ > 10 && coastalZ < 69) {
       traveled.current += stepDistance;
       if (traveled.current > .58) {
         const side = footSide.current;
@@ -3233,7 +3245,7 @@ function FootprintTrail({
         const print = prints.current[cursor.current++ % FOOTPRINT_COUNT];
         print.x = current.x + side * .17;
         print.z = current.z + (side > 0 ? .08 : -.08);
-        print.y = THREE.MathUtils.lerp(-.39, -.465, THREE.MathUtils.smoothstep(current.z, 24, 36));
+        print.y = THREE.MathUtils.lerp(-.39, -.465, THREE.MathUtils.smoothstep(coastalZ, 24, 36));
         print.age = 13;
         print.side = side;
       }
@@ -3244,7 +3256,7 @@ function FootprintTrail({
 
     prints.current.forEach((print, index) => {
       print.age = Math.max(0, print.age - delta);
-      if (print.age <= 0) {
+      if (print.age <= 0 || print.z - tideShift <= 9.7) {
         dummy.position.set(0, -100, 0);
         dummy.scale.setScalar(.001);
       } else {
@@ -4856,6 +4868,7 @@ function BeachLife({
   coastHeading,
   weatherCode,
   light,
+  tide,
   playerPosition,
 }: {
   beach: Beach;
@@ -4864,12 +4877,14 @@ function BeachLife({
   coastHeading: number;
   weatherCode: number;
   light: number;
+  tide: number;
   playerPosition: MutableRefObject<THREE.Vector3>;
 }) {
   const biome = getCoastBiome(beach.id);
   const wind = THREE.MathUtils.clamp(windSpeed / 24, 0.08, 1.4);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const quality = useRenderQuality();
+  const wetSand = useRef<THREE.Mesh>(null);
   const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
   const sandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 11), [sandTextureSource]);
   const wetSandTexture = useMemo(() => createTiledSandTexture(sandTextureSource, 22, 2), [sandTextureSource]);
@@ -4895,13 +4910,17 @@ function BeachLife({
     volcanic: ["#454744", "#252b2a"],
     desert: ["#c08c62", "#725a49"],
   }[biome];
+  const tideShift = shorelineShiftForTide(tide);
+  useFrame((_, delta) => {
+    if (wetSand.current) wetSand.current.position.z = THREE.MathUtils.damp(wetSand.current.position.z, 21 + tideShift, 2.8, delta);
+  });
   return (
     <group>
       <mesh position={[0, -0.5, 64]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[250, 125, 20, 20]} />
         <meshStandardMaterial color={surface[0]} map={sandTexture} bumpMap={sandTexture} bumpScale={0.045} roughness={0.93} metalness={0} />
       </mesh>
-      <mesh position={[0, -0.43, 21]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh ref={wetSand} position={[0, -0.43, 21 + tideShift]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[250, 18]} />
         <meshStandardMaterial color={surface[1]} map={wetSandTexture} bumpMap={wetSandTexture} bumpScale={0.025} roughness={0.76} metalness={0.04} />
       </mesh>
@@ -5303,6 +5322,7 @@ function KinematicContactShadows({
   vanHeading,
   mobile,
   daylight,
+  tide,
 }: {
   motion: MutableRefObject<MotionState>;
   playerPosition: MutableRefObject<THREE.Vector3>;
@@ -5312,6 +5332,7 @@ function KinematicContactShadows({
   vanHeading: MutableRefObject<number>;
   mobile: boolean;
   daylight: number;
+  tide: number;
 }) {
   const playerShadow = useRef<THREE.Mesh>(null);
   const playerMaterial = useRef<THREE.MeshBasicMaterial>(null);
@@ -5349,7 +5370,7 @@ function KinematicContactShadows({
       : 0;
     if (playerShadow.current) {
       const target = playerPosition.current;
-      const wetSand = target.z < 29;
+      const wetSand = target.z < 29 + shorelineShiftForTide(tide);
       playerShadow.current.position.set(target.x, wetSand ? -.392 : -.482, target.z + .08);
       playerShadow.current.rotation.set(-Math.PI / 2, 0, -playerHeading.current);
       playerShadow.current.scale.x = THREE.MathUtils.damp(playerShadow.current.scale.x, .92 + state.run * .18, 9, delta);
@@ -5541,6 +5562,7 @@ function Simulation({
       : THREE.MathUtils.smootherstep(t, .12, 3.25);
     const state = controls.current;
     const currentPhase = phase.current;
+    const tideShift = shorelineShiftForTide(settings.tide);
     const steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
     const move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY + state.gamepadMoveY, -1, 1);
     const balanceInput = state.gamepadActive ? state.gamepadBalance : state.balance;
@@ -5608,7 +5630,8 @@ function Simulation({
       if (currentPhase === "shore") {
         stance.current = THREE.MathUtils.damp(stance.current, 0, 4, delta);
         stamina.current = Math.min(100, stamina.current + delta * 12);
-        const drySand = THREE.MathUtils.smoothstep(position.current.z, 22, 46) * (1 - THREE.MathUtils.smoothstep(position.current.z, 65, 74));
+        const coastalZ = position.current.z - tideShift;
+        const drySand = THREE.MathUtils.smoothstep(coastalZ, 22, 46) * (1 - THREE.MathUtils.smoothstep(coastalZ, 65, 74));
         const surfacePace = 1 - drySand * .12;
         const targetSpeed = (wantsRun ? 6.45 : 3.75) * surfacePace;
         const acceleration = inputLength > .001 ? (wantsRun ? 6.4 : 8.8) : 11.5;
@@ -5616,7 +5639,7 @@ function Simulation({
         landVelocity.current.y = THREE.MathUtils.damp(landVelocity.current.y, movementZ * targetSpeed, acceleration, delta);
         position.current.x += landVelocity.current.x * delta;
         position.current.z += landVelocity.current.y * delta;
-        position.current.z = THREE.MathUtils.clamp(position.current.z, 7.6, 88);
+        position.current.z = THREE.MathUtils.clamp(position.current.z, 7.6 + tideShift, 88);
         speed = landVelocity.current.length();
         runBlend = wantsRun ? THREE.MathUtils.smoothstep(speed, 3.6, 6) : 0;
         if (speed > .16) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), wantsRun ? 10 : 13, delta);
@@ -5636,7 +5659,7 @@ function Simulation({
           vanYawVelocity.current = 0;
           landVelocity.current.set(0, 0);
         }
-        if (position.current.z < 8) phase.current = "wading";
+        if (position.current.z < 8 + tideShift) phase.current = "wading";
       } else if (currentPhase === "driving") {
         stance.current = THREE.MathUtils.damp(stance.current, 0, 4, delta);
         stamina.current = Math.min(100, stamina.current + delta * 15);
@@ -5755,8 +5778,8 @@ function Simulation({
         speed = landVelocity.current.length();
         if (speed > .12) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), 9, delta);
         prompt = "Keep moving — your board will float soon";
-        if (position.current.z > 10) phase.current = "shore";
-        if (position.current.z < 1) {
+        if (position.current.z > 10 + tideShift) phase.current = "shore";
+        if (position.current.z < 1 + tideShift) {
           phase.current = "paddling";
           paddleHeading.current = playerHeading.current;
           paddleVelocity.current.copy(landVelocity.current).multiplyScalar(.55);
@@ -5790,11 +5813,12 @@ function Simulation({
         paddleVelocity.current.y = THREE.MathUtils.damp(paddleVelocity.current.y, targetPaddleZ, paddleResponse, delta);
         position.current.x += paddleVelocity.current.x * delta;
         position.current.z += paddleVelocity.current.y * delta;
-        position.current.z = Math.max(OUTER_PADDLE_LIMIT_Z, position.current.z);
+        position.current.z = Math.max(OUTER_PADDLE_LIMIT_Z + tideShift, position.current.z);
         speed = paddleVelocity.current.length();
-        inLineup = position.current.z < LINEUP_ENTRY_Z;
+        const coastalZ = position.current.z - tideShift;
+        inLineup = coastalZ < LINEUP_ENTRY_Z;
         if (nextShorebreakAt.current <= 0) nextShorebreakAt.current = t + 2.55;
-        const breakZone = THREE.MathUtils.smoothstep(position.current.z, -18, -8) * (1 - THREE.MathUtils.smoothstep(position.current.z, -3, 1));
+        const breakZone = THREE.MathUtils.smoothstep(coastalZ, -18, -8) * (1 - THREE.MathUtils.smoothstep(coastalZ, -3, 1));
         shorebreakPower = !inLineup
           ? THREE.MathUtils.clamp(
               breakZone * (.34 + setState.energy * .66) * (.52 + settings.waveHeight * .22) * (.86 + character.power * .14),
@@ -5844,7 +5868,7 @@ function Simulation({
         const takeoffPhase = primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character);
         const crestAlignment = THREE.MathUtils.smoothstep(Math.sin(takeoffPhase), -.08, .96);
         const staminaTiming = .82 + stamina.current * .0018;
-        const deepWaterAssist = settings.mode === "training" && position.current.z < -34 ? .08 : 0;
+        const deepWaterAssist = settings.mode === "training" && coastalZ < -34 ? .08 : 0;
         const touchTimingAssist = mobileRenderer ? .045 : 0;
         takeoffQuality = inLineup
           ? THREE.MathUtils.clamp(
@@ -5913,7 +5937,7 @@ function Simulation({
             catchReady = false;
           }
         }
-        if (position.current.z > 1) {
+        if (position.current.z > 1 + tideShift) {
           phase.current = "wading";
           playerHeading.current = paddleHeading.current;
           landVelocity.current.copy(paddleVelocity.current).multiplyScalar(.45);
@@ -6193,7 +6217,7 @@ function Simulation({
         } else if (
           !finishing
           && !activeManeuver.current
-          && (position.current.z > 11 + (character.length - 1) * 11 || rideDistance.current > 82 + character.length * 24)
+          && (position.current.z - tideShift > 11 + (character.length - 1) * 11 || rideDistance.current > 82 + character.length * 24)
         ) {
           score.current += 750 + rideDistance.current * 11;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
@@ -6212,7 +6236,7 @@ function Simulation({
           prompt = finishElapsed < .55 ? "Hold the exit — clean line" : "Line complete — returning to shore";
           if (finishElapsed > 1.08) {
             phase.current = "shore";
-            position.current.z = 17;
+            position.current.z = 17 + tideShift;
             landVelocity.current.set(0, 0);
             playerHeading.current = 0;
             finishAt.current = -1;
@@ -6225,7 +6249,7 @@ function Simulation({
         motion.current.wipeout = Math.min(1.8, t - wipeoutAt.current);
         if (t - wipeoutAt.current > 2.25) {
           phase.current = "paddling";
-          position.current.z = -22;
+          position.current.z = -22 + tideShift;
           paddleHeading.current = 0;
           paddleVelocity.current.set(0, 0);
           unstableFor.current = 0;
@@ -6273,7 +6297,7 @@ function Simulation({
     const waterDepthTarget = phase.current === "shore" || phase.current === "driving"
       ? 0
       : phase.current === "wading"
-        ? 1 - THREE.MathUtils.smoothstep(position.current.z, .72, 8)
+        ? 1 - THREE.MathUtils.smoothstep(position.current.z, .72 + tideShift, 8 + tideShift)
         : 1;
     motion.current.waterDepth = THREE.MathUtils.damp(
       motion.current.waterDepth,
@@ -6777,10 +6801,11 @@ function Simulation({
         coastHeading={settings.coastHeading}
         weatherCode={weatherCode}
         light={light}
+        tide={settings.tide}
         playerPosition={position}
       />
       <ShorelineWash settings={settings} light={light} sunPosition={oceanSunPosition} sunColor={sunLightColor} />
-      <FootprintTrail motion={motion} targetPosition={position} />
+      <FootprintTrail motion={motion} targetPosition={position} tide={settings.tide} />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <KinematicContactShadows
@@ -6792,6 +6817,7 @@ function Simulation({
         vanHeading={vanHeading}
         mobile={mobileRenderer}
         daylight={daylightStrength * directLight}
+        tide={settings.tide}
       />
       <group ref={player}>
         <PaddleOutShorebreak motion={motion} settings={settings} light={light} mobile={mobileRenderer} />

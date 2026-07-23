@@ -80,6 +80,12 @@ export type SessionSettings = {
   weatherCode: number;
 };
 
+const TIDE_SHORELINE_TRAVEL = 3;
+
+export function shorelineShiftForTide(tide: number) {
+  return Math.max(-1.5, Math.min(1.8, tide)) * TIDE_SHORELINE_TRAVEL;
+}
+
 export type GameStats = {
   phase: GamePhase;
   sessionIntro: number;
@@ -266,13 +272,14 @@ export function waveHeightAt(
   const speed = (Math.PI * 2) / period;
   const setEnergy = waveSetState(elapsed, period).energy;
   const setLift = 0.78 + setEnergy * 0.34;
+  const coastalZ = z - shorelineShiftForTide(settings.tide);
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
-  const breakZ = z + x * peel * .16 + section;
+  const breakZ = coastalZ + x * peel * .16 + section;
   const shoreBoost = 0.72 + Math.max(0, Math.min(1, (breakZ + 90) / 98)) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-  const waveAlong = x * Math.sin(relativeWaveAngle) + z * Math.max(.35, Math.cos(relativeWaveAngle));
-  const waveCross = x * Math.cos(relativeWaveAngle) - z * Math.sin(relativeWaveAngle);
+  const waveAlong = x * Math.sin(relativeWaveAngle) + coastalZ * Math.max(.35, Math.cos(relativeWaveAngle));
+  const waveCross = x * Math.cos(relativeWaveAngle) - coastalZ * Math.sin(relativeWaveAngle);
   const p2 = waveAlong * 0.31 - waveCross * 0.05 - elapsed * speed * 7.1 + 1.7;
   const p3 = waveAlong * 0.09 + waveCross * 0.13 - elapsed * speed * 2.7;
   return (
@@ -300,8 +307,9 @@ export function primaryWavePhaseAt(
   const variability = character?.variability ?? .4;
   const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
+  const coastalZ = z - shorelineShiftForTide(settings.tide);
   const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
-  const breakZ = z + x * peel * .16 + section;
+  const breakZ = coastalZ + x * peel * .16 + section;
   const shoaling = smoothstep(-32, 9, breakZ);
   const shallowScale = .82 + (.69 - .82) * steepness;
   const compression = 1 + (shallowScale - 1) * shoaling;
