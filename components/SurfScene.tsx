@@ -6023,6 +6023,63 @@ type VisitorPalette = {
   hair: string;
 };
 
+type CoastChunkLayout = {
+  worldIndex: number;
+  dunes: Array<{ x: number; z: number; s: number; height: number }>;
+  umbrella: { position: [number, number, number]; rotation: number; scale: number } | null;
+  station: { position: [number, number, number]; rotation: number } | null;
+  activitySeed: number;
+  backdropOffset: number;
+  backdropScale: number;
+};
+
+const VISITOR_PALETTES: VisitorPalette[] = [
+  { skin: "#9a5c3b", shirt: "#d55c48", shorts: "#203842", hair: "#21150f" },
+  { skin: "#c98d69", shirt: "#e2c15b", shorts: "#374b5d", hair: "#5b3828" },
+  { skin: "#6e3e2e", shirt: "#244c5f", shorts: "#ddd4bf", hair: "#17110f" },
+  { skin: "#d2a07a", shirt: "#e87861", shorts: "#36585d", hair: "#7a4d2d" },
+  { skin: "#80513c", shirt: "#4ca195", shorts: "#e3c891", hair: "#2a1c17" },
+  { skin: "#e1b18b", shirt: "#526d9b", shorts: "#b95f48", hair: "#9c724f" },
+];
+
+function stringSeed(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createCoastChunkLayout(worldIndex: number, beachId: string): CoastChunkLayout {
+  const beachSeed = stringSeed(beachId) % 10_000;
+  const sample = (channel: number) => seededRandom(worldIndex * 47 + channel, beachSeed + channel * 19);
+  const dunes = Array.from({ length: 22 }, (_, index) => ({
+    x: -108 + seededRandom(index + worldIndex * 71, beachSeed + 101) * 216,
+    z: 89 + seededRandom(index + worldIndex * 73, beachSeed + 102) * 34,
+    s: 2.7 + seededRandom(index + worldIndex * 79, beachSeed + 103) * 4.4,
+    height: .72 + seededRandom(index + worldIndex * 83, beachSeed + 104) * .72,
+  }));
+  const umbrellaPresent = worldIndex === 0 || sample(1) > .3;
+  const stationPresent = worldIndex === 0 || sample(2) > .72;
+  return {
+    worldIndex,
+    dunes,
+    umbrella: umbrellaPresent ? {
+      position: [-70 + sample(3) * 140, 0, 44 + sample(4) * 13],
+      rotation: (sample(5) - .5) * .32,
+      scale: .88 + sample(6) * .2,
+    } : null,
+    station: stationPresent ? {
+      position: [-76 + sample(7) * 152, 0, 59 + sample(8) * 8],
+      rotation: (sample(9) - .5) * .12,
+    } : null,
+    activitySeed: beachSeed + worldIndex * 137,
+    backdropOffset: (sample(10) - .5) * 22,
+    backdropScale: .94 + sample(11) * .12,
+  };
+}
+
 function prepareVisitorScene(source: THREE.Group, palette: VisitorPalette, photographing: boolean) {
   const model = cloneSkeleton(source) as THREE.Group;
   const paletteColors = {
@@ -6078,6 +6135,7 @@ function BeachVisitor({
   palette,
   phase,
   observerPosition,
+  worldOffsetX,
   scale = 1,
 }: {
   position: [number, number, number];
@@ -6086,6 +6144,7 @@ function BeachVisitor({
   palette: VisitorPalette;
   phase: number;
   observerPosition: MutableRefObject<THREE.Vector3>;
+  worldOffsetX: number;
   scale?: number;
 }) {
   const { scene } = useGLTF(VISITOR_MODEL_URL);
@@ -6144,7 +6203,7 @@ function BeachVisitor({
       joint.rotation.z = dampAngle(joint.rotation.z, (rest?.z ?? 0) + z, responsiveness, delta);
     };
 
-    const currentX = root.current?.position.x ?? baseX;
+    const currentX = (root.current?.position.x ?? baseX) + worldOffsetX;
     const dx = observerPosition.current.x - currentX;
     const dz = observerPosition.current.z - position[2];
     const glanceDistance = Math.hypot(dx, dz);
@@ -6200,9 +6259,19 @@ function LifeguardFlag({ wind }: { wind: number }) {
   );
 }
 
-function LifeguardStation({ wind, light }: { wind: number; light: number }) {
+function LifeguardStation({
+  wind,
+  light,
+  position,
+  rotation,
+}: {
+  wind: number;
+  light: number;
+  position: [number, number, number];
+  rotation: number;
+}) {
   return (
-    <group position={[13, 0, 61]}>
+    <group position={position} rotation={[0, rotation, 0]}>
       {[[-2, -1.35], [2, -1.35], [-2, 1.35], [2, 1.35]].map(([x, z]) => (
         <mesh key={`${x}-${z}`} position={[x, 1.25, z]} castShadow>
           <cylinderGeometry args={[.105, .14, 2.5, 10]} />
@@ -6261,34 +6330,77 @@ function LifeguardStation({ wind, light }: { wind: number; light: number }) {
   );
 }
 
-function BeachActivity({ mobile, weatherCode, observerPosition }: { mobile: boolean; weatherCode: number; observerPosition: MutableRefObject<THREE.Vector3> }) {
+function BeachActivity({
+  mobile,
+  weatherCode,
+  observerPosition,
+  seed,
+  worldOffsetX,
+}: {
+  mobile: boolean;
+  weatherCode: number;
+  observerPosition: MutableRefObject<THREE.Vector3>;
+  seed: number;
+  worldOffsetX: number;
+}) {
   const quality = useRenderQuality();
   const weather = weatherProfile(weatherCode);
   const sheltered = weather.storm || weather.kind !== "none" || weather.fog;
-  const visitors = useMemo(() => [
-    { position: [-18, -.47, 43] as [number, number, number], rotation: Math.PI, activity: "walk" as const, phase: .3, palette: { skin: "#9a5c3b", shirt: "#d55c48", shorts: "#203842", hair: "#21150f" } },
-    { position: [27, -.47, 46] as [number, number, number], rotation: Math.PI, activity: "photo" as const, phase: 2.1, palette: { skin: "#c98d69", shirt: "#e2c15b", shorts: "#374b5d", hair: "#5b3828" } },
-    { position: [-34, -.47, 56] as [number, number, number], rotation: Math.PI * .84, activity: "watch" as const, phase: 4.2, palette: { skin: "#6e3e2e", shirt: "#244c5f", shorts: "#ddd4bf", hair: "#17110f" } },
-    { position: [7, -.47, 51] as [number, number, number], rotation: Math.PI * 1.08, activity: "relax" as const, phase: 6.4, palette: { skin: "#d2a07a", shirt: "#e87861", shorts: "#36585d", hair: "#7a4d2d" } },
-  ], []);
+  const visitors = useMemo(() => {
+    const activities: VisitorActivity[] = ["walk", "photo", "watch", "relax"];
+    return Array.from({ length: 4 }, (_, index) => {
+      const random = (channel: number) => seededRandom(seed + index * 17 + channel, 341 + channel);
+      return {
+        position: [
+          -82 + random(1) * 164,
+          -.47,
+          41 + random(2) * 18,
+        ] as [number, number, number],
+        rotation: Math.PI * (.8 + random(3) * .4),
+        activity: activities[(index + Math.floor(random(4) * activities.length)) % activities.length],
+        phase: random(5) * 8,
+        palette: VISITOR_PALETTES[Math.floor(random(6) * VISITOR_PALETTES.length)],
+      };
+    });
+  }, [seed]);
   const visitorCount = mobile
     ? quality === "reduced" ? 1 : quality === "high" ? 3 : 2
     : quality === "reduced" ? 2 : visitors.length;
   const visibleVisitors = sheltered ? [] : visitors.slice(0, visitorCount);
+  const towelPosition = useMemo(() => [
+    -66 + seededRandom(seed, 401) * 132,
+    -.47,
+    47 + seededRandom(seed, 402) * 10,
+  ] as [number, number, number], [seed]);
+  const coolerPosition = useMemo(() => [
+    -76 + seededRandom(seed, 403) * 152,
+    0,
+    49 + seededRandom(seed, 404) * 12,
+  ] as [number, number, number], [seed]);
   return (
     <group>
-      {visibleVisitors.map((visitor, index) => <BeachVisitor key={index} {...visitor} observerPosition={observerPosition} scale={index === 1 ? .94 : 1} />)}
+      {visibleVisitors.map((visitor, index) => (
+        <BeachVisitor
+          key={index}
+          {...visitor}
+          observerPosition={observerPosition}
+          worldOffsetX={worldOffsetX}
+          scale={index === 1 ? .94 : 1}
+        />
+      ))}
       {!sheltered && (
-        <group position={[7, -.47, 51]} rotation={[-Math.PI / 2, 0, -.18]}>
+        <group position={towelPosition} rotation={[-Math.PI / 2, 0, (seededRandom(seed, 405) - .5) * .6]}>
           <mesh receiveShadow><planeGeometry args={[2.4, 1.15]} /><meshStandardMaterial color="#e8b852" roughness={.92} /></mesh>
           {[-.66, 0, .66].map((x) => <mesh key={x} position={[x, 0, .006]}><planeGeometry args={[.12, 1.15]} /><meshBasicMaterial color="#f4e3b5" /></mesh>)}
         </group>
       )}
-      <group position={[-29, 0, 53]}>
-        <mesh position={[0, .28, 0]} castShadow><boxGeometry args={[.65, .5, .48]} /><meshStandardMaterial color="#e8ded0" roughness={.62} /></mesh>
-        <mesh position={[0, .56, 0]} castShadow><boxGeometry args={[.69, .1, .52]} /><meshStandardMaterial color="#da6249" roughness={.55} /></mesh>
-        <mesh position={[0, .3, -.25]}><boxGeometry args={[.24, .16, .04]} /><meshStandardMaterial color="#a8d8d3" metalness={.18} roughness={.28} /></mesh>
-      </group>
+      {!sheltered && (
+        <group position={coolerPosition}>
+          <mesh position={[0, .28, 0]} castShadow><boxGeometry args={[.65, .5, .48]} /><meshStandardMaterial color="#e8ded0" roughness={.62} /></mesh>
+          <mesh position={[0, .56, 0]} castShadow><boxGeometry args={[.69, .1, .52]} /><meshStandardMaterial color="#da6249" roughness={.55} /></mesh>
+          <mesh position={[0, .3, -.25]}><boxGeometry args={[.24, .16, .04]} /><meshStandardMaterial color="#a8d8d3" metalness={.18} roughness={.28} /></mesh>
+        </group>
+      )}
     </group>
   );
 }
@@ -6340,12 +6452,18 @@ function BeachUmbrella({
   coastHeading,
   weatherCode,
   mobile,
+  position,
+  rotation,
+  scale,
 }: {
   wind: number;
   windDirection: number;
   coastHeading: number;
   weatherCode: number;
   mobile: boolean;
+  position: [number, number, number];
+  rotation: number;
+  scale: number;
 }) {
   const canopy = useRef<THREE.Group>(null);
   const fabric = useRef<THREE.Mesh>(null);
@@ -6398,7 +6516,7 @@ function BeachUmbrella({
   });
 
   return (
-    <group position={[-10, 0, 50]}>
+    <group position={position} rotation={[0, rotation, 0]} scale={scale}>
       <mesh position={[0, 2.05, 0]} castShadow>
         <cylinderGeometry args={[.13, .19, 4.1, 12]} />
         <meshStandardMaterial color="#e6d9bd" roughness={.72} />
@@ -6571,7 +6689,9 @@ function BeachLife({
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const quality = useRenderQuality();
   const wetSand = useRef<THREE.Mesh>(null);
-  const coastChunkGroups = useRef<Array<THREE.Group | null>>([]);
+  const initialChunkIndex = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN);
+  const [coastChunkIndex, setCoastChunkIndex] = useState(initialChunkIndex);
+  const coastChunkIndexRef = useRef(initialChunkIndex);
   const sandTextureSource = useTexture(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/sand-premium.webp`);
   const sandTexture = useMemo(
     () => createTiledSandTexture(sandTextureSource, Math.round(COAST_GEOMETRY_WIDTH / 250 * 22), 11),
@@ -6581,14 +6701,9 @@ function BeachLife({
     () => createTiledSandTexture(sandTextureSource, Math.round(COAST_GEOMETRY_WIDTH / 250 * 22), 2),
     [sandTextureSource],
   );
-  const dunes = useMemo(
-    () =>
-      Array.from({ length: 22 }, (_, index) => ({
-        x: -75 + ((index * 29) % 150),
-        z: 68 + ((index * 13) % 54),
-        s: 3.2 + ((index * 7) % 8) * 0.42,
-      })),
-    [],
+  const coastChunks = useMemo(
+    () => COAST_CHUNK_SLOTS.map((slot) => createCoastChunkLayout(coastChunkIndex + slot, beach.id)),
+    [beach.id, coastChunkIndex],
   );
   useEffect(() => () => {
     sandTexture.dispose();
@@ -6606,11 +6721,11 @@ function BeachLife({
   const tideShift = shorelineShiftForTide(tide);
   useFrame((_, delta) => {
     if (wetSand.current) wetSand.current.position.z = THREE.MathUtils.damp(wetSand.current.position.z, 21 + tideShift, 2.8, delta);
-    const coastCenter = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN) * COAST_CHUNK_SPAN;
-    coastChunkGroups.current.forEach((chunk, index) => {
-      if (!chunk) return;
-      chunk.position.x = coastCenter + COAST_CHUNK_SLOTS[index] * COAST_CHUNK_SPAN;
-    });
+    const nextChunkIndex = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN);
+    if (nextChunkIndex !== coastChunkIndexRef.current) {
+      coastChunkIndexRef.current = nextChunkIndex;
+      setCoastChunkIndex(nextChunkIndex);
+    }
   });
   return (
     <group>
@@ -6665,40 +6780,56 @@ function BeachLife({
           </mesh>
         </group>
       </group>
-      {COAST_CHUNK_SLOTS.map((slot, chunkIndex) => (
+      {coastChunks.map((chunk) => (
         <group
-          key={slot}
-          ref={(node) => {
-            coastChunkGroups.current[chunkIndex] = node;
-          }}
-          position={[slot * COAST_CHUNK_SPAN, 0, 0]}
+          key={chunk.worldIndex}
+          position={[chunk.worldIndex * COAST_CHUNK_SPAN, 0, 0]}
         >
-          {biome !== "urban" && biome !== "rugged" && dunes
-            .filter((dune) => dune.z > 88)
+          {biome !== "urban" && biome !== "rugged" && chunk.dunes
             .slice(0, mobileRenderer ? quality === "reduced" ? 8 : quality === "high" ? 17 : 13 : quality === "reduced" ? 13 : 22)
             .map((dune, index) => (
-            <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, 0.8 + (index % 3) * 0.28, dune.s * 0.72]} receiveShadow>
+            <mesh key={index} position={[dune.x, -0.4, dune.z]} scale={[dune.s, dune.height, dune.s * (.62 + seededRandom(index, chunk.activitySeed) * .2)]} receiveShadow>
               <sphereGeometry args={[1, 12, 8]} />
               <meshStandardMaterial color={biome === "volcanic" ? index % 2 ? "#373a36" : "#484a43" : index % 2 ? "#a9875f" : "#c19d6b"} roughness={1} />
             </mesh>
           ))}
-          <BeachUmbrella
-            wind={wind}
-            windDirection={windDirection}
-            coastHeading={coastHeading}
+          {chunk.umbrella && (
+            <BeachUmbrella
+              wind={wind}
+              windDirection={windDirection}
+              coastHeading={coastHeading}
+              weatherCode={weatherCode}
+              mobile={mobileRenderer}
+              position={chunk.umbrella.position}
+              rotation={chunk.umbrella.rotation}
+              scale={chunk.umbrella.scale}
+            />
+          )}
+          {chunk.station && (
+            <LifeguardStation
+              wind={wind}
+              light={light}
+              position={chunk.station.position}
+              rotation={chunk.station.rotation}
+            />
+          )}
+          <BeachActivity
+            mobile={mobileRenderer}
             weatherCode={weatherCode}
-            mobile={mobileRenderer}
+            observerPosition={playerPosition}
+            seed={chunk.activitySeed}
+            worldOffsetX={chunk.worldIndex * COAST_CHUNK_SPAN}
           />
-          <LifeguardStation wind={wind} light={light} />
-          <BeachActivity mobile={mobileRenderer} weatherCode={weatherCode} observerPosition={playerPosition} />
-          <CoastBackdrop
-            biome={biome}
-            wind={wind}
-            windDirection={windDirection}
-            coastHeading={coastHeading}
-            light={light}
-            mobile={mobileRenderer}
-          />
+          <group position={[chunk.backdropOffset, 0, 0]} scale={[chunk.backdropScale, 1, 1]}>
+            <CoastBackdrop
+              biome={biome}
+              wind={wind}
+              windDirection={windDirection}
+              coastHeading={coastHeading}
+              light={light}
+              mobile={mobileRenderer}
+            />
+          </group>
         </group>
       ))}
       <CoastWayfinding beach={beach} zoneName={zoneName} light={light} />
