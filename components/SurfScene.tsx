@@ -2562,7 +2562,7 @@ function WaveReadingGuide({
   );
 }
 
-const FOOTPRINT_COUNT = 28;
+const FOOTPRINT_COUNT = 36;
 const CARVE_TRACK_COUNT = 64;
 const IMPACT_RING_COUNT = 10;
 
@@ -3340,115 +3340,315 @@ function BoardTrack({
 function FootprintTrail({
   motion,
   targetPosition,
+  playerHeading,
   tide,
+  sandColor,
 }: {
   motion: MutableRefObject<MotionState>;
   targetPosition: MutableRefObject<THREE.Vector3>;
+  playerHeading: MutableRefObject<number>;
   tide: number;
+  sandColor: string;
 }) {
-  const mesh = useRef<THREE.InstancedMesh>(null);
+  const quality = useRenderQuality();
+  const mobile = useMemo(() => isMobileRenderer(), []);
+  const footprintCount = mobile
+    ? quality === "reduced" ? 14 : quality === "high" ? 24 : 19
+    : quality === "reduced" ? 22 : quality === "balanced" ? 29 : FOOTPRINT_COUNT;
+  const grainCount = mobile
+    ? quality === "reduced" ? 10 : quality === "high" ? 22 : 16
+    : quality === "reduced" ? 18 : quality === "balanced" ? 28 : 38;
+  const depressionMesh = useRef<THREE.InstancedMesh>(null);
+  const rimMesh = useRef<THREE.InstancedMesh>(null);
+  const grains = useRef<THREE.Points>(null);
+  const grainMaterial = useRef<THREE.PointsMaterial>(null);
   const dummy = useMemo(() => new THREE.Object3D(), []);
+  const rimDummy = useMemo(() => new THREE.Object3D(), []);
   const previousPosition = useRef(new THREE.Vector3());
   const traveled = useRef(0);
   const cursor = useRef(0);
   const footSide = useRef(-1);
-  const prints = useRef(Array.from({ length: FOOTPRINT_COUNT }, () => ({ x: 0, y: -100, z: 0, age: 0, side: 1 })));
-  const footprintTexture = useMemo(() => {
+  const prints = useRef(Array.from({ length: FOOTPRINT_COUNT }, () => ({
+    x: 0,
+    y: -100,
+    z: 0,
+    age: 0,
+    maxAge: 1,
+    side: 1,
+    heading: 0,
+    moisture: 0,
+    strength: 0,
+  })));
+  const footprintTextures = useMemo(() => {
+    const createCanvas = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 96;
+      canvas.height = 192;
+      return canvas;
+    };
+    const drawFoot = (context: CanvasRenderingContext2D, stroke: boolean) => {
+      context.clearRect(0, 0, 96, 192);
+      context.fillStyle = "rgba(255,255,255,.92)";
+      context.strokeStyle = "rgba(255,255,255,.78)";
+      context.lineWidth = 5;
+      const shape = (x: number, y: number, rx: number, ry: number, rotation: number) => {
+        context.beginPath();
+        context.ellipse(x, y, rx, ry, rotation, 0, Math.PI * 2);
+        if (stroke) context.stroke();
+        else context.fill();
+      };
+      shape(48, 128, 20, 42, -.05);
+      shape(49, 58, 26, 34, .04);
+      [22, 35, 48, 61, 73].forEach((x, index) => {
+        shape(x, 19 + Math.abs(index - 2) * 3, 6.3 - Math.abs(index - 2) * .42, 8.7 - Math.abs(index - 2) * .68, 0);
+      });
+    };
+    const depressionCanvas = createCanvas();
+    const depressionContext = depressionCanvas.getContext("2d");
+    if (depressionContext) drawFoot(depressionContext, false);
+    const rimCanvas = createCanvas();
+    const rimContext = rimCanvas.getContext("2d");
+    if (rimContext) drawFoot(rimContext, true);
+    const depression = new THREE.CanvasTexture(depressionCanvas);
+    const rim = new THREE.CanvasTexture(rimCanvas);
+    depression.colorSpace = THREE.SRGBColorSpace;
+    rim.colorSpace = THREE.SRGBColorSpace;
+    return { depression, rim };
+  }, []);
+  const grainTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
-    canvas.width = 96;
-    canvas.height = 192;
+    canvas.width = 48;
+    canvas.height = 48;
     const context = canvas.getContext("2d");
     if (context) {
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = "rgba(255,255,255,.9)";
-      context.beginPath();
-      context.ellipse(48, 128, 21, 43, -.05, 0, Math.PI * 2);
-      context.fill();
-      context.beginPath();
-      context.ellipse(49, 56, 27, 36, .04, 0, Math.PI * 2);
-      context.fill();
-      [22, 35, 48, 61, 73].forEach((x, index) => {
-        context.beginPath();
-        context.ellipse(x, 19 + Math.abs(index - 2) * 3, 6.5 - Math.abs(index - 2) * .45, 9 - Math.abs(index - 2) * .7, 0, 0, Math.PI * 2);
-        context.fill();
-      });
+      const gradient = context.createRadialGradient(24, 24, 2, 24, 24, 22);
+      gradient.addColorStop(0, "rgba(255,255,255,.96)");
+      gradient.addColorStop(.34, "rgba(255,255,255,.72)");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 48, 48);
     }
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }, []);
+  const grainPositions = useMemo(() => {
+    const values = new Float32Array(grainCount * 3);
+    for (let index = 0; index < grainCount; index += 1) values[index * 3 + 1] = -100;
+    return values;
+  }, [grainCount]);
+  const grainVelocities = useRef(new Float32Array(grainCount * 3));
+  const grainLife = useRef(new Float32Array(grainCount));
+  const grainCursor = useRef(0);
+  const sandBase = useMemo(() => new THREE.Color(sandColor), [sandColor]);
+  const wetDepression = useMemo(() => new THREE.Color(sandColor).multiplyScalar(.34), [sandColor]);
+  const dryDepression = useMemo(() => new THREE.Color(sandColor).multiplyScalar(.52), [sandColor]);
+  const wetRim = useMemo(() => new THREE.Color(sandColor).lerp(new THREE.Color("#c6ece2"), .28), [sandColor]);
+  const dryRim = useMemo(() => new THREE.Color(sandColor).lerp(new THREE.Color("#fff0ca"), .22), [sandColor]);
+  const grainColor = useMemo(() => new THREE.Color(sandColor).lerp(new THREE.Color("#fff1cf"), .3), [sandColor]);
+  const depressionColor = useMemo(() => new THREE.Color(), []);
+  const rimColor = useMemo(() => new THREE.Color(), []);
 
   useEffect(() => {
     const current = targetPosition.current;
     previousPosition.current.copy(current);
-    if (mesh.current) {
-      prints.current.forEach((print, index) => {
+    [depressionMesh.current, rimMesh.current].forEach((mesh) => {
+      if (!mesh) return;
+      for (let index = 0; index < mesh.count; index += 1) {
         dummy.position.set(0, -100, 0);
+        dummy.scale.setScalar(.001);
         dummy.updateMatrix();
-        mesh.current?.setMatrixAt(index, dummy.matrix);
-        print.age = 0;
-      });
-      mesh.current.instanceMatrix.needsUpdate = true;
-    }
-    return () => footprintTexture.dispose();
-  }, [dummy, footprintTexture, targetPosition]);
+        mesh.setMatrixAt(index, dummy.matrix);
+        mesh.setColorAt(index, sandBase);
+      }
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    });
+    prints.current.forEach((print) => { print.age = 0; });
+  }, [dummy, footprintCount, sandBase, targetPosition]);
+
+  useEffect(() => {
+    grainVelocities.current = new Float32Array(grainCount * 3);
+    grainLife.current = new Float32Array(grainCount);
+    grainCursor.current = 0;
+  }, [grainCount]);
+
+  useEffect(() => () => {
+    footprintTextures.depression.dispose();
+    footprintTextures.rim.dispose();
+    grainTexture.dispose();
+  }, [footprintTextures, grainTexture]);
 
   useFrame((_, delta) => {
-    if (!mesh.current) return;
+    if (!depressionMesh.current || !rimMesh.current) return;
     const current = targetPosition.current;
     const state = motion.current;
     const stepDistance = current.distanceTo(previousPosition.current);
     const tideShift = shorelineShiftForTide(tide);
     const coastalZ = current.z - tideShift;
-    if (state.phase === "shore" && state.speed > .4 && coastalZ > 10 && coastalZ < 69) {
+    const movementX = stepDistance > .001 ? (current.x - previousPosition.current.x) / stepDistance : 0;
+    const movementZ = stepDistance > .001 ? (current.z - previousPosition.current.z) / stepDistance : 0;
+    if (state.phase === "shore" && state.speed > .4 && stepDistance < 2.2 && coastalZ > 10 && coastalZ < 69) {
       traveled.current += stepDistance;
-      if (traveled.current > .58) {
+      const spacing = .54 + state.run * .2;
+      if (traveled.current > spacing) {
         const side = footSide.current;
         footSide.current *= -1;
-        traveled.current %= .58;
-        const print = prints.current[cursor.current++ % FOOTPRINT_COUNT];
-        print.x = current.x + side * .17;
-        print.z = current.z + (side > 0 ? .08 : -.08);
+        traveled.current %= spacing;
+        const heading = playerHeading.current;
+        const rightX = Math.cos(heading);
+        const rightZ = -Math.sin(heading);
+        const forwardX = -Math.sin(heading);
+        const forwardZ = -Math.cos(heading);
+        const print = prints.current[cursor.current++ % footprintCount];
+        print.x = current.x + rightX * side * .17 - forwardX * .035;
+        print.z = current.z + rightZ * side * .17 - forwardZ * .035;
         print.y = THREE.MathUtils.lerp(-.39, -.465, THREE.MathUtils.smoothstep(coastalZ, 24, 36));
-        print.age = 13;
+        print.moisture = 1 - THREE.MathUtils.smoothstep(coastalZ, 20, 39);
+        print.maxAge = 10 + print.moisture * 10;
+        print.age = print.maxAge;
         print.side = side;
+        print.heading = heading;
+        print.strength = THREE.MathUtils.clamp(.62 + state.run * .22 + print.moisture * .18, .58, 1);
+
+        const particlePositions = grains.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+        const activeGrains = particlePositions?.array as Float32Array | undefined;
+        if (activeGrains && particlePositions) {
+          const emitCount = Math.max(1, Math.round((2 + state.run * 3) * (1 - print.moisture * .82)));
+          for (let particle = 0; particle < emitCount; particle += 1) {
+            const index = grainCursor.current++ % grainCount;
+            const offset = index * 3;
+            const lateral = (Math.random() - .5) * (.34 + state.run * .2);
+            const kickBack = .08 + Math.random() * (.18 + state.run * .24);
+            activeGrains[offset] = print.x + rightX * lateral;
+            activeGrains[offset + 1] = print.y + .025 + Math.random() * .045;
+            activeGrains[offset + 2] = print.z + rightZ * lateral;
+            grainVelocities.current[offset] = -movementX * kickBack + rightX * (Math.random() - .5) * .16;
+            grainVelocities.current[offset + 1] = .12 + Math.random() * (.2 + state.run * .18);
+            grainVelocities.current[offset + 2] = -movementZ * kickBack + rightZ * (Math.random() - .5) * .16;
+            grainLife.current[index] = .22 + Math.random() * (.2 + state.run * .12);
+          }
+          particlePositions.needsUpdate = true;
+        }
       }
-    } else if (state.phase !== "shore") {
+    } else if (state.phase !== "shore" || stepDistance >= 2.2) {
       traveled.current = 0;
     }
     previousPosition.current.copy(current);
 
-    prints.current.forEach((print, index) => {
+    for (let index = 0; index < footprintCount; index += 1) {
+      const print = prints.current[index];
       print.age = Math.max(0, print.age - delta);
       if (print.age <= 0 || print.z - tideShift <= 9.7) {
         dummy.position.set(0, -100, 0);
         dummy.scale.setScalar(.001);
+        depressionColor.setRGB(0, 0, 0);
+        rimColor.setRGB(0, 0, 0);
+        dummy.updateMatrix();
+        depressionMesh.current.setMatrixAt(index, dummy.matrix);
+        rimMesh.current.setMatrixAt(index, dummy.matrix);
       } else {
-        const fade = THREE.MathUtils.smoothstep(print.age, 0, 2.4);
+        const fade = THREE.MathUtils.smoothstep(print.age, 0, Math.min(3.2, print.maxAge * .28));
+        const depressionTarget = print.moisture > .5 ? wetDepression : dryDepression;
+        const rimTarget = print.moisture > .5 ? wetRim : dryRim;
+        depressionColor.copy(sandBase).lerp(depressionTarget, fade * print.strength);
+        rimColor.copy(sandBase).lerp(rimTarget, fade * (.44 + print.strength * .36));
         dummy.position.set(print.x, print.y, print.z);
-        dummy.rotation.set(-Math.PI / 2, 0, print.side * .055);
-        dummy.scale.set(.31 * fade, .58 * fade, 1);
+        dummy.rotation.set(-Math.PI / 2, 0, -print.heading + print.side * .045);
+        dummy.scale.set(.31 * (.96 + print.strength * .05), .58 * (1 + print.strength * .035), 1);
+        dummy.updateMatrix();
+        depressionMesh.current.setMatrixAt(index, dummy.matrix);
+        rimDummy.position.set(print.x, print.y + .003, print.z);
+        rimDummy.rotation.set(-Math.PI / 2, 0, -print.heading + print.side * .045);
+        rimDummy.scale.set(.31 * (.96 + print.strength * .05) * 1.055, .58 * (1 + print.strength * .035) * 1.055, 1);
+        rimDummy.updateMatrix();
+        rimMesh.current.setMatrixAt(index, rimDummy.matrix);
       }
-      dummy.updateMatrix();
-      mesh.current?.setMatrixAt(index, dummy.matrix);
-    });
-    mesh.current.instanceMatrix.needsUpdate = true;
+      depressionMesh.current.setColorAt(index, depressionColor);
+      rimMesh.current.setColorAt(index, rimColor);
+    }
+    depressionMesh.current.instanceMatrix.needsUpdate = true;
+    rimMesh.current.instanceMatrix.needsUpdate = true;
+    if (depressionMesh.current.instanceColor) depressionMesh.current.instanceColor.needsUpdate = true;
+    if (rimMesh.current.instanceColor) rimMesh.current.instanceColor.needsUpdate = true;
+
+    const grainPositionAttribute = grains.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const activeGrainPositions = grainPositionAttribute?.array as Float32Array | undefined;
+    let activeParticleStrength = 0;
+    if (activeGrainPositions && grainPositionAttribute) {
+      for (let index = 0; index < grainCount; index += 1) {
+        if (grainLife.current[index] <= 0) continue;
+        const offset = index * 3;
+        grainLife.current[index] -= delta;
+        activeParticleStrength = Math.max(activeParticleStrength, grainLife.current[index]);
+        activeGrainPositions[offset] += grainVelocities.current[offset] * delta;
+        activeGrainPositions[offset + 1] += grainVelocities.current[offset + 1] * delta;
+        activeGrainPositions[offset + 2] += grainVelocities.current[offset + 2] * delta;
+        grainVelocities.current[offset + 1] -= delta * .72;
+        grainVelocities.current[offset] *= 1 - delta * 1.8;
+        grainVelocities.current[offset + 2] *= 1 - delta * 1.8;
+        if (grainLife.current[index] <= 0 || activeGrainPositions[offset + 1] < -.49) {
+          grainLife.current[index] = 0;
+          activeGrainPositions[offset + 1] = -100;
+        }
+      }
+      grainPositionAttribute.needsUpdate = true;
+    }
+    if (grainMaterial.current) {
+      grainMaterial.current.opacity = THREE.MathUtils.damp(grainMaterial.current.opacity, activeParticleStrength > 0 ? .58 : 0, activeParticleStrength > 0 ? 10 : 5, delta);
+      grainMaterial.current.size = THREE.MathUtils.damp(grainMaterial.current.size, mobile ? .036 : .029, 6, delta);
+    }
   });
 
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, FOOTPRINT_COUNT]} frustumCulled={false} renderOrder={3}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial
-        map={footprintTexture}
-        color="#2a211b"
-        transparent
-        opacity={.34}
-        alphaTest={.08}
-        depthWrite={false}
-        polygonOffset
-        polygonOffsetFactor={-2}
-      />
-    </instancedMesh>
+    <group>
+      <instancedMesh ref={depressionMesh} args={[undefined, undefined, footprintCount]} frustumCulled={false} renderOrder={3}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          map={footprintTextures.depression}
+          color="#ffffff"
+          transparent
+          opacity={.58}
+          alphaTest={.08}
+          depthWrite={false}
+          toneMapped={false}
+          polygonOffset
+          polygonOffsetFactor={-2}
+        />
+      </instancedMesh>
+      <instancedMesh ref={rimMesh} args={[undefined, undefined, footprintCount]} frustumCulled={false} renderOrder={3.1}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          map={footprintTextures.rim}
+          color="#ffffff"
+          transparent
+          opacity={.3}
+          alphaTest={.045}
+          depthWrite={false}
+          toneMapped={false}
+          polygonOffset
+          polygonOffsetFactor={-3}
+        />
+      </instancedMesh>
+      <points ref={grains} frustumCulled={false} renderOrder={4}>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[grainPositions, 3]} />
+        </bufferGeometry>
+        <pointsMaterial
+          ref={grainMaterial}
+          map={grainTexture}
+          color={grainColor}
+          size={.03}
+          sizeAttenuation
+          transparent
+          opacity={0}
+          alphaTest={.04}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </points>
+    </group>
   );
 }
 
@@ -6997,7 +7197,13 @@ function Simulation({
         playerPosition={position}
       />
       <ShorelineWash settings={settings} light={light} sunPosition={oceanSunPosition} sunColor={sunLightColor} />
-      <FootprintTrail motion={motion} targetPosition={position} tide={settings.tide} />
+      <FootprintTrail
+        motion={motion}
+        targetPosition={position}
+        playerHeading={playerHeading}
+        tide={settings.tide}
+        sandColor={beach.palette[1]}
+      />
       <BoardTrack motion={motion} target={player} settings={settings} character={character} mobile={mobileRenderer} />
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <KinematicContactShadows
