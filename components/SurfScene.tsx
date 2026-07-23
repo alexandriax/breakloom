@@ -7409,6 +7409,18 @@ function Simulation({
   const cameraPosition = useRef(new THREE.Vector3(0, 4.8, 44));
   const cameraOffset = useRef(new THREE.Vector3());
   const cameraOrbit = useRef(new THREE.Spherical());
+  const cameraSubjectPrevious = useRef(new THREE.Vector3());
+  const cameraSubjectVelocity = useRef(new THREE.Vector3());
+  const cameraSubjectVelocityPrevious = useRef(new THREE.Vector3());
+  const cameraRawVelocity = useRef(new THREE.Vector3());
+  const cameraRawAcceleration = useRef(new THREE.Vector3());
+  const cameraAcceleration = useRef(new THREE.Vector3());
+  const cameraSpringOffset = useRef(new THREE.Vector3());
+  const cameraSpringVelocity = useRef(new THREE.Vector3());
+  const cameraBank = useRef(0);
+  const cameraMotionInitialized = useRef(false);
+  const cameraTrackingDriving = useRef(false);
+  const previousCameraImpact = useRef(0);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const sunTarget = useMemo(() => new THREE.Object3D(), []);
   const timeToHour = (value: string, fallback: number) => {
@@ -8602,6 +8614,105 @@ function Simulation({
         THREE.MathUtils.lerp(-20, normalTargetZ, sessionIntroProgress),
       );
     }
+    const cameraSubject = driving ? vanPosition.current : position.current;
+    const cameraMotionStrength = reducedMotion ? 0 : mobileRenderer ? .72 : 1;
+    let cameraLongitudinalAcceleration = 0;
+    let cameraLateralAcceleration = 0;
+    let cameraTrackedSpeed = 0;
+    const subjectStep = Math.min(delta, .12);
+    const subjectTravel = cameraSubject.distanceTo(cameraSubjectPrevious.current);
+    const subjectChanged = cameraTrackingDriving.current !== driving;
+    if (!cameraMotionInitialized.current || subjectChanged || delta > .12 || subjectTravel > 12) {
+      cameraMotionInitialized.current = true;
+      cameraTrackingDriving.current = driving;
+      cameraSubjectPrevious.current.copy(cameraSubject);
+      cameraSubjectVelocity.current.set(0, 0, 0);
+      cameraSubjectVelocityPrevious.current.set(0, 0, 0);
+      cameraAcceleration.current.set(0, 0, 0);
+      cameraSpringOffset.current.set(0, 0, 0);
+      cameraSpringVelocity.current.set(0, 0, 0);
+    } else if (subjectStep > .0001) {
+      cameraRawVelocity.current.copy(cameraSubject).sub(cameraSubjectPrevious.current).divideScalar(subjectStep);
+      cameraSubjectVelocityPrevious.current.copy(cameraSubjectVelocity.current);
+      cameraSubjectVelocity.current.lerp(
+        cameraRawVelocity.current,
+        1 - Math.exp(-subjectStep * (driving ? 7.2 : riding ? 9.5 : 7.8)),
+      );
+      cameraRawAcceleration.current
+        .copy(cameraSubjectVelocity.current)
+        .sub(cameraSubjectVelocityPrevious.current)
+        .divideScalar(subjectStep);
+      cameraAcceleration.current.lerp(
+        cameraRawAcceleration.current,
+        1 - Math.exp(-subjectStep * (driving ? 4.6 : riding ? 6.2 : 5.2)),
+      );
+      cameraSubjectPrevious.current.copy(cameraSubject);
+    }
+    cameraTrackedSpeed = Math.hypot(cameraSubjectVelocity.current.x, cameraSubjectVelocity.current.z);
+    const subjectHeading = driving
+      ? vanHeading.current + Math.PI
+      : riding
+        ? rideHeading.current
+        : paddling
+          ? paddleHeading.current
+          : playerHeading.current;
+    const subjectForwardX = Math.sin(subjectHeading);
+    const subjectForwardZ = Math.cos(subjectHeading);
+    const subjectRightX = Math.cos(subjectHeading);
+    const subjectRightZ = -Math.sin(subjectHeading);
+    cameraLongitudinalAcceleration = THREE.MathUtils.clamp(
+      cameraAcceleration.current.x * subjectForwardX + cameraAcceleration.current.z * subjectForwardZ,
+      -18,
+      18,
+    );
+    cameraLateralAcceleration = THREE.MathUtils.clamp(
+      cameraAcceleration.current.x * subjectRightX + cameraAcceleration.current.z * subjectRightZ,
+      -18,
+      18,
+    );
+    if (cameraMotionStrength > 0) {
+      const velocityLookAhead = driving ? .095 : riding ? .075 : paddling ? .045 : .035;
+      const accelerationLag = driving ? .032 : riding ? .026 : .016;
+      cameraTarget.current.x += (
+        cameraSubjectVelocity.current.x * velocityLookAhead
+        + subjectRightX * cameraLateralAcceleration * .018
+      ) * cameraMotionStrength;
+      cameraTarget.current.z += (
+        cameraSubjectVelocity.current.z * velocityLookAhead
+        + subjectRightZ * cameraLateralAcceleration * .018
+      ) * cameraMotionStrength;
+      cameraPosition.current.x -= (
+        subjectForwardX * cameraLongitudinalAcceleration * accelerationLag
+        + subjectRightX * cameraLateralAcceleration * accelerationLag * 1.22
+      ) * cameraMotionStrength;
+      cameraPosition.current.z -= (
+        subjectForwardZ * cameraLongitudinalAcceleration * accelerationLag
+        + subjectRightZ * cameraLateralAcceleration * accelerationLag * 1.22
+      ) * cameraMotionStrength;
+      cameraPosition.current.y += (
+        Math.abs(cameraLateralAcceleration) * .0055
+        + Math.max(0, -cameraLongitudinalAcceleration) * .0065
+      ) * cameraMotionStrength;
+    }
+    const impactRise = Math.max(0, motion.current.impact - previousCameraImpact.current);
+    previousCameraImpact.current = motion.current.impact;
+    if (impactRise > .025 && cameraMotionStrength > 0) {
+      const impactDirection = motion.current.maneuverSide || Math.sign(motion.current.rail) || 1;
+      cameraSpringVelocity.current.x += subjectRightX * impactDirection * impactRise * .52;
+      cameraSpringVelocity.current.y += impactRise * (riding ? 1.05 : paddling ? .72 : .46);
+      cameraSpringVelocity.current.z += subjectRightZ * impactDirection * impactRise * .52;
+    }
+    if (cameraMotionStrength > 0) {
+      const springStep = Math.min(delta, 1 / 30);
+      cameraSpringVelocity.current.addScaledVector(cameraSpringOffset.current, -48 * springStep);
+      cameraSpringVelocity.current.multiplyScalar(Math.exp(-10.5 * springStep));
+      cameraSpringOffset.current.addScaledVector(cameraSpringVelocity.current, springStep);
+      cameraPosition.current.addScaledVector(cameraSpringOffset.current, cameraMotionStrength);
+      cameraTarget.current.addScaledVector(cameraSpringOffset.current, cameraMotionStrength * .18);
+    } else {
+      cameraSpringOffset.current.set(0, 0, 0);
+      cameraSpringVelocity.current.set(0, 0, 0);
+    }
     cameraOffset.current.copy(cameraPosition.current).sub(cameraTarget.current);
     cameraOrbit.current.setFromVector3(cameraOffset.current);
     // lookYaw is an unrestricted angle. Keeping it independent of camera mode
@@ -8614,13 +8725,24 @@ function Simulation({
     );
     cameraOffset.current.setFromSpherical(cameraOrbit.current);
     cameraPosition.current.copy(cameraTarget.current).add(cameraOffset.current);
-    const cameraShakeBase = riding
-      ? motion.current.maneuver * 0.1 + motion.current.takeoff * .04 + motion.current.impact * .075 + motion.current.slip * .045 + motion.current.barrel * 0.035 + Math.max(0, speed - 11) * 0.003
-      : paddling ? motion.current.impact * .07 + motion.current.shorebreak * .025
-      : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * 0.55) * 0.16 : 0;
-    const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
-    cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
-    cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
+    const cameraVibrationBase = riding
+      ? motion.current.maneuver * .052 + motion.current.slip * .038 + motion.current.barrel * .024 + Math.max(0, cameraTrackedSpeed - 11) * .0017
+      : paddling ? motion.current.shorebreak * .018
+      : phase.current === "wipeout" ? Math.max(0, 1 - motion.current.wipeout * .55) * .082 : 0;
+    const cameraVibration = cameraVibrationBase
+      * (cameraMode === "cinematic" ? .28 : cameraMode === "immersive" ? 1.04 : .78)
+      * cameraMotionStrength;
+    const lateralVibration = (
+      Math.sin(t * 23.7)
+      + Math.sin(t * 41.3 + 1.8) * .34
+    ) * cameraVibration;
+    const verticalVibration = (
+      Math.cos(t * 29.2 + .6)
+      + Math.sin(t * 47.1) * .28
+    ) * cameraVibration * .46;
+    cameraPosition.current.x += subjectRightX * lateralVibration;
+    cameraPosition.current.z += subjectRightZ * lateralVibration;
+    cameraPosition.current.y += verticalVibration;
     if (submersion < .08) {
       const cameraCoastalZ = cameraPosition.current.z - tideShift;
       const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
@@ -8677,13 +8799,21 @@ function Simulation({
     }
     camera.lookAt(cameraLookTarget.current);
     const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
-    camera.rotateZ((riding
+    const cameraBankTarget = (riding
       ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012
       : driving
         ? -vanMotion.current.lateralG * .034 - Math.sign(vanMotion.current.steer || 1) * vanMotion.current.slip * .012
         : phase.current === "wipeout"
           ? Math.sin(t * 3.2) * submersion * .052
-          : paddling ? Math.sin(t * 2.6) * submersion * .014 : 0) * rollScale);
+          : paddling ? Math.sin(t * 2.6) * submersion * .014 : 0)
+      - cameraLateralAcceleration * (driving ? .0016 : riding ? .0022 : .0007);
+    cameraBank.current = THREE.MathUtils.damp(
+      cameraBank.current,
+      cameraBankTarget * rollScale * cameraMotionStrength,
+      riding ? 6.8 : driving ? 5.6 : 7.5,
+      delta,
+    );
+    camera.rotateZ(cameraBank.current);
     if (camera instanceof THREE.PerspectiveCamera) {
       const gameplayFov = cameraMode === "cinematic"
         ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : phase.current === "wipeout" ? 53 - submersion * 4 : 51
@@ -8698,7 +8828,12 @@ function Simulation({
             : riding
               ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 3.1 + motion.current.takeoff * 1.2 - motion.current.finish * 2.5
               : paddling ? 56 + motion.current.shorebreak * 2.5 - submersion * 3.8 : phase.current === "wipeout" ? 59 - submersion * 4.5 : 58;
-      const targetFov = THREE.MathUtils.lerp(67, gameplayFov, sessionIntroProgress);
+      const accelerationFov = cameraMotionStrength * (
+        Math.max(0, cameraLongitudinalAcceleration) * (driving ? .07 : .11)
+        + Math.abs(cameraLateralAcceleration) * (riding ? .035 : .018)
+        + impactRise * (riding ? 1.8 : .9)
+      );
+      const targetFov = THREE.MathUtils.lerp(67, gameplayFov + accelerationFov, sessionIntroProgress);
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {
         const focalLength = 0.5 * camera.getFilmHeight() / Math.tan(THREE.MathUtils.degToRad(nextFov * 0.5));
