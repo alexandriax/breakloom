@@ -59,6 +59,10 @@ type MotionState = {
   maneuverLift: number;
   maneuverSpin: number;
   trickCharge: number;
+  maneuverProgress: number;
+  landingCue: number;
+  landingTarget: number;
+  landingWindow: number;
   stance: number;
   barrel: number;
   rail: number;
@@ -561,32 +565,42 @@ const BREAKING_WAVE_VERTEX = /* glsl */ `
   uniform float uEnergy;
   uniform float uCurl;
   uniform float uSide;
+  uniform float uLine;
+  uniform float uSection;
   varying vec2 vUv;
   varying float vPocket;
   varying float vFoam;
+  varying float vSection;
   varying float vEdge;
   varying vec3 vWorldPosition;
 
   void main() {
     float heightRatio = uv.y;
     float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
-    float pocketCenter = uSide * 2.6;
-    float pocketDistance = (position.x - pocketCenter) / 5.2;
+    float pocketCenter = clamp(-uLine * 4.6 * uSide, -7.2, 7.2);
+    float pocketDistance = (position.x - pocketCenter) / 5.0;
     float pocket = exp(-pocketDistance * pocketDistance);
     float lip = smoothstep(.34, 1.0, heightRatio);
+    float sectionPulse = .5 + .5 * sin((position.x - pocketCenter) * .42 * uSide - uTime * .72);
+    float section = uSection * smoothstep(.42, .94, sectionPulse) * (.48 + pocket * .52);
     float curl = uCurl * (.28 + pocket * .72);
     float edge = smoothstep(0.0, .09, uv.x) * smoothstep(0.0, .09, 1.0 - uv.x);
     vec3 p = position;
-    p.x += uSide * curl * lip * .58;
-    p.y = heightRatio * faceHeight;
+    float concave = pow(heightRatio, 1.42);
+    p.x += uSide * (curl * lip * .58 + section * lip * .18);
+    p.y = concave * faceHeight;
+    p.y += sin(heightRatio * 3.14159) * pocket * faceHeight * .055;
+    p.y += section * lip * faceHeight * .1;
     p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
-    p.z = 2.7 - heightRatio * .62;
+    p.z = 2.82 - concave * (.62 + faceHeight * .035);
     p.z -= curl * lip * lip * (1.45 + faceHeight * .38);
+    p.z -= section * lip * lip * (.3 + faceHeight * .14);
     p.z += sin(position.x * .24 + uTime * 1.35) * .12 * (1.0 - heightRatio);
 
     vUv = uv;
     vPocket = pocket;
-    vFoam = smoothstep(.68, 1.0, heightRatio) * (.5 + curl * .5);
+    vFoam = smoothstep(.66, 1.0, heightRatio) * (.44 + curl * .46 + section * .42);
+    vSection = section;
     vEdge = edge;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -602,6 +616,7 @@ const BREAKING_WAVE_FRAGMENT = /* glsl */ `
   varying vec2 vUv;
   varying float vPocket;
   varying float vFoam;
+  varying float vSection;
   varying float vEdge;
   varying vec3 vWorldPosition;
 
@@ -635,15 +650,16 @@ const BREAKING_WAVE_FRAGMENT = /* glsl */ `
     vec3 color = deep + transmitted;
     color = mix(color, reflection, fresnel * .56);
     color *= .9 + faceNoise * .13;
+    color = mix(color, vec3(.006, .07, .09), vSection * (.12 + verticalDepth * .16));
 
-    float lipFoam = vFoam * smoothstep(.2, .76, faceNoise) * (.68 + veinNoise * .5);
+    float lipFoam = vFoam * smoothstep(.16, .72, faceNoise) * (.66 + veinNoise * .5 + vSection * .35);
     float streaks = smoothstep(.7, .96, veinNoise) * smoothstep(.42, .95, vUv.y) * (.18 + vPocket * .36);
     float foam = clamp(max(lipFoam, streaks), 0.0, .96);
     vec3 foamColor = mix(vec3(.62, .88, .84), vec3(.94, 1.0, .98), uLight);
     color = mix(color, foamColor, foam);
 
     float lowerFade = smoothstep(.0, .1, vUv.y);
-    float alpha = uOpacity * vEdge * lowerFade * (.32 + fresnel * .38 + vPocket * .14);
+    float alpha = uOpacity * vEdge * lowerFade * (.32 + fresnel * .38 + vPocket * .14 + vSection * .08);
     alpha = max(alpha, foam * uOpacity * .96);
     gl_FragColor = vec4(color, clamp(alpha, 0.0, .96));
   }
@@ -655,23 +671,29 @@ const WAVE_CURTAIN_VERTEX = /* glsl */ `
   uniform float uEnergy;
   uniform float uCurl;
   uniform float uSide;
+  uniform float uLine;
+  uniform float uSection;
   varying vec2 vUv;
   varying float vPocket;
   varying float vEdge;
   varying float vDrop;
+  varying float vSection;
   varying vec3 vWorldPosition;
 
   void main() {
     float drop = uv.y;
     float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
-    float pocketCenter = uSide * 2.6;
+    float pocketCenter = clamp(-uLine * 4.6 * uSide, -7.2, 7.2);
     float pocketDistance = (position.x - pocketCenter) / 4.9;
     float pocket = exp(-pocketDistance * pocketDistance);
+    float sectionPulse = .5 + .5 * sin((position.x - pocketCenter) * .42 * uSide - uTime * .72);
+    float section = uSection * smoothstep(.42, .94, sectionPulse) * (.48 + pocket * .52);
     float curl = uCurl * (.24 + pocket * .76);
-    float lipZ = 2.08 - curl * (1.45 + faceHeight * .38);
+    float crestHeight = faceHeight * (1.0 + section * .1);
+    float lipZ = 2.2 - curl * (1.45 + faceHeight * .38) - section * (.3 + faceHeight * .14);
     float flutter = sin(position.x * 1.7 - uTime * 4.2 + drop * 9.0) * .055;
     flutter += sin(position.x * .38 + uTime * 2.1) * .08;
-    vec3 p = vec3(position.x + uSide * curl * .58, faceHeight, lipZ);
+    vec3 p = vec3(position.x + uSide * (curl * .58 + section * .18), crestHeight, lipZ);
     p.x += flutter * (.35 + drop * .65);
     p.y -= drop * faceHeight * (.7 + curl * .18);
     p.z += drop * (.12 + curl * .52) + sin(drop * 12.0 + uTime * 2.8) * .045 * curl;
@@ -679,6 +701,7 @@ const WAVE_CURTAIN_VERTEX = /* glsl */ `
     vUv = uv;
     vPocket = pocket;
     vDrop = drop;
+    vSection = section;
     vEdge = smoothstep(0.0, .08, uv.x) * smoothstep(0.0, .08, 1.0 - uv.x);
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -695,6 +718,7 @@ const WAVE_CURTAIN_FRAGMENT = /* glsl */ `
   varying float vPocket;
   varying float vEdge;
   varying float vDrop;
+  varying float vSection;
   varying vec3 vWorldPosition;
 
   float hash(vec2 p) {
@@ -722,12 +746,12 @@ const WAVE_CURTAIN_FRAGMENT = /* glsl */ `
     float threads = smoothstep(.56, .94, longVeins) * (.42 + broadSheet * .58);
     float beading = smoothstep(.72, .96, noise(vec2(vUv.x * 91.0, vUv.y * 24.0 + uTime * 2.6)));
     float verticalFade = smoothstep(.0, .055, vDrop) * (1.0 - smoothstep(.78, 1.0, vDrop));
-    float body = .07 + threads * .34 + broadSheet * .09 + beading * .18;
+    float body = .07 + threads * .34 + broadSheet * .09 + beading * .18 + vSection * .08;
     float alpha = uOpacity * vPocket * vEdge * verticalFade * body;
     vec3 deep = mix(vec3(.015, .22, .24), vec3(.025, .4, .35), uLight);
     deep = mix(deep, vec3(.055, .105, .13), uCloud * .38);
     vec3 highlight = mix(vec3(.45, .86, .8), vec3(.91, 1.0, .97), clamp(threads + fresnel, 0.0, 1.0));
-    vec3 color = mix(deep, highlight, .24 + fresnel * .36 + beading * .2);
+    vec3 color = mix(deep, highlight, .24 + fresnel * .36 + beading * .2 + vSection * .12);
     gl_FragColor = vec4(color, clamp(alpha, 0.0, .7));
   }
 `;
@@ -738,25 +762,29 @@ const BREAKING_FOAM_VERTEX = /* glsl */ `
   uniform float uEnergy;
   uniform float uCurl;
   uniform float uSide;
+  uniform float uLine;
+  uniform float uSection;
   uniform float uOpacity;
   varying float vAlpha;
 
   void main() {
     float seed = position.y;
     float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
-    float pocketCenter = uSide * 2.6;
-    float pocketDistance = (position.x - pocketCenter) / 5.2;
+    float pocketCenter = clamp(-uLine * 4.6 * uSide, -7.2, 7.2);
+    float pocketDistance = (position.x - pocketCenter) / 5.0;
     float pocket = exp(-pocketDistance * pocketDistance);
+    float sectionPulse = .5 + .5 * sin((position.x - pocketCenter) * .42 * uSide - uTime * .72);
+    float section = uSection * smoothstep(.42, .94, sectionPulse) * (.48 + pocket * .52);
     float curl = uCurl * (.28 + pocket * .72);
     float age = fract(seed + uTime * (.12 + uEnergy * .1));
     float faller = step(.56, fract(seed * 17.31 + .19));
-    vec3 p = vec3(position.x, faceHeight, 2.08 - curl * (1.45 + faceHeight * .38));
-    p.x += uSide * curl * .58 + sin(seed * 41.0 + uTime * 2.7) * age * (.48 + faller * .32);
+    vec3 p = vec3(position.x, faceHeight * (1.0 + section * .1), 2.2 - curl * (1.45 + faceHeight * .38) - section * (.3 + faceHeight * .14));
+    p.x += uSide * (curl * .58 + section * .18) + sin(seed * 41.0 + uTime * 2.7) * age * (.48 + faller * .32);
     p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
     p.y += mix(age * (.28 + uEnergy * .8), -age * (.4 + curl * 1.7), faller * curl);
     p.z += mix(-age * (.18 + curl * .32), age * (.12 + curl * .72), faller);
     vec4 viewPosition = modelViewMatrix * vec4(p, 1.0);
-    vAlpha = pow(1.0 - age, 1.7) * uOpacity * (.42 + pocket * .58);
+    vAlpha = pow(1.0 - age, 1.7) * uOpacity * (.38 + pocket * .52 + section * .24);
     gl_PointSize = (2.8 + seed * 5.4) * clamp(68.0 / -viewPosition.z, 1.0, 7.0);
     gl_Position = projectionMatrix * viewPosition;
   }
@@ -797,6 +825,8 @@ function BreakingWave({
     uEnergy: { value: 0 },
     uCurl: { value: 0 },
     uSide: { value: 1 },
+    uLine: { value: 0 },
+    uSection: { value: 0 },
     uLight: { value: 1 },
     uCloud: { value: 0 },
     uOpacity: { value: 0 },
@@ -807,6 +837,8 @@ function BreakingWave({
     uEnergy: { value: 0 },
     uCurl: { value: 0 },
     uSide: { value: 1 },
+    uLine: { value: 0 },
+    uSection: { value: 0 },
     uOpacity: { value: 0 },
   }), []);
   const curtainUniforms = useMemo(() => ({
@@ -815,6 +847,8 @@ function BreakingWave({
     uEnergy: { value: 0 },
     uCurl: { value: 0 },
     uSide: { value: 1 },
+    uLine: { value: 0 },
+    uSection: { value: 0 },
     uLight: { value: 1 },
     uCloud: { value: 0 },
     uOpacity: { value: 0 },
@@ -857,6 +891,8 @@ function BreakingWave({
     values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, state.setEnergy, 4, delta);
     values.uCurl.value = THREE.MathUtils.damp(values.uCurl.value, targetCurl, 5.5, delta);
     values.uSide.value = THREE.MathUtils.damp(values.uSide.value, lineSide.current, 3.2, delta);
+    values.uLine.value = THREE.MathUtils.damp(values.uLine.value, state.linePosition, 5.8, delta);
+    values.uSection.value = THREE.MathUtils.damp(values.uSection.value, state.sectionPressure, 4.8, delta);
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, riding ? 7 : 4, delta);
@@ -866,6 +902,8 @@ function BreakingWave({
     curtain.uEnergy.value = values.uEnergy.value;
     curtain.uCurl.value = values.uCurl.value;
     curtain.uSide.value = values.uSide.value;
+    curtain.uLine.value = values.uLine.value;
+    curtain.uSection.value = values.uSection.value;
     curtain.uLight.value = light;
     curtain.uCloud.value = cloudCover / 100;
     curtain.uOpacity.value = THREE.MathUtils.damp(curtain.uOpacity.value, targetCurtain, riding ? 6 : 3.5, delta);
@@ -875,6 +913,8 @@ function BreakingWave({
     foam.uEnergy.value = values.uEnergy.value;
     foam.uCurl.value = values.uCurl.value;
     foam.uSide.value = values.uSide.value;
+    foam.uLine.value = values.uLine.value;
+    foam.uSection.value = values.uSection.value;
     foam.uOpacity.value = values.uOpacity.value;
     if (warmupFrames.current > 0) {
       warmupFrames.current -= 1;
@@ -1326,11 +1366,16 @@ function WaveReadingGuide({
   const crestMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const shoulder = useRef<THREE.Points>(null);
   const shoulderMaterial = useRef<THREE.PointsMaterial>(null);
+  const pocketSeam = useRef<THREE.Mesh>(null);
+  const pocketMaterial = useRef<THREE.MeshBasicMaterial>(null);
+  const landingMarker = useRef<THREE.Mesh>(null);
+  const landingMaterial = useRef<THREE.MeshBasicMaterial>(null);
   const lineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
   const particleCount = mobile ? 18 : 34;
   const positions = useMemo(() => new Float32Array(particleCount * 3), [particleCount]);
   const coolColor = useMemo(() => new THREE.Color("#7fded5"), []);
   const readyColor = useMemo(() => new THREE.Color("#e7ffd5"), []);
+  const pressureColor = useMemo(() => new THREE.Color("#ffd39a"), []);
   const crestTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 128;
@@ -1376,6 +1421,62 @@ function WaveReadingGuide({
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }, []);
+  const pocketTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 96;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const glow = context.createLinearGradient(0, 0, 96, 0);
+      glow.addColorStop(0, "rgba(116,242,220,0)");
+      glow.addColorStop(.38, "rgba(137,255,233,.14)");
+      glow.addColorStop(.5, "rgba(226,255,247,.82)");
+      glow.addColorStop(.62, "rgba(137,255,233,.14)");
+      glow.addColorStop(1, "rgba(116,242,220,0)");
+      context.fillStyle = glow;
+      context.fillRect(0, 0, 96, 256);
+      context.globalCompositeOperation = "destination-out";
+      for (let index = 0; index < 24; index += 1) {
+        const y = seededRandom(index, 291) * 256;
+        const radius = 3 + seededRandom(index, 292) * 8;
+        context.beginPath();
+        context.arc(48 + (seededRandom(index, 293) - .5) * 22, y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
+  const landingTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.translate(64, 64);
+      context.lineCap = "round";
+      for (let ring = 0; ring < 3; ring += 1) {
+        const radius = 22 + ring * 14;
+        context.setLineDash([10 + ring * 2, 8]);
+        context.lineDashOffset = ring * 5;
+        context.strokeStyle = `rgba(255,224,174,${.82 - ring * .2})`;
+        context.lineWidth = 3 - ring * .55;
+        context.beginPath();
+        context.arc(0, 0, radius, 0, Math.PI * 2);
+        context.stroke();
+      }
+      const core = context.createRadialGradient(0, 0, 1, 0, 0, 28);
+      core.addColorStop(0, "rgba(255,239,204,.42)");
+      core.addColorStop(1, "rgba(255,202,132,0)");
+      context.setLineDash([]);
+      context.fillStyle = core;
+      context.fillRect(-32, -32, 64, 64);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
 
   useEffect(() => {
     lineSide.current = character.peel === 0 ? 1 : Math.sign(character.peel);
@@ -1384,7 +1485,9 @@ function WaveReadingGuide({
   useEffect(() => () => {
     crestTexture.dispose();
     glintTexture.dispose();
-  }, [crestTexture, glintTexture]);
+    pocketTexture.dispose();
+    landingTexture.dispose();
+  }, [crestTexture, glintTexture, landingTexture, pocketTexture]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
@@ -1403,6 +1506,36 @@ function WaveReadingGuide({
       crest.current.scale.setScalar(crestScale);
       crest.current.rotation.z = clock.elapsedTime * (.045 + state.catchReady * .04);
       crest.current.visible = crestMaterial.current.opacity > .006;
+    }
+
+    if (pocketSeam.current && pocketMaterial.current) {
+      const riding = state.phase === "riding";
+      const faceHeight = THREE.MathUtils.clamp(settings.waveHeight * 1.55, 1.45, 5.8) * (.82 + state.setEnergy * .3);
+      const pocketOffset = THREE.MathUtils.clamp(-state.linePosition * 4.6 * lineSide.current, -7.2, 7.2);
+      pocketSeam.current.position.x = THREE.MathUtils.damp(pocketSeam.current.position.x, pocketOffset, 7, delta);
+      pocketSeam.current.position.y = THREE.MathUtils.damp(pocketSeam.current.position.y, faceHeight * .47, 6, delta);
+      pocketSeam.current.position.z = THREE.MathUtils.damp(pocketSeam.current.position.z, 2.24 - state.barrel * .5 - state.sectionPressure * .14, 6, delta);
+      pocketSeam.current.scale.x = THREE.MathUtils.damp(pocketSeam.current.scale.x, .72 + state.lineControl * .34, 6, delta);
+      pocketSeam.current.scale.y = THREE.MathUtils.damp(pocketSeam.current.scale.y, faceHeight * (.58 + state.waveQuality * .08), 6, delta);
+      pocketSeam.current.rotation.z = lineSide.current * (-.05 - state.sectionPressure * .045);
+      const seamOpacity = riding
+        ? assist * mobileBoost * (.055 + state.lineControl * .23 + state.sectionPressure * .18) * (1 - state.barrel * .58)
+        : 0;
+      pocketMaterial.current.opacity = THREE.MathUtils.damp(pocketMaterial.current.opacity, seamOpacity, riding ? 7 : 4, delta);
+      pocketMaterial.current.color.lerp(state.sectionPressure > .5 ? pressureColor : coolColor, 1 - Math.exp(-delta * 5));
+      pocketSeam.current.visible = pocketMaterial.current.opacity > .006;
+    }
+
+    if (landingMarker.current && landingMaterial.current) {
+      const landingAssist = settings.mode === "training" ? .78 : settings.mode === "advanced" ? .3 : .54;
+      const targetOpacity = state.phase === "riding" ? state.landingCue * landingAssist * mobileBoost : 0;
+      landingMaterial.current.opacity = THREE.MathUtils.damp(landingMaterial.current.opacity, targetOpacity, targetOpacity > .02 ? 12 : 7, delta);
+      landingMarker.current.position.x = THREE.MathUtils.damp(landingMarker.current.position.x, state.landingTarget * 1.35 + state.maneuverSide * .52, 11, delta);
+      landingMarker.current.position.z = THREE.MathUtils.damp(landingMarker.current.position.z, 1.25 + state.maneuverProgress * 2.2, 10, delta);
+      const markerScale = (.74 + state.landingWindow * 1.35) * (1 + Math.sin(clock.elapsedTime * 6.2) * .035);
+      landingMarker.current.scale.setScalar(THREE.MathUtils.damp(landingMarker.current.scale.x, markerScale, 10, delta));
+      landingMarker.current.rotation.z = clock.elapsedTime * .22 * lineSide.current;
+      landingMarker.current.visible = landingMaterial.current.opacity > .006;
     }
 
     if (shoulder.current && shoulderMaterial.current) {
@@ -1440,6 +1573,34 @@ function WaveReadingGuide({
           transparent
           opacity={0}
           depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh ref={pocketSeam} position={[0, 1.4, 2.2]} visible={false} renderOrder={4.35}>
+        <planeGeometry args={[1, 1]} />
+        <meshBasicMaterial
+          ref={pocketMaterial}
+          map={pocketTexture}
+          color="#7fded5"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh ref={landingMarker} position={[0, .08, 1.5]} rotation={[-Math.PI / 2, 0, 0]} visible={false} renderOrder={4.45}>
+        <planeGeometry args={[2.8, 2.8]} />
+        <meshBasicMaterial
+          ref={landingMaterial}
+          map={landingTexture}
+          color="#ffe0ae"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
         />
@@ -3607,6 +3768,10 @@ function Simulation({
     maneuverLift: 0,
     maneuverSpin: 0,
     trickCharge: 0,
+    maneuverProgress: 0,
+    landingCue: 0,
+    landingTarget: 0,
+    landingWindow: 0,
     stance: 0,
     barrel: 0,
     rail: 0,
@@ -4234,6 +4399,10 @@ function Simulation({
     motion.current.setEnergy = setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
     motion.current.trickCharge = THREE.MathUtils.damp(motion.current.trickCharge, trickCharge.current, trickCharge.current > motion.current.trickCharge ? 12 : 8, delta);
+    motion.current.maneuverProgress = activeManeuver.current ? maneuverProgress : THREE.MathUtils.damp(motion.current.maneuverProgress, 0, 9, delta);
+    motion.current.landingCue = THREE.MathUtils.damp(motion.current.landingCue, activeManeuver.current ? 1 : 0, activeManeuver.current ? 13 : 8, delta);
+    motion.current.landingTarget = THREE.MathUtils.damp(motion.current.landingTarget, landingTarget, 10, delta);
+    motion.current.landingWindow = THREE.MathUtils.damp(motion.current.landingWindow, landingWindow, 9, delta);
     if (!activeManeuver.current) {
       motion.current.maneuverLift = THREE.MathUtils.damp(motion.current.maneuverLift, 0, 11, delta);
       motion.current.maneuverSpin = THREE.MathUtils.damp(motion.current.maneuverSpin, 0, 12, delta);
