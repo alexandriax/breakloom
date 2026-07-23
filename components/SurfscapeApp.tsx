@@ -2617,8 +2617,29 @@ export default function SurfscapeApp() {
     if (paused) return;
     event.preventDefault();
     controls.current.gamepadActive = false;
-    if (event.pointerType === "mouse" && document.pointerLockElement !== event.currentTarget && event.currentTarget.requestPointerLock) {
-      event.currentTarget.requestPointerLock();
+    if (event.pointerType === "mouse" && document.pointerLockElement !== event.currentTarget) {
+      const lookSurface = event.currentTarget;
+      const pointerId = event.pointerId;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      void lookSurface.requestPointerLock().catch(() => {
+        // Embedded and automated browsers may deny pointer lock. Preserve the
+        // same gesture as drag-look instead of surfacing an unhandled rejection.
+        if (!lookSurface.isConnected || document.pointerLockElement === lookSurface) return;
+        try {
+          lookSurface.setPointerCapture(pointerId);
+        } catch {
+          return;
+        }
+        lookSurface.classList.add("is-dragging");
+        lookGesture.current = {
+          pointerId,
+          x: startX,
+          y: startY,
+          yaw: controls.current.lookYaw,
+          pitch: controls.current.lookPitch,
+        };
+      });
       return;
     }
     if (document.pointerLockElement === event.currentTarget) return;
