@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import {
+  Aperture,
   ArrowRight,
   AudioLines,
   BatteryMedium,
@@ -98,6 +99,7 @@ type WetLensEvent = {
   duration: number;
 };
 type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
+type PhotoStatus = "idle" | "capturing" | "ready" | "shared" | "saved" | "error";
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -605,6 +607,8 @@ export default function SurfscapeApp() {
   const [settings, setSettings] = useState<SessionSettings>(() => settingsFromConditions(INITIAL_MODELED_CONDITIONS, DEFAULT_BEACH.heading));
   const [stats, setStats] = useState<GameStats>(INITIAL_STATS);
   const [paused, setPaused] = useState(false);
+  const [photoMode, setPhotoMode] = useState(false);
+  const [photoStatus, setPhotoStatus] = useState<PhotoStatus>("idle");
   const [sceneReady, setSceneReady] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -635,6 +639,7 @@ export default function SurfscapeApp() {
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const rideCard = useRef<File | null>(null);
+  const photoFile = useRef<File | null>(null);
   const rideFrame = useRef<RideFrameCapture | null>(null);
   const captureSequence = useRef(0);
   const activeRideCaptureId = useRef(0);
@@ -730,10 +735,18 @@ export default function SurfscapeApp() {
       id: captureSequence.current,
       rideId: activeRideCaptureId.current,
       quality: nextQuality,
+      purpose: "ride",
+      view: "cinematic",
     });
   }, []);
 
   const handleRideFrameCapture = useCallback((capture: RideFrameCapture) => {
+    if (capture.purpose === "photo") {
+      photoFile.current = new File([capture.blob], `surfscape-photo-${Date.now()}.jpg`, { type: "image/jpeg" });
+      setPhotoStatus("ready");
+      haptic([7, 18, 11]);
+      return;
+    }
     if (capture.rideId !== activeRideCaptureId.current) return;
     if (rideFrame.current && capture.quality < rideFrame.current.quality) return;
     rideFrame.current = capture;
@@ -947,8 +960,34 @@ export default function SurfscapeApp() {
       if (screen !== "game") return;
       controls.current.gamepadActive = false;
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "q", "e", "r", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
+      if (["w", "a", "s", "d", "q", "e", "p", "r", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
+      }
+      if (key === "p" && !event.repeat) {
+        if (paused) return;
+        releaseAllControls();
+        setPhotoMode(!photoMode);
+        if (!photoMode) setPhotoStatus(photoFile.current ? "ready" : "idle");
+        haptic(5);
+        return;
+      }
+      if (photoMode) {
+        if (key === "escape") {
+          releaseAllControls();
+          setPhotoMode(false);
+        }
+        if (key === "c" && !event.repeat) {
+          controls.current.lookYaw = 0;
+          controls.current.lookPitch = 0;
+          setCameraMode((current) => nextCameraMode(current));
+          haptic(5);
+        }
+        if (key === "r" && !event.repeat) {
+          controls.current.lookYaw = 0;
+          controls.current.lookPitch = 0;
+          haptic(4);
+        }
+        return;
       }
       if (key === "w" || key === "arrowup") controls.current.forward = true;
       if (key === "s" || key === "arrowdown") controls.current.back = true;
@@ -989,7 +1028,7 @@ export default function SurfscapeApp() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [screen]);
+  }, [paused, photoMode, screen]);
 
   useEffect(() => {
     if (screen !== "game" || !navigator.getGamepads) {
@@ -1530,6 +1569,9 @@ export default function SurfscapeApp() {
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     resetRideCapture();
+    photoFile.current = null;
+    setPhotoMode(false);
+    setPhotoStatus("idle");
     setStats(INITIAL_STATS);
     trainingStepValue.current = 0;
     setTrainingStep(0);
@@ -1556,6 +1598,9 @@ export default function SurfscapeApp() {
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     resetRideCapture();
+    photoFile.current = null;
+    setPhotoMode(false);
+    setPhotoStatus("idle");
     setWetLens(null);
     setScreen("launch");
     setPaused(false);
@@ -1743,6 +1788,79 @@ export default function SurfscapeApp() {
     haptic(7);
   };
 
+  const openPhotoMode = () => {
+    clearAnalogMovement();
+    controls.current = { ...controls.current, forward: false, back: false, left: false, right: false, sprint: false, action: false };
+    setPhotoStatus(photoFile.current ? "ready" : "idle");
+    setPhotoMode(true);
+    haptic(5);
+  };
+
+  const closePhotoMode = () => {
+    clearAnalogMovement();
+    setPhotoMode(false);
+    haptic(4);
+  };
+
+  const capturePhoto = () => {
+    captureSequence.current += 1;
+    photoFile.current = null;
+    setPhotoStatus("capturing");
+    setCaptureRequest({
+      id: captureSequence.current,
+      rideId: activeRideCaptureId.current,
+      quality: 1,
+      purpose: "photo",
+      view: "player",
+      caption: `${zoneLabel} · ${beach.name} · ${localTime}`,
+    });
+    window.setTimeout(() => {
+      setPhotoStatus((current) => current === "capturing" ? "error" : current);
+    }, 4200);
+  };
+
+  const savePhoto = (file: File) => {
+    const objectUrl = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = file.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    setPhotoStatus("saved");
+    haptic(6);
+  };
+
+  const sharePhoto = async () => {
+    const file = photoFile.current;
+    if (!file) {
+      setPhotoStatus("error");
+      return;
+    }
+    const shareData: ShareData = {
+      title: `Surfscape · ${zoneLabel}`,
+      text: `${zoneLabel}, ${beach.name} · ${effectiveFaceHeight.toFixed(1)}m at ${settings.wavePeriod.toFixed(0)}s. Captured in Surfscape.`,
+      url: window.location.origin,
+      files: [file],
+    };
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share(shareData);
+        setPhotoStatus("shared");
+        haptic([7, 18, 12]);
+        return;
+      }
+      savePhoto(file);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setPhotoStatus("ready");
+        return;
+      }
+      savePhoto(file);
+    }
+  };
+
   const shareRide = async (ride: RideToast) => {
     if (shareStatus === "working") return;
     setShareStatus("working");
@@ -1804,6 +1922,7 @@ export default function SurfscapeApp() {
   };
 
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
+  const hasPhoto = photoStatus === "ready" || photoStatus === "shared" || photoStatus === "saved";
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
   const trainingComplete = trainingStep >= TRAINING_STEPS.length;
   const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
@@ -1991,7 +2110,7 @@ export default function SurfscapeApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
-          active={screen === "game" && !paused}
+          active={screen === "game" && !paused && !photoMode}
           captureRequest={captureRequest}
           onCapture={handleRideFrameCapture}
           onStats={handleStats}
@@ -2295,11 +2414,11 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
+        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
           <div
             ref={cameraLookSurface}
             className={`camera-look-surface ${pointerLocked ? "is-locked" : ""}`}
-            aria-label={pointerLocked ? "Mouse locked for 360 degree view. Press Escape to release." : "Click to lock the mouse or drag to look around"}
+            aria-label={photoMode ? "Photo mode camera. Click to lock the mouse or drag to frame the shot." : pointerLocked ? "Mouse locked for 360 degree view. Press Escape to release." : "Click to lock the mouse or drag to look around"}
             onPointerDown={beginCameraLook}
             onPointerMove={updateCameraLook}
             onPointerUp={endCameraLook}
@@ -2313,6 +2432,43 @@ export default function SurfscapeApp() {
           >
             <span>{gamepadConnected ? "RIGHT STICK · 360° VIEW" : pointerLocked ? "360° VIEW LOCKED · ESC RELEASES" : "CLICK / TOUCH · 360° VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
           </div>
+          {photoMode && (
+            <>
+              <div className="photo-mode-ui" aria-label="Surfscape photo mode">
+                <div className="photo-mode-top">
+                  <div>
+                    <Aperture />
+                    <span>PHOTO MODE</span>
+                    <strong>{CAMERA_LABELS[cameraMode].toUpperCase()} LENS</strong>
+                  </div>
+                  <small>{pointerLocked ? "MOUSE LOOK LOCKED · P / ESC TO EXIT" : "DRAG OR CLICK TO FRAME · P / ESC TO EXIT"}</small>
+                  <button type="button" onClick={closePhotoMode} aria-label="Exit photo mode"><X /></button>
+                </div>
+                <div className="photo-reticle" aria-hidden="true"><i /><i /><i /><i /><span /></div>
+                <div className="photo-mode-bottom">
+                  <div className="photo-meta">
+                    <span>{zoneLabel.toUpperCase()} · {beach.name.toUpperCase()}</span>
+                    <strong>{effectiveFaceHeight.toFixed(1)} M · {settings.wavePeriod.toFixed(0)} S · {localTime}</strong>
+                    <small>{photoStatus === "error" ? "CAPTURE FAILED · TRY A DIFFERENT LENS" : photoStatus === "capturing" ? "RENDERING HIGH-RES FRAME…" : photoStatus === "ready" ? "HIGH-RES FRAME READY" : photoStatus === "shared" ? "PHOTO SHARED" : photoStatus === "saved" ? "PHOTO SAVED" : "LIVING OCEAN PAUSED · WEATHER AND WATER STAY ALIVE"}</small>
+                  </div>
+                  <div className="photo-actions">
+                    <button type="button" className="photo-lens-button" onClick={cycleCamera}><Camera /><span>CYCLE LENS</span></button>
+                    <button type="button" className="photo-capture-button" onClick={capturePhoto} disabled={photoStatus === "capturing"}>
+                      {photoStatus === "capturing" ? <LoaderCircle className="spin" /> : <Aperture />}
+                      <span>{photoStatus === "capturing" ? "CAPTURING" : hasPhoto ? "RECAPTURE" : "CAPTURE"}</span>
+                    </button>
+                    {hasPhoto && (
+                      <button type="button" className="photo-share-button" onClick={() => void sharePhoto()}>
+                        {photoStatus === "shared" || photoStatus === "saved" ? <CircleCheck /> : <Share2 />}
+                        <span>{photoStatus === "shared" ? "SHARED" : photoStatus === "saved" ? "SAVED" : "SHARE / SAVE"}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {photoStatus === "ready" && <div className="photo-capture-flash" aria-hidden="true" />}
+            </>
+          )}
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
           </div>
@@ -2408,6 +2564,7 @@ export default function SurfscapeApp() {
                   {isFullscreen ? <Minimize2 /> : <Maximize2 />}
                 </button>
               )}
+              <button className="photo-button" onClick={openPhotoMode} aria-label="Open photo mode" title="Photo mode (P)"><Aperture /></button>
               <button className="camera-button" onClick={cycleCamera} aria-label={`Camera: ${CAMERA_LABELS[cameraMode]}. Switch camera.`} title={`Camera: ${CAMERA_LABELS[cameraMode]}`}><Camera /></button>
               <button onClick={() => { clearAnalogMovement(); setPaused(true); }} aria-label="Pause"><Pause /></button>
             </div>
@@ -2726,7 +2883,7 @@ export default function SurfscapeApp() {
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); previousPhase.current = "shore"; previousTakeoffPhase.current = "shore"; previousManeuverId.current = 0; previousRideResultId.current = 0; previousPassportRideResultId.current = 0; setManeuverToast(null); setRideToast(null); setPassportAward(null); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); resetRideCapture(); photoFile.current = null; setPhotoMode(false); setPhotoStatus("idle"); previousPhase.current = "shore"; previousTakeoffPhase.current = "shore"; previousManeuverId.current = 0; previousRideResultId.current = 0; previousPassportRideResultId.current = 0; setManeuverToast(null); setRideToast(null); setPassportAward(null); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}

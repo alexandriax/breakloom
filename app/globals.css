@@ -908,6 +908,154 @@ input:focus-visible {
   pointer-events: none;
 }
 
+.game-ui.is-photo > :not(.camera-look-surface):not(.photo-mode-ui):not(.photo-capture-flash) {
+  opacity: 0 !important;
+  visibility: hidden;
+  pointer-events: none !important;
+}
+.game-ui.is-photo .camera-look-surface { inset: 0; cursor: crosshair; }
+.game-ui.is-photo .camera-look-surface.is-locked { cursor: none; }
+.game-ui.is-photo .camera-look-surface > span { display: none; }
+
+.photo-mode-ui {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  color: #f1fffb;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .78);
+  pointer-events: none;
+}
+
+.photo-mode-top {
+  position: absolute;
+  top: 22px;
+  left: 24px;
+  right: 24px;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto 1fr 38px;
+  align-items: center;
+  gap: 18px;
+  padding: 0 4px 0 13px;
+  border: 1px solid rgba(208, 255, 248, .18);
+  border-left: 2px solid var(--spot-accent);
+  background: linear-gradient(90deg, rgba(2, 12, 17, .72), rgba(2, 12, 17, .28) 62%, rgba(2, 12, 17, .62));
+  backdrop-filter: blur(11px);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .22);
+}
+
+.photo-mode-top > div { display: flex; align-items: center; gap: 8px; }
+.photo-mode-top > div svg { width: 16px; color: var(--spot-accent); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--spot-accent) 62%, transparent)); }
+.photo-mode-top > div span { font-size: 7px; font-weight: 900; letter-spacing: .19em; }
+.photo-mode-top > div strong { padding-left: 8px; border-left: 1px solid rgba(255, 255, 255, .16); color: rgba(221, 252, 246, .54); font-size: 6px; letter-spacing: .12em; }
+.photo-mode-top > small { color: rgba(225, 247, 242, .46); font-size: 5px; font-weight: 800; letter-spacing: .12em; text-align: right; }
+.photo-mode-top > button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .19);
+  background: rgba(3, 16, 21, .68);
+  color: white;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.photo-mode-top > button svg { width: 14px; }
+
+.photo-reticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(58vw, 760px);
+  aspect-ratio: 16 / 9;
+  transform: translate(-50%, -50%);
+  opacity: .62;
+  pointer-events: none;
+}
+.photo-reticle > i { position: absolute; width: 38px; height: 38px; border-color: rgba(230, 255, 250, .62); border-style: solid; }
+.photo-reticle > i:nth-child(1) { top: 0; left: 0; border-width: 1px 0 0 1px; }
+.photo-reticle > i:nth-child(2) { top: 0; right: 0; border-width: 1px 1px 0 0; }
+.photo-reticle > i:nth-child(3) { right: 0; bottom: 0; border-width: 0 1px 1px 0; }
+.photo-reticle > i:nth-child(4) { bottom: 0; left: 0; border-width: 0 0 1px 1px; }
+.photo-reticle > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(230, 255, 250, .48);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .28);
+}
+.photo-reticle::before,
+.photo-reticle::after {
+  content: "";
+  position: absolute;
+  border-color: rgba(230, 255, 250, .12);
+  border-style: solid;
+}
+.photo-reticle::before { top: 0; bottom: 0; left: 33.333%; width: 33.333%; border-width: 0 1px; }
+.photo-reticle::after { top: 33.333%; right: 0; bottom: 33.333%; left: 0; border-width: 1px 0; }
+
+.photo-mode-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 22px;
+  left: 24px;
+  min-height: 70px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid rgba(208, 255, 248, .18);
+  background: linear-gradient(90deg, rgba(2, 12, 17, .76), rgba(2, 12, 17, .38) 62%, rgba(2, 12, 17, .72));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 42px rgba(0, 0, 0, .26);
+}
+.photo-meta { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 10px 15px; }
+.photo-meta > span { overflow: hidden; color: rgba(225, 249, 244, .48); font-size: 5px; font-weight: 900; letter-spacing: .14em; text-overflow: ellipsis; white-space: nowrap; }
+.photo-meta > strong { font-size: 10px; letter-spacing: .09em; }
+.photo-meta > small { overflow: hidden; color: var(--spot-accent); font-size: 5px; font-weight: 800; letter-spacing: .08em; text-overflow: ellipsis; white-space: nowrap; }
+
+.photo-actions { flex: 0 0 auto; display: flex; align-items: stretch; pointer-events: auto; }
+.photo-actions button {
+  min-width: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, .13);
+  background: rgba(4, 20, 25, .48);
+  color: rgba(228, 252, 247, .74);
+  cursor: pointer;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.photo-actions button:hover { background: rgba(95, 220, 200, .11); color: white; }
+.photo-actions button:disabled { cursor: progress; opacity: .62; }
+.photo-actions button svg { width: 16px; }
+.photo-actions .photo-capture-button { min-width: 132px; background: color-mix(in srgb, var(--spot-accent) 20%, rgba(4, 22, 27, .78)); color: #eafffa; }
+.photo-actions .photo-share-button { color: #c5fff5; }
+
+.photo-capture-flash {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  background: white;
+  pointer-events: none;
+  animation: photo-capture-flash .46s ease-out both;
+}
+
+@keyframes photo-capture-flash {
+  0% { opacity: .92; }
+  22% { opacity: .28; }
+  100% { opacity: 0; }
+}
+
 .session-intro {
   position: absolute;
   z-index: 8;
@@ -1347,6 +1495,7 @@ input:focus-visible {
 }
 .game-actions svg { width: 14px; }
 .game-actions .camera-button { color: #b8fff5; border-color: rgba(113, 225, 211, 0.3); box-shadow: inset 0 0 12px rgba(113, 225, 211, 0.07); }
+.game-actions .photo-button { color: #ffd7a3; border-color: rgba(255, 198, 132, .3); box-shadow: inset 0 0 12px rgba(255, 190, 118, .06); }
 .controller-chip {
   height: 34px;
   display: flex;
@@ -1928,6 +2077,35 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .desktop-controls { display: none; }
   .camera-look-surface { inset: calc(62px + env(safe-area-inset-top)) 0 calc(112px + env(safe-area-inset-bottom)); }
   .camera-look-surface > span { right: 12px; bottom: 5px; font-size: 5px; opacity: .76; }
+  .game-ui.is-photo .camera-look-surface { inset: 0; }
+  .photo-mode-top {
+    top: max(10px, env(safe-area-inset-top));
+    right: 10px;
+    left: 10px;
+    min-height: 43px;
+    grid-template-columns: 1fr 34px;
+    gap: 8px;
+    padding-left: 10px;
+  }
+  .photo-mode-top > div strong { display: none; }
+  .photo-mode-top > small { display: none; }
+  .photo-mode-top > button { width: 32px; height: 32px; }
+  .photo-reticle { width: calc(100vw - 36px); }
+  .photo-reticle > i { width: 25px; height: 25px; }
+  .photo-mode-bottom {
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: 10px;
+    min-height: 0;
+    display: grid;
+    gap: 0;
+  }
+  .photo-meta { min-height: 52px; padding: 8px 10px; border-bottom: 1px solid rgba(255, 255, 255, .11); }
+  .photo-meta > strong { font-size: 8px; }
+  .photo-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; min-height: 49px; }
+  .photo-actions button,
+  .photo-actions .photo-capture-button { min-width: 0; padding: 0 8px; font-size: 5px; }
+  .photo-actions button:first-child { display: flex; }
   .mobile-controls { position: absolute; z-index: 4; left: 0; right: 0; bottom: max(10px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: clamp(84px, 28vw, 108px) minmax(0, 1fr) clamp(70px, 22vw, 84px); align-items: end; gap: clamp(6px, 2.2vw, 10px); padding: 0 clamp(7px, 2.5vw, 10px); touch-action: none; user-select: none; -webkit-user-select: none; }
   .touch-ride-telemetry { position: absolute; left: clamp(9px, 3vw, 14px); right: clamp(9px, 3vw, 14px); bottom: calc(100% + 7px); min-height: 36px; display: grid; grid-template-columns: 1fr 1.18fr .78fr; border: 1px solid rgba(191, 255, 246, .18); border-radius: 12px; background: linear-gradient(90deg, rgba(3, 15, 20, .82), rgba(7, 28, 32, .68), rgba(3, 15, 20, .82)); box-shadow: 0 9px 24px rgba(0, 0, 0, .24), inset 0 1px rgba(255, 255, 255, .06); backdrop-filter: blur(11px); overflow: hidden; pointer-events: none; }
   .touch-ride-telemetry > span { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 5px 9px; border-right: 1px solid rgba(255, 255, 255, .08); }

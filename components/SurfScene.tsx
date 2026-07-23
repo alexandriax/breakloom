@@ -38,6 +38,9 @@ export type RideCaptureRequest = {
   id: number;
   rideId: number;
   quality: number;
+  purpose: "ride" | "photo";
+  view: "cinematic" | "player";
+  caption?: string;
 };
 export type RideFrameCapture = RideCaptureRequest & {
   blob: Blob;
@@ -7754,7 +7757,7 @@ function CinematicFrameCapture({
   settings: SessionSettings;
   character: BreakCharacter;
 }) {
-  const { gl, scene } = useThree();
+  const { gl, scene, camera: activeCamera } = useThree();
   const quality = useRenderQuality();
   const handledRequest = useRef(0);
   const captureCallback = useRef(onCapture);
@@ -7768,31 +7771,42 @@ function CinematicFrameCapture({
   useFrame(({ clock }) => {
     if (!request || request.id <= handledRequest.current) return;
     handledRequest.current = request.id;
-    const width = quality === "high" ? 1200 : quality === "balanced" ? 1040 : 840;
-    const height = Math.round(width * 630 / 1200);
+    const photoCapture = request.purpose === "photo";
+    const width = photoCapture
+      ? quality === "high" ? 1440 : quality === "balanced" ? 1200 : 960
+      : quality === "high" ? 1200 : quality === "balanced" ? 1040 : 840;
+    const height = photoCapture ? Math.round(width * 9 / 16) : Math.round(width * 630 / 1200);
     const focus = focusPosition.current;
-    const transport = primaryWaveVelocityAt(focus.x, focus.z, clock.elapsedTime, settings, character);
-    const normalX = transport.x / Math.max(.001, transport.speed);
-    const normalZ = transport.z / Math.max(.001, transport.speed);
-    const tangentX = normalZ;
-    const tangentZ = -normalX;
-    const lineSide = motion.current.lineSide || (character.peel === 0 ? 1 : Math.sign(character.peel));
-    const surfaceY = waveHeightAt(focus.x, focus.z, clock.elapsedTime, settings, character);
-    const shoulderOffset = 4.4 + settings.waveHeight * .42;
-    const shorewardOffset = 6.2 + settings.waveHeight * .68;
-    captureCamera.current.aspect = width / height;
-    captureCamera.current.fov = THREE.MathUtils.clamp(54 - settings.waveHeight * 1.2, 47, 53);
-    captureCamera.current.position.set(
-      focus.x + normalX * shorewardOffset + tangentX * lineSide * shoulderOffset,
-      surfaceY + 2.75 + settings.waveHeight * .24,
-      focus.z + normalZ * shorewardOffset + tangentZ * lineSide * shoulderOffset,
-    );
-    lookTarget.current.set(
-      focus.x - normalX * .6 + tangentX * lineSide * .7,
-      surfaceY + .92 + motion.current.maneuverLift * .18,
-      focus.z - normalZ * .6 + tangentZ * lineSide * .7,
-    );
-    captureCamera.current.lookAt(lookTarget.current);
+    if (request.view === "player" && activeCamera instanceof THREE.PerspectiveCamera) {
+      captureCamera.current.copy(activeCamera, false);
+      activeCamera.getWorldPosition(captureCamera.current.position);
+      activeCamera.getWorldQuaternion(captureCamera.current.quaternion);
+      captureCamera.current.scale.set(1, 1, 1);
+      captureCamera.current.aspect = width / height;
+    } else {
+      const transport = primaryWaveVelocityAt(focus.x, focus.z, clock.elapsedTime, settings, character);
+      const normalX = transport.x / Math.max(.001, transport.speed);
+      const normalZ = transport.z / Math.max(.001, transport.speed);
+      const tangentX = normalZ;
+      const tangentZ = -normalX;
+      const lineSide = motion.current.lineSide || (character.peel === 0 ? 1 : Math.sign(character.peel));
+      const surfaceY = waveHeightAt(focus.x, focus.z, clock.elapsedTime, settings, character);
+      const shoulderOffset = 4.4 + settings.waveHeight * .42;
+      const shorewardOffset = 6.2 + settings.waveHeight * .68;
+      captureCamera.current.aspect = width / height;
+      captureCamera.current.fov = THREE.MathUtils.clamp(54 - settings.waveHeight * 1.2, 47, 53);
+      captureCamera.current.position.set(
+        focus.x + normalX * shorewardOffset + tangentX * lineSide * shoulderOffset,
+        surfaceY + 2.75 + settings.waveHeight * .24,
+        focus.z + normalZ * shorewardOffset + tangentZ * lineSide * shoulderOffset,
+      );
+      lookTarget.current.set(
+        focus.x - normalX * .6 + tangentX * lineSide * .7,
+        surfaceY + .92 + motion.current.maneuverLift * .18,
+        focus.z - normalZ * .6 + tangentZ * lineSide * .7,
+      );
+      captureCamera.current.lookAt(lookTarget.current);
+    }
     captureCamera.current.updateProjectionMatrix();
     captureCamera.current.updateMatrixWorld(true);
 
@@ -7808,7 +7822,7 @@ function CinematicFrameCapture({
     const previousSurferVisibility = surferVisual?.visible;
     const pixels = new Uint8Array(width * height * 4);
     try {
-      if (surferVisual) surferVisual.visible = true;
+      if (surferVisual && request.view === "cinematic") surferVisual.visible = true;
       gl.setRenderTarget(target);
       gl.clear(true, true, true);
       gl.render(scene, captureCamera.current);
@@ -7835,9 +7849,28 @@ function CinematicFrameCapture({
     const context = canvas.getContext("2d");
     if (!context) return;
     context.putImageData(new ImageData(flipped, width, height), 0, 0);
+    if (photoCapture) {
+      const unit = width / 1200;
+      const lowerShade = context.createLinearGradient(0, height * .68, 0, height);
+      lowerShade.addColorStop(0, "rgba(1,8,12,0)");
+      lowerShade.addColorStop(1, "rgba(1,8,12,.72)");
+      context.fillStyle = lowerShade;
+      context.fillRect(0, height * .64, width, height * .36);
+      context.fillStyle = "rgba(207,255,248,.92)";
+      context.font = `900 ${Math.round(17 * unit)}px Arial, sans-serif`;
+      context.fillText("S U R F S C A P E", 34 * unit, height - 42 * unit);
+      context.fillStyle = "rgba(222,248,243,.66)";
+      context.font = `700 ${Math.round(10 * unit)}px Arial, sans-serif`;
+      context.fillText(request.caption?.toUpperCase() ?? "LIVING OCEAN / PHOTO MODE", 34 * unit, height - 23 * unit);
+      context.textAlign = "right";
+      context.fillStyle = "rgba(222,248,243,.74)";
+      context.font = `800 ${Math.round(11 * unit)}px Arial, sans-serif`;
+      context.fillText(`${settings.waveHeight.toFixed(1)} M  ·  ${settings.wavePeriod.toFixed(0)} S`, width - 34 * unit, height - 27 * unit);
+      context.textAlign = "left";
+    }
     canvas.toBlob((blob) => {
       if (blob) captureCallback.current({ ...request, blob });
-    }, "image/jpeg", .92);
+    }, "image/jpeg", photoCapture ? .95 : .92);
   });
 
   return null;
