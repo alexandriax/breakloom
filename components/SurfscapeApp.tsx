@@ -15,6 +15,7 @@ import {
   Download,
   Gauge,
   Gamepad2,
+  Grid3X3,
   LoaderCircle,
   MapPin,
   Maximize2,
@@ -25,6 +26,7 @@ import {
   Settings2,
   Share2,
   Sparkles,
+  SunMedium,
   Target,
   Thermometer,
   Trophy,
@@ -34,7 +36,7 @@ import {
   Wind,
   X,
 } from "lucide-react";
-import { CSSProperties, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BEACHES, DEFAULT_BEACH, getBreakCharacter, type Beach } from "@/lib/beaches";
 import {
   fallbackConditions,
@@ -100,6 +102,7 @@ type WetLensEvent = {
 };
 type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
 type PhotoStatus = "idle" | "capturing" | "ready" | "shared" | "saved" | "error";
+type PhotoGuide = "thirds" | "center" | "clean";
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -141,9 +144,28 @@ const CAMERA_LABELS: Record<CameraMode, string> = {
   immersive: "Immersive",
   cinematic: "Cinematic",
 };
+const PHOTO_FOCAL_LENGTHS = [24, 35, 50, 70] as const;
+const PHOTO_GUIDES: PhotoGuide[] = ["thirds", "center", "clean"];
+const PHOTO_GUIDE_LABELS: Record<PhotoGuide, string> = {
+  thirds: "Rule of thirds",
+  center: "Center cross",
+  clean: "Clean frame",
+};
 
 function nextCameraMode(current: CameraMode) {
   return CAMERA_MODES[(CAMERA_MODES.indexOf(current) + 1) % CAMERA_MODES.length];
+}
+
+function steppedPhotoFocalLength(current: number, direction: number) {
+  const index = PHOTO_FOCAL_LENGTHS.reduce(
+    (nearest, value, candidate) => Math.abs(value - current) < Math.abs(PHOTO_FOCAL_LENGTHS[nearest] - current) ? candidate : nearest,
+    0,
+  );
+  return PHOTO_FOCAL_LENGTHS[THREEClamp(index + direction, 0, PHOTO_FOCAL_LENGTHS.length - 1)];
+}
+
+function formatExposure(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)} EV`;
 }
 
 function gradeRank(grade: GameStats["grade"]) {
@@ -609,6 +631,9 @@ export default function SurfscapeApp() {
   const [paused, setPaused] = useState(false);
   const [photoMode, setPhotoMode] = useState(false);
   const [photoStatus, setPhotoStatus] = useState<PhotoStatus>("idle");
+  const [photoFocalLength, setPhotoFocalLength] = useState<number>(35);
+  const [photoExposure, setPhotoExposure] = useState(0);
+  const [photoGuide, setPhotoGuide] = useState<PhotoGuide>("thirds");
   const [sceneReady, setSceneReady] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -751,6 +776,31 @@ export default function SurfscapeApp() {
     if (rideFrame.current && capture.quality < rideFrame.current.quality) return;
     rideFrame.current = capture;
     setRideFrameVersion((version) => version + 1);
+  }, []);
+
+  const selectPhotoFocalLength = useCallback((focalLength: number) => {
+    photoFile.current = null;
+    setPhotoStatus("idle");
+    setPhotoFocalLength(focalLength);
+    haptic(3);
+  }, []);
+
+  const nudgePhotoFocalLength = useCallback((direction: number) => {
+    photoFile.current = null;
+    setPhotoStatus("idle");
+    setPhotoFocalLength((current) => steppedPhotoFocalLength(current, direction));
+    haptic(3);
+  }, []);
+
+  const selectPhotoExposure = useCallback((exposure: number) => {
+    photoFile.current = null;
+    setPhotoStatus("idle");
+    setPhotoExposure(THREEClamp(exposure, -1.5, 1.5));
+  }, []);
+
+  const cyclePhotoGuide = useCallback(() => {
+    setPhotoGuide((current) => PHOTO_GUIDES[(PHOTO_GUIDES.indexOf(current) + 1) % PHOTO_GUIDES.length]);
+    haptic(3);
   }, []);
 
   useEffect(() => {
@@ -960,7 +1010,7 @@ export default function SurfscapeApp() {
       if (screen !== "game") return;
       controls.current.gamepadActive = false;
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "q", "e", "p", "r", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
+      if (["w", "a", "s", "d", "q", "e", "g", "p", "r", "[", "]", "-", "=", "+", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
       }
       if (key === "p" && !event.repeat) {
@@ -987,6 +1037,11 @@ export default function SurfscapeApp() {
           controls.current.lookPitch = 0;
           haptic(4);
         }
+        if (key === "[") nudgePhotoFocalLength(-1);
+        if (key === "]") nudgePhotoFocalLength(1);
+        if (key === "-") selectPhotoExposure(photoExposure - .2);
+        if (key === "=" || key === "+") selectPhotoExposure(photoExposure + .2);
+        if (key === "g" && !event.repeat) cyclePhotoGuide();
         return;
       }
       if (key === "w" || key === "arrowup") controls.current.forward = true;
@@ -1028,7 +1083,7 @@ export default function SurfscapeApp() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [paused, photoMode, screen]);
+  }, [cyclePhotoGuide, nudgePhotoFocalLength, paused, photoExposure, photoMode, screen, selectPhotoExposure]);
 
   useEffect(() => {
     if (screen !== "game" || !navigator.getGamepads) {
@@ -1123,7 +1178,8 @@ export default function SurfscapeApp() {
       centerButton = nextCenterButton;
       const nextPauseButton = Boolean(gamepad.buttons[9]?.pressed);
       if (nextPauseButton && !pauseButton) {
-        setPaused((current) => !current);
+        if (photoMode) setPhotoMode(false);
+        else setPaused((current) => !current);
         haptic(6);
       }
       pauseButton = nextPauseButton;
@@ -1136,7 +1192,7 @@ export default function SurfscapeApp() {
       clearGamepad();
       setGamepadConnected(false);
     };
-  }, [screen]);
+  }, [photoMode, screen]);
 
   useEffect(() => {
     const releaseAllControls = () => {
@@ -1777,6 +1833,12 @@ export default function SurfscapeApp() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const adjustPhotoLensFromWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if (!photoMode || Math.abs(event.deltaY) < 2) return;
+    event.preventDefault();
+    nudgePhotoFocalLength(event.deltaY > 0 ? -1 : 1);
+  };
+
   const centerCameraLook = () => {
     controls.current.lookYaw = 0;
     controls.current.lookPitch = 0;
@@ -1813,6 +1875,8 @@ export default function SurfscapeApp() {
       purpose: "photo",
       view: "player",
       caption: `${zoneLabel} · ${beach.name} · ${localTime}`,
+      focalLength: photoFocalLength,
+      exposure: photoExposure,
     });
     window.setTimeout(() => {
       setPhotoStatus((current) => current === "capturing" ? "error" : current);
@@ -2111,6 +2175,10 @@ export default function SurfscapeApp() {
           cameraMode={cameraMode}
           controls={controls}
           active={screen === "game" && !paused && !photoMode}
+          renderActive={screen === "game" && !paused}
+          photoMode={photoMode}
+          photoFocalLength={photoFocalLength}
+          photoExposure={photoExposure}
           captureRequest={captureRequest}
           onCapture={handleRideFrameCapture}
           onStats={handleStats}
@@ -2423,6 +2491,7 @@ export default function SurfscapeApp() {
             onPointerMove={updateCameraLook}
             onPointerUp={endCameraLook}
             onPointerCancel={endCameraLook}
+            onWheel={adjustPhotoLensFromWheel}
             onLostPointerCapture={(event) => {
               lookGesture.current = null;
               event.currentTarget.classList.remove("is-dragging");
@@ -2439,20 +2508,56 @@ export default function SurfscapeApp() {
                   <div>
                     <Aperture />
                     <span>PHOTO MODE</span>
-                    <strong>{CAMERA_LABELS[cameraMode].toUpperCase()} LENS</strong>
+                    <strong>{CAMERA_LABELS[cameraMode].toUpperCase()} RIG · {photoFocalLength} MM</strong>
                   </div>
-                  <small>{pointerLocked ? "MOUSE LOOK LOCKED · P / ESC TO EXIT" : "DRAG OR CLICK TO FRAME · P / ESC TO EXIT"}</small>
+                  <small>{pointerLocked ? "MOUSE LOOK LOCKED · WHEEL ZOOMS · P / ESC EXITS" : "DRAG / CLICK TO FRAME · WHEEL ZOOMS · P / ESC EXITS"}</small>
                   <button type="button" onClick={closePhotoMode} aria-label="Exit photo mode"><X /></button>
                 </div>
-                <div className="photo-reticle" aria-hidden="true"><i /><i /><i /><i /><span /></div>
+                <div className="photo-director-panel">
+                  <div className="photo-optics">
+                    <span><Camera /> OPTICS</span>
+                    <div role="group" aria-label="Photo focal length">
+                      {PHOTO_FOCAL_LENGTHS.map((focalLength) => (
+                        <button
+                          type="button"
+                          key={focalLength}
+                          className={photoFocalLength === focalLength ? "is-active" : ""}
+                          onClick={() => selectPhotoFocalLength(focalLength)}
+                          aria-pressed={photoFocalLength === focalLength}
+                        >
+                          {focalLength}<small>MM</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <label className="photo-exposure-control">
+                    <span><SunMedium /> EXPOSURE</span>
+                    <input
+                      type="range"
+                      min={-1.5}
+                      max={1.5}
+                      step={.1}
+                      value={photoExposure}
+                      onChange={(event) => selectPhotoExposure(Number(event.target.value))}
+                      aria-label="Photo exposure compensation"
+                    />
+                    <output>{formatExposure(photoExposure)}</output>
+                  </label>
+                  <button type="button" className="photo-guide-button" onClick={cyclePhotoGuide}>
+                    <Grid3X3 />
+                    <span>GUIDE</span>
+                    <strong>{PHOTO_GUIDE_LABELS[photoGuide].toUpperCase()}</strong>
+                  </button>
+                </div>
+                <div className={`photo-reticle guide-${photoGuide}`} aria-hidden="true"><i /><i /><i /><i /><span /></div>
                 <div className="photo-mode-bottom">
                   <div className="photo-meta">
                     <span>{zoneLabel.toUpperCase()} · {beach.name.toUpperCase()}</span>
-                    <strong>{effectiveFaceHeight.toFixed(1)} M · {settings.wavePeriod.toFixed(0)} S · {localTime}</strong>
-                    <small>{photoStatus === "error" ? "CAPTURE FAILED · TRY A DIFFERENT LENS" : photoStatus === "capturing" ? "RENDERING HIGH-RES FRAME…" : photoStatus === "ready" ? "HIGH-RES FRAME READY" : photoStatus === "shared" ? "PHOTO SHARED" : photoStatus === "saved" ? "PHOTO SAVED" : "LIVING OCEAN PAUSED · WEATHER AND WATER STAY ALIVE"}</small>
+                    <strong>{photoFocalLength} MM · {formatExposure(photoExposure)} · {effectiveFaceHeight.toFixed(1)} M · {settings.wavePeriod.toFixed(0)} S · {localTime}</strong>
+                    <small aria-live="polite">{photoStatus === "error" ? "CAPTURE FAILED · TRY A DIFFERENT RIG" : photoStatus === "capturing" ? "RENDERING HIGH-RES FRAME…" : photoStatus === "ready" ? "HIGH-RES FRAME READY" : photoStatus === "shared" ? "PHOTO SHARED" : photoStatus === "saved" ? "PHOTO SAVED" : "PLAYER HELD · LIVING OCEAN / WEATHER ACTIVE"}</small>
                   </div>
                   <div className="photo-actions">
-                    <button type="button" className="photo-lens-button" onClick={cycleCamera}><Camera /><span>CYCLE LENS</span></button>
+                    <button type="button" className="photo-lens-button" onClick={cycleCamera}><Camera /><span>CYCLE RIG</span></button>
                     <button type="button" className="photo-capture-button" onClick={capturePhoto} disabled={photoStatus === "capturing"}>
                       {photoStatus === "capturing" ? <LoaderCircle className="spin" /> : <Aperture />}
                       <span>{photoStatus === "capturing" ? "CAPTURING" : hasPhoto ? "RECAPTURE" : "CAPTURE"}</span>

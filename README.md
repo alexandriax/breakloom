@@ -28,6 +28,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `Space` beside the parked van: enter; stop and press again to exit
 - `C`: cycle Follow, Surfer POV, Immersive, and Cinematic cameras
 - `P`: enter Photo Mode; frame with the same unrestricted mouse, touch, or gamepad camera, then capture and share/save a high-resolution shot
+- Photo Mode: mouse wheel or `[` / `]` changes the 24–70 mm lens, `-` / `+` changes exposure, and `G` cycles composition guides
 - `Esc`: pause
 - Mobile: analog movement stick, target-tracking balance rail with landing zones and haptic lock feedback, camera switcher, and a context-sensitive Move/Paddle/Catch/Trick/Drive button
 
@@ -43,7 +44,7 @@ The persistent Surf Passport turns all thirteen coastlines into a non-gating Wor
 
 Camera motion is derived from the active subject rather than a generic shake loop. Filtered velocity and acceleration produce directional chase lag, turn anticipation, physical horizon banking, speed-sensitive focal changes, and a damped spring response to takeoffs, landings, shorebreak hits, and van weight transfer. These effects are softened on mobile and disabled when the device requests reduced motion; unrestricted mouse, touch, and gamepad free look remains layered on top.
 
-Photo Mode can freeze locomotion at any unpaused moment without freezing the simulated water, weather, wildlife, lighting, character secondary motion, or audio bed. The player keeps the active Follow, POV, Immersive, or Cinematic lens and unrestricted 360-degree framing, while an adaptive offscreen render captures the exact camera view as a high-resolution 16:9 JPEG. The saved frame receives a restrained Surfscape, location, local-time, wave-height, and period treatment, then uses the native mobile share sheet when available or downloads directly on desktop. Capture resolution scales with the device quality tier so photography does not compromise mobile play.
+Photo Mode can hold player locomotion at any unpaused moment while a dedicated render path keeps the simulated water, weather, wildlife, lighting, character secondary motion, audio bed, and unrestricted camera framing alive. The player keeps the active Follow, POV, Immersive, or Cinematic rig, then selects a true 24, 35, 50, or 70 mm optical field of view, applies ±1.5 EV exposure compensation, and cycles rule-of-thirds, center-cross, or clean composition guides. Mouse-wheel and keyboard shortcuts complement the touch-sized director controls. An adaptive offscreen render captures the exact active camera and optical treatment as a high-resolution 16:9 JPEG; the saved frame receives restrained Surfscape, location, local-time, focal-length, exposure, wave-height, and period metadata, then uses the native mobile share sheet when available or downloads directly on desktop. Capture resolution scales with the device quality tier so photography does not compromise mobile play.
 
 ## Live data
 

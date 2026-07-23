@@ -41,6 +41,8 @@ export type RideCaptureRequest = {
   purpose: "ride" | "photo";
   view: "cinematic" | "player";
   caption?: string;
+  focalLength?: number;
+  exposure?: number;
 };
 export type RideFrameCapture = RideCaptureRequest & {
   blob: Blob;
@@ -168,6 +170,10 @@ type SurfSceneProps = {
   cameraMode: CameraMode;
   controls: MutableRefObject<ControlState>;
   active: boolean;
+  renderActive: boolean;
+  photoMode: boolean;
+  photoFocalLength: number;
+  photoExposure: number;
   captureRequest: RideCaptureRequest | null;
   onCapture: (capture: RideFrameCapture) => void;
   onStats: (stats: GameStats) => void;
@@ -7865,7 +7871,10 @@ function CinematicFrameCapture({
       context.textAlign = "right";
       context.fillStyle = "rgba(222,248,243,.74)";
       context.font = `800 ${Math.round(11 * unit)}px Arial, sans-serif`;
-      context.fillText(`${settings.waveHeight.toFixed(1)} M  ·  ${settings.wavePeriod.toFixed(0)} S`, width - 34 * unit, height - 27 * unit);
+      const opticalMetadata = request.focalLength
+        ? `${request.focalLength} MM  ·  ${(request.exposure ?? 0) >= 0 ? "+" : ""}${(request.exposure ?? 0).toFixed(1)} EV  ·  `
+        : "";
+      context.fillText(`${opticalMetadata}${settings.waveHeight.toFixed(1)} M  ·  ${settings.wavePeriod.toFixed(0)} S`, width - 34 * unit, height - 27 * unit);
       context.textAlign = "left";
     }
     canvas.toBlob((blob) => {
@@ -7891,6 +7900,9 @@ function Simulation({
   cameraMode,
   controls,
   active,
+  photoMode,
+  photoFocalLength,
+  photoExposure,
   captureRequest,
   onCapture,
   onStats,
@@ -8111,8 +8123,9 @@ function Simulation({
     onReady();
   }, [onReady]);
 
-  useFrame(({ clock }, delta) => {
+  useFrame(({ clock, gl }, delta) => {
     if (!player.current || !van.current) return;
+    gl.toneMappingExposure = photoMode ? 1.08 * Math.pow(2, photoExposure) : 1.08;
     const t = clock.elapsedTime;
     const sessionIntroProgress = reducedMotion
       ? THREE.MathUtils.smootherstep(t, .04, .58)
@@ -9890,7 +9903,12 @@ function Simulation({
         + Math.abs(cameraLateralAcceleration) * (riding ? .035 : .018)
         + impactRise * (riding ? 1.8 : .9)
       );
-      const targetFov = THREE.MathUtils.lerp(67, gameplayFov + accelerationFov, sessionIntroProgress);
+      const opticalFov = THREE.MathUtils.radToDeg(
+        2 * Math.atan(camera.getFilmHeight() / Math.max(1, photoFocalLength * 2)),
+      );
+      const targetFov = photoMode
+        ? opticalFov
+        : THREE.MathUtils.lerp(67, gameplayFov + accelerationFov, sessionIntroProgress);
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {
         const focalLength = 0.5 * camera.getFilmHeight() / Math.tan(THREE.MathUtils.degToRad(nextFov * 0.5));
@@ -10226,7 +10244,7 @@ export default function SurfScene(props: SurfSceneProps) {
       className="surf-canvas"
       shadows={mobileRenderer ? false : "percentage"}
       dpr={limits.initial}
-      frameloop={props.active ? "always" : "demand"}
+      frameloop={props.renderActive ? "always" : "demand"}
       camera={{ position: [0, 4.8, 44], fov: 58, near: 0.08, far: 650 }}
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping }}
       onCreated={({ gl }) => {
@@ -10235,7 +10253,7 @@ export default function SurfScene(props: SurfSceneProps) {
       }}
     >
       <RenderQualityContext.Provider value={renderQuality}>
-        <AdaptiveRenderer active={props.active} mobile={mobileRenderer} limits={limits} onQualityChange={setRenderQuality} />
+        <AdaptiveRenderer active={props.renderActive} mobile={mobileRenderer} limits={limits} onQualityChange={setRenderQuality} />
         <Simulation {...props} />
       </RenderQualityContext.Provider>
     </Canvas>

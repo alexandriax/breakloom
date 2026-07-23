@@ -962,6 +962,101 @@ input:focus-visible {
 }
 .photo-mode-top > button svg { width: 14px; }
 
+.photo-director-panel {
+  position: absolute;
+  top: 84px;
+  left: 24px;
+  width: 208px;
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgba(208, 255, 248, .18);
+  border-left: 2px solid rgba(208, 255, 248, .36);
+  background: linear-gradient(145deg, rgba(2, 12, 17, .78), rgba(3, 20, 25, .47));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .24);
+  pointer-events: auto;
+}
+.photo-optics { display: grid; gap: 7px; }
+.photo-optics > span,
+.photo-exposure-control > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(225, 249, 244, .52);
+  font-size: 5px;
+  font-weight: 900;
+  letter-spacing: .15em;
+}
+.photo-optics > span svg,
+.photo-exposure-control > span svg { width: 12px; color: var(--spot-accent); }
+.photo-optics > div {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid rgba(255, 255, 255, .11);
+}
+.photo-optics button {
+  height: 33px;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, .1);
+  background: rgba(3, 17, 22, .68);
+  color: rgba(230, 253, 248, .55);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 900;
+}
+.photo-optics button:last-child { border-right: 0; }
+.photo-optics button small { font-size: 4px; letter-spacing: .06em; }
+.photo-optics button.is-active {
+  background: color-mix(in srgb, var(--spot-accent) 19%, rgba(3, 21, 26, .82));
+  color: #effffb;
+  box-shadow: inset 0 -2px var(--spot-accent);
+}
+.photo-exposure-control {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 7px 9px;
+}
+.photo-exposure-control > span { grid-column: 1 / -1; }
+.photo-exposure-control input {
+  width: 100%;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--spot-accent);
+  cursor: ew-resize;
+}
+.photo-exposure-control output {
+  min-width: 46px;
+  color: #ecfffa;
+  font-size: 6px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-align: right;
+}
+.photo-guide-button {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 17px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 7px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, .11);
+  background: rgba(3, 17, 22, .58);
+  color: rgba(227, 252, 247, .52);
+  cursor: pointer;
+  text-align: left;
+}
+.photo-guide-button:hover { background: rgba(95, 220, 200, .1); color: white; }
+.photo-guide-button svg { grid-row: 1 / 3; width: 14px; color: var(--spot-accent); }
+.photo-guide-button span { font-size: 4px; font-weight: 900; letter-spacing: .15em; }
+.photo-guide-button strong { color: #ecfffa; font-size: 6px; letter-spacing: .09em; }
+
 .photo-reticle {
   position: absolute;
   top: 50%;
@@ -997,6 +1092,12 @@ input:focus-visible {
 }
 .photo-reticle::before { top: 0; bottom: 0; left: 33.333%; width: 33.333%; border-width: 0 1px; }
 .photo-reticle::after { top: 33.333%; right: 0; bottom: 33.333%; left: 0; border-width: 1px 0; }
+.photo-reticle.guide-center::before { top: 0; bottom: 0; left: 50%; width: 0; border-width: 0 0 0 1px; }
+.photo-reticle.guide-center::after { top: 50%; right: 0; bottom: auto; left: 0; height: 0; border-width: 1px 0 0; }
+.photo-reticle.guide-clean::before,
+.photo-reticle.guide-clean::after,
+.photo-reticle.guide-clean > span { display: none; }
+.photo-reticle.guide-clean > i { opacity: .58; }
 
 .photo-mode-bottom {
   position: absolute;
@@ -2090,6 +2191,34 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .photo-mode-top > div strong { display: none; }
   .photo-mode-top > small { display: none; }
   .photo-mode-top > button { width: 32px; height: 32px; }
+  .photo-director-panel {
+    top: calc(max(10px, env(safe-area-inset-top)) + 50px);
+    right: 10px;
+    left: 10px;
+    width: auto;
+    grid-template-columns: minmax(112px, 1.25fr) minmax(82px, .8fr) 38px;
+    align-items: center;
+    gap: 7px;
+    padding: 7px;
+    border-left-width: 1px;
+  }
+  .photo-optics { gap: 0; }
+  .photo-optics > span,
+  .photo-exposure-control > span { display: none; }
+  .photo-optics button { height: 30px; font-size: 7px; }
+  .photo-exposure-control { grid-template-columns: 1fr; gap: 1px; }
+  .photo-exposure-control output { width: 100%; min-width: 0; font-size: 5px; text-align: center; }
+  .photo-guide-button {
+    width: 38px;
+    min-height: 38px;
+    display: grid;
+    grid-template: 1fr / 1fr;
+    place-items: center;
+    padding: 0;
+  }
+  .photo-guide-button svg { grid-row: auto; width: 15px; }
+  .photo-guide-button span,
+  .photo-guide-button strong { display: none; }
   .photo-reticle { width: calc(100vw - 36px); }
   .photo-reticle > i { width: 25px; height: 25px; }
   .photo-mode-bottom {
