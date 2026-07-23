@@ -944,11 +944,7 @@ export default function SurfscapeApp() {
     audio.current?.setSubmersion(
       paused
         ? 0
-        : stats.phase === "wipeout"
-          ? 1
-          : stats.duckDiveActive
-            ? .72 + stats.duckDiveQuality * .24
-            : 0,
+        : stats.submersion,
     );
     const movementSpeed = stats.phase === "paddling" ? stats.speed * stats.paddleEffort : stats.speed;
     audio.current?.setMovement(
@@ -956,7 +952,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.wavePeriod, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1507,11 +1503,7 @@ export default function SurfscapeApp() {
   const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
   const submersionIntensity = paused
     ? 0
-    : stats.phase === "wipeout"
-      ? .92
-      : stats.duckDiveActive
-        ? .68 + stats.duckDiveQuality * .24
-        : 0;
+    : stats.submersion;
   const submersionStyle = {
     "--submersion": submersionIntensity,
   } as CSSProperties;

@@ -189,6 +189,7 @@ type MotionState = {
   shorebreakPower: number;
   shorebreakSeconds: number;
   duckDive: number;
+  submersion: number;
   paddleHeading: number;
 };
 
@@ -2215,34 +2216,34 @@ function SurferModel({
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 : riding ? .84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 : riding ? .84 - state.takeoff * .34 - state.compression * .15 + rebound * .08 + state.maneuverLift * .05 : wipeout ? .42 - state.submersion * .34 + Math.sin(clock.elapsedTime * 4.1) * .045 : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, wipeout ? state.wipeout * 2.1 : riding ? state.slip * state.rail * -.08 : paddle ? Math.sin(clock.elapsedTime * 8) * state.shorebreak * .025 : 0, 9, delta);
     rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, riding ? state.slip * Math.sign(state.rail) * .13 + state.maneuverSpin : 0, state.maneuverLift > .12 ? 13 : 8, delta);
-    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, riding ? state.maneuverLift : paddle ? -state.duckDive * .42 + state.shorebreak * .055 : 0, state.maneuverLift > .08 || state.duckDive > .08 ? 13 : 9, delta);
+    rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, riding ? state.maneuverLift : paddle ? -state.duckDive * .42 + state.shorebreak * .055 : wipeout ? -.18 - state.submersion * .5 + Math.sin(clock.elapsedTime * 3.4) * .06 : 0, state.maneuverLift > .08 || state.duckDive > .08 || wipeout ? 13 : 9, delta);
 
     board.current.rotation.z = THREE.MathUtils.damp(
       board.current.rotation.z,
-      carrying ? (-.12 + carryStep * .026) * carryBlend : riding ? state.rail * -.27 - state.maneuverSide * state.maneuver * .22 : 0,
+      carrying ? (-.12 + carryStep * .026) * carryBlend : riding ? state.rail * -.27 - state.maneuverSide * state.maneuver * .22 : wipeout ? Math.sin(clock.elapsedTime * 4.1) * .34 : 0,
       7,
       delta,
     );
     board.current.rotation.y = THREE.MathUtils.damp(
       board.current.rotation.y,
-      riding ? state.maneuverSide * state.maneuver * 0.52 + state.slip * Math.sign(state.rail) * .18 - state.maneuverSpin * .22 : 0,
+      riding ? state.maneuverSide * state.maneuver * 0.52 + state.slip * Math.sign(state.rail) * .18 - state.maneuverSpin * .22 : wipeout ? Math.sin(clock.elapsedTime * 2.8 + .6) * .28 : 0,
       9,
       delta,
     );
     board.current.position.x = THREE.MathUtils.damp(board.current.position.x, carrying ? THREE.MathUtils.lerp(.68 + carryStep * .018, .04, waterDepth) : 0, 7, delta);
     board.current.position.y = THREE.MathUtils.damp(
       board.current.position.y,
-      carrying ? THREE.MathUtils.lerp(1.14 + Math.abs(carryStep) * .026, .16 + Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : paddle ? .16 - state.duckDive * .12 : .16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
+      carrying ? THREE.MathUtils.lerp(1.14 + Math.abs(carryStep) * .026, .16 + Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : paddle ? .16 - state.duckDive * .12 : wipeout ? .06 - state.submersion * .14 + Math.sin(clock.elapsedTime * 3.5) * .075 : .16 - Math.abs(state.rail) * .035 - state.compression * .025 + rebound * .09,
       7,
       delta,
     );
     board.current.rotation.x = THREE.MathUtils.damp(
       board.current.rotation.x,
-      carrying ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : riding ? state.stance * -.05 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : paddle ? state.duckDive * .3 - state.shorebreak * .035 : 0,
+      carrying ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth) : riding ? state.stance * -.05 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 : paddle ? state.duckDive * .3 - state.shorebreak * .035 : wipeout ? .12 + Math.sin(clock.elapsedTime * 3.5 + .8) * .18 : 0,
       7,
       delta,
     );
@@ -5677,6 +5678,159 @@ function VehicleSurfaceEffects({
   );
 }
 
+function UnderwaterAtmosphere({
+  motion,
+  backgroundRef,
+  fogRef,
+  backgroundColor,
+  fogColor,
+  fogNear,
+  fogFar,
+  light,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  backgroundRef: MutableRefObject<THREE.Color | null>;
+  fogRef: MutableRefObject<THREE.Fog | null>;
+  backgroundColor: string;
+  fogColor: string;
+  fogNear: number;
+  fogFar: number;
+  light: number;
+  mobile: boolean;
+}) {
+  const baseBackground = useMemo(() => new THREE.Color(backgroundColor), [backgroundColor]);
+  const baseFog = useMemo(() => new THREE.Color(fogColor), [fogColor]);
+  const underwaterBackground = useMemo(
+    () => new THREE.Color("#003f50").lerp(new THREE.Color("#0a6d70"), light * .24),
+    [light],
+  );
+  const underwaterFog = useMemo(
+    () => new THREE.Color("#074c59").lerp(new THREE.Color("#168074"), light * .28),
+    [light],
+  );
+
+  useFrame((_, delta) => {
+    const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
+    if (backgroundRef.current) {
+      backgroundRef.current.lerpColors(baseBackground, underwaterBackground, depth);
+    }
+    if (fogRef.current) {
+      fogRef.current.color.lerpColors(baseFog, underwaterFog, depth);
+      fogRef.current.near = THREE.MathUtils.damp(fogRef.current.near, THREE.MathUtils.lerp(fogNear, .28, depth), 12, delta);
+      fogRef.current.far = THREE.MathUtils.damp(
+        fogRef.current.far,
+        THREE.MathUtils.lerp(fogFar, (mobile ? 12 : 17) + light * 4, depth),
+        depth > .04 ? 10 : 4.5,
+        delta,
+      );
+    }
+  });
+
+  return null;
+}
+
+function UnderwaterSuspendedMatter({
+  motion,
+  settings,
+  mobile,
+}: {
+  motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  mobile: boolean;
+}) {
+  const quality = useRenderQuality();
+  const particleCount = mobile
+    ? quality === "reduced" ? 24 : quality === "high" ? 50 : 36
+    : quality === "reduced" ? 48 : quality === "balanced" ? 72 : 96;
+  const particles = useRef<THREE.Points>(null);
+  const material = useRef<THREE.PointsMaterial>(null);
+  const positions = useMemo(() => {
+    const values = new Float32Array(particleCount * 3);
+    for (let index = 0; index < particleCount; index += 1) {
+      values[index * 3] = (seededRandom(index, 901) - .5) * 17;
+      values[index * 3 + 1] = -.12 - seededRandom(index, 902) * 2.25;
+      values[index * 3 + 2] = (seededRandom(index, 903) - .5) * 17;
+    }
+    return values;
+  }, [particleCount]);
+  const particleSeeds = useMemo(() => {
+    const values = new Float32Array(particleCount);
+    for (let index = 0; index < particleCount; index += 1) values[index] = seededRandom(index, 904);
+    return values;
+  }, [particleCount]);
+  const texture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 48;
+    canvas.height = 48;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const gradient = context.createRadialGradient(21, 19, 1, 24, 24, 22);
+      gradient.addColorStop(0, "rgba(255,255,255,.92)");
+      gradient.addColorStop(.28, "rgba(196,255,242,.54)");
+      gradient.addColorStop(1, "rgba(123,220,211,0)");
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, 48, 48);
+    }
+    const value = new THREE.CanvasTexture(canvas);
+    value.colorSpace = THREE.SRGBColorSpace;
+    return value;
+  }, []);
+
+  useEffect(() => () => texture.dispose(), [texture]);
+
+  useFrame(({ clock }, delta) => {
+    const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
+    const positionAttribute = particles.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
+    const activePositions = positionAttribute?.array as Float32Array | undefined;
+    if (activePositions && positionAttribute && depth > .003) {
+      const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
+      const currentDrift = THREE.MathUtils.clamp(settings.currentStrength / 1.4, 0, 1.35);
+      const currentX = Math.sin(currentAngle) * currentDrift * .13;
+      const currentZ = Math.cos(currentAngle) * currentDrift * .13;
+      for (let index = 0; index < particleCount; index += 1) {
+        const offset = index * 3;
+        const seed = particleSeeds[index];
+        activePositions[offset] += (currentX + Math.sin(clock.elapsedTime * .42 + seed * 17) * .018) * delta;
+        activePositions[offset + 1] += (.012 + seed * .022) * delta;
+        activePositions[offset + 2] += (currentZ + Math.cos(clock.elapsedTime * .36 + seed * 19) * .016) * delta;
+        if (activePositions[offset] > 8.5) activePositions[offset] = -8.5;
+        else if (activePositions[offset] < -8.5) activePositions[offset] = 8.5;
+        if (activePositions[offset + 1] > .16) activePositions[offset + 1] = -2.35;
+        if (activePositions[offset + 2] > 8.5) activePositions[offset + 2] = -8.5;
+        else if (activePositions[offset + 2] < -8.5) activePositions[offset + 2] = 8.5;
+      }
+      positionAttribute.needsUpdate = true;
+    }
+    if (material.current) {
+      material.current.opacity = THREE.MathUtils.damp(material.current.opacity, depth * .34, depth > material.current.opacity ? 11 : 5, delta);
+      material.current.size = THREE.MathUtils.damp(material.current.size, mobile ? .038 : .03, 5, delta);
+    }
+    if (particles.current) particles.current.visible = depth > .004 || (material.current?.opacity ?? 0) > .004;
+  });
+
+  return (
+    <points ref={particles} frustumCulled={false} renderOrder={4.8}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        ref={material}
+        map={texture}
+        color="#baf8ec"
+        size={.03}
+        sizeAttenuation
+        transparent
+        opacity={0}
+        alphaTest={.02}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        toneMapped={false}
+      />
+    </points>
+  );
+}
+
 function KinematicContactShadows({
   motion,
   playerPosition,
@@ -5785,6 +5939,8 @@ function Simulation({
   onReady,
 }: SurfSceneProps) {
   const { camera } = useThree();
+  const backgroundRef = useRef<THREE.Color>(null);
+  const fogRef = useRef<THREE.Fog>(null);
   const boardSpec = BOARD_SPECS[settings.board];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
@@ -5894,6 +6050,7 @@ function Simulation({
     shorebreakPower: 0,
     shorebreakSeconds: 0,
     duckDive: 0,
+    submersion: 0,
     paddleHeading: 0,
   });
   const vanMotion = useRef<VehicleMotionState>({
@@ -6730,6 +6887,17 @@ function Simulation({
     const diveProgress = THREE.MathUtils.clamp(1 - (duckDiveUntil.current - t) / 1.12, 0, 1);
     const diveEnvelope = t < duckDiveUntil.current ? Math.sin(diveProgress * Math.PI) : 0;
     motion.current.duckDive = THREE.MathUtils.damp(motion.current.duckDive, diveEnvelope, diveEnvelope > motion.current.duckDive ? 14 : 9, delta);
+    const wipeoutSubmersion = phase.current === "wipeout"
+      ? THREE.MathUtils.smootherstep(motion.current.wipeout, 0, .24)
+        * (1 - THREE.MathUtils.smoothstep(motion.current.wipeout, 1.48, 2.18))
+      : 0;
+    const submersionTarget = Math.max(motion.current.duckDive * .94, wipeoutSubmersion);
+    motion.current.submersion = THREE.MathUtils.damp(
+      motion.current.submersion,
+      submersionTarget,
+      submersionTarget > motion.current.submersion ? 14 : 6.5,
+      delta,
+    );
     motion.current.paddleHeading = paddleHeading.current;
     const vanDriving = phase.current === "driving";
     if (!vanDriving) {
@@ -6764,6 +6932,7 @@ function Simulation({
     const riding = phase.current === "riding";
     const paddling = phase.current === "paddling";
     const driving = phase.current === "driving";
+    const submersion = motion.current.submersion;
     if (driving) {
       const forwardX = -Math.sin(vanHeading.current);
       const forwardZ = -Math.cos(vanHeading.current);
@@ -6808,39 +6977,38 @@ function Simulation({
       const forwardZ = Math.cos(paddleHeading.current);
       const rightX = Math.cos(paddleHeading.current);
       const rightZ = -Math.sin(paddleHeading.current);
-      const diveBeat = motion.current.duckDive;
       const wallBeat = motion.current.shorebreak;
       if (cameraMode === "immersive") {
         cameraPosition.current.set(
           position.current.x - forwardX * 4.6 + rightX * .68,
-          playerY + 2.2 - diveBeat * .48 + wallBeat * .16,
+          playerY + 2.2 - submersion * 3.35 + wallBeat * .16,
           position.current.z - forwardZ * 4.6 + rightZ * .68,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 3.8,
-          playerY + .42 - diveBeat * .24,
+          playerY + .42 - submersion * .86,
           position.current.z + forwardZ * 3.8,
         );
       } else if (cameraMode === "cinematic") {
         cameraPosition.current.set(
           position.current.x - forwardX * 3.1 + rightX * 6,
-          playerY + 3.6 - diveBeat * .34 + wallBeat * .22,
+          playerY + 3.6 - submersion * 5 + wallBeat * .22,
           position.current.z - forwardZ * 3.1 + rightZ * 6,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 2.2,
-          playerY + .52 - diveBeat * .2,
+          playerY + .52 - submersion * .92,
           position.current.z + forwardZ * 2.2,
         );
       } else {
         cameraPosition.current.set(
           position.current.x - forwardX * 9.5,
-          playerY + 4.9 - diveBeat * .38 + wallBeat * .2,
+          playerY + 4.9 - submersion * 6.5 + wallBeat * .2,
           position.current.z - forwardZ * 9.5,
         );
         cameraTarget.current.set(
           position.current.x + forwardX * 3,
-          playerY + .9 - diveBeat * .18,
+          playerY + .9 - submersion * 1.34,
           position.current.z + forwardZ * 3,
         );
       }
@@ -6856,6 +7024,9 @@ function Simulation({
       const rideForwardZ = Math.cos(rideHeading.current);
       const rideRightX = Math.cos(rideHeading.current);
       const rideRightZ = -Math.sin(rideHeading.current);
+      const wipeout = phase.current === "wipeout";
+      const underwaterDriftX = Math.sin(t * 4.4) * submersion;
+      const underwaterDriftZ = Math.cos(t * 3.7 + .8) * submersion;
       if (cameraMode === "immersive") {
         if (riding) {
           const cameraBack = 4.15 - barrelCamera * .82 - takeoffBeat * 1.12 + maneuverBeat * .42 + finishBeat * .75;
@@ -6871,6 +7042,17 @@ function Simulation({
             position.current.x + rideForwardX * targetLead + rideRightX * targetSide,
             playerY + .72 + maneuverAir * .68,
             position.current.z + rideForwardZ * targetLead + rideRightZ * targetSide,
+          );
+        } else if (wipeout) {
+          cameraPosition.current.set(
+            position.current.x + .68 + underwaterDriftX * .72,
+            waterY + THREE.MathUtils.lerp(2.05, -.72, submersion),
+            position.current.z + THREE.MathUtils.lerp(5.2, 3.5, submersion) + underwaterDriftZ * .42,
+          );
+          cameraTarget.current.set(
+            position.current.x + underwaterDriftX * .3,
+            waterY + THREE.MathUtils.lerp(.5, -.38, submersion),
+            position.current.z - THREE.MathUtils.lerp(2.4, .8, submersion),
           );
         } else {
           cameraPosition.current.set(position.current.x + .68, playerY + 3.05, position.current.z + 5.8);
@@ -6892,6 +7074,17 @@ function Simulation({
             playerY + .82 + maneuverAir * .7,
             position.current.z + rideForwardZ * targetLead + rideRightZ * targetSide,
           );
+        } else if (wipeout) {
+          cameraPosition.current.set(
+            position.current.x + directorSide * THREE.MathUtils.lerp(6.2, 4.1, submersion) + underwaterDriftX * .5,
+            waterY + THREE.MathUtils.lerp(2.7, -.74, submersion),
+            position.current.z + THREE.MathUtils.lerp(5.3, 3.1, submersion) + underwaterDriftZ * .35,
+          );
+          cameraTarget.current.set(
+            position.current.x - directorSide * .12,
+            waterY + THREE.MathUtils.lerp(.48, -.42, submersion),
+            position.current.z - .6,
+          );
         } else {
           cameraPosition.current.set(position.current.x + directorSide * 5.8, playerY + 3.1, position.current.z + 4.5);
           cameraTarget.current.set(position.current.x - directorSide * .16, playerY + 1.02, position.current.z - 1.8);
@@ -6911,6 +7104,17 @@ function Simulation({
             position.current.x + rideForwardX * targetLead + rideRightX * targetSide,
             playerY + .9 - barrelCamera * .2 + maneuverAir * .72,
             position.current.z + rideForwardZ * targetLead + rideRightZ * targetSide,
+          );
+        } else if (wipeout) {
+          cameraPosition.current.set(
+            position.current.x + underwaterDriftX * .58,
+            waterY + THREE.MathUtils.lerp(4.45, -.82, submersion),
+            position.current.z + THREE.MathUtils.lerp(9.4, 5.2, submersion) + underwaterDriftZ * .42,
+          );
+          cameraTarget.current.set(
+            position.current.x + underwaterDriftX * .22,
+            waterY + THREE.MathUtils.lerp(.58, -.4, submersion),
+            position.current.z - THREE.MathUtils.lerp(2.7, .9, submersion),
           );
         } else {
           cameraPosition.current.set(position.current.x, playerY + 4.9, position.current.z + 10.5);
@@ -6958,6 +7162,8 @@ function Simulation({
     cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
     const cameraResponse = sessionIntroProgress < 1
       ? 5.4
+      : submersion > .03
+        ? 10 + submersion * 5
       : cameraMode === "cinematic"
       ? 2.15 + motion.current.maneuver * 1.9 + motion.current.takeoff * .8
       : cameraMode === "immersive"
@@ -6968,7 +7174,7 @@ function Simulation({
       cameraLookTarget.current.copy(cameraTarget.current);
     } else {
       camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
-      cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (sessionIntroProgress < 1 ? 5 : cameraMode === "cinematic" ? 2.45 : 4.8)));
+      cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (sessionIntroProgress < 1 ? 5 : submersion > .03 ? 12 : cameraMode === "cinematic" ? 2.45 : 4.8)));
     }
     camera.lookAt(cameraLookTarget.current);
     const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
@@ -6976,21 +7182,23 @@ function Simulation({
       ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012
       : driving
         ? -vanMotion.current.lateralG * .034 - Math.sign(vanMotion.current.steer || 1) * vanMotion.current.slip * .012
-        : 0) * rollScale);
+        : phase.current === "wipeout"
+          ? Math.sin(t * 3.2) * submersion * .052
+          : paddling ? Math.sin(t * 2.6) * submersion * .014 : 0) * rollScale);
     if (camera instanceof THREE.PerspectiveCamera) {
       const gameplayFov = cameraMode === "cinematic"
-        ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : 51
+        ? riding ? 52 + motion.current.maneuver * 3.2 + motion.current.takeoff * 1.8 - motion.current.finish * 3.4 : driving ? 54 : phase.current === "wipeout" ? 53 - submersion * 4 : 51
         : cameraMode === "immersive"
           ? driving
             ? 70 + Math.min(7, Math.abs(vanSpeed.current) * .28)
             : riding
               ? 68 + Math.min(10, Math.max(0, speed - 7) * .82) + motion.current.maneuver * 3.4 + motion.current.takeoff * 1.4 - motion.current.finish * 2.8
-              : paddling ? 62 + motion.current.shorebreak * 3.2 - motion.current.duckDive * 2.2 : 64
+              : paddling ? 62 + motion.current.shorebreak * 3.2 - submersion * 4.2 : phase.current === "wipeout" ? 66 - submersion * 5 : 64
           : driving
             ? 59 + Math.min(5, Math.abs(vanSpeed.current) * .2)
             : riding
               ? 58 + Math.min(8, Math.max(0, speed - 7) * .72) + motion.current.maneuver * 3.1 + motion.current.takeoff * 1.2 - motion.current.finish * 2.5
-              : paddling ? 56 + motion.current.shorebreak * 2.5 - motion.current.duckDive * 1.6 : 58;
+              : paddling ? 56 + motion.current.shorebreak * 2.5 - submersion * 3.8 : phase.current === "wipeout" ? 59 - submersion * 4.5 : 58;
       const targetFov = THREE.MathUtils.lerp(67, gameplayFov, sessionIntroProgress);
       const nextFov = THREE.MathUtils.damp(camera.fov, targetFov, 4.5, delta);
       if (Math.abs(camera.fov - nextFov) > 0.005) {
@@ -7060,6 +7268,7 @@ function Simulation({
         duckDiveReady,
         duckDiveActive,
         duckDiveQuality: duckDiveQuality.current,
+        submersion: motion.current.submersion,
         shorebreakId: shorebreakId.current,
         shorebreakResult: shorebreakResult.current,
         takeoffAlignment,
@@ -7123,8 +7332,19 @@ function Simulation({
 
   return (
     <>
-      <color attach="background" args={[backgroundColor]} />
-      <fog attach="fog" args={[fogColor, fogNear, fogFar]} />
+      <color ref={backgroundRef} attach="background" args={[backgroundColor]} />
+      <fog ref={fogRef} attach="fog" args={[fogColor, fogNear, fogFar]} />
+      <UnderwaterAtmosphere
+        motion={motion}
+        backgroundRef={backgroundRef}
+        fogRef={fogRef}
+        backgroundColor={backgroundColor}
+        fogColor={fogColor}
+        fogNear={fogNear}
+        fogFar={fogFar}
+        light={light}
+        mobile={mobileRenderer}
+      />
       <Sky
         distance={450000}
         sunPosition={[sunX, Math.max(-8, solarElevation * 150), -120]}
@@ -7222,6 +7442,7 @@ function Simulation({
         <BreakingWave motion={motion} settings={settings} character={character} light={light} cloudCover={cloudCover} />
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
+        <UnderwaterSuspendedMatter motion={motion} settings={settings} mobile={mobileRenderer} />
         <SurferModel motion={motion} boardType={settings.board} accent={beach.palette[0]} />
       </group>
       <group ref={van}>

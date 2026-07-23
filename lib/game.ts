@@ -143,6 +143,7 @@ export type GameStats = {
   duckDiveReady: boolean;
   duckDiveActive: boolean;
   duckDiveQuality: number;
+  submersion: number;
   shorebreakId: number;
   shorebreakResult: "" | "clean" | "hit";
   takeoffAlignment: number;
@@ -207,6 +208,7 @@ export const INITIAL_STATS: GameStats = {
   duckDiveReady: false,
   duckDiveActive: false,
   duckDiveQuality: 0,
+  submersion: 0,
   shorebreakId: 0,
   shorebreakResult: "",
   takeoffAlignment: 0,
