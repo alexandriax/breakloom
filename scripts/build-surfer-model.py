@@ -196,9 +196,14 @@ def assign_body_materials(
     panel: bpy.types.Material,
     knee: bpy.types.Material,
     skin: bpy.types.Material,
+    rashguard: bpy.types.Material | None = None,
+    boardshort: bpy.types.Material | None = None,
+    variant: str = "full",
 ) -> None:
     body.data.materials.clear()
-    for mat in (wetsuit, panel, knee, skin):
+    for mat in (wetsuit, panel, knee, skin, rashguard, boardshort):
+        if mat is None:
+            continue
         body.data.materials.append(mat)
 
     hand_groups = {
@@ -210,6 +215,16 @@ def assign_body_materials(
         group.index
         for group in body.vertex_groups
         if group.name.startswith(("Foot.", "toe.", "heel."))
+    }
+    lower_arm_groups = {
+        group.index
+        for group in body.vertex_groups
+        if group.name.startswith(("LowerArm.", "Hand.", "f_", "thumb."))
+    }
+    lower_leg_groups = {
+        group.index
+        for group in body.vertex_groups
+        if group.name.startswith(("LowerLeg.", "Foot.", "toe.", "heel."))
     }
 
     def group_weight(polygon: bpy.types.MeshPolygon, group_ids: set[int]) -> float:
@@ -228,12 +243,25 @@ def assign_body_materials(
         bare_head = z > 1.64
         bare_hand = group_weight(polygon, hand_groups) > .32
         bare_foot = group_weight(polygon, foot_groups) > .4
+        bare_forearm = group_weight(polygon, lower_arm_groups) > .32
+        bare_calf = group_weight(polygon, lower_leg_groups) > .34
         knee_patch = y < -0.055 and 0.37 < z < 0.66 and abs(x) < 0.18
         flex_panel = (
             (0.98 < z < 1.53 and abs(x) > 0.19)
             or (0.71 < z < 1.02 and abs(x) > 0.065)
         )
-        if bare_head or bare_hand or bare_foot:
+        if variant == "tropical":
+            if bare_head or bare_hand or bare_foot:
+                polygon.material_index = 3
+            elif 1.02 < z < 1.64:
+                polygon.material_index = 4
+            elif .66 < z <= 1.02:
+                polygon.material_index = 5
+            else:
+                polygon.material_index = 3
+        elif variant == "spring" and (bare_head or bare_hand or bare_foot or bare_forearm or bare_calf):
+            polygon.material_index = 3
+        elif bare_head or bare_hand or bare_foot:
             polygon.material_index = 3
         elif knee_patch:
             polygon.material_index = 2
@@ -312,6 +340,50 @@ def create_wetsuit_details(
     return [collar, logo, leash_cuff, leash_tab, *wrist_details, *ankle_details]
 
 
+def create_cold_water_details(neoprene: bpy.types.Material) -> list[bpy.types.Object]:
+    hood_parts = [
+        ellipsoid("Cold.Hood.back", (0, .045, 1.86), (.122, .108, .15), neoprene, 36, 22),
+        ellipsoid("Cold.Hood.temple.L", (.102, -.002, 1.835), (.025, .071, .112), neoprene, 24, 16, (.03, 0, .02)),
+        ellipsoid("Cold.Hood.temple.R", (-.102, -.002, 1.835), (.025, .071, .112), neoprene, 24, 16, (.03, 0, -.02)),
+    ]
+    hood = join_objects(hood_parts, "Cold.Hood")
+    hood.data.name = "Cold.Hood.mesh"
+
+    gloves = [
+        ellipsoid(
+            f"Cold.Glove.{side}",
+            (.548 * sign, -.034, 1.058),
+            (.069, .102, .054),
+            neoprene,
+            28,
+            16,
+            (.08, sign * .08, sign * -.04),
+        )
+        for side, sign in (("L", 1), ("R", -1))
+    ]
+    booties = [
+        ellipsoid(
+            f"Cold.Bootie.{side}",
+            (.071 * sign, -.045, .075),
+            (.071, .152, .061),
+            neoprene,
+            30,
+            16,
+            (.02, 0, sign * -.015),
+        )
+        for side, sign in (("L", 1), ("R", -1))
+    ]
+    for detail in (*gloves, *booties):
+        detail.data.name = f"{detail.name}.mesh"
+    cold_details = [hood, *gloves, *booties]
+    for detail in cold_details:
+        bpy.ops.object.select_all(action="DESELECT")
+        detail.select_set(True)
+        bpy.context.view_layer.objects.active = detail
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    return cold_details
+
+
 def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
     if not SOURCE_PATH.exists():
         raise FileNotFoundError(f"Missing CC0 base mesh: {SOURCE_PATH}")
@@ -324,7 +396,8 @@ def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
 
     armature.name = "SurferArmature"
     armature.data.name = "SurferArmature.rig"
-    body.name = "SurferBody"
+    body.name = "SurferBody.Full"
+    body.data.name = "SurferBody.Full.mesh"
     rename_bones(armature, body)
     armature.data.pose_position = "REST"
     apply_anatomical_smoothing(body)
@@ -341,33 +414,71 @@ def build_surfer() -> tuple[bpy.types.Object, list[bpy.types.Object]]:
     hair = material("Wet dark hair", (.004, .003, .002, 1), .35, specular=.58, clearcoat=.12)
     reflective = material("Surfscape reflective mark", (.08, .62, .58, 1), .24, metallic=.18, specular=.72, clearcoat=.32)
     cuff = material("Leash ankle cuff", (.012, .019, .022, 1), .36, specular=.62, clearcoat=.16)
+    rashguard = material("Thermal UV rashguard", (.02, .18, .2, 1), .46, specular=.46, sheen=.08)
+    boardshort = material("Hydrophobic performance boardshort", (.018, .052, .065, 1), .52, specular=.4, clearcoat=.03)
+    thermal_accessory = material("Thermal neoprene accessories", (.009, .014, .017, 1), .5, specular=.52, sheen=.05)
 
     assign_body_materials(body, wetsuit, panel, knee, skin)
+    spring_body = body.copy()
+    spring_body.data = body.data.copy()
+    spring_body.name = "SurferBody.Spring"
+    spring_body.data.name = "SurferBody.Spring.mesh"
+    bpy.context.scene.collection.objects.link(spring_body)
+    assign_body_materials(spring_body, wetsuit, panel, knee, skin, variant="spring")
+
+    tropical_body = body.copy()
+    tropical_body.data = body.data.copy()
+    tropical_body.name = "SurferBody.Tropical"
+    tropical_body.data.name = "SurferBody.Tropical.mesh"
+    bpy.context.scene.collection.objects.link(tropical_body)
+    assign_body_materials(
+        tropical_body,
+        wetsuit,
+        panel,
+        knee,
+        skin,
+        rashguard,
+        boardshort,
+        variant="tropical",
+    )
     head_details = create_head_details(skin, eye_white, iris, pupil, lip, hair)
     details = create_wetsuit_details(seam, reflective, cuff)
+    cold_details = create_cold_water_details(thermal_accessory)
     # The CC0 glTF carries its bind rotation and translation on the armature object.
     # Static detail meshes are authored in armature space, so give them that complete
     # transform before runtime attaches each piece to its matching joint.
     bind_matrix = armature.matrix_world.copy()
-    for detail in (head_details, *details):
+    for detail in (head_details, *details, *cold_details):
         detail.matrix_world = bind_matrix @ detail.matrix_world
     bpy.context.view_layer.update()
 
     root = bpy.data.objects.new("SurferRig", None)
     bpy.context.scene.collection.objects.link(root)
-    for articulated in (armature, body):
+    for articulated in (armature, body, spring_body, tropical_body):
         world = articulated.matrix_world.copy()
         articulated.parent = root
         articulated.matrix_world = world
-    for detail in (head_details, *details):
+    for detail in (head_details, *details, *cold_details):
         detail_world = detail.matrix_world.copy()
         detail.parent = root
         detail.matrix_world = detail_world
     root.location.z = -PELVIS_HEIGHT
-    return root, [root, armature, body, head_details, *details]
+    return root, [
+        root,
+        armature,
+        body,
+        spring_body,
+        tropical_body,
+        head_details,
+        *details,
+        *cold_details,
+    ]
 
 
 def setup_preview(root: bpy.types.Object, export_objects: list[bpy.types.Object]) -> None:
+    for obj in export_objects:
+        if obj.name.startswith(("SurferBody.Spring", "SurferBody.Tropical")):
+            obj.hide_render = True
     bpy.context.view_layer.update()
     bounds = [
         obj.matrix_world @ Vector(corner)

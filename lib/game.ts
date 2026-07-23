@@ -80,11 +80,85 @@ export type SessionSettings = {
   currentDirection: number;
   windSpeed: number;
   windDirection: number;
+  waterTemperature: number;
+  airTemperature: number;
   coastHeading: number;
   tide: number;
   timeOfDay: number;
   weatherCode: number;
 };
+
+export type ThermalKitId = "hooded-5-4" | "full-4-3" | "full-3-2" | "spring-2-2" | "tropical";
+
+export type ThermalKit = {
+  id: ThermalKitId;
+  name: string;
+  shortName: string;
+  bodyVariant: "full" | "spring" | "tropical";
+  insulation: number;
+  effectiveTemperature: number;
+};
+
+export function thermalKitForConditions(
+  waterTemperature: number,
+  airTemperature: number,
+  windSpeed: number,
+): ThermalKit {
+  const water = Number.isFinite(waterTemperature) ? waterTemperature : 20;
+  const air = Number.isFinite(airTemperature) ? airTemperature : water;
+  const wind = Number.isFinite(windSpeed) ? Math.max(0, windSpeed) : 0;
+  const airAdjustment = Math.max(-1.35, Math.min(1.05, (air - water) * .09));
+  const windChill = Math.max(0, wind - 7) * .024;
+  const effectiveTemperature = water + airAdjustment - windChill;
+  if (effectiveTemperature < 14.5) {
+    return {
+      id: "hooded-5-4",
+      name: "Hooded 5/4 · gloves + boots",
+      shortName: "5/4 HOOD",
+      bodyVariant: "full",
+      insulation: .97,
+      effectiveTemperature,
+    };
+  }
+  if (effectiveTemperature < 17.5) {
+    return {
+      id: "full-4-3",
+      name: "Sealed 4/3 full suit",
+      shortName: "4/3 FULL",
+      bodyVariant: "full",
+      insulation: .91,
+      effectiveTemperature,
+    };
+  }
+  if (effectiveTemperature < 21.5) {
+    return {
+      id: "full-3-2",
+      name: "Flexible 3/2 full suit",
+      shortName: "3/2 FULL",
+      bodyVariant: "full",
+      insulation: .82,
+      effectiveTemperature,
+    };
+  }
+  if (effectiveTemperature < 24.5) {
+    return {
+      id: "spring-2-2",
+      name: "Short-arm 2/2 spring suit",
+      shortName: "2/2 SPRING",
+      bodyVariant: "spring",
+      insulation: .58,
+      effectiveTemperature,
+    };
+  }
+  return {
+    id: "tropical",
+    name: "UV rashguard · performance boardshort",
+    shortName: "TROPICAL",
+    bodyVariant: "tropical",
+    insulation: .22,
+    effectiveTemperature,
+  };
+}
 
 const TIDE_SHORELINE_TRAVEL = 3;
 
@@ -307,6 +381,8 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
     currentDirection: conditions.currentDirection,
     windSpeed: conditions.windSpeed,
     windDirection: conditions.windDirection,
+    waterTemperature: conditions.waterTemperature,
+    airTemperature: conditions.airTemperature,
     coastHeading,
     tide: conditions.seaLevel,
     timeOfDay: Number.isFinite(localHour) ? localHour + 0.5 : 16,

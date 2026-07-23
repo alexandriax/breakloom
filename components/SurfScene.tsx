@@ -8,8 +8,8 @@ import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.j
 import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
-import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
+import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
+import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -1856,9 +1856,21 @@ const SURFER_JOINT_NAMES = [
 
 type SurferJointName = (typeof SURFER_JOINT_NAMES)[number];
 
-function prepareSurferScene(source: THREE.Group, accent: string, neopreneBump: THREE.Texture) {
+function prepareSurferScene(
+  source: THREE.Group,
+  accent: string,
+  neopreneBump: THREE.Texture,
+  thermalKit: ThermalKit,
+) {
   const model = cloneSkeleton(source) as THREE.Group;
   const accentColor = new THREE.Color(accent);
+  const coldWaterKit = thermalKit.id === "hooded-5-4";
+  const tropicalKit = thermalKit.bodyVariant === "tropical";
+  const activeBodyName = {
+    full: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Full.mesh"),
+    spring: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Spring.mesh"),
+    tropical: THREE.PropertyBinding.sanitizeNodeName("SurferBody.Tropical.mesh"),
+  }[thermalKit.bodyVariant];
   model.updateMatrixWorld(true);
   const attachments = [
     ["Head.details", "Head"],
@@ -1870,6 +1882,11 @@ function prepareSurferScene(source: THREE.Group, accent: string, neopreneBump: T
     ["Ankle.seam.R", "LowerLeg.R"],
     ["Leash.cuff", "LowerLeg.R"],
     ["Leash.cuff.tab", "LowerLeg.R"],
+    ["Cold.Hood", "Head"],
+    ["Cold.Glove.L", "Hand.L"],
+    ["Cold.Glove.R", "Hand.R"],
+    ["Cold.Bootie.L", "Foot.L"],
+    ["Cold.Bootie.R", "Foot.R"],
   ] as const;
   attachments.forEach(([detailName, jointName]) => {
     const detail = namedModelObject(model, detailName);
@@ -1879,10 +1896,25 @@ function prepareSurferScene(source: THREE.Group, accent: string, neopreneBump: T
   model.updateMatrixWorld(true);
   model.traverse((object) => {
     if (object instanceof THREE.Mesh) {
+      const materialList = Array.isArray(object.material) ? object.material : [object.material];
+      const materialNames = materialList.map((material) => material.name.toLowerCase());
+      const bodyVariant = object.name.startsWith("SurferBody");
+      const coldAccessory = object.name.startsWith("Cold");
+      const hair = materialNames.some((name) => name.includes("wet dark hair"));
+      const warmWaterSeam = object.name.startsWith("Wristseam") || object.name.startsWith("Ankleseam");
+      object.visible = bodyVariant
+        ? object.name.startsWith(activeBodyName)
+        : coldAccessory
+          ? coldWaterKit
+          : hair
+            ? !coldWaterKit
+            : warmWaterSeam
+              ? !tropicalKit
+              : object.visible;
       object.castShadow = true;
       object.receiveShadow = true;
       object.frustumCulled = true;
-      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      const sourceMaterials = materialList;
       const materials = sourceMaterials.map((sourceMaterial) => {
         const next = sourceMaterial.clone();
         if (next instanceof THREE.MeshStandardMaterial) {
@@ -1897,6 +1929,25 @@ function prepareSurferScene(source: THREE.Group, accent: string, neopreneBump: T
           if (isNeoprene) {
             next.bumpMap = neopreneBump;
             next.bumpScale = name.includes("knee") ? .004 : .0065;
+            const suitColor = thermalKit.id === "hooded-5-4"
+              ? new THREE.Color("#0a1114")
+              : thermalKit.id === "full-4-3"
+                ? new THREE.Color("#111b1f")
+                : new THREE.Color("#18272b");
+            next.color.copy(suitColor).lerp(accentColor, name.includes("stretch") ? .12 : .035);
+          }
+          if (name.includes("thermal uv rashguard")) {
+            next.color.copy(new THREE.Color("#113d44")).lerp(accentColor, .46);
+            next.roughness = .55;
+          }
+          if (name.includes("hydrophobic performance boardshort")) {
+            next.color.copy(new THREE.Color("#132429")).lerp(accentColor, .24);
+            next.roughness = .42;
+          }
+          if (name.includes("thermal neoprene accessories")) {
+            next.color.set("#070d10");
+            next.bumpMap = neopreneBump;
+            next.bumpScale = .007;
           }
           if (name.includes("liquid sealed") || name.includes("reflective")) {
             next.color.copy(accentColor).lerp(new THREE.Color("#8ef3df"), name.includes("reflective") ? .36 : .12);
@@ -1914,10 +1965,12 @@ function PremiumSurferBody({
   motion,
   accent,
   ankleJointRef,
+  thermalKit,
 }: {
   motion: MutableRefObject<MotionState>;
   accent: string;
   ankleJointRef: MutableRefObject<THREE.Object3D | null>;
+  thermalKit: ThermalKit;
 }) {
   const { scene } = useGLTF(SURFER_MODEL_URL);
   const sourceNeoprene = useTexture(NEOPRENE_TEXTURE_URL);
@@ -1932,11 +1985,14 @@ function PremiumSurferBody({
     texture.needsUpdate = true;
     return texture;
   }, [sourceNeoprene]);
-  const model = useMemo(() => prepareSurferScene(scene, accent, neopreneBump), [accent, neopreneBump, scene]);
+  const model = useMemo(
+    () => prepareSurferScene(scene, accent, neopreneBump, thermalKit),
+    [accent, neopreneBump, scene, thermalKit],
+  );
   const responsiveMaterials = useMemo(() => {
     const materials = new Set<THREE.MeshStandardMaterial>();
     model.traverse((object) => {
-      if (!(object instanceof THREE.Mesh)) return;
+      if (!(object instanceof THREE.Mesh) || !object.visible) return;
       const next = Array.isArray(object.material) ? object.material : [object.material];
       next.forEach((entry) => {
         if (entry instanceof THREE.MeshStandardMaterial) materials.add(entry);
@@ -2897,12 +2953,14 @@ function SurferModel({
   accent,
   onLeashTension,
   cameraMode,
+  thermalKit,
 }: {
   motion: MutableRefObject<MotionState>;
   boardType: BoardType;
   accent: string;
   onLeashTension: (tension: number) => void;
   cameraMode: CameraMode;
+  thermalKit: ThermalKit;
 }) {
   const root = useRef<THREE.Group>(null);
   const rig = useRef<THREE.Group>(null);
@@ -3143,7 +3201,7 @@ function SurferModel({
         <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
         <SurferRunoffEffects motion={motion} />
         <group ref={body} position={[0, 1.02, 0]} visible={cameraMode !== "pov"}>
-          <PremiumSurferBody motion={motion} accent={accent} ankleJointRef={ankleJointRef} />
+          <PremiumSurferBody motion={motion} accent={accent} ankleJointRef={ankleJointRef} thermalKit={thermalKit} />
         </group>
       </group>
       <group ref={board} position={[0, 0.16, 0]}>
@@ -7662,6 +7720,10 @@ function Simulation({
   const fogRef = useRef<THREE.Fog>(null);
   const boardSpec = BOARD_SPECS[settings.board];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
+  const thermalKit = useMemo(
+    () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
+    [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
+  );
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const renderQuality = useRenderQuality();
   const reducedMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
@@ -9925,6 +9987,7 @@ function Simulation({
           accent={beach.palette[0]}
           onLeashTension={setLeashTension}
           cameraMode={cameraMode}
+          thermalKit={thermalKit}
         />
       </group>
       <group ref={van}>

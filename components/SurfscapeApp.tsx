@@ -25,6 +25,7 @@ import {
   Share2,
   Sparkles,
   Target,
+  Thermometer,
   Volume2,
   VolumeX,
   Waves,
@@ -46,6 +47,7 @@ import {
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
   settingsFromConditions,
+  thermalKitForConditions,
   type BoardType,
   type GameMode,
   type GameStats,
@@ -530,6 +532,10 @@ export default function SurfscapeApp() {
   const availableForecastWindows = useMemo(() => forecastWindows(conditions), [conditions]);
   const sessionWeatherCode = settings.weatherCode;
   const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : sessionConditions.cloudCover;
+  const thermalKit = useMemo(
+    () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
+    [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
+  );
 
   const splashLens = useCallback((intensity: number, duration: number) => {
     wetLensSequence.current += 1;
@@ -1846,6 +1852,7 @@ export default function SurfscapeApp() {
                   <span><Waves /> {beach.breakType}</span>
                   <span><ArrowRight /> {breakCharacter.line} · {breakCharacter.kind.toUpperCase()}</span>
                   <span><Gauge /> Difficulty {beach.difficulty}/5</span>
+                  <span><Thermometer /> {settings.waterTemperature.toFixed(0)}°C water · {thermalKit.name}</span>
                   <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
                   <span className="data-credit">Model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD · Not for navigation</span>
                 </div>
@@ -1867,6 +1874,8 @@ export default function SurfscapeApp() {
               <PlaygroundSlider label="Wind" value={settings.windSpeed} min={0} max={45} step={1} unit="km/h" onChange={(windSpeed) => setSettings((value) => ({ ...value, windSpeed }))} />
               <PlaygroundSlider label="Wind bearing" value={settings.windDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(windDirection) => setSettings((value) => ({ ...value, windDirection }))} />
               <PlaygroundSlider label="Tide" value={settings.tide} min={-1.5} max={1.8} step={0.05} unit="m" onChange={(tide) => setSettings((value) => ({ ...value, tide }))} />
+              <PlaygroundSlider label="Water temperature" value={settings.waterTemperature} min={8} max={31} step={1} unit="°C" onChange={(waterTemperature) => setSettings((value) => ({ ...value, waterTemperature }))} />
+              <PlaygroundSlider label="Air temperature" value={settings.airTemperature} min={5} max={38} step={1} unit="°C" onChange={(airTemperature) => setSettings((value) => ({ ...value, airTemperature }))} />
               <PlaygroundSlider label="Local hour" value={settings.timeOfDay} min={0} max={23.5} step={0.5} unit=":00" onChange={(timeOfDay) => setSettings((value) => ({ ...value, timeOfDay }))} />
               <button className="lab-weather" type="button" onClick={() => setSettings((value) => ({ ...value, weatherCode: nextWeatherPreset(value.weatherCode) }))} aria-label={`Weather preset: ${weatherLabel(settings.weatherCode)}. Tap to change.`}>
                 <CloudSun /><span>Weather</span><strong>{weatherLabel(settings.weatherCode)}</strong><small>Tap to cycle</small>
@@ -1975,6 +1984,7 @@ export default function SurfscapeApp() {
                   <strong><Waves /> {settings.waveHeight.toFixed(1)} m</strong>
                   <strong><Waves /> {settings.swellHeight.toFixed(1)} m @ {settings.swellPeriod.toFixed(1)} s</strong>
                   <strong><ArrowRight /> {breakCharacter.line}</strong>
+                  <strong><Thermometer /> {settings.waterTemperature.toFixed(0)}° · {thermalKit.shortName}</strong>
                 </div>
               </div>
               <small><i /> OCEAN MODEL LOCKED · CONTROLS LIVE</small>
@@ -2192,7 +2202,7 @@ export default function SurfscapeApp() {
                     : stats.rideDistance.toFixed(0)} m
               </strong>
             </div>
-            <div><CloudSun /><span>SKY</span><strong>{weatherLabel(sessionWeatherCode)}</strong></div>
+            <div><Thermometer /><span>WATER / KIT</span><strong>{settings.waterTemperature.toFixed(0)}° · {thermalKit.shortName}</strong></div>
           </div>
 
           <div className="desktop-controls">
