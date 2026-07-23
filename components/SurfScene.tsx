@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
 import { createContext, MutableRefObject, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
@@ -1283,6 +1284,7 @@ function PaddleOutShorebreak({ motion, settings, light, mobile }: { motion: Muta
 
 const SURFER_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surfer-premium.glb`;
 const VAN_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surf-van-premium.glb`;
+const NEOPRENE_TEXTURE_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/neoprene-premium.webp`;
 const SURFER_JOINT_NAMES = [
   "Pelvis",
   "Torso",
@@ -1303,9 +1305,27 @@ const SURFER_JOINT_NAMES = [
 
 type SurferJointName = (typeof SURFER_JOINT_NAMES)[number];
 
-function prepareSurferScene(source: THREE.Group, accent: string) {
-  const model = source.clone(true);
+function prepareSurferScene(source: THREE.Group, accent: string, neopreneBump: THREE.Texture) {
+  const model = cloneSkeleton(source) as THREE.Group;
   const accentColor = new THREE.Color(accent);
+  model.updateMatrixWorld(true);
+  const attachments = [
+    ["Head.details", "Head"],
+    ["Collar.seam", "Torso"],
+    ["Chest.logo", "Torso"],
+    ["Wrist.seam.L", "Hand.L"],
+    ["Wrist.seam.R", "Hand.R"],
+    ["Ankle.seam.L", "LowerLeg.L"],
+    ["Ankle.seam.R", "LowerLeg.R"],
+    ["Leash.cuff", "LowerLeg.R"],
+    ["Leash.cuff.tab", "LowerLeg.R"],
+  ] as const;
+  attachments.forEach(([detailName, jointName]) => {
+    const detail = model.getObjectByName(detailName);
+    const joint = model.getObjectByName(jointName);
+    if (detail && joint) joint.attach(detail);
+  });
+  model.updateMatrixWorld(true);
   model.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       object.castShadow = true;
@@ -1322,6 +1342,11 @@ function prepareSurferScene(source: THREE.Group, accent: string) {
             next.userData.surfscapeBaseClearcoatRoughness = next.clearcoatRoughness;
           }
           const name = next.name.toLowerCase();
+          const isNeoprene = name.includes("neoprene") || name.includes("stretch panels") || name.includes("knee panels");
+          if (isNeoprene) {
+            next.bumpMap = neopreneBump;
+            next.bumpScale = name.includes("knee") ? .004 : .0065;
+          }
           if (name.includes("liquid sealed") || name.includes("reflective")) {
             next.color.copy(accentColor).lerp(new THREE.Color("#8ef3df"), name.includes("reflective") ? .36 : .12);
           }
@@ -1344,7 +1369,19 @@ function PremiumSurferBody({
   ankleJointRef: MutableRefObject<THREE.Object3D | null>;
 }) {
   const { scene } = useGLTF(SURFER_MODEL_URL);
-  const model = useMemo(() => prepareSurferScene(scene, accent), [accent, scene]);
+  const sourceNeoprene = useTexture(NEOPRENE_TEXTURE_URL);
+  const neopreneBump = useMemo(() => {
+    const texture = sourceNeoprene.clone();
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(7, 10);
+    texture.colorSpace = THREE.NoColorSpace;
+    texture.flipY = false;
+    texture.anisotropy = 4;
+    texture.needsUpdate = true;
+    return texture;
+  }, [sourceNeoprene]);
+  const model = useMemo(() => prepareSurferScene(scene, accent, neopreneBump), [accent, neopreneBump, scene]);
   const responsiveMaterials = useMemo(() => {
     const materials = new Set<THREE.MeshStandardMaterial>();
     model.traverse((object) => {
@@ -1358,18 +1395,25 @@ function PremiumSurferBody({
   }, [model]);
   const locomotionRoot = useRef<THREE.Group>(null);
   const joints = useRef<Partial<Record<SurferJointName, THREE.Object3D>>>({});
+  const jointRestPose = useRef<Partial<Record<SurferJointName, THREE.Euler>>>({});
   const wetness = useRef(0);
 
   useEffect(() => {
     const next: Partial<Record<SurferJointName, THREE.Object3D>> = {};
+    const rest: Partial<Record<SurferJointName, THREE.Euler>> = {};
     SURFER_JOINT_NAMES.forEach((name) => {
       const joint = model.getObjectByName(name);
-      if (joint) next[name] = joint;
+      if (joint) {
+        next[name] = joint;
+        rest[name] = joint.rotation.clone();
+      }
     });
     joints.current = next;
-    ankleJointRef.current = next["LowerLeg.R"] ?? null;
+    jointRestPose.current = rest;
+    ankleJointRef.current = next["Foot.R"] ?? next["LowerLeg.R"] ?? null;
     return () => {
       ankleJointRef.current = null;
+      jointRestPose.current = {};
     };
   }, [ankleJointRef, model]);
 
@@ -1426,9 +1470,10 @@ function PremiumSurferBody({
     const pose = (name: SurferJointName, x: number, y: number, z: number, responsiveness = 8) => {
       const joint = joints.current[name];
       if (!joint) return;
-      joint.rotation.x = THREE.MathUtils.damp(joint.rotation.x, x, responsiveness, delta);
-      joint.rotation.y = THREE.MathUtils.damp(joint.rotation.y, y, responsiveness, delta);
-      joint.rotation.z = THREE.MathUtils.damp(joint.rotation.z, z, responsiveness, delta);
+      const rest = jointRestPose.current[name];
+      joint.rotation.x = dampAngle(joint.rotation.x, (rest?.x ?? 0) + x, responsiveness, delta);
+      joint.rotation.y = dampAngle(joint.rotation.y, (rest?.y ?? 0) + y, responsiveness, delta);
+      joint.rotation.z = dampAngle(joint.rotation.z, (rest?.z ?? 0) + z, responsiveness, delta);
     };
 
     const rideLean = (state.balance * 0.12 + state.maneuverSide * state.maneuver * 0.12 + state.rail * (.08 + state.trickCharge * .06)) * (1 - state.takeoff * .72);
@@ -1475,11 +1520,14 @@ function PremiumSurferBody({
     responsiveMaterials.forEach((surface) => surface.dispose());
   }, [responsiveMaterials]);
 
-  return <group ref={locomotionRoot}><primitive object={model} scale={0.74} /></group>;
+  useEffect(() => () => neopreneBump.dispose(), [neopreneBump]);
+
+  return <group ref={locomotionRoot}><primitive object={model} scale={0.94} /></group>;
 }
 
 useGLTF.preload(SURFER_MODEL_URL);
 useGLTF.preload(VAN_MODEL_URL);
+useTexture.preload(NEOPRENE_TEXTURE_URL);
 
 function boardWidthAt(boardType: BoardType, normalizedLength: number) {
   const profile = Math.max(0, Math.sin(Math.PI * normalizedLength));
@@ -1709,7 +1757,7 @@ function SurfLeashCord({
     start.set(0, .13, -BOARD_SPECS[boardType].length * .43);
     boardObject.localToWorld(start);
     rigObject.worldToLocal(start);
-    end.set(.073, -.012, -.472);
+    end.set(0, 0, 0);
     ankle.localToWorld(end);
     rigObject.worldToLocal(end);
 
