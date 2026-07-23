@@ -8,9 +8,11 @@ export type BoardType = "performance" | "fish" | "longboard";
 export const SHORELINE_REFERENCE_Z = 8;
 export const OUTER_PADDLE_LIMIT_Z = -900;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
-const WAVE_GROUP_ENERGY = [.1, .12, .16, .24, .72, 1, .86, .36, .17] as const;
-const SET_WAVE_START = 4;
-const SET_WAVE_COUNT = 3;
+const WAVE_ENERGY_SEQUENCE = [
+  .18, .42, .29, .76, .58, .23, .34, .88, .67,
+  .51, .2, .27, .46, .37, .92, .33, .62,
+] as const;
+const SURFABLE_CREST_ENERGY = .28;
 
 export const BOARD_SPECS: Record<BoardType, {
   name: string;
@@ -374,6 +376,11 @@ export type GameStats = {
   setWaveIndex: number;
   setWaveCount: number;
   setActive: boolean;
+  crestEnergy: number;
+  crestApproach: number;
+  crestDistance: number;
+  nextWaveEnergy: number;
+  waveSurfable: boolean;
   maneuver: string;
   maneuverScore: number;
   maneuverQuality: number;
@@ -459,8 +466,13 @@ export const INITIAL_STATS: GameStats = {
   setEnergy: 0,
   nextSetSeconds: 0,
   setWaveIndex: 0,
-  setWaveCount: 3,
+  setWaveCount: 0,
   setActive: false,
+  crestEnergy: 0,
+  crestApproach: 0,
+  crestDistance: 0,
+  nextWaveEnergy: 0,
+  waveSurfable: false,
   maneuver: "",
   maneuverScore: 0,
   maneuverQuality: 0,
@@ -520,12 +532,13 @@ function positiveModulo(value: number, divisor: number) {
 
 function waveGroupOrdinal(crestIndex: number) {
   // A fixed observer sees crest indices decrease as the train travels shoreward.
-  // Negating the index makes the group order read lull → build → 1/2/3 → tail.
-  return positiveModulo(-crestIndex, WAVE_GROUP_ENERGY.length);
+  // The longer irregular spectrum avoids a repeating "three-wave set" cadence
+  // while remaining deterministic on CPU and GPU.
+  return positiveModulo(-crestIndex, WAVE_ENERGY_SEQUENCE.length);
 }
 
 function crestEnergy(crestIndex: number) {
-  return WAVE_GROUP_ENERGY[waveGroupOrdinal(crestIndex)];
+  return WAVE_ENERGY_SEQUENCE[waveGroupOrdinal(crestIndex)];
 }
 
 export function waveEnergyForPhase(phase: number) {
@@ -537,44 +550,53 @@ export function waveEnergyForPhase(phase: number) {
   return lowerEnergy + (crestEnergy(lowerCrest + 1) - lowerEnergy) * easedBlend;
 }
 
-function waveSetStateForPhase(phase: number, wavePeriod: number) {
+function waveReadStateForPhase(phase: number, wavePeriod: number) {
   const period = Math.max(4, wavePeriod);
   const angularSpeed = Math.PI * 2 / period;
   const crestCoordinate = (phase - Math.PI * .5) / (Math.PI * 2);
   const closestCrest = Math.round(crestCoordinate);
-  const closestOrdinal = waveGroupOrdinal(closestCrest);
   const energy = waveEnergyForPhase(phase);
-  const setWaveIndex = closestOrdinal >= SET_WAVE_START
-    && closestOrdinal < SET_WAVE_START + SET_WAVE_COUNT
-    ? closestOrdinal - SET_WAVE_START + 1
-    : 0;
-  const setActive = setWaveIndex > 0 && energy >= .38;
-  const upcomingCrest = Math.floor(crestCoordinate + .000001);
-  const phaseToUpcoming = Math.max(
-    0,
-    phase - (Math.PI * .5 + upcomingCrest * Math.PI * 2),
+  const currentCrestEnergy = crestEnergy(closestCrest);
+  const crestPhase = Math.PI * .5 + closestCrest * Math.PI * 2;
+  const crestPhaseError = Math.atan2(
+    Math.sin(phase - crestPhase),
+    Math.cos(phase - crestPhase),
   );
+  const crestProximity = 1 - smoothstep(.12, 1.5, Math.abs(crestPhaseError));
+  const crestSurfable = currentCrestEnergy >= SURFABLE_CREST_ENERGY;
+  const upcomingCrest = Math.floor(crestCoordinate + .000001);
   let secondsToPeak = Number.POSITIVE_INFINITY;
-  for (let offset = 0; offset <= WAVE_GROUP_ENERGY.length; offset += 1) {
+  let nextSurfableEnergy = currentCrestEnergy;
+  for (let offset = 0; offset <= WAVE_ENERGY_SEQUENCE.length; offset += 1) {
     const candidate = upcomingCrest - offset;
-    const ordinal = waveGroupOrdinal(candidate);
-    if (ordinal < SET_WAVE_START || ordinal >= SET_WAVE_START + SET_WAVE_COUNT) continue;
-    secondsToPeak = (phaseToUpcoming + offset * Math.PI * 2) / angularSpeed;
+    const candidateEnergy = crestEnergy(candidate);
+    if (candidateEnergy < SURFABLE_CREST_ENERGY) continue;
+    const candidatePhase = Math.PI * .5 + candidate * Math.PI * 2;
+    secondsToPeak = Math.max(0, phase - candidatePhase) / angularSpeed;
+    nextSurfableEnergy = candidateEnergy;
     break;
   }
   return {
     energy,
-    secondsToPeak: secondsToPeak < .72 ? 0 : secondsToPeak,
-    cycle: period * WAVE_GROUP_ENERGY.length,
-    waveCount: SET_WAVE_COUNT,
-    setWaveIndex,
-    setActive,
+    secondsToPeak: secondsToPeak < .45 ? 0 : secondsToPeak,
+    cycle: period * WAVE_ENERGY_SEQUENCE.length,
+    waveCount: 0,
+    setWaveIndex: 0,
+    setActive: crestSurfable && crestProximity > .08,
+    crestEnergy: currentCrestEnergy,
+    crestPhase,
+    crestPhaseError,
+    crestProximity,
+    crestIndex: waveGroupOrdinal(closestCrest) + 1,
+    crestSequenceLength: WAVE_ENERGY_SEQUENCE.length,
+    crestSurfable,
+    nextSurfableEnergy,
   };
 }
 
 export function waveSetState(elapsed: number, wavePeriod: number) {
   const period = Math.max(4, wavePeriod);
-  return waveSetStateForPhase(-elapsed * (Math.PI * 2 / period), period);
+  return waveReadStateForPhase(-elapsed * (Math.PI * 2 / period), period);
 }
 
 export function waveSetStateAt(
@@ -584,7 +606,7 @@ export function waveSetStateAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
-  return waveSetStateForPhase(
+  return waveReadStateForPhase(
     primaryWavePhaseAt(x, z, elapsed, settings, character),
     settings.wavePeriod,
   );

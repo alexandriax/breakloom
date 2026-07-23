@@ -2590,14 +2590,6 @@ export default function SurfscapeApp() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  const updateBalance = (event: ReactPointerEvent<HTMLElement>) => {
-    if (screen !== "game" || paused) return;
-    if (event.pointerType === "mouse" && event.buttons === 0 && document.pointerLockElement !== cameraLookSurface.current) {
-      controls.current.gamepadActive = false;
-      controls.current.balance = THREEClamp((event.clientX / window.innerWidth - 0.5) * 2, -1, 1);
-    }
-  };
-
   const updateTouchBalance = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (motionBalanceStatus === "active") return;
     event.preventDefault();
@@ -2992,6 +2984,36 @@ export default function SurfscapeApp() {
   const vehicleGrip = Math.round(stats.vehicleTraction * 100);
   const ridingOut = stats.phase === "riding" && stats.rideOutProgress > .02;
   const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
+  const currentCrestInRange = stats.waveSurfable
+    && stats.crestDistance > -.8
+    && stats.crestDistance < 9;
+  const crestAtBoard = currentCrestInRange && stats.crestDistance <= .45;
+  const surfRadarValue = currentCrestInRange
+    ? crestAtBoard
+      ? "HERE"
+      : `${stats.crestDistance.toFixed(1)}m`
+    : `${Math.max(1, Math.ceil(stats.nextSetSeconds))}s`;
+  const surfRadarLabel = stats.catchReady
+    ? "CATCHABLE FACE"
+    : crestAtBoard
+      ? "CREST UNDER BOARD"
+      : currentCrestInRange
+        ? "SURFABLE CREST"
+        : "NEXT SURFABLE WAVE";
+  const surfRadarDetail = stats.catchReady
+    ? "Face is lifting · square the board and commit"
+    : crestAtBoard
+      ? "Match the wall's speed and keep driving"
+      : currentCrestInRange
+        ? `${Math.max(0, stats.crestDistance).toFixed(1)} m behind · ${Math.round(stats.crestEnergy * 100)}% energy`
+        : `${Math.max(1, Math.ceil(stats.nextSetSeconds))} s · ${Math.round(stats.nextWaveEnergy * 100)}% energy`;
+  const surfRadarFill = Math.round(
+    THREEClamp(
+      currentCrestInRange ? Math.max(stats.crestApproach, stats.crestEnergy * .34) : stats.nextWaveEnergy,
+      0,
+      1,
+    ) * 100,
+  );
   const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || takeoffCommitted || stats.catchReady || stats.duckDiveReady;
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
@@ -3043,7 +3065,7 @@ export default function SurfscapeApp() {
             : stats.inLineup && stats.takeoffAlignment < .3
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
-                ? { title: "HOLD THE LINEUP", detail: "Board is set · wait for the crest pulse" }
+                ? { title: "READ THE LINEUP", detail: `${surfRadarValue} · turn shoreward as a surfable wall approaches` }
                 : { title: "PADDLE OUT", detail: "Hold PADDLE · steer toward open water · DIVE appears only when needed" }
           : stats.phase === "wipeout"
             ? {
@@ -3182,7 +3204,7 @@ export default function SurfscapeApp() {
   } as CSSProperties;
 
   return (
-    <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle} onPointerMove={updateBalance}>
+    <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle}>
       <div className="scene-layer" aria-hidden={screen === "launch"}>
         <SurfScene
           key={`${beach.id}-${sessionKey}`}
@@ -3588,6 +3610,9 @@ export default function SurfscapeApp() {
           style={gameUiStyle}
           data-qa-scenario={qaScenario ? "surf" : undefined}
           data-qa-phase={stats.phase}
+          data-qa-crest-distance={stats.crestDistance.toFixed(1)}
+          data-qa-wave-surfable={stats.waveSurfable ? "true" : "false"}
+          data-qa-catch-ready={stats.catchReady ? "true" : "false"}
         >
           <div
             ref={cameraLookSurface}
@@ -3937,7 +3962,7 @@ export default function SurfscapeApp() {
               <span>{stats.phase === "riding" ? "Rail" : "Stamina"}</span>
               <strong>{stats.phase === "riding" ? `${Math.round(stats.railGrip * 100)}%` : `${stats.stamina}%`}</strong>
             </div>
-            <div><Waves /><span>{stats.setActive ? "Set" : "Next set"}</span><strong>{stats.setActive ? `${stats.setWaveIndex}/${stats.setWaveCount}` : `${Math.ceil(stats.nextSetSeconds)}s`}</strong></div>
+            <div><Waves /><span>Crest</span><strong>{surfRadarValue}</strong></div>
           </div>
           </div>
 
@@ -3955,9 +3980,9 @@ export default function SurfscapeApp() {
               {hudPanel === "ocean" && (
                 <div className="hud-ocean-grid">
                   <article className="hud-set-card">
-                    <div><Waves /><span>SWELL RADAR</span><strong>{stats.setActive ? `WAVE ${stats.setWaveIndex}/${stats.setWaveCount}` : `${Math.ceil(stats.nextSetSeconds)}s`}</strong></div>
-                    <i><b style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></i>
-                    <small>{stats.setActive ? "Set energy is peaking" : "Reading the next pulse"}</small>
+                    <div><Waves /><span>SURF RADAR</span><strong>{surfRadarValue}</strong></div>
+                    <i><b style={{ width: `${surfRadarFill}%` }} /></i>
+                    <small>{surfRadarDetail}</small>
                   </article>
                   <article><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s period</small></article>
                   <article><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)} m</strong><small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small></article>
@@ -3999,8 +4024,9 @@ export default function SurfscapeApp() {
                 <div className="hud-controls-panel">
                   <span>{gamepadConnected ? "GAMEPAD" : "KEYBOARD + MOUSE"} · {stats.phase.toUpperCase()}</span>
                   <div>
-                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.phase === "riding" ? "Steer and move on the wave face" : "Move and paddle"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.phase === "riding" ? "A/D carve · W/S move trough to lip" : "Move and paddle"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
+                    {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
                     <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.phase === "riding" ? "Hold to load, release to trick" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Dive or catch the wave" : "Context action"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
@@ -4026,41 +4052,15 @@ export default function SurfscapeApp() {
 
           <div className="set-panel">
             <div className="set-heading">
-              <div><Waves /><span>SWELL RADAR</span></div>
-              <strong>
-                {stats.setActive && stats.setWaveIndex > 0
-                  ? `WAVE ${stats.setWaveIndex}/${stats.setWaveCount}`
-                  : stats.nextSetSeconds === 0
-                    ? "SET HERE"
-                    : `${Math.ceil(stats.nextSetSeconds)}s`}
-              </strong>
+              <div><Waves /><span>SURF RADAR</span></div>
+              <strong>{surfRadarValue}</strong>
             </div>
-            <div className={`set-meter ${stats.setActive ? "is-set" : "is-lull"}`}>
-              <i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} />
-              <span aria-hidden="true">
-                {Array.from({ length: stats.setWaveCount }, (_, index) => (
-                  <b
-                    key={index}
-                    className={stats.setActive && index + 1 === stats.setWaveIndex
-                      ? "is-current"
-                      : stats.setActive && index + 1 < stats.setWaveIndex
-                        ? "is-passed"
-                        : ""}
-                  />
-                ))}
-              </span>
+            <div className={`set-meter ${currentCrestInRange ? "is-set" : "is-lull"}`}>
+              <i style={{ width: `${surfRadarFill}%` }} />
             </div>
-            <div className={`set-readout ${stats.setActive ? "is-set" : "is-lull"}`}>
-              <span>{stats.setActive ? "THREE-WAVE SET" : "LULL"}</span>
-              <small>
-                {stats.setActive
-                  ? stats.setWaveIndex === 1
-                    ? "First wave standing up"
-                    : stats.setWaveIndex === stats.setWaveCount
-                      ? "Last wave of the set"
-                      : "Largest wave building"
-                  : `Next wave in ${Math.max(1, Math.ceil(stats.nextSetSeconds))}s`}
-              </small>
+            <div className={`set-readout ${currentCrestInRange ? "is-set" : "is-lull"}`}>
+              <span>{surfRadarLabel}</span>
+              <small>{surfRadarDetail}</small>
             </div>
             {stats.phase === "paddling" && (
               <>
@@ -4174,7 +4174,7 @@ export default function SurfscapeApp() {
 
           <div className={`balance-instrument ${stats.phase === "riding" ? "is-active" : ""} ${ridingOut ? "is-exit" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
-              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "BALANCE"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
+              <span>{ridingOut ? "RIDE OUT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : "RECOVERY"} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{ridingOut ? "CLEAN LINE · MOMENTUM RELEASED" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
               <strong>{ridingOut ? `${Math.round(stats.rideOutProgress * 100)}%` : `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%`}</strong>
             </div>
             <div className="balance-track">
@@ -4194,7 +4194,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small balance corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : `Track the pocket · balance with ${pointerLocked ? "Q / E" : "mouse or thumb"} · W/S moves from trough to lip`}</small>
+            <small>{ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D sets the rail · W/S moves trough to lip · Q/E counterweights impacts"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -4237,7 +4237,7 @@ export default function SurfscapeApp() {
             {gamepadConnected ? (
               <>
                 <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : stats.phase === "riding" ? "rail / wave face" : "move"}</span>
-                <span><kbd>LT</kbd><kbd>RT</kbd> balance</span>
+                <span><kbd>LT</kbd><kbd>RT</kbd> counterweight / recover</span>
                 <span><kbd>A</kbd> {stats.phase === "riding" ? "hold / release trick" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : "context action"}</span>
                 <span><kbd>RS</kbd> freelook</span>
                 <span><kbd>RB</kbd> camera · <kbd>START</kbd> pause</span>
@@ -4265,7 +4265,7 @@ export default function SurfscapeApp() {
                 )}
                 <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" && !stats.inLineup ? "duck-dive the shorebreak" : "catch wave"}</span>
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
-                <span>{pointerLocked ? <><kbd>Q</kbd><kbd>E</kbd> balance</> : <><span className="mouse-icon" /> mouse to balance</>}</span>
+                <span>{stats.phase === "riding" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
               </>
             )}
           </div>
@@ -4377,7 +4377,7 @@ export default function SurfscapeApp() {
                 <div className="heat-results-hero">
                   <div>
                     <span>{heatWon ? "QUALIFICATION LINE CLEARED" : "HEAT COMPLETE"}</span>
-                    <h2 id="heat-result-title">{heatWon ? "YOU ADVANCE." : "CHASE THE NEXT SET."}</h2>
+                    <h2 id="heat-result-title">{heatWon ? "YOU ADVANCE." : "FIND THE NEXT WAVE."}</h2>
                     <p>
                       {heatWon
                         ? `${heatTotal.toFixed(2)} beats the ${heatTarget.toFixed(2)} coast target. That line is now part of your Surf Passport.`
@@ -4466,8 +4466,8 @@ export default function SurfscapeApp() {
             <h2 id="howto-title">From sand to clean line.</h2>
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board and walk through the shallows. Click the scene to lock a 360° mouse view, or swipe on touch; use C or the camera button to frame your line.</p></article>
-              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and watch each wall approach. Turn shoreward, read the tightening catch pulse, then commit; the surfer drives through final strokes, plants both hands, and carries the pop-up into the drop.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>Set a rail, hold Trick or Space to compress, then release into a move. On mobile, enable Motion Balance above the rail to tilt the phone instead of covering the wave with your thumb.</p></article>
+              <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and read the surf radar in metres. Any strong crest can be caught: turn shoreward, match its speed, drive through the lift, then commit as the face takes the board.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>A/D sets the rail and W/S moves from trough to lip. Hold Trick or Space to compress, release into a move, and use Q/E or the mobile recovery rail only when turbulence knocks you off center.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>
