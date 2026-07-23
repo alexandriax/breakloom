@@ -73,6 +73,8 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 
 type Screen = "launch" | "game";
 type SessionFormat = "free" | "heat";
+type LaunchPanel = "break" | "forecast" | "tour";
+type HudPanel = "ocean" | "session" | "controls";
 type MotionBalanceStatus = "checking" | "unavailable" | "idle" | "requesting" | "active" | "denied";
 type PersonalBest = { score: number; distance: number; combo: number };
 type CoastPassportRecord = {
@@ -886,6 +888,9 @@ export default function SurfscapeApp() {
   const [pointerLocked, setPointerLocked] = useState(false);
   const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
   const [showPlanner, setShowPlanner] = useState(true);
+  const [launchPanel, setLaunchPanel] = useState<LaunchPanel>("break");
+  const [hudMenuOpen, setHudMenuOpen] = useState(false);
+  const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
   const [showHowTo, setShowHowTo] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
@@ -2339,6 +2344,8 @@ export default function SurfscapeApp() {
     setWetLens(null);
     setShareStatus("idle");
     setSessionKey((value) => value + 1);
+    setHudMenuOpen(false);
+    setHudPanel("ocean");
     setPaused(false);
     setScreen("game");
   };
@@ -2360,6 +2367,7 @@ export default function SurfscapeApp() {
     resetReplayStudio();
     resetHeatSession();
     setWetLens(null);
+    setHudMenuOpen(false);
     setScreen("launch");
     setPaused(false);
   };
@@ -3226,9 +3234,10 @@ export default function SurfscapeApp() {
               </div>
             </div>
 
-            <aside className={`planner ${showPlanner ? "is-open" : ""}`}>
+            <aside className={`planner panel-${launchPanel} ${showPlanner ? "is-open" : ""}`}>
               <button className="planner-mobile-toggle" onClick={() => setShowPlanner((value) => !value)}>
-                <MapPin /> {beach.name} <ChevronDown />
+                <span><MapPin /> <strong>{beach.name}</strong><small>{zoneLabel}</small></span>
+                <ChevronDown />
               </button>
               <div className="planner-inner">
                 <div className="planner-head">
@@ -3245,7 +3254,18 @@ export default function SurfscapeApp() {
                     <ChevronDown />
                   </label>
                 </div>
-                <div className={`tour-passport mastery-${currentCoastRecord.mastery}`}>
+                <nav className="planner-tabs" aria-label="Session planning">
+                  <button type="button" className={launchPanel === "break" ? "is-active" : ""} onClick={() => setLaunchPanel("break")} aria-pressed={launchPanel === "break"}>
+                    <MapPin /><span>Break</span><small>Choose a line</small>
+                  </button>
+                  <button type="button" className={launchPanel === "forecast" ? "is-active" : ""} onClick={() => setLaunchPanel("forecast")} aria-pressed={launchPanel === "forecast"}>
+                    <CloudSun /><span>Forecast</span><small>Pick a window</small>
+                  </button>
+                  <button type="button" className={launchPanel === "tour" ? "is-active" : ""} onClick={() => setLaunchPanel("tour")} aria-pressed={launchPanel === "tour"}>
+                    <Trophy /><span>Tour</span><small>{passportSummary.stamps} stamps</small>
+                  </button>
+                </nav>
+                {launchPanel === "tour" && <div className={`tour-passport mastery-${currentCoastRecord.mastery}`}>
                   <div className="passport-heading">
                     <Trophy />
                     <span>WORLD TOUR PASSPORT</span>
@@ -3283,8 +3303,9 @@ export default function SurfscapeApp() {
                       {Array.from({ length: 3 }, (_, stamp) => <i key={stamp} className={stamp < currentCoastRecord.mastery ? "is-earned" : ""}>{stamp + 1}</i>)}
                     </span>
                   </div>
-                </div>
-                <WorldMap
+                </div>}
+                {launchPanel === "break" && <div className="planner-panel planner-break-panel">
+                  <WorldMap
                   beach={beach}
                   latitude={latitude}
                   longitude={longitude}
@@ -3313,7 +3334,24 @@ export default function SurfscapeApp() {
                     </button>
                   ))}
                 </div>
-                <div className="forecast-planner">
+                  <p className="break-description">{beach.description}</p>
+                  <div className="break-meta">
+                    <span><Waves /> {beach.breakType}</span>
+                    <span><ArrowRight /> {breakCharacter.line} · {breakCharacter.kind.toUpperCase()}</span>
+                    <span><Gauge /> Difficulty {beach.difficulty}/5</span>
+                    <span><Thermometer /> {settings.waterTemperature.toFixed(0)}°C · {thermalKit.name}</span>
+                    <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
+                    <span className="data-credit">Model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD · Not for navigation</span>
+                  </div>
+                </div>}
+                {launchPanel === "forecast" && <div className="planner-panel planner-forecast-panel">
+                  <div className="forecast-summary">
+                    <div><Waves /><span>Face</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong></div>
+                    <div><Wind /><span>Period</span><strong>{settings.swellPeriod.toFixed(1)} s</strong></div>
+                    <div><ArrowRight /><span>Tide</span><strong>{tideResponse.shortName}</strong></div>
+                    <div><SunMedium /><span>Local</span><strong>{localTime}</strong></div>
+                  </div>
+                  <div className="forecast-planner">
                   <div className="forecast-head">
                     <span>03 / SESSION WINDOW</span>
                     <strong>{selectedForecast ? `${forecastDayLabel(selectedForecast.time, conditions.observedAt)} · ${formatClock(selectedForecast.time)}` : "Now · live model"}</strong>
@@ -3351,16 +3389,12 @@ export default function SurfscapeApp() {
                     })}
                   </div>
                 </div>
-                <p className="break-description">{beach.description}</p>
-                <div className="break-meta">
-                  <span><Waves /> {beach.breakType}</span>
-                  <span><ArrowRight /> {breakCharacter.line} · {breakCharacter.kind.toUpperCase()}</span>
-                  <span><Gauge /> Difficulty {beach.difficulty}/5</span>
+                  <div className="break-meta forecast-meta">
                   <span title={tideResponse.note} aria-label={`${tideResponse.label}. ${tideResponse.note}. ${Math.round(tideResponse.quality * 100)} percent bathymetry fit.`}><Waves /> {tideResponse.label} · {Math.round(tideResponse.quality * 100)}% bathymetry fit</span>
-                  <span><Thermometer /> {settings.waterTemperature.toFixed(0)}°C water · {thermalKit.name}</span>
-                  <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
-                  <span className="data-credit">Model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD · Not for navigation</span>
-                </div>
+                    <span><Wind /> Wind {settings.windSpeed.toFixed(0)} km/h · {degrees(settings.windDirection)}</span>
+                    <span><Thermometer /> Water {settings.waterTemperature.toFixed(0)}°C · {thermalKit.name}</span>
+                  </div>
+                </div>}
               </div>
             </aside>
           </div>
@@ -3388,22 +3422,15 @@ export default function SurfscapeApp() {
             </section>
           )}
 
-          <footer className="launch-footer">
+          <footer className="launch-footer" aria-label="Ready session">
             <div className="session-summary">
-              <span>{sessionFormat === "heat" ? "World tour heat" : selectedMode.kicker}</span>
-              <strong>{sessionFormat === "heat" ? `5:00 · target ${heatTarget.toFixed(2)}` : selectedMode.name}</strong>
+              <div><span>Session</span><strong>{sessionFormat === "heat" ? "World Tour Heat" : selectedMode.name}</strong></div>
               <i />
-              <span>{zoneLabel}</span>
-              <strong>{localTime} {sessionConditions.timezoneAbbreviation}</strong>
+              <div><span>Line</span><strong>{zoneLabel}</strong></div>
               <i />
-              <span>World tour</span>
-              <strong>{passportSummary.explored}/{BEACHES.length} · {passportSummary.stamps} stamps</strong>
+              <div><span>Window</span><strong>{localTime} · {settings.waveHeight.toFixed(1)} m</strong></div>
               <i />
-              <span>Personal best</span>
-              <strong>{personalBest.score.toLocaleString()}</strong>
-              <i />
-              <span>Board</span>
-              <strong>{BOARD_SPECS[settings.board].name}</strong>
+              <div><span>Board</span><strong>{BOARD_SPECS[settings.board].name}</strong></div>
             </div>
             <button className="launch-button" onClick={startSession}>
               <span>{sessionFormat === "heat" ? "START WORLD TOUR HEAT" : "ENTER THE WATER"}</span>
@@ -3414,7 +3441,7 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "game" && (
-        <section className={`game-ui phase-${stats.phase} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
+        <section className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""}`} style={gameUiStyle}>
           <div
             ref={cameraLookSurface}
             className={`camera-look-surface ${pointerLocked ? "is-locked" : ""}`}
@@ -3715,18 +3742,125 @@ export default function SurfscapeApp() {
               )}
             </div>
             <div className="game-actions">
-              <button onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
+              <div className="hud-score-chip" aria-label={`${sessionFormat === "heat" ? "Heat total" : "Session score"} ${sessionFormat === "heat" ? heatTotal.toFixed(2) : stats.score.toLocaleString()}`}>
+                <span>{sessionFormat === "heat" ? "HEAT" : stats.grade}</span>
+                <strong>{sessionFormat === "heat" ? heatTotal.toFixed(2) : stats.score.toLocaleString()}</strong>
+              </div>
+              <button className="sound-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
               {gamepadConnected && <div className="controller-chip" role="status" aria-label="Game controller connected"><Gamepad2 /><span>PAD</span></div>}
               {fullscreenAvailable && (
-                <button onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
+                <button className="fullscreen-button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
                   {isFullscreen ? <Minimize2 /> : <Maximize2 />}
                 </button>
               )}
               <button className="photo-button" onClick={openPhotoMode} aria-label="Open photo mode" title="Photo mode (P)"><Aperture /></button>
               <button className="camera-button" onClick={cycleCamera} aria-label={`Camera: ${CAMERA_LABELS[cameraMode]}. Switch camera.`} title={`Camera: ${CAMERA_LABELS[cameraMode]}`}><Camera /></button>
+              <button
+                className={`hud-menu-button ${hudMenuOpen ? "is-active" : ""}`}
+                onClick={() => setHudMenuOpen((value) => !value)}
+                aria-label={hudMenuOpen ? "Close surf computer" : "Open surf computer"}
+                aria-expanded={hudMenuOpen}
+                aria-controls="surf-computer"
+                title="Surf computer"
+              >
+                {hudMenuOpen ? <X /> : <Grid3X3 />}
+              </button>
               <button onClick={() => { clearAnalogMovement(); setPaused(true); }} aria-label="Pause"><Pause /></button>
             </div>
           </header>
+
+          <div className="hud-vitals" aria-label="Live session essentials">
+            <div>
+              <Crosshair />
+              <span>{stats.phase === "paddling" ? "Offshore" : stats.phase === "driving" ? "Coast" : stats.phase === "riding" ? "Line" : "Break"}</span>
+              <strong>
+                {stats.phase === "paddling"
+                  ? `${stats.offshoreDistance.toFixed(0)} m`
+                  : stats.phase === "driving"
+                    ? `${Math.abs(stats.coastDistance).toFixed(0)} m`
+                    : stats.phase === "riding"
+                      ? `${stats.rideDistance.toFixed(0)} m`
+                      : activeLine}
+              </strong>
+            </div>
+            <div><Gauge /><span>Speed</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
+            <div>
+              {stats.phase === "riding" ? <Target /> : <BatteryMedium />}
+              <span>{stats.phase === "riding" ? "Rail" : "Stamina"}</span>
+              <strong>{stats.phase === "riding" ? `${Math.round(stats.railGrip * 100)}%` : `${stats.stamina}%`}</strong>
+            </div>
+            <div><Waves /><span>{stats.setActive ? "Set" : "Next set"}</span><strong>{stats.setActive ? `${stats.setWaveIndex}/${stats.setWaveCount}` : `${Math.ceil(stats.nextSetSeconds)}s`}</strong></div>
+          </div>
+
+          <aside id="surf-computer" className="hud-drawer" aria-hidden={!hudMenuOpen}>
+            <header>
+              <div><Grid3X3 /><span>SURF COMPUTER</span><strong>{zoneLabel}</strong></div>
+              <button type="button" onClick={() => setHudMenuOpen(false)} aria-label="Close surf computer"><X /></button>
+            </header>
+            <nav aria-label="Surf computer panels">
+              <button type="button" className={hudPanel === "ocean" ? "is-active" : ""} onClick={() => setHudPanel("ocean")} aria-pressed={hudPanel === "ocean"}><Waves /><span>Ocean</span></button>
+              <button type="button" className={hudPanel === "session" ? "is-active" : ""} onClick={() => setHudPanel("session")} aria-pressed={hudPanel === "session"}><Trophy /><span>Session</span></button>
+              <button type="button" className={hudPanel === "controls" ? "is-active" : ""} onClick={() => setHudPanel("controls")} aria-pressed={hudPanel === "controls"}><Gamepad2 /><span>Controls</span></button>
+            </nav>
+            <div className="hud-drawer-body">
+              {hudPanel === "ocean" && (
+                <div className="hud-ocean-grid">
+                  <article className="hud-set-card">
+                    <div><Waves /><span>SWELL RADAR</span><strong>{stats.setActive ? `WAVE ${stats.setWaveIndex}/${stats.setWaveCount}` : `${Math.ceil(stats.nextSetSeconds)}s`}</strong></div>
+                    <i><b style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></i>
+                    <small>{stats.setActive ? "Set energy is peaking" : "Reading the next pulse"}</small>
+                  </article>
+                  <article><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s period</small></article>
+                  <article><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)} m</strong><small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small></article>
+                  <article><span>BREAK / TIDE</span><strong>{activeLine}</strong><small>{tideResponse.label}</small></article>
+                  <article><span>WIND</span><strong>{settings.windSpeed.toFixed(0)} km/h</strong><small>{degrees(settings.windDirection)}</small></article>
+                  <article><span>WATER / KIT</span><strong>{settings.waterTemperature.toFixed(0)}°C</strong><small>{thermalKit.name}</small></article>
+                  {stats.phase === "paddling" && (
+                    <article className="hud-offshore-card">
+                      <span>OFFSHORE DISTANCE</span><strong>{Math.round(stats.offshoreDistance)} m</strong>
+                      <i><b style={{ width: `${Math.min(100, stats.offshoreDistance / MAX_OFFSHORE_DISTANCE * 100)}%` }} /></i>
+                      <small>{stats.inLineup ? "Outside the break" : "Paddling toward the lineup"}</small>
+                    </article>
+                  )}
+                </div>
+              )}
+              {hudPanel === "session" && (
+                <div className="hud-session-panel">
+                  <div className="hud-session-score">
+                    <span>{sessionFormat === "heat" ? "HEAT TOTAL" : "SESSION SCORE"}</span>
+                    <strong>{sessionFormat === "heat" ? heatTotal.toFixed(2) : stats.score.toLocaleString()}</strong>
+                    <small>{sessionFormat === "heat" ? `${heatNeed.toFixed(2)} to qualify` : `${stats.combo.toFixed(1)}× flow · grade ${stats.grade}`}</small>
+                  </div>
+                  <div className="hud-session-goals">
+                    <span>{sessionFormat === "heat" ? "HEAT SHEET" : settings.mode === "training" ? "LESSON PROGRESS" : "SESSION LINES"}</span>
+                    {objectives.map((objective) => (
+                      <small key={objective.label} className={objective.done ? "is-done" : ""}>
+                        {objective.done ? <CircleCheck /> : <i />} {objective.label}
+                      </small>
+                    ))}
+                  </div>
+                  <div className="hud-session-meta">
+                    <span><MapPin /> {zoneLabel}</span>
+                    <span><Waves /> {BOARD_SPECS[settings.board].name}</span>
+                    <span><Trophy /> Best {personalBest.score.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+              {hudPanel === "controls" && (
+                <div className="hud-controls-panel">
+                  <span>{gamepadConnected ? "GAMEPAD" : "KEYBOARD + MOUSE"} · {stats.phase.toUpperCase()}</span>
+                  <div>
+                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.phase === "riding" ? "Steer and move on the wave face" : "Move and paddle"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.phase === "riding" ? "Hold to load, release to trick" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Dive or catch the wave" : "Context action"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
+                    {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
+                  </div>
+                  <button type="button" onClick={() => setShowHowTo(true)}><Gamepad2 /> OPEN FULL RIDE GUIDE</button>
+                </div>
+              )}
+            </div>
+          </aside>
 
           <div className="score-panel">
             <span>{sessionFormat === "heat" ? "HEAT TOTAL" : "SESSION SCORE"} <b>{sessionFormat === "heat" ? heatWaves.length : stats.grade}</b></span>
