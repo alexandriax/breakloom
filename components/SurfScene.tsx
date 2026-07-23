@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
+import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetState, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -304,6 +304,8 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uWindDirection;
   uniform float uCoastHeading;
   uniform float uTide;
+  uniform float uTideFaceScale;
+  uniform float uBreakShift;
   uniform float uWind;
   uniform float uPeel;
   uniform float uPower;
@@ -374,7 +376,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vec2 currentDir = coastalVector(uCurrentDirection);
     vec2 windDir = coastalVector(uWindDirection);
     float section = sin(surfaceOrigin.x * .07 + uTime * .05) * uVariability * 2.3;
-    float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section;
+    float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section - uBreakShift;
     float curve = waveDir.x * .0019 * surfaceOrigin.x * surfaceOrigin.x;
     vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
     float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
@@ -382,7 +384,7 @@ const OCEAN_VERTEX = /* glsl */ `
     float primaryWavelength = clamp(1.56 * uPeriod * uPeriod, 48.0, 320.0) * shallowCompression;
     float setEnergy = setEnvelope();
     float setLift = .78 + setEnergy * .34;
-    float amplitude = max(.12, uHeight * .62) * uPower;
+    float amplitude = max(.12, uHeight * .62) * uPower * uTideFaceScale;
     float swellPeriod = max(4.0, uSwellPeriod);
     float swellWavelength = clamp(1.56 * swellPeriod * swellPeriod, 64.0, 520.0);
     float swellAmplitude = max(0.0, min(uSwellHeight, uHeight * 1.35) * .16);
@@ -616,6 +618,10 @@ function Ocean({
   const material = useRef<THREE.ShaderMaterial>(null);
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
+  const tideResponse = useMemo(
+    () => tideResponseForBreak(settings.tide, character),
+    [character, settings.tide],
+  );
   const crossShoreSegments = mobile
     ? quality === "reduced" ? 80 : quality === "high" ? 140 : 108
     : quality === "reduced" ? 180 : quality === "balanced" ? 224 : 280;
@@ -636,22 +642,24 @@ function Ocean({
       uWindDirection: { value: settings.windDirection },
       uCoastHeading: { value: settings.coastHeading },
       uTide: { value: settings.tide },
+      uTideFaceScale: { value: tideResponse.faceScale },
+      uBreakShift: { value: tideResponse.breakShift },
       uLight: { value: 1 },
       uCloud: { value: 0 },
       uWind: { value: settings.windSpeed },
       uRain: { value: 0 },
       uVisibility: { value: 240 },
       uPeel: { value: character.peel },
-      uPower: { value: character.power },
-      uSteepness: { value: character.steepness },
-      uHollow: { value: character.hollow },
-      uVariability: { value: character.variability },
+      uPower: { value: character.power * tideResponse.powerScale },
+      uSteepness: { value: character.steepness * tideResponse.steepnessScale },
+      uHollow: { value: character.hollow * tideResponse.hollowScale },
+      uVariability: { value: character.variability * tideResponse.variabilityScale },
       uCenterX: { value: 0 },
       uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
       uSunColor: { value: new THREE.Color("#fff0ca") },
       uHazeColor: { value: new THREE.Color("#78979c") },
     }),
-    [character, settings],
+    [character, settings, tideResponse],
   );
 
   const tideShift = shorelineShiftForTide(settings.tide);
@@ -675,16 +683,18 @@ function Ocean({
     values.uWindDirection.value = settings.windDirection;
     values.uCoastHeading.value = settings.coastHeading;
     values.uTide.value = settings.tide;
+    values.uTideFaceScale.value = THREE.MathUtils.lerp(values.uTideFaceScale.value, tideResponse.faceScale, .035);
+    values.uBreakShift.value = THREE.MathUtils.lerp(values.uBreakShift.value, tideResponse.breakShift, .035);
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uWind.value = settings.windSpeed;
     values.uRain.value = rain;
     values.uVisibility.value = visibility;
     values.uPeel.value = THREE.MathUtils.lerp(values.uPeel.value, character.peel, .035);
-    values.uPower.value = THREE.MathUtils.lerp(values.uPower.value, character.power, .035);
-    values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness, .035);
-    values.uHollow.value = THREE.MathUtils.lerp(values.uHollow.value, character.hollow, .035);
-    values.uVariability.value = THREE.MathUtils.lerp(values.uVariability.value, character.variability, .035);
+    values.uPower.value = THREE.MathUtils.lerp(values.uPower.value, character.power * tideResponse.powerScale, .035);
+    values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness * tideResponse.steepnessScale, .035);
+    values.uHollow.value = THREE.MathUtils.lerp(values.uHollow.value, character.hollow * tideResponse.hollowScale, .035);
+    values.uVariability.value = THREE.MathUtils.lerp(values.uVariability.value, character.variability * tideResponse.variabilityScale, .035);
     values.uCenterX.value = ocean.current?.position.x ?? focusPosition.current.x;
     values.uSunDirection.value.set(...sunPosition).normalize();
     values.uSunColor.value.set(sunColor);
@@ -1557,6 +1567,10 @@ function BreakingWave({
   const foamMaterial = useRef<THREE.ShaderMaterial>(null);
   const lineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
   const warmupFrames = useRef(1);
+  const tideResponse = useMemo(
+    () => tideResponseForBreak(settings.tide, character),
+    [character, settings.tide],
+  );
   const faceUniforms = useMemo(() => ({
     uTime: { value: 0 },
     uWaveHeight: { value: 1 },
@@ -1610,22 +1624,30 @@ function BreakingWave({
     const state = motion.current;
     const riding = state.phase === "riding";
     if (riding) lineSide.current = state.lineSide || lineSide.current;
+    const effectiveHollow = character.hollow * tideResponse.hollowScale;
+    const effectiveSteepness = character.steepness * tideResponse.steepnessScale;
+    const effectivePower = character.power * tideResponse.powerScale;
     const targetCurl = riding
       ? THREE.MathUtils.clamp(
-          (state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12) * (.72 + character.hollow * .3 + character.steepness * .08),
+          (state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12) * (.72 + effectiveHollow * .3 + effectiveSteepness * .08),
           .08,
           1.28,
         )
       : 0;
     const targetOpacity = riding
-      ? THREE.MathUtils.clamp(.28 + state.waveQuality * .25 + state.barrel * .3 + character.power * .045, .3, .92)
+      ? THREE.MathUtils.clamp(.28 + state.waveQuality * .25 + state.barrel * .3 + effectivePower * .045, .3, .92)
       : 0;
     const targetCurtain = riding
-      ? THREE.MathUtils.clamp((state.waveQuality - .5 + character.hollow * .14) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .96)
+      ? THREE.MathUtils.clamp((state.waveQuality - .5 + effectiveHollow * .14) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .96)
       : 0;
     const values = faceMaterial.current.uniforms;
     values.uTime.value = clock.elapsedTime;
-    values.uWaveHeight.value = THREE.MathUtils.damp(values.uWaveHeight.value, settings.waveHeight * (.9 + character.power * .1), 3.5, delta);
+    values.uWaveHeight.value = THREE.MathUtils.damp(
+      values.uWaveHeight.value,
+      settings.waveHeight * tideResponse.faceScale * (.9 + effectivePower * .1),
+      3.5,
+      delta,
+    );
     values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, state.setEnergy, 4, delta);
     values.uCurl.value = THREE.MathUtils.damp(values.uCurl.value, targetCurl, 5.5, delta);
     values.uSide.value = THREE.MathUtils.damp(values.uSide.value, lineSide.current, 3.2, delta);
@@ -4081,6 +4103,10 @@ function BreakingWhitewaterField({
   mobile: boolean;
 }) {
   const quality = useRenderQuality();
+  const tideResponse = useMemo(
+    () => tideResponseForBreak(settings.tide, character),
+    [character, settings.tide],
+  );
   const patchCount = mobile
     ? quality === "reduced" ? 24 : quality === "high" ? 40 : 32
     : quality === "reduced" ? 42 : quality === "balanced" ? 56 : BREAKING_FOAM_PATCH_LIMIT;
@@ -4234,9 +4260,15 @@ function BreakingWhitewaterField({
     const normalZ = transport.z / Math.max(.001, transport.speed);
     const tangentX = normalZ;
     const tangentZ = -normalX;
-    const faceHeight = THREE.MathUtils.clamp(settings.waveHeight * 1.55, 1.35, 5.8) * (.78 + state.setEnergy * .32);
+    const faceHeight = THREE.MathUtils.clamp(settings.waveHeight * tideResponse.faceScale * 1.55, 1.35, 5.8) * (.78 + state.setEnergy * .32);
     const breakEnergy = THREE.MathUtils.clamp(
-      .24 + state.waveQuality * .42 + state.sectionPressure * .26 + state.barrel * .18 + Math.abs(state.rail) * .08,
+      (
+        .24
+        + state.waveQuality * .42
+        + state.sectionPressure * .26
+        + state.barrel * .18
+        + Math.abs(state.rail) * .08
+      ) * (.94 + (tideResponse.powerScale - 1) * .55),
       .18,
       1.15,
     );
@@ -7720,6 +7752,14 @@ function Simulation({
   const fogRef = useRef<THREE.Fog>(null);
   const boardSpec = BOARD_SPECS[settings.board];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
+  const tideResponse = useMemo(
+    () => tideResponseForBreak(settings.tide, character),
+    [character, settings.tide],
+  );
+  const tidePower = character.power * tideResponse.powerScale;
+  const tideSteepness = character.steepness * tideResponse.steepnessScale;
+  const tideHollow = character.hollow * tideResponse.hollowScale;
+  const tideVariability = character.variability * tideResponse.variabilityScale;
   const thermalKit = useMemo(
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
@@ -8202,10 +8242,15 @@ function Simulation({
         const coastalZ = position.current.z - tideShift;
         inLineup = coastalZ < LINEUP_ENTRY_Z;
         if (nextShorebreakAt.current <= 0) nextShorebreakAt.current = t + 2.55;
-        const breakZone = THREE.MathUtils.smoothstep(coastalZ, -18, -8) * (1 - THREE.MathUtils.smoothstep(coastalZ, -3, 1));
+        const breakCoastalZ = coastalZ - tideResponse.breakShift;
+        const breakZone = THREE.MathUtils.smoothstep(breakCoastalZ, -18, -8) * (1 - THREE.MathUtils.smoothstep(breakCoastalZ, -3, 1));
         shorebreakPower = !inLineup
           ? THREE.MathUtils.clamp(
-              breakZone * (.34 + setState.energy * .66) * (.52 + settings.waveHeight * .22) * (.86 + character.power * .14),
+              breakZone
+                * (.34 + setState.energy * .66)
+                * (.52 + settings.waveHeight * tideResponse.faceScale * .22)
+                * (.86 + tidePower * .14)
+                * tideResponse.shorebreakScale,
               0,
               1,
             )
@@ -8245,7 +8290,7 @@ function Simulation({
             motion.current.impact = .66 + shorebreakPower * .34;
           }
           const breakInterval = Math.max(4.4, settings.wavePeriod * .58);
-          const variation = Math.sin(shorebreakId.current * 2.31 + position.current.x * .04) * character.variability * .09;
+          const variation = Math.sin(shorebreakId.current * 2.31 + position.current.x * .04) * tideVariability * .09;
           nextShorebreakAt.current = t + breakInterval * (.88 + setState.energy * .16 + variation);
         }
         takeoffAlignment = THREE.MathUtils.smoothstep(paddleForwardZ, .08, .94);
@@ -8262,7 +8307,7 @@ function Simulation({
               1,
             )
           : 0;
-        const breakDemand = Math.max(0, character.power + character.steepness - 1.85) * .055;
+        const breakDemand = Math.max(0, tidePower + tideSteepness - 1.85) * .055;
         const takeoffThreshold = (settings.mode === "training" ? .22 : settings.mode === "advanced" ? .5 : .36) + breakDemand;
         const headingThreshold = settings.mode === "training" ? .18 : settings.mode === "advanced" ? .52 : .34;
         catchReady = !takeoffCommitting
@@ -8485,7 +8530,7 @@ function Simulation({
           * waveTransport.speed
           * (.38 + Math.abs(character.peel) * .22 + character.length * .018);
         ridePocketOffset.current += peelVelocity * delta;
-        const waveSpeed = waveTransport.speed * (.88 + character.power * .12);
+        const waveSpeed = waveTransport.speed * (.88 + tidePower * .12);
         const pumping = !finishing && move > 0.08 && stamina.current > 1;
         if (finishing) stance.current = THREE.MathUtils.damp(stance.current, 0, 4.8, delta);
         else if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
@@ -8495,9 +8540,9 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const breakTravel = rideDistance.current;
-        const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * character.variability * 1.1;
+        const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * tideVariability * 1.1;
         const pocketAlong = rideOriginAlong.current + ridePocketOffset.current + pocketPulse;
-        const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * .46 + (1 - character.steepness) * .9, 3.6, 6.7);
+        const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * tideResponse.faceScale * .46 + (1 - tideSteepness) * .9, 3.6, 6.7);
         const surferAlong = position.current.x * waveTangentX + position.current.z * waveTangentZ;
         const signedPocketDistance = (surferAlong - pocketAlong) * rideLineSide.current;
         linePosition = THREE.MathUtils.clamp(signedPocketDistance / pocketWidth, -1.5, 1.5);
@@ -8505,13 +8550,13 @@ function Simulation({
         lineControl = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition), .38 * lineTolerance, 1.16 * lineTolerance);
         const deepRisk = THREE.MathUtils.smoothstep(-linePosition, .64 * lineTolerance, 1.34 * lineTolerance);
         const shoulderStall = THREE.MathUtils.smoothstep(linePosition, .76 * lineTolerance, 1.42 * lineTolerance);
-        sectionPressure = Math.max(deepRisk, shoulderStall * .78) * (.66 + character.variability * .34);
+        sectionPressure = Math.max(deepRisk, shoulderStall * .78) * (.66 + tideVariability * .34);
         const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
         speed = waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16) + pumpBoost + nosePressure * 0.85 - tailPressure * 0.48;
         speed *= .82 + lineControl * .24 - shoulderStall * .1 + Math.max(0, -linePosition) * .025;
         const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const railDemand = Math.abs(rideSteer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + character.steepness * .1);
+        const railDemand = Math.abs(rideSteer) * (.72 + speed * .035) * (1 + nosePressure * .16 - tailPressure * .12) * (.92 + tideSteepness * .1);
         const railGrip = gripBase + priorWaveQuality * .2 + tailPressure * .08 - nosePressure * .1;
         const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
         const assistedSlip = settings.mode === "training" ? rawSlip * .52 : rawSlip;
@@ -8542,7 +8587,7 @@ function Simulation({
         rideDistance.current += rideStep;
         if (lineControl > .5) pocketDistance.current += rideStep;
         balanceTarget =
-          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) * (.88 + character.power * .08 + character.variability * .1) / boardSpec.stability +
+          Math.sin(t * (1.25 + modeDifficulty * 0.7) + position.current.x * 0.13) * (0.33 + modeDifficulty * 0.28) * (1 + nosePressure * 0.12) * (.88 + tidePower * .08 + tideVariability * .1) / boardSpec.stability +
           Math.sin(t * 3.1) * settings.currentStrength * 0.045 -
           rideSteer * (0.22 + tailPressure * 0.08) +
           stance.current * 0.07 +
@@ -8587,19 +8632,19 @@ function Simulation({
         const lineMatch = Math.abs(character.peel) < .18
           ? 1
           : THREE.MathUtils.clamp(.58 + rideSteer * character.peel * .42, .2, 1);
-        const sectionQuality = 1 - character.variability * (.12 + Math.abs(Math.sin(position.current.x * .11 + t * .17)) * .18);
-        const windShape = 1 - onshoreChop * .17 + offshoreGroom * .055;
+        const sectionQuality = 1 - tideVariability * (.12 + Math.abs(Math.sin(position.current.x * .11 + t * .17)) * .18);
+        const windShape = (1 - onshoreChop * .17 + offshoreGroom * .055) * (.9 + tideResponse.quality * .1);
         waveQuality = THREE.MathUtils.clamp(
           ((wavePhase + 1) * .3 + setState.energy * .12 + catchQuality.current * .08 + lineMatch * .1 + sectionQuality * .07 + lineControl * .23) * windShape,
           0,
           1,
         );
         const controlQuality = Math.max(0, 1 - balanceError / 1.2) * (1 - railSlip.current * .36);
-        const barrelThreshold = .8 - character.hollow * .18 + onshoreChop * .08 - offshoreGroom * .025;
+        const barrelThreshold = .8 - tideHollow * .18 + onshoreChop * .08 - offshoreGroom * .025;
         const pocketBarrel = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition + .18), .34, .92);
         const inBarrel = !finishing && waveQuality > barrelThreshold && controlQuality > .72 && pocketBarrel > .42 && Math.abs(rideSteer) < .68 && stance.current > -.58;
         barrelIntensity = inBarrel
-          ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + character.hollow) + controlQuality * .16, 0, 1)
+          ? THREE.MathUtils.clamp((waveQuality - barrelThreshold + .12) * (1.75 + tideHollow) + controlQuality * .16, 0, 1)
           : 0;
         if (inBarrel && !finishing) {
           barrelTime.current += delta;
@@ -8755,7 +8800,7 @@ function Simulation({
             settings.waveHeight / 4.2 * .24
               + Math.max(0, settings.wavePeriod - 6) / 12 * .16
               + setState.energy * .18
-              + character.power * .09
+              + tidePower * .09
               + Math.min(1, speed / 22) * .13
               + sectionPressure * .12
               + railSlip.current * .08,

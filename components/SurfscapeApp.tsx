@@ -48,6 +48,7 @@ import {
   MAX_OFFSHORE_DISTANCE,
   settingsFromConditions,
   thermalKitForConditions,
+  tideResponseForBreak,
   type BoardType,
   type GameMode,
   type GameStats,
@@ -532,6 +533,19 @@ export default function SurfscapeApp() {
   const availableForecastWindows = useMemo(() => forecastWindows(conditions), [conditions]);
   const sessionWeatherCode = settings.weatherCode;
   const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : sessionConditions.cloudCover;
+  const breakCharacter = useMemo(
+    () => getBreakCharacter(beach.id, zoneLabel),
+    [beach.id, zoneLabel],
+  );
+  const tideResponse = useMemo(
+    () => tideResponseForBreak(settings.tide, breakCharacter),
+    [breakCharacter, settings.tide],
+  );
+  const currentTideResponse = useMemo(
+    () => tideResponseForBreak(conditions.seaLevel, breakCharacter),
+    [breakCharacter, conditions.seaLevel],
+  );
+  const effectiveFaceHeight = settings.waveHeight * tideResponse.faceScale;
   const thermalKit = useMemo(
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
@@ -974,7 +988,7 @@ export default function SurfscapeApp() {
       stats.catchReady,
       stats.lineSide,
       stats.sectionPressure,
-      settings.waveHeight,
+      effectiveFaceHeight,
       settings.wavePeriod,
       settings.waveDirection,
       settings.swellHeight,
@@ -993,7 +1007,7 @@ export default function SurfscapeApp() {
     );
     audio.current?.setEnvironment(
       settings.windSpeed,
-      settings.waveHeight,
+      effectiveFaceHeight,
       sessionCloudCover,
       paused ? 0.34 : screen === "game" ? .4 + stats.sessionIntro * .6 : .42,
       sessionWeatherCode,
@@ -1011,7 +1025,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.waveHeight, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
+  }, [effectiveFaceHeight, paused, screen, sessionCloudCover, sessionWeatherCode, settings.coastHeading, settings.swellDirection, settings.swellHeight, settings.swellPeriod, settings.timeOfDay, settings.waveDirection, settings.wavePeriod, settings.windDirection, settings.windSpeed, splashLens, stats.barrelIntensity, stats.breath, stats.cameraHeading, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.holdDownSeconds, stats.leashTension, stats.lineSide, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sectionPressure, stats.sessionIntro, stats.setEnergy, stats.shorebreakIntensity, stats.speed, stats.submersion, stats.takeoffCommitProgress, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle, stats.wipeoutPower]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -1212,8 +1226,8 @@ export default function SurfscapeApp() {
     audio.current.setEnabled(soundEnabled);
     audio.current.setMusicEnabled(musicEnabled);
     audio.current.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
-    audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, .34, sessionWeatherCode);
-    audio.current.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, true, 0);
+    audio.current.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, .34, sessionWeatherCode);
+    audio.current.setWaveField("shore", 0, 0, false, 1, 0, effectiveFaceHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, true, 0);
     audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
     audio.current.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
@@ -1235,10 +1249,10 @@ export default function SurfscapeApp() {
   const leaveSession = () => {
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
-    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, settings.waveHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, false, 0);
+    audio.current?.setWaveField("shore", 0, 0, false, 1, 0, effectiveFaceHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, false, 0);
     audio.current?.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, false);
     audio.current?.setMovement(stats.phase, 0, false);
-    audio.current?.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
+    audio.current?.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     setWetLens(null);
@@ -1254,7 +1268,7 @@ export default function SurfscapeApp() {
     audio.current.setEnabled(next);
     if (next) {
       audio.current.setPerspective(stats.cameraHeading, settings.windDirection, settings.coastHeading, stats.phase);
-      audio.current.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
+      audio.current.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
       audio.current.setWaveField(
         stats.phase,
         stats.setEnergy,
@@ -1262,7 +1276,7 @@ export default function SurfscapeApp() {
         stats.catchReady,
         stats.lineSide,
         stats.sectionPressure,
-        settings.waveHeight,
+        effectiveFaceHeight,
         settings.wavePeriod,
         settings.waveDirection,
         settings.swellHeight,
@@ -1474,7 +1488,6 @@ export default function SurfscapeApp() {
 
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
-  const breakCharacter = getBreakCharacter(beach.id, zoneLabel);
   const trainingComplete = trainingStep >= TRAINING_STEPS.length;
   const trainingLesson = TRAINING_STEPS[Math.min(trainingStep, TRAINING_STEPS.length - 1)];
   const accentStyle = { "--spot-accent": beach.palette[0], "--sand-accent": beach.palette[1] } as CSSProperties;
@@ -1719,6 +1732,7 @@ export default function SurfscapeApp() {
                 <div className="readout-metric tide-readout">
                   <span>Tide · {settings.mode === "playground" ? "custom" : sessionConditions.tideTrend}</span>
                   <strong>{settings.tide >= 0 ? "+" : ""}{settings.tide.toFixed(2)}<small>m</small></strong>
+                  <em>{tideResponse.label} · {Math.round(tideResponse.quality * 100)}% fit</em>
                   {settings.mode !== "playground" && <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />}
                 </div>
               </div>
@@ -1827,24 +1841,27 @@ export default function SurfscapeApp() {
                     >
                       <span><b>NOW</b><em>{formatClock(conditions.observedAt)}</em></span>
                       <strong>{conditions.waveHeight.toFixed(1)} m · {conditions.wavePeriod.toFixed(0)} s</strong>
-                      <small>{weatherLabel(conditions.weatherCode)} · wind {conditions.windSpeed.toFixed(0)} km/h</small>
-                      <i><b style={{ width: `${Math.min(100, conditions.waveHeight * Math.max(5, conditions.wavePeriod) * 3)}%` }} /></i>
+                      <small>{currentTideResponse.label} · wind {conditions.windSpeed.toFixed(0)} km/h</small>
+                      <i><b style={{ width: `${Math.min(100, conditions.waveHeight * Math.max(5, conditions.wavePeriod) * 3 * (.68 + currentTideResponse.quality * .32))}%` }} /></i>
                     </button>
-                    {availableForecastWindows.map((point) => (
-                      <button
-                        type="button"
-                        key={point.time}
-                        className={selectedForecastTime === point.time ? "is-active" : ""}
-                        onClick={() => selectSessionWindow(point)}
-                        aria-pressed={selectedForecastTime === point.time}
-                        disabled={conditionsLoading}
-                      >
-                        <span><b>{forecastDayLabel(point.time, conditions.observedAt).toUpperCase()}</b><em>{formatClock(point.time)}</em></span>
-                        <strong>{point.waveHeight.toFixed(1)} m · {point.wavePeriod.toFixed(0)} s</strong>
-                        <small>{weatherLabel(point.weatherCode)} · wind {point.windSpeed.toFixed(0)} km/h</small>
-                        <i><b style={{ width: `${Math.min(100, point.waveHeight * Math.max(5, point.wavePeriod) * 3)}%` }} /></i>
-                      </button>
-                    ))}
+                    {availableForecastWindows.map((point) => {
+                      const windowTide = tideResponseForBreak(point.seaLevel, breakCharacter);
+                      return (
+                        <button
+                          type="button"
+                          key={point.time}
+                          className={selectedForecastTime === point.time ? "is-active" : ""}
+                          onClick={() => selectSessionWindow(point)}
+                          aria-pressed={selectedForecastTime === point.time}
+                          disabled={conditionsLoading}
+                        >
+                          <span><b>{forecastDayLabel(point.time, conditions.observedAt).toUpperCase()}</b><em>{formatClock(point.time)}</em></span>
+                          <strong>{point.waveHeight.toFixed(1)} m · {point.wavePeriod.toFixed(0)} s</strong>
+                          <small>{windowTide.label} · wind {point.windSpeed.toFixed(0)} km/h</small>
+                          <i><b style={{ width: `${Math.min(100, point.waveHeight * Math.max(5, point.wavePeriod) * 3 * (.68 + windowTide.quality * .32))}%` }} /></i>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
                 <p className="break-description">{beach.description}</p>
@@ -1852,6 +1869,7 @@ export default function SurfscapeApp() {
                   <span><Waves /> {beach.breakType}</span>
                   <span><ArrowRight /> {breakCharacter.line} · {breakCharacter.kind.toUpperCase()}</span>
                   <span><Gauge /> Difficulty {beach.difficulty}/5</span>
+                  <span title={tideResponse.note} aria-label={`${tideResponse.label}. ${tideResponse.note}. ${Math.round(tideResponse.quality * 100)} percent bathymetry fit.`}><Waves /> {tideResponse.label} · {Math.round(tideResponse.quality * 100)}% bathymetry fit</span>
                   <span><Thermometer /> {settings.waterTemperature.toFixed(0)}°C water · {thermalKit.name}</span>
                   <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
                   <span className="data-credit">Model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD · Not for navigation</span>
@@ -1862,7 +1880,7 @@ export default function SurfscapeApp() {
 
           {settings.mode === "playground" && (
             <section className="wave-lab-panel">
-              <div className="lab-title"><Settings2 /><div><span>WAVE LAB</span><strong>Shape the session</strong></div></div>
+              <div className="lab-title"><Settings2 /><div><span>WAVE LAB · {tideResponse.shortName}</span><strong>{tideResponse.label}</strong></div></div>
               <PlaygroundSlider label="Face height" value={settings.waveHeight} min={0.3} max={6} step={0.1} unit="m" onChange={(waveHeight) => setSettings((value) => ({ ...value, waveHeight }))} />
               <PlaygroundSlider label="Period" value={settings.wavePeriod} min={5} max={22} step={0.5} unit="s" onChange={(wavePeriod) => setSettings((value) => ({ ...value, wavePeriod }))} />
               <PlaygroundSlider label="Wave bearing" value={settings.waveDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(waveDirection) => setSettings((value) => ({ ...value, waveDirection }))} />
@@ -1983,7 +2001,7 @@ export default function SurfscapeApp() {
                 <div>
                   <strong><Waves /> {settings.waveHeight.toFixed(1)} m</strong>
                   <strong><Waves /> {settings.swellHeight.toFixed(1)} m @ {settings.swellPeriod.toFixed(1)} s</strong>
-                  <strong><ArrowRight /> {breakCharacter.line}</strong>
+                  <strong><ArrowRight /> {breakCharacter.line} · {tideResponse.shortName}</strong>
                   <strong><Thermometer /> {settings.waterTemperature.toFixed(0)}° · {thermalKit.shortName}</strong>
                 </div>
               </div>
@@ -2187,9 +2205,9 @@ export default function SurfscapeApp() {
           </div>
 
           <div className="game-conditions">
-            <div><Waves /><span>FACE</span><strong>{settings.waveHeight.toFixed(1)} m</strong></div>
+            <div><Waves /><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong></div>
             <div><Wind /><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)}m · {settings.swellPeriod.toFixed(0)}s</strong></div>
-            <div><ArrowRight /><span>BREAK LINE</span><strong>{activeLine}</strong></div>
+            <div><ArrowRight /><span>BREAK / TIDE</span><strong>{activeLine} · {tideResponse.shortName}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div>
               <Crosshair />

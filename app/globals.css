@@ -410,6 +410,7 @@ input:focus-visible {
 }
 
 .tide-readout > strong { position: relative; z-index: 1; }
+.tide-readout > em { position: relative; z-index: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 7px rgba(2, 13, 18, .9); white-space: nowrap; }
 
 .mode-section {
   max-width: 790px;
