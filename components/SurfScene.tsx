@@ -1151,6 +1151,119 @@ const LINEUP_CREST_FRAGMENT = /* glsl */ `
   }
 `;
 
+const LINEUP_WHITEWATER_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uFaceHeight;
+  uniform float uSpan;
+  uniform float uTrail;
+  uniform float uEnergy;
+  uniform float uSeed;
+  uniform float uCenterX;
+  uniform float uPeel;
+  uniform float uVariability;
+  uniform float uWaveAngle;
+
+  varying vec2 vUv;
+  varying float vWake;
+  varying float vSection;
+  varying vec3 vWorldPosition;
+
+  void main() {
+    float across = position.x * uSpan;
+    float wake = clamp(uv.y, 0.0, 1.0);
+    float sectionPhase = (uCenterX + across) * .07 + uTime * .05;
+    float centerPhase = uCenterX * .07 + uTime * .05;
+    float section = (sin(sectionPhase) - sin(centerPhase)) * uVariability * 2.3;
+    float worldAcross = uCenterX + across;
+    float curvedSection = sin(uWaveAngle) * .0019
+      * (worldAcross * worldAcross - uCenterX * uCenterX);
+    float scallop = sin(across * .17 + wake * 6.4 + uSeed * 5.1 + uTime * .18);
+    float crossCurrent = sin(across * .051 - wake * 9.2 - uTime * .11 + uSeed * 2.7);
+    float trail = pow(wake, .82) * uTrail;
+
+    vec3 transformed;
+    transformed.x = across + crossCurrent * wake * (.035 + uEnergy * .07);
+    transformed.y = uFaceHeight * .7
+      + .055
+      - wake * .018
+      + scallop * (.012 + wake * .022);
+    transformed.z = -(section + curvedSection + across * uPeel * .16);
+    transformed.z -= trail;
+    transformed.z += scallop * wake * (.08 + uTrail * .018);
+
+    vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
+    vUv = uv;
+    vWake = wake;
+    vSection = scallop * .5 + .5;
+    vWorldPosition = worldPosition.xyz;
+    gl_Position = projectionMatrix * viewMatrix * worldPosition;
+  }
+`;
+
+const LINEUP_WHITEWATER_FRAGMENT = /* glsl */ `
+  uniform float uTime;
+  uniform float uOpacity;
+  uniform float uEnergy;
+  uniform float uBreak;
+  uniform float uLight;
+  uniform float uCloud;
+  uniform float uSeed;
+
+  varying vec2 vUv;
+  varying float vWake;
+  varying float vSection;
+  varying vec3 vWorldPosition;
+
+  float foamHash(vec2 point) {
+    return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
+  }
+
+  float foamNoise(vec2 point) {
+    vec2 cell = floor(point);
+    vec2 fraction = fract(point);
+    fraction = fraction * fraction * (3.0 - 2.0 * fraction);
+    float a = foamHash(cell);
+    float b = foamHash(cell + vec2(1.0, 0.0));
+    float c = foamHash(cell + vec2(0.0, 1.0));
+    float d = foamHash(cell + vec2(1.0, 1.0));
+    return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+  }
+
+  void main() {
+    vec2 flow = vec2(
+      vUv.x * 92.0 + uSeed * 4.2 + vWake * 3.7,
+      vUv.y * 24.0 - uTime * (.32 + uEnergy * .18)
+    );
+    float broad = foamNoise(flow);
+    float cells = foamNoise(flow * vec2(2.3, 1.7) + vec2(-uTime * .17, uTime * .11));
+    float detail = foamNoise(flow * 4.4 + vec2(uTime * .41, -uTime * .27));
+    float rollingEdge = exp(-vWake * (7.5 + uEnergy * 4.0));
+    float lace = smoothstep(.42, .68, broad)
+      * (1.0 - smoothstep(.76, .94, cells));
+    float perforation = 1.0 - smoothstep(.64, .88, detail);
+    float veins = smoothstep(.7, .94, detail) * smoothstep(.2, .78, cells);
+    float foam = rollingEdge * (.72 + cells * .28);
+    foam += lace * perforation * (.48 + vSection * .34) * (1.0 - vWake * .38);
+    foam += veins * .32 * (1.0 - smoothstep(.42, 1.0, vWake));
+    foam = clamp(foam, 0.0, 1.0);
+
+    float sideFade = smoothstep(0.0, .055, vUv.x)
+      * (1.0 - smoothstep(.945, 1.0, vUv.x));
+    float tailFade = 1.0 - smoothstep(.68, 1.0, vWake);
+    float breakPresence = smoothstep(.2, .76, uEnergy) * smoothstep(.3, .84, uBreak);
+    float distanceFade = 1.0 - smoothstep(190.0, 430.0, length(cameraPosition - vWorldPosition));
+    float alpha = foam * sideFade * tailFade * breakPresence * distanceFade;
+    alpha *= uOpacity * (2.25 + uEnergy * 1.35);
+    if (alpha < .006) discard;
+
+    vec3 shadowFoam = mix(vec3(.42, .69, .7), vec3(.69, .89, .84), uLight);
+    vec3 highlightFoam = mix(vec3(.67, .83, .83), vec3(.95, 1.0, .96), uLight);
+    vec3 color = mix(shadowFoam, highlightFoam, .46 + detail * .4 + rollingEdge * .14);
+    color *= 1.0 - uCloud * .1;
+    gl_FragColor = vec4(color, min(alpha, .82));
+  }
+`;
+
 const LINEUP_SPINDRIFT_VERTEX = /* glsl */ `
   uniform float uTime;
   uniform float uFaceHeight;
@@ -1271,6 +1384,7 @@ function LineupWaveSetVolume({
       uTime: { value: 0 },
       uFaceHeight: { value: .5 },
       uSpan: { value: mobile ? 86 : 124 },
+      uTrail: { value: 3.2 },
       uCurl: { value: .2 },
       uEnergy: { value: .2 },
       uSeed: { value: index * 1.713 + .47 },
@@ -1377,6 +1491,18 @@ function LineupWaveSetVolume({
         5,
         delta,
       );
+      values.uTrail.value = THREE.MathUtils.damp(
+        values.uTrail.value,
+        THREE.MathUtils.clamp(
+          (1.45 + settings.waveHeight * 1.65)
+            * (.28 + shoaling * .72)
+            * (.36 + energy * .86),
+          1.15,
+          13.5,
+        ),
+        5.5,
+        delta,
+      );
       values.uCurl.value = THREE.MathUtils.damp(
         values.uCurl.value,
         (.12 + shoaling * (.32 + character.hollow * .42)) * (.55 + energy * .45),
@@ -1401,6 +1527,7 @@ function LineupWaveSetVolume({
 
   const horizontalSegments = mobile ? quality === "reduced" ? 24 : 34 : quality === "high" ? 58 : 44;
   const verticalSegments = mobile ? 7 : 10;
+  const foamTrailSegments = mobile ? quality === "reduced" ? 3 : 5 : quality === "high" ? 10 : 7;
 
   return (
     <group>
@@ -1420,6 +1547,17 @@ function LineupWaveSetVolume({
               uniforms={uniforms[index]}
               vertexShader={LINEUP_CREST_VERTEX}
               fragmentShader={LINEUP_CREST_FRAGMENT}
+              transparent
+              depthWrite={false}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <mesh frustumCulled={false} renderOrder={2.1}>
+            <planeGeometry args={[1, 1, horizontalSegments, foamTrailSegments]} />
+            <shaderMaterial
+              uniforms={uniforms[index]}
+              vertexShader={LINEUP_WHITEWATER_VERTEX}
+              fragmentShader={LINEUP_WHITEWATER_FRAGMENT}
               transparent
               depthWrite={false}
               side={THREE.DoubleSide}
