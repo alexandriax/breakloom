@@ -4322,7 +4322,14 @@ function SurferModel({
     <group ref={root}>
       <mesh ref={contact} position={[0, .025, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
         <circleGeometry args={[1, 30]} />
-        <meshBasicMaterial color="#05252b" transparent opacity={0} depthWrite={false} blending={THREE.MultiplyBlending} />
+        <meshBasicMaterial
+          color="#05252b"
+          transparent
+          premultipliedAlpha
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.MultiplyBlending}
+        />
       </mesh>
       <group ref={rig}>
         <SurfLeashCord motion={motion} boardType={boardType} rigRef={rig} boardRef={board} ankleJointRef={ankleJointRef} />
@@ -7928,7 +7935,7 @@ const WET_SAND_FRAGMENT = /* glsl */ `
     );
     float broadPools = fbm(world * vec2(.038, .11) + vec2(uTime * .006, 0.0));
     float puddles = smoothstep(.5, .73, broadPools + tideSaturation * .17 + uWeatherWetness * .23);
-    float drainageNoise = fbm(vec2(world.x * .19, world.z * .058 - uTime * .032));
+    float drainageNoise = fbm(vec2(world.x * .19, world.y * .058 - uTime * .032));
     float drainage = smoothstep(.66, .84, drainageNoise);
     drainage *= smoothstep(4.0, 18.0, shoreDistance) * (1.0 - smoothstep(18.0, 26.0, shoreDistance));
     float film = clamp(
@@ -7969,7 +7976,7 @@ const WET_SAND_FRAGMENT = /* glsl */ `
 
     vec3 reflectedSun = reflect(-normalize(uSunDirection), surfaceNormal);
     float sunPath = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(58.0, 112.0, 1.0 - uWind * .34));
-    float sunBreakup = smoothstep(.38, .83, noise(vec2(world.x * .34 - uTime * .05, world.z * .58)));
+    float sunBreakup = smoothstep(.38, .83, noise(vec2(world.x * .34 - uTime * .05, world.y * .58)));
     sunPath *= sunBreakup * film * (1.0 - uCloud * .82);
     color += uSunColor * sunPath * (.24 + uLight * 1.22);
 
@@ -9523,7 +9530,7 @@ const CINEMATIC_GRADE_SHADER = {
     uniform float uAspect;
     varying vec2 vUv;
 
-    float luminance(vec3 color) {
+    float surfscapeLuminance(vec3 color) {
       return dot(color, vec3(.2126, .7152, .0722));
     }
 
@@ -9634,12 +9641,12 @@ const CINEMATIC_GRADE_SHADER = {
         source = texture2D(tDiffuse, vUv);
       }
       vec3 color = max(source.rgb, vec3(0.0));
-      float initialLuma = luminance(color);
+      float initialLuma = surfscapeLuminance(color);
 
       // A restrained display curve keeps the ACES highlight roll-off while
       // restoring just enough separation in wet materials and distant haze.
       color = (color - vec3(.18)) * uContrast + vec3(.18);
-      float gradedLuma = luminance(color);
+      float gradedLuma = surfscapeLuminance(color);
       color = mix(vec3(gradedLuma), color, uSaturation);
 
       float highlightWeight = smoothstep(.16, .78, initialLuma);
@@ -9648,7 +9655,7 @@ const CINEMATIC_GRADE_SHADER = {
       color += vec3(-.008, .003, .015) * uWarmth * -shadowWeight * .42;
 
       float stormMix = uStorm * (.18 + shadowWeight * .12);
-      vec3 stormColor = mix(vec3(luminance(color)), color, .62) * vec3(.91, .995, 1.04);
+      vec3 stormColor = mix(vec3(surfscapeLuminance(color)), color, .62) * vec3(.91, .995, 1.04);
       color = mix(color, stormColor, stormMix);
 
       vec3 nightColor = color * vec3(.84, .96, 1.08);
@@ -9658,7 +9665,7 @@ const CINEMATIC_GRADE_SHADER = {
       // Approximate the wavelength loss that occurs beneath the surface:
       // red falls away first, while suspended light lifts cyan-green mids.
       vec3 absorbed = color * vec3(.52, .86, .96);
-      float underwaterLuma = luminance(absorbed);
+      float underwaterLuma = surfscapeLuminance(absorbed);
       absorbed = mix(vec3(underwaterLuma) * vec3(.55, 1.04, 1.08), absorbed, .68);
       absorbed += vec3(0.0, .018, .024) * (1.0 - smoothstep(.2, .92, underwaterLuma));
       color = mix(color, absorbed, uUnderwater);
@@ -9681,7 +9688,7 @@ const CINEMATIC_GRADE_SHADER = {
       color *= 1.0 - edge * uVignette;
 
       float noise = interleavedGradientNoise(gl_FragCoord.xy, uTime) - .5;
-      float shadowGrain = mix(.72, 1.42, 1.0 - smoothstep(.04, .68, luminance(color)));
+      float shadowGrain = mix(.72, 1.42, 1.0 - smoothstep(.04, .68, surfscapeLuminance(color)));
       color += noise * (uGrain * shadowGrain + 1.1 / 255.0);
       color = max(color, vec3(0.0));
 
@@ -13148,13 +13155,20 @@ function Simulation({
     }
   });
 
-  const light = THREE.MathUtils.clamp(sunHeight * 1.1 + 0.12, 0.08, 1);
   const weather = weatherProfile(weatherCode);
   const weatherCloudFloor = weather.storm ? .88 : weather.kind !== "none" ? .64 : weather.fog ? .8 : 0;
   const cloudFactor = THREE.MathUtils.clamp(Math.max(cloudCover / 100, weatherCloudFloor), 0, 1);
   const directLight = 1 - cloudFactor * .52;
   const daylightStrength = THREE.MathUtils.smoothstep(solarElevation, -.04, .14);
   const moonlightStrength = 1 - THREE.MathUtils.smoothstep(solarElevation, -.02, .16);
+  // The physical sky brightens before the sun clears the horizon. Keep shader-driven
+  // water, terrain, and characters on the same perceptual curve so dawn never turns
+  // into a bright sky over a black foreground.
+  const light = THREE.MathUtils.clamp(
+    .16 + daylightStrength * .84 + moonlightStrength * .07,
+    .16,
+    1,
+  );
   const vanDarkness = THREE.MathUtils.clamp(1 - daylightStrength + (weather.storm ? .38 : weather.fog ? .22 : weather.intensity * .16), 0, 1);
   const coastBiome = getCoastBiome(beach.id);
   const daylightSky: Record<CoastBiome, string> = {
@@ -13176,9 +13190,21 @@ function Simulation({
     desert: "#ad9b7e",
   };
   const atmosphereBoost = coastBiome === "desert" ? 2.2 : coastBiome === "urban" ? 0.9 : coastBiome === "cold" ? 1.4 : 0;
-  const baseBackgroundColor = sunHeight < 0.08 ? "#07101e" : sunHeight < 0.3 ? "#c66f5d" : daylightSky[coastBiome];
-  const baseFogColor = sunHeight < 0.08 ? "#07101e" : daylightFog[coastBiome];
-  const overcastColor = sunHeight < 0.08 ? "#071017" : "#53676c";
+  const atmosphereDaylight = THREE.MathUtils.smoothstep(solarElevation, -.08, .2);
+  const goldenAtmosphere = 1 - THREE.MathUtils.smoothstep(Math.abs(solarElevation - .1), .025, .3);
+  const daylightBackground = new THREE.Color(daylightSky[coastBiome])
+    .lerp(new THREE.Color("#c66f5d"), goldenAtmosphere * .72);
+  const daylightFogColor = new THREE.Color(daylightFog[coastBiome])
+    .lerp(new THREE.Color("#bd7d6f"), goldenAtmosphere * .42);
+  const baseBackgroundColor = new THREE.Color("#07101e")
+    .lerp(daylightBackground, atmosphereDaylight)
+    .getStyle();
+  const baseFogColor = new THREE.Color("#07101e")
+    .lerp(daylightFogColor, atmosphereDaylight)
+    .getStyle();
+  const overcastColor = new THREE.Color("#071017")
+    .lerp(new THREE.Color("#53676c"), atmosphereDaylight)
+    .getStyle();
   const backgroundColor = new THREE.Color(baseBackgroundColor).lerp(new THREE.Color(overcastColor), cloudFactor * .34).getStyle();
   const fogColor = new THREE.Color(baseFogColor).lerp(new THREE.Color(overcastColor), cloudFactor * .42).getStyle();
   const fogNear = weather.fog ? 18 : weather.storm ? 34 : weather.kind !== "none" ? 42 : 55;
@@ -13231,8 +13257,8 @@ function Simulation({
         hazeColor={fogColor}
       />
       <WeatherEffects weatherCode={weatherCode} windSpeed={settings.windSpeed} windDirection={settings.windDirection} coastHeading={settings.coastHeading} />
-      <ambientLight intensity={(0.18 + light * 0.42) * (.94 + cloudFactor * .08)} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
-      <hemisphereLight args={["#a9d9dc", "#5c4431", (0.38 + light * 0.55) * (.93 + cloudFactor * .09)]} />
+      <ambientLight intensity={(0.22 + light * 0.42) * (.94 + cloudFactor * .08)} color={sunHeight < 0.16 ? "#8eb4cf" : "#d8f0ee"} />
+      <hemisphereLight args={["#a9d9dc", "#5c4431", (0.44 + light * 0.55) * (.93 + cloudFactor * .09)]} />
       <directionalLight
         ref={sunLight}
         target={sunTarget}
