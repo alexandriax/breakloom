@@ -7664,6 +7664,90 @@ function DuneGrassField({
   );
 }
 
+function createUrbanFacadeTexture(style: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 1024;
+  const context = canvas.getContext("2d");
+  if (context) {
+    const wallColors = ["#737b78", "#8a7868", "#5f6d70", "#928679"];
+    const trimColors = ["#b7b6aa", "#c8b89f", "#98a8a7", "#c0b4a4"];
+    const wall = wallColors[style % wallColors.length];
+    const trim = trimColors[style % trimColors.length];
+    const gradient = context.createLinearGradient(0, 0, 512, 0);
+    gradient.addColorStop(0, "#4f5857");
+    gradient.addColorStop(.08, wall);
+    gradient.addColorStop(.78, wall);
+    gradient.addColorStop(1, "#485252");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 512, 1024);
+
+    const rows = 9;
+    const columns = style % 2 ? 4 : 5;
+    const marginX = 38;
+    const floorTop = 92;
+    const floorHeight = 88;
+    const windowGap = 13;
+    const windowWidth = (512 - marginX * 2 - windowGap * (columns - 1)) / columns;
+    for (let row = 0; row < rows; row += 1) {
+      const y = floorTop + row * floorHeight;
+      context.fillStyle = row % 3 === 0 ? "rgba(238,228,205,.3)" : "rgba(44,55,56,.22)";
+      context.fillRect(0, y + 63, 512, row % 3 === 0 ? 9 : 5);
+      for (let column = 0; column < columns; column += 1) {
+        const x = marginX + column * (windowWidth + windowGap);
+        const variation = (row * 17 + column * 29 + style * 11) % 7;
+        context.fillStyle = variation === 0
+          ? "#c8b174"
+          : variation === 1
+            ? "#30464b"
+            : "#547277";
+        context.fillRect(x, y, windowWidth, 54);
+        const glassGradient = context.createLinearGradient(x, y, x + windowWidth, y + 54);
+        glassGradient.addColorStop(0, "rgba(214,236,226,.48)");
+        glassGradient.addColorStop(.46, "rgba(72,105,111,.16)");
+        glassGradient.addColorStop(.5, "rgba(230,239,223,.34)");
+        glassGradient.addColorStop(1, "rgba(36,65,72,.42)");
+        context.fillStyle = glassGradient;
+        context.fillRect(x + 4, y + 4, windowWidth - 8, 46);
+        context.fillStyle = trim;
+        context.fillRect(x - 3, y - 4, windowWidth + 6, 4);
+        context.fillRect(x - 3, y + 54, windowWidth + 6, 4);
+        context.fillRect(x + windowWidth * .49, y + 2, 4, 50);
+        if (variation === 3 || variation === 5) {
+          context.fillStyle = "#545e5d";
+          context.fillRect(x + windowWidth * .18, y + 57, windowWidth * .64, 13);
+          context.fillStyle = "#2a3638";
+          for (let slot = 0; slot < 4; slot += 1) {
+            context.fillRect(x + windowWidth * .23 + slot * windowWidth * .13, y + 60, 3, 7);
+          }
+        }
+      }
+    }
+
+    context.fillStyle = style % 2 ? "#2f5453" : "#8e493d";
+    context.fillRect(0, 895, 512, 36);
+    context.fillStyle = "#283638";
+    context.fillRect(25, 935, 146, 89);
+    context.fillRect(196, 935, 132, 89);
+    context.fillRect(353, 935, 134, 89);
+    context.fillStyle = "rgba(181,220,211,.62)";
+    context.fillRect(33, 943, 130, 42);
+    context.fillRect(204, 943, 116, 42);
+    context.fillRect(361, 943, 118, 42);
+    context.strokeStyle = "rgba(247,239,218,.42)";
+    context.lineWidth = 5;
+    context.strokeRect(3, 3, 506, 1018);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 6;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function CoastBackdrop({
   biome,
   wind,
@@ -7671,6 +7755,8 @@ function CoastBackdrop({
   coastHeading,
   light,
   mobile,
+  observerPosition,
+  worldOffsetX,
 }: {
   biome: CoastBiome;
   wind: number;
@@ -7678,7 +7764,31 @@ function CoastBackdrop({
   coastHeading: number;
   light: number;
   mobile: boolean;
+  observerPosition: MutableRefObject<THREE.Vector3>;
+  worldOffsetX: number;
 }) {
+  const quality = useRenderQuality();
+  const nearUrbanDetails = useRef<Array<THREE.Group | null>>([]);
+  const facadeTextures = useMemo(
+    () => biome === "urban"
+      ? Array.from({ length: 4 }, (_, index) => createUrbanFacadeTexture(index))
+      : [],
+    [biome],
+  );
+
+  useEffect(() => () => {
+    facadeTextures.forEach((texture) => texture.dispose());
+  }, [facadeTextures]);
+
+  useFrame(() => {
+    const closeAlongshore = Math.abs(observerPosition.current.x - worldOffsetX) < COAST_CHUNK_SPAN * .78;
+    const onLand = observerPosition.current.z > 18;
+    const visible = quality !== "reduced" && closeAlongshore && onLand;
+    nearUrbanDetails.current.forEach((group) => {
+      if (group) group.visible = visible;
+    });
+  });
+
   if (biome === "urban") {
     const buildings = Array.from({ length: 12 }, (_, index) => ({
       x: -112 + index * 20,
@@ -7704,12 +7814,84 @@ function CoastBackdrop({
               <boxGeometry args={[building.width, building.height, building.depth]} />
               <meshStandardMaterial color={["#6e7779", "#8c7968", "#59666b", "#94887b"][index % 4]} roughness={0.86} />
             </mesh>
-            {Array.from({ length: Math.max(2, Math.floor(building.height / 3)) }, (_, floor) => (
-              <mesh key={floor} position={[0, 2 + floor * 2.6, -building.depth / 2 - 0.01]}>
-                <planeGeometry args={[building.width * 0.72, 0.58]} />
-                <meshStandardMaterial color="#b4d5d0" emissive="#5d8f92" emissiveIntensity={0.18} roughness={0.32} />
+            <group
+              ref={(group) => {
+                nearUrbanDetails.current[index] = group;
+              }}
+              visible={false}
+            >
+              <mesh position={[0, building.height * .5, -building.depth * .5 - .012]}>
+                <planeGeometry args={[building.width * .91, building.height * .9]} />
+                <meshStandardMaterial
+                  map={facadeTextures[index % facadeTextures.length]}
+                  emissive="#17383b"
+                  emissiveIntensity={.035 + (1 - light) * .3}
+                  roughness={.48}
+                  metalness={.08}
+                />
               </mesh>
-            ))}
+              <mesh
+                position={[-building.width * .5 - .012, building.height * .5, 0]}
+                rotation={[0, -Math.PI / 2, 0]}
+              >
+                <planeGeometry args={[building.depth * .9, building.height * .88]} />
+                <meshStandardMaterial
+                  map={facadeTextures[(index + 1) % facadeTextures.length]}
+                  emissive="#17383b"
+                  emissiveIntensity={.025 + (1 - light) * .22}
+                  roughness={.52}
+                  metalness={.06}
+                />
+              </mesh>
+              <mesh position={[0, building.height + .24, 0]} castShadow>
+                <boxGeometry args={[building.width + .24, .48, building.depth + .24]} />
+                <meshStandardMaterial color={index % 2 ? "#a59d8f" : "#7b8584"} roughness={.78} />
+              </mesh>
+              {[.34, .68].map((fraction) => (
+                <mesh
+                  key={fraction}
+                  position={[0, building.height * fraction, -building.depth * .5 - .1]}
+                  castShadow
+                >
+                  <boxGeometry args={[building.width * .96, .13, .22]} />
+                  <meshStandardMaterial color={index % 2 ? "#c0b8aa" : "#899493"} roughness={.64} />
+                </mesh>
+              ))}
+              <mesh position={[0, 1.3, -building.depth * .5 - .13]} castShadow>
+                <boxGeometry args={[building.width * .88, .18, .55]} />
+                <meshStandardMaterial color={index % 3 === 0 ? "#b95c49" : "#507e7d"} roughness={.58} />
+              </mesh>
+              {!mobile && (
+                <>
+                  <group position={[building.width * .19, building.height + .72, 0]}>
+                    <mesh castShadow>
+                      <boxGeometry args={[1.75, .95, 1.35]} />
+                      <meshStandardMaterial color="#68716f" metalness={.28} roughness={.68} />
+                    </mesh>
+                    {[-.56, 0, .56].map((x) => (
+                      <mesh key={x} position={[x, 0, -.69]}>
+                        <boxGeometry args={[.055, .62, .04]} />
+                        <meshStandardMaterial color="#263437" metalness={.52} roughness={.4} />
+                      </mesh>
+                    ))}
+                  </group>
+                  {index % 4 === 1 && (
+                    <group position={[-building.width * .22, building.height + 1.5, .2]}>
+                      {[[-.48, 0], [.48, 0], [-.48, .72], [.48, .72]].map(([x, z], legIndex) => (
+                        <mesh key={legIndex} position={[x, -.75, z]} rotation={[0, 0, x < 0 ? -.09 : .09]}>
+                          <cylinderGeometry args={[.035, .045, 1.5, 7]} />
+                          <meshStandardMaterial color="#505a59" metalness={.55} roughness={.46} />
+                        </mesh>
+                      ))}
+                      <mesh castShadow>
+                        <cylinderGeometry args={[1.05, .82, 1.25, 18]} />
+                        <meshStandardMaterial color="#606b69" metalness={.46} roughness={.5} />
+                      </mesh>
+                    </group>
+                  )}
+                </>
+              )}
+            </group>
           </group>
         ))}
       </group>
@@ -7812,6 +7994,9 @@ function createTiledSandTexture(source: THREE.Texture, repeatX: number, repeatY:
   texture.repeat.set(repeatX, repeatY);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
 }
@@ -8002,11 +8187,18 @@ const WET_SAND_FRAGMENT = /* glsl */ `
     vec3 saturatedSand = drySand * vec3(.42, .49, .47);
     saturatedSand = mix(saturatedSand, vec3(.055, .09, .087), puddles * .22 + drainage * .08);
 
-    float rippleStrength = (.012 + uWind * .023) * film;
+    float rippleStrength = (.008 + uWind * .014) * film;
     float rippleA = sin(windSpace.x * 2.2 + windSpace.y * .47 - uTime * (1.2 + uWind * .72));
     float rippleB = sin(windSpace.x * 4.7 - windSpace.y * .82 - uTime * (1.8 + uWind));
-    float microX = dFdx(grain) * 9.0 + windTangent.x * (rippleA + rippleB * .38) * rippleStrength;
-    float microZ = dFdy(grain) * 9.0 + windTangent.y * (rippleA + rippleB * .38) * rippleStrength;
+    // Use a world-space height gradient rather than screen-space derivatives
+    // of the photographic grain. The previous dFdx/dFdy normal changed as the
+    // camera moved and turned sub-centimeter grains into crawling highlights.
+    vec2 sandSampleScale = vec2(.13, .19);
+    float stableHeight = fbm(world * sandSampleScale);
+    float stableSlopeX = fbm((world + vec2(.28, 0.0)) * sandSampleScale) - stableHeight;
+    float stableSlopeZ = fbm((world + vec2(0.0, .28)) * sandSampleScale) - stableHeight;
+    float microX = stableSlopeX * .075 + windTangent.x * (rippleA + rippleB * .38) * rippleStrength;
+    float microZ = stableSlopeZ * .075 + windTangent.y * (rippleA + rippleB * .38) * rippleStrength;
     vec3 surfaceNormal = normalize(vec3(-microX, 1.0, -microZ));
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float fresnel = .025 + .975 * pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 5.0);
@@ -8124,6 +8316,9 @@ function WetSandSurface({
           uniforms={uniforms}
           vertexShader={WET_SAND_VERTEX}
           fragmentShader={WET_SAND_FRAGMENT}
+          polygonOffset
+          polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1}
         />
       )}
     </mesh>
@@ -8349,7 +8544,7 @@ function BeachVisitor({
 
   return (
     <group ref={root} position={position} rotation={[0, rotation, 0]} scale={scale * .91}>
-      <primitive object={model} />
+      <primitive object={model} position={[0, 1.01, 0]} />
     </group>
   );
 }
@@ -8742,7 +8937,7 @@ function CoastZoneMarker({
           <meshStandardMaterial color="#9ca7a2" metalness={.62} roughness={.38} />
         </mesh>
       ))}
-      <mesh position={[0, 2.15, 0]} castShadow>
+      <mesh position={[0, 2.15, -.025]} rotation={[0, Math.PI, 0]} castShadow>
         <planeGeometry args={[5.25, 1.64]} />
         <meshStandardMaterial
           map={texture}
@@ -8750,7 +8945,18 @@ function CoastZoneMarker({
           emissiveIntensity={(1 - light) * .46 + .08}
           metalness={.08}
           roughness={.54}
-          side={THREE.DoubleSide}
+          side={THREE.FrontSide}
+        />
+      </mesh>
+      <mesh position={[0, 2.15, .025]} castShadow>
+        <planeGeometry args={[5.25, 1.64]} />
+        <meshStandardMaterial
+          map={texture}
+          emissive={current ? "#195b55" : "#5f4b18"}
+          emissiveIntensity={(1 - light) * .46 + .08}
+          metalness={.08}
+          roughness={.54}
+          side={THREE.FrontSide}
         />
       </mesh>
       <pointLight position={[0, 2.25, -.45]} intensity={current ? (1 - light) * .42 : 0} distance={9} color="#8ef4e5" />
@@ -8819,7 +9025,7 @@ function BeachLife({
     [sandTextureSource],
   );
   const wetSandTexture = useMemo(
-    () => createTiledSandTexture(sandTextureSource, Math.round(COAST_GEOMETRY_WIDTH / 250 * 22), 2),
+    () => createTiledSandTexture(sandTextureSource, Math.round(COAST_GEOMETRY_WIDTH / 25), 3),
     [sandTextureSource],
   );
   const coastChunks = useMemo(
@@ -8957,6 +9163,8 @@ function BeachLife({
               coastHeading={coastHeading}
               light={light}
               mobile={mobileRenderer}
+              observerPosition={playerPosition}
+              worldOffsetX={chunk.worldIndex * COAST_CHUNK_SPAN + chunk.backdropOffset}
             />
           </group>
         </group>
