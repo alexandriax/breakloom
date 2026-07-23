@@ -291,9 +291,14 @@ export default function SurfscapeApp() {
   const shorebreakToastTimer = useRef<number | null>(null);
   const previousBalanceLock = useRef(false);
   const lastBalanceHapticAt = useRef(0);
+  const previousGripWarning = useRef(false);
+  const previousPocketLock = useRef(false);
   const previousTakeoffPhase = useRef(stats.phase);
   const joystickKnob = useRef<HTMLSpanElement>(null);
   const joystickPointer = useRef<number | null>(null);
+  const joystickBounds = useRef<DOMRect | null>(null);
+  const balancePointer = useRef<number | null>(null);
+  const balanceBounds = useRef<DOMRect | null>(null);
   const lookGesture = useRef<{
     pointerId: number;
     x: number;
@@ -382,6 +387,10 @@ export default function SurfscapeApp() {
       controls.current.action = false;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
+      joystickPointer.current = null;
+      joystickBounds.current = null;
+      balancePointer.current = null;
+      balanceBounds.current = null;
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (screen !== "game") return;
@@ -431,6 +440,10 @@ export default function SurfscapeApp() {
       controls.current.action = false;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
+      joystickPointer.current = null;
+      joystickBounds.current = null;
+      balancePointer.current = null;
+      balanceBounds.current = null;
     };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") releaseAllControls();
@@ -465,6 +478,9 @@ export default function SurfscapeApp() {
       !paused && stats.phase === "riding",
       stats.setEnergy,
       stats.barrelIntensity,
+      stats.railLoad,
+      stats.railGrip,
+      stats.trickCharge,
     );
     audio.current?.setScore(
       stats.phase,
@@ -487,7 +503,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.setEnergy, stats.speed, stats.vehicleMode]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleMode]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -544,6 +560,20 @@ export default function SurfscapeApp() {
     }
     previousBalanceLock.current = locked;
   }, [stats.balance, stats.balanceTarget, stats.landingWindow, stats.maneuverActive, stats.phase]);
+
+  useEffect(() => {
+    if (stats.phase !== "riding") {
+      previousGripWarning.current = false;
+      previousPocketLock.current = false;
+      return;
+    }
+    const gripWarning = stats.railGrip < .48;
+    const pocketLock = stats.lineControl > .82 && stats.sectionPressure < .38;
+    if (gripWarning && !previousGripWarning.current) haptic([10, 16, 10]);
+    if (pocketLock && !previousPocketLock.current) haptic(5);
+    previousGripWarning.current = gripWarning;
+    previousPocketLock.current = pocketLock;
+  }, [stats.lineControl, stats.phase, stats.railGrip, stats.sectionPressure]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -625,6 +655,7 @@ export default function SurfscapeApp() {
     controls.current.moveX = 0;
     controls.current.moveY = 0;
     joystickPointer.current = null;
+    joystickBounds.current = null;
     if (joystickKnob.current) joystickKnob.current.style.transform = "translate3d(-50%, -50%, 0)";
   }
 
@@ -709,10 +740,11 @@ export default function SurfscapeApp() {
     if (event.type === "pointerdown") {
       if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
       joystickPointer.current = event.pointerId;
+      joystickBounds.current = event.currentTarget.getBoundingClientRect();
       haptic(4);
     }
     if (joystickPointer.current !== event.pointerId) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
+    const bounds = joystickBounds.current ?? event.currentTarget.getBoundingClientRect();
     const radius = Math.min(bounds.width, bounds.height) * 0.31;
     let x = event.clientX - (bounds.left + bounds.width / 2);
     let y = event.clientY - (bounds.top + bounds.height / 2);
@@ -746,12 +778,23 @@ export default function SurfscapeApp() {
 
   const updateTouchBalance = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (event.type === "pointerdown" && !event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.setPointerCapture(event.pointerId);
+    if (event.type === "pointerdown") {
+      if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
+      balancePointer.current = event.pointerId;
+      balanceBounds.current = event.currentTarget.getBoundingClientRect();
       haptic(3);
     }
-    const bounds = event.currentTarget.getBoundingClientRect();
+    if (balancePointer.current !== event.pointerId) return;
+    const bounds = balanceBounds.current ?? event.currentTarget.getBoundingClientRect();
     controls.current.balance = THREEClamp(((event.clientX - bounds.left) / bounds.width - 0.5) * 2, -1, 1);
+  };
+
+  const endTouchBalance = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (balancePointer.current !== event.pointerId) return;
+    event.preventDefault();
+    balancePointer.current = null;
+    balanceBounds.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const beginCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -883,6 +926,9 @@ export default function SurfscapeApp() {
             ? { title: "UNDERWATER", detail: "Breathe · the board is resetting" }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
   const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
+  const mobileControlStyle = {
+    "--rail-grip": `${Math.round(stats.railGrip * 100)}%`,
+  } as CSSProperties;
   const shorebreakTiming = Math.round((1 - THREEClamp(stats.shorebreakSeconds / 2.8, 0, 1)) * 100);
   const touchBalancePosition = (THREEClamp(stats.balance, -.94, .94) + 1) * 50;
   const touchTargetPosition = (THREEClamp(stats.balanceTarget, -.94, .94) + 1) * 50;
@@ -1352,7 +1398,10 @@ export default function SurfscapeApp() {
             )}
           </div>
 
-          <div className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""}`}>
+          <div
+            className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""} ${stats.phase === "riding" && stats.railGrip < .48 ? "is-grip-warning" : ""} ${stats.phase === "riding" && balanceAccuracy < 58 ? "is-balance-warning" : ""} ${stats.phase === "riding" && stats.lineControl > .82 && stats.sectionPressure < .38 ? "is-pocket-locked" : ""}`}
+            style={mobileControlStyle}
+          >
             <div
               className="analog-stick"
               role="group"
@@ -1378,6 +1427,9 @@ export default function SurfscapeApp() {
                 tabIndex={0}
                 onPointerDown={updateTouchBalance}
                 onPointerMove={updateTouchBalance}
+                onPointerUp={endTouchBalance}
+                onPointerCancel={endTouchBalance}
+                onLostPointerCapture={endTouchBalance}
                 onKeyDown={(event) => {
                   if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
                   event.preventDefault();
@@ -1386,6 +1438,10 @@ export default function SurfscapeApp() {
               >
                 <span><em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `LOADED ${Math.round(stats.trickCharge * 100)}%` : "MATCH TARGET"}</em><strong>{balanceAccuracy}%</strong></span>
                 {stats.maneuverActive && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
+                <i
+                  className={`touch-rail-pressure ${stats.railLoad < 0 ? "is-left" : "is-right"}`}
+                  style={{ width: `${Math.min(48, Math.abs(stats.railLoad) * 48)}%` }}
+                />
                 <i className="touch-balance-target" style={{ left: `${touchTargetPosition}%` }} />
                 <b className="touch-balance-thumb" style={{ left: `${touchBalancePosition}%` }} />
                 <small><em>LEAN LEFT</em><em>LEAN RIGHT</em></small>
@@ -1410,6 +1466,13 @@ export default function SurfscapeApp() {
               <span>{mobileActionLabel}</span>
               {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" ? <Sparkles /> : <Waves />}
             </button>
+            {stats.phase === "riding" && (
+              <div className={`touch-ride-telemetry ${stats.sectionPressure > .48 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Line ${lineLabel}. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>
+                <span><small>STANCE</small><strong>{stanceLabel}</strong></span>
+                <span><small>LINE</small><strong>{lineLabel}</strong></span>
+                <span className="touch-grip"><small>RAIL</small><strong>{Math.round(stats.railGrip * 100)}%</strong><i><b /></i></span>
+              </div>
+            )}
           </div>
 
           {paused && (

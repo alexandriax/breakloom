@@ -46,6 +46,7 @@ export class SurfscapeAudio {
   private surf: AudioBufferSourceNode | null = null;
   private surfGain: GainNode | null = null;
   private surfFilter: BiquadFilterNode | null = null;
+  private surfPanner: StereoPannerNode | null = null;
 
   private score: OscillatorNode[] = [];
   private scoreGain: GainNode | null = null;
@@ -155,15 +156,17 @@ export class SurfscapeAudio {
     const surf = this.loopNoise(1.16, 3.12);
     const surfFilter = context.createBiquadFilter();
     const surfGain = context.createGain();
+    const surfPanner = context.createStereoPanner();
     surfFilter.type = "highpass";
     surfFilter.frequency.value = 980;
     surfFilter.Q.value = .65;
     surfGain.gain.value = 0;
-    surf.connect(surfFilter).connect(surfGain).connect(master);
+    surf.connect(surfFilter).connect(surfPanner).connect(surfGain).connect(master);
     this.sendToReverb(surfFilter, .08);
     this.surf = surf;
     this.surfFilter = surfFilter;
     this.surfGain = surfGain;
+    this.surfPanner = surfPanner;
 
     const musicBus = context.createGain();
     const musicCompressor = context.createDynamicsCompressor();
@@ -234,14 +237,29 @@ export class SurfscapeAudio {
     });
   }
 
-  setSurf(speed: number, active: boolean, setEnergy: number, barrel: number) {
+  setSurf(
+    speed: number,
+    active: boolean,
+    setEnergy: number,
+    barrel: number,
+    railLoad = 0,
+    railGrip = 1,
+    trickCharge = 0,
+  ) {
     if (!this.context || !this.surfGain || !this.surfFilter || !this.surf) return;
     const now = this.context.currentTime;
     const velocity = Math.min(1, Math.max(0, speed - 4.5) / 13);
-    const targetGain = active && this.enabled ? .016 + velocity * .13 + barrel * .068 + setEnergy * .02 : 0;
+    const rail = Math.min(1, Math.abs(railLoad));
+    const release = 1 - Math.min(1, Math.max(0, railGrip));
+    const loaded = Math.min(1, Math.max(0, trickCharge));
+    const targetGain = active && this.enabled
+      ? .016 + velocity * .12 + barrel * .068 + setEnergy * .02 + rail * .032 + release * .052 + loaded * .016
+      : 0;
     ramp(this.surfGain.gain, targetGain, now, .12);
-    ramp(this.surfFilter.frequency, 820 + velocity * 1550 + barrel * 520, now, .12);
-    ramp(this.surf.playbackRate, 1.0 + velocity * .36 + barrel * .1, now, .12);
+    ramp(this.surfFilter.frequency, 820 + velocity * 1420 + barrel * 520 + rail * 620 + release * 940, now, .1);
+    ramp(this.surfFilter.Q, .62 + rail * .72 + loaded * .34, now, .12);
+    ramp(this.surf.playbackRate, 1.0 + velocity * .34 + barrel * .1 + release * .12, now, .1);
+    if (this.surfPanner) ramp(this.surfPanner.pan, Math.max(-.68, Math.min(.68, railLoad * .62)), now, .1);
   }
 
   setScore(
