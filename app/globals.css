@@ -891,6 +891,110 @@ input:focus-visible {
 .barrel-lens i:nth-child(8) { top: 84%; left: 7%; transform: scale(0.94) rotate(-9deg); animation-delay: -3s; }
 .barrel-lens.is-wipeout::before { background: radial-gradient(circle at 50% 48%, rgba(220, 255, 249, 0.03) 0 18%, rgba(82, 204, 198, 0.24) 68%, rgba(4, 54, 67, 0.4) 100%); }
 
+.wet-lens {
+  position: absolute;
+  z-index: 2;
+  inset: -1px;
+  overflow: hidden;
+  opacity: var(--wetness, 0);
+  pointer-events: none;
+  animation: wet-lens-dry var(--wet-duration, 4s) cubic-bezier(.16, .67, .24, 1) forwards;
+}
+.wet-lens::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 48%, transparent 0 47%, rgba(163, 235, 226, .045) 72%, rgba(30, 106, 119, .18) 100%),
+    linear-gradient(104deg, rgba(236, 255, 251, .08), transparent 17% 79%, rgba(213, 255, 248, .07));
+  box-shadow: inset 0 0 42px rgba(185, 250, 241, .09), inset 0 0 118px rgba(6, 68, 83, .13);
+  animation: wet-lens-wash var(--wet-duration, 4s) cubic-bezier(.16, .68, .28, 1) forwards;
+}
+.wet-lens::after {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  background:
+    radial-gradient(circle at 17% 24%, rgba(239, 255, 252, .38) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 68% 31%, rgba(224, 255, 249, .31) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 39% 76%, rgba(229, 255, 251, .26) 0 .9px, transparent 1.7px),
+    radial-gradient(circle at 86% 64%, rgba(229, 255, 251, .28) 0 1px, transparent 1.8px);
+  background-size: 47px 59px, 71px 67px, 83px 77px, 61px 89px;
+  mix-blend-mode: screen;
+  animation: wet-lens-mist var(--wet-duration, 4s) ease-out forwards;
+}
+.wet-lens i {
+  position: absolute;
+  top: var(--drop-top, 15%);
+  left: var(--drop-left, 15%);
+  width: var(--drop-width, 18px);
+  height: var(--drop-height, 25px);
+  border: 1px solid rgba(235, 255, 251, .56);
+  border-radius: 58% 42% 62% 38% / 48% 48% 52% 52%;
+  background:
+    radial-gradient(circle at 29% 20%, rgba(255, 255, 255, .72) 0 5%, transparent 13%),
+    radial-gradient(ellipse at 42% 37%, rgba(197, 248, 241, .18), rgba(15, 83, 96, .22) 61%, transparent 72%);
+  box-shadow:
+    inset -3px -4px 5px rgba(3, 48, 61, .27),
+    inset 2px 2px 4px rgba(245, 255, 253, .14),
+    0 2px 5px rgba(193, 250, 242, .1);
+  transform: rotate(var(--drop-rotate, 0deg)) scale(var(--drop-scale, 1));
+  transform-origin: 50% 15%;
+  opacity: var(--drop-opacity, .82);
+  animation: wet-bead-slide var(--drop-speed, 3.4s) cubic-bezier(.36, .06, .26, 1) var(--drop-delay, 0s) forwards;
+}
+.wet-lens i::after {
+  content: "";
+  position: absolute;
+  top: calc(100% - 1px);
+  left: 43%;
+  width: 24%;
+  height: var(--trail, 34px);
+  border-radius: 0 0 80% 80%;
+  background: linear-gradient(180deg, rgba(194, 247, 240, .17), transparent);
+  filter: blur(.45px);
+  transform: rotate(var(--drop-rotate, 0deg));
+}
+.wet-lens.is-heavy::before { box-shadow: inset 0 0 54px rgba(185, 250, 241, .14), inset 0 0 138px rgba(4, 59, 75, .25); }
+.wet-lens.is-heavy::after { filter: blur(.25px); }
+.wet-lens i:nth-child(1) { --drop-top: 7%; --drop-left: 8%; --drop-width: 25px; --drop-height: 34px; --drop-rotate: 7deg; --drop-scale: .92; --drop-speed: 3.8s; --drop-delay: .04s; --trail: 57px; }
+.wet-lens i:nth-child(2) { --drop-top: 15%; --drop-left: 72%; --drop-width: 17px; --drop-height: 24px; --drop-rotate: -9deg; --drop-scale: 1.08; --drop-speed: 4.7s; --drop-delay: .18s; }
+.wet-lens i:nth-child(3) { --drop-top: 31%; --drop-left: 24%; --drop-width: 11px; --drop-height: 15px; --drop-rotate: 13deg; --drop-scale: .72; --drop-speed: 3.1s; --drop-delay: .08s; --drop-opacity: .64; }
+.wet-lens i:nth-child(4) { --drop-top: 44%; --drop-left: 88%; --drop-width: 21px; --drop-height: 29px; --drop-rotate: -5deg; --drop-speed: 4.2s; --drop-delay: .3s; --trail: 46px; }
+.wet-lens i:nth-child(5) { --drop-top: 61%; --drop-left: 37%; --drop-width: 14px; --drop-height: 20px; --drop-rotate: 5deg; --drop-scale: .82; --drop-speed: 3.6s; --drop-delay: .14s; }
+.wet-lens i:nth-child(6) { --drop-top: 73%; --drop-left: 78%; --drop-width: 28px; --drop-height: 38px; --drop-rotate: -8deg; --drop-speed: 4.9s; --drop-delay: .24s; --trail: 62px; }
+.wet-lens i:nth-child(7) { --drop-top: 4%; --drop-left: 47%; --drop-width: 9px; --drop-height: 12px; --drop-rotate: 16deg; --drop-scale: .65; --drop-speed: 2.9s; --drop-delay: .09s; --drop-opacity: .57; }
+.wet-lens i:nth-child(8) { --drop-top: 81%; --drop-left: 11%; --drop-width: 19px; --drop-height: 27px; --drop-rotate: 8deg; --drop-speed: 4.4s; --drop-delay: .2s; }
+.wet-lens i:nth-child(9) { --drop-top: 25%; --drop-left: 95%; --drop-width: 12px; --drop-height: 17px; --drop-rotate: -14deg; --drop-scale: .74; --drop-speed: 3.3s; --drop-delay: .12s; }
+.wet-lens i:nth-child(10) { --drop-top: 53%; --drop-left: 4%; --drop-width: 15px; --drop-height: 23px; --drop-rotate: 12deg; --drop-speed: 3.9s; --drop-delay: .27s; --drop-opacity: .7; }
+.wet-lens i:nth-child(11) { --drop-top: 89%; --drop-left: 57%; --drop-width: 10px; --drop-height: 14px; --drop-rotate: -6deg; --drop-scale: .68; --drop-speed: 3.2s; --drop-delay: .06s; --drop-opacity: .58; }
+.wet-lens i:nth-child(12) { --drop-top: 38%; --drop-left: 61%; --drop-width: 23px; --drop-height: 32px; --drop-rotate: -3deg; --drop-speed: 4.6s; --drop-delay: .34s; --trail: 51px; }
+
+@keyframes wet-lens-dry {
+  0% { opacity: var(--wetness, 0); }
+  100% { opacity: 0; }
+}
+
+@keyframes wet-lens-wash {
+  0% { opacity: .95; transform: scale(1.018); }
+  18% { opacity: .68; }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+@keyframes wet-lens-mist {
+  0% { opacity: .86; transform: translate3d(-1%, -1%, 0) scale(1.02); }
+  34% { opacity: .42; }
+  100% { opacity: 0; transform: translate3d(1%, 2%, 0) scale(1.06); }
+}
+
+@keyframes wet-bead-slide {
+  0% { opacity: 0; transform: translate3d(0, -7px, 0) rotate(var(--drop-rotate, 0deg)) scale(var(--drop-scale, 1)); }
+  8% { opacity: var(--drop-opacity, .82); }
+  29% { transform: translate3d(2px, 1px, 0) rotate(var(--drop-rotate, 0deg)) scale(var(--drop-scale, 1)); }
+  72% { opacity: .45; }
+  100% { opacity: 0; transform: translate3d(-1px, clamp(34px, 8vh, 92px), 0) rotate(var(--drop-rotate, 0deg)) scale(.72); }
+}
+
 .submersion-lens {
   position: absolute;
   z-index: 2;
@@ -1550,6 +1654,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .session-intro-title strong { gap: 4px; font-size: 6px; }
   .session-intro-title strong svg { width: 11px; }
   .session-intro > small { right: 14px; bottom: calc(var(--intro-bar, 0dvh) + max(11px, env(safe-area-inset-bottom))); font-size: 5px; }
+  .wet-lens i:nth-child(n + 9) { display: none; }
+  .wet-lens i::after { max-height: 34px; }
   .velocity-veil { filter: none; }
   .cinema-impact { animation-name: cinema-impact-mobile; }
   .game-brand span { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1738,4 +1844,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   }
   .cinema-impact { display: none; }
   .velocity-veil::after { display: none; }
+  .wet-lens { animation-duration: 1.4s !important; }
+  .wet-lens::before,
+  .wet-lens::after,
+  .wet-lens i { animation: none !important; }
 }

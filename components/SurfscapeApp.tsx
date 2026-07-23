@@ -71,6 +71,11 @@ type RideToast = {
   barrelTime: number;
   grade: GameStats["grade"];
 };
+type WetLensEvent = {
+  id: number;
+  intensity: number;
+  duration: number;
+};
 type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
 type DualRumbleActuator = {
@@ -483,6 +488,7 @@ export default function SurfscapeApp() {
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
+  const [wetLens, setWetLens] = useState<WetLensEvent | null>(null);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const rideCard = useRef<File | null>(null);
@@ -495,6 +501,8 @@ export default function SurfscapeApp() {
   const previousCatchReady = useRef(false);
   const previousDuckDiveReady = useRef(false);
   const previousShorebreakId = useRef(0);
+  const wetLensSequence = useRef(0);
+  const previousSprayHit = useRef(false);
   const shorebreakToastTimer = useRef<number | null>(null);
   const previousBalanceLock = useRef(false);
   const lastBalanceHapticAt = useRef(0);
@@ -523,6 +531,15 @@ export default function SurfscapeApp() {
   const availableForecastWindows = useMemo(() => forecastWindows(conditions), [conditions]);
   const sessionWeatherCode = settings.weatherCode;
   const sessionCloudCover = settings.mode === "playground" ? playgroundCloudCover(sessionWeatherCode) : sessionConditions.cloudCover;
+
+  const splashLens = useCallback((intensity: number, duration: number) => {
+    wetLensSequence.current += 1;
+    setWetLens({
+      id: wetLensSequence.current,
+      intensity: THREEClamp(intensity, .12, 1),
+      duration: THREEClamp(duration, 2.2, 7.2),
+    });
+  }, []);
 
   useEffect(() => {
     const onPointerLockChange = () => {
@@ -875,6 +892,7 @@ export default function SurfscapeApp() {
       if (stats.phase === "wipeout") {
         audio.current?.effect("wipeout");
         haptic([34, 36, 58]);
+        splashLens(1, 6.4);
       }
       previousPhase.current = stats.phase;
     }
@@ -927,7 +945,7 @@ export default function SurfscapeApp() {
       paused ? 0 : movementSpeed,
       !paused && !stats.vehicleMode,
     );
-  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sessionIntro, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
+  }, [paused, screen, sessionCloudCover, sessionWeatherCode, settings.timeOfDay, settings.waveHeight, settings.windSpeed, splashLens, stats.barrelIntensity, stats.catchReady, stats.duckDiveActive, stats.duckDiveQuality, stats.paddleEffort, stats.phase, stats.railGrip, stats.railLoad, stats.sessionIntro, stats.setEnergy, stats.speed, stats.trickCharge, stats.vehicleGear, stats.vehicleMode, stats.vehicleOffRoad, stats.vehicleSlip, stats.vehicleThrottle]);
 
   useEffect(() => {
     if (stats.duckDiveReady && !previousDuckDiveReady.current) haptic([5, 18, 8]);
@@ -947,12 +965,27 @@ export default function SurfscapeApp() {
     setShorebreakToast({ id: stats.shorebreakId, result: clean ? "clean" : "hit", quality: stats.duckDiveQuality });
     audio.current?.effect(clean ? "duck" : "shorebreak");
     haptic(clean ? [7, 16, 10] : [18, 20, 28]);
+    splashLens(clean ? .42 + stats.duckDiveQuality * .22 : .88, clean ? 4.2 : 5.5);
     if (shorebreakToastTimer.current !== null) window.clearTimeout(shorebreakToastTimer.current);
     shorebreakToastTimer.current = window.setTimeout(() => {
       setShorebreakToast(null);
       shorebreakToastTimer.current = null;
     }, 1550);
-  }, [stats.duckDiveQuality, stats.shorebreakId, stats.shorebreakResult]);
+  }, [splashLens, stats.duckDiveQuality, stats.shorebreakId, stats.shorebreakResult]);
+
+  useEffect(() => {
+    const railSpray = stats.phase === "riding"
+      && stats.speed > 10.5
+      && Math.abs(stats.railLoad) > .68
+      && stats.railGrip > .45;
+    const curtainWash = stats.phase === "riding" && stats.barrelIntensity > .62;
+    const sprayHit = railSpray || curtainWash;
+    if (sprayHit && !previousSprayHit.current) {
+      const pressure = Math.max(Math.abs(stats.railLoad), stats.barrelIntensity);
+      splashLens(.24 + pressure * .22, 3.25 + pressure * .8);
+    }
+    previousSprayHit.current = sprayHit;
+  }, [splashLens, stats.barrelIntensity, stats.phase, stats.railGrip, stats.railLoad, stats.speed]);
 
   useEffect(() => () => {
     if (shorebreakToastTimer.current !== null) window.clearTimeout(shorebreakToastTimer.current);
@@ -1124,6 +1157,7 @@ export default function SurfscapeApp() {
     previousRideResultId.current = 0;
     setManeuverToast(null);
     setRideToast(null);
+    setWetLens(null);
     setShareStatus("idle");
     setSessionKey((value) => value + 1);
     setPaused(false);
@@ -1138,6 +1172,7 @@ export default function SurfscapeApp() {
     audio.current?.setEnvironment(settings.windSpeed, settings.waveHeight, sessionCloudCover, 0.42, sessionWeatherCode);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
+    setWetLens(null);
     setScreen("launch");
     setPaused(false);
   };
@@ -1456,6 +1491,12 @@ export default function SurfscapeApp() {
   const submersionStyle = {
     "--submersion": submersionIntensity,
   } as CSSProperties;
+  const wetLensStyle = wetLens
+    ? {
+        "--wetness": wetLens.intensity,
+        "--wet-duration": `${wetLens.duration}s`,
+      } as CSSProperties
+    : undefined;
   const velocityIntensity = stats.phase === "riding"
     ? Math.min(.34, Math.max(0, stats.speed - 8.5) * .026 + stats.barrelIntensity * .11)
     : 0;
@@ -1760,6 +1801,16 @@ export default function SurfscapeApp() {
           <div className={`barrel-lens ${stats.phase === "wipeout" ? "is-wipeout" : ""}`} style={{ opacity: lensIntensity }} aria-hidden="true">
             {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
           </div>
+          {wetLens && (
+            <div
+              className={`wet-lens ${wetLens.intensity >= .72 ? "is-heavy" : ""}`}
+              key={wetLens.id}
+              style={wetLensStyle}
+              aria-hidden="true"
+            >
+              {Array.from({ length: 12 }, (_, index) => <i key={index} />)}
+            </div>
+          )}
           <div
             className={`submersion-lens ${submersionIntensity > .01 ? "is-active" : ""} ${stats.phase === "wipeout" ? "is-wipeout" : "is-duck-dive"}`}
             style={submersionStyle}
@@ -2073,7 +2124,7 @@ export default function SurfscapeApp() {
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
+                <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>
             </div>
           )}
