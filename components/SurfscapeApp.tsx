@@ -11,6 +11,7 @@ import {
   CircleCheck,
   CloudSun,
   Crosshair,
+  Download,
   Gauge,
   Gamepad2,
   LoaderCircle,
@@ -79,6 +80,10 @@ type WetLensEvent = {
 };
 type ShareStatus = "idle" | "working" | "shared" | "copied" | "error";
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
 type DualRumbleActuator = {
   playEffect: (type: "dual-rumble", parameters: {
     duration: number;
@@ -472,6 +477,7 @@ export default function SurfscapeApp() {
   const [sceneReady, setSceneReady] = useState(false);
   const [fullscreenAvailable, setFullscreenAvailable] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
@@ -613,6 +619,31 @@ export default function SurfscapeApp() {
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("fullscreenchange", syncFullscreen);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return;
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    const registerServiceWorker = () => {
+      if (!("serviceWorker" in navigator)) return;
+      void navigator.serviceWorker
+        .register(`${basePath}/sw.js`, { scope: `${basePath || ""}/` })
+        .catch(() => undefined);
+    };
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallPrompt(null);
+    window.addEventListener("load", registerServiceWorker, { once: true });
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    if (document.readyState === "complete") registerServiceWorker();
+    return () => {
+      window.removeEventListener("load", registerServiceWorker);
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
     };
   }, []);
 
@@ -1236,6 +1267,13 @@ export default function SurfscapeApp() {
     audio.current.setScore(stats.phase, stats.setEnergy, stats.barrelIntensity, settings.timeOfDay, sessionWeatherCode, screen === "game" && !paused);
   };
 
+  const installApp = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") setInstallPrompt(null);
+  };
+
   const setControl = (name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">, value: boolean) => {
     controls.current[name] = value;
   };
@@ -1606,6 +1644,11 @@ export default function SurfscapeApp() {
               <button className="icon-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute sound" : "Enable sound"}>
                 {soundEnabled ? <Volume2 /> : <VolumeX />}
               </button>
+              {installPrompt && (
+                <button className="install-button" onClick={() => void installApp()}>
+                  <Download /><span>Install game</span>
+                </button>
+              )}
               <button className="text-button" onClick={() => setShowHowTo(true)}>How to ride</button>
             </div>
           </header>
@@ -2213,6 +2256,7 @@ export default function SurfscapeApp() {
                 <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
+                {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
                 <button onClick={() => { controls.current = { ...EMPTY_CONTROLS }; clearAnalogMovement(); setStats(INITIAL_STATS); setWetLens(null); trainingStepValue.current = 0; setTrainingStep(0); setSessionKey((value) => value + 1); setPaused(false); }}><RotateCcw /> Restart session</button>
               </div>

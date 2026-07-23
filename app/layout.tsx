@@ -1,11 +1,29 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  themeColor: "#06141b",
+  viewportFit: "cover",
+};
 
 export const metadata: Metadata = {
   title: "Surfscape — Read the Ocean",
   description:
     "A living, browser-based surf experience powered by real marine conditions from the world's most iconic breaks.",
   applicationName: "Surfscape",
+  manifest: "./manifest.webmanifest",
+  icons: {
+    icon: [{ url: "./icons/surfscape-192.png", type: "image/png", sizes: "192x192" }],
+    apple: [{ url: "./icons/surfscape-180.png", type: "image/png", sizes: "180x180" }],
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Surfscape",
+  },
+  formatDetection: {
+    telephone: false,
+  },
   keywords: ["surfing", "browser game", "ocean", "waves", "OpenStreetMap"],
   openGraph: {
     title: "Surfscape — Read the Ocean",
@@ -27,7 +45,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <link rel="icon" href="./favicon.svg" />
         <meta property="og:image" content="./og.jpg" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />

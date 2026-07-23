@@ -244,6 +244,25 @@ input:focus-visible {
   cursor: pointer;
 }
 
+.install-button {
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid rgba(139, 245, 229, .34);
+  background: linear-gradient(110deg, rgba(64, 186, 174, .16), rgba(5, 22, 29, .44));
+  color: #c6fff7;
+  cursor: pointer;
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .05);
+}
+.install-button:hover { border-color: rgba(165, 255, 242, .62); background: rgba(75, 209, 193, .18); }
+.install-button svg { width: 13px; }
+
 .icon-button {
   width: 34px;
   display: grid;
@@ -1624,6 +1643,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .wordmark-mark svg { width: 16px; }
   .launch-nav { gap: 8px; }
   .launch-nav .text-button, .live-chip { display: none; }
+  .install-button { width: 38px; padding: 0; justify-content: center; border-radius: 50%; }
+  .install-button span { display: none; }
   .launch-content { display: flex; flex-direction: column; min-height: auto; }
   .launch-hero { order: 1; padding: 39px 0 26px; border-right: 0; }
   .hero-index { font-size: 7px; }
@@ -1867,4 +1888,36 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .wet-lens::before,
   .wet-lens::after,
   .wet-lens i { animation: none !important; }
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .launch-screen {
+    padding-left: max(42px, env(safe-area-inset-left));
+    padding-right: max(42px, env(safe-area-inset-right));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .launch-header {
+    height: calc(78px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+  }
+  .launch-footer {
+    height: calc(86px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (max-width: 760px) and (display-mode: standalone),
+  (max-width: 760px) and (display-mode: fullscreen),
+  (hover: none) and (pointer: coarse) and (display-mode: standalone),
+  (hover: none) and (pointer: coarse) and (display-mode: fullscreen) {
+  .launch-screen {
+    padding-left: max(15px, env(safe-area-inset-left));
+    padding-right: max(15px, env(safe-area-inset-right));
+  }
+  .launch-header {
+    height: calc(62px + env(safe-area-inset-top));
+  }
+  .launch-footer {
+    height: calc(78px + env(safe-area-inset-bottom));
+  }
 }
