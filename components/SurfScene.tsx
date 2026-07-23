@@ -1151,6 +1151,90 @@ const LINEUP_CREST_FRAGMENT = /* glsl */ `
   }
 `;
 
+const LINEUP_SPINDRIFT_VERTEX = /* glsl */ `
+  uniform float uTime;
+  uniform float uFaceHeight;
+  uniform float uSpan;
+  uniform float uCurl;
+  uniform float uEnergy;
+  uniform float uSeed;
+  uniform float uCenterX;
+  uniform float uPeel;
+  uniform float uVariability;
+  uniform float uWaveAngle;
+  uniform float uWind;
+  uniform float uWindCross;
+  uniform float uWindNormal;
+  uniform float uPixelRatio;
+
+  varying float vLife;
+  varying float vBreakup;
+  varying float vDepthFade;
+
+  void main() {
+    float windRate = .032 + min(uWind, 36.0) * .0022;
+    float life = fract(position.y + uTime * windRate + uSeed * .173);
+    float across = position.x * uSpan;
+    float sectionPhase = (uCenterX + across) * .07 + uTime * .05;
+    float centerPhase = uCenterX * .07 + uTime * .05;
+    float section = (sin(sectionPhase) - sin(centerPhase)) * uVariability * 2.3;
+    float worldAcross = uCenterX + across;
+    float curvedSection = sin(uWaveAngle) * .0019
+      * (worldAcross * worldAcross - uCenterX * uCenterX);
+    float windTravel = life * life * uWind * .046;
+    float flutter = sin(life * 17.0 + across * .19 + uTime * 1.3 + uSeed * 4.1);
+    float lift = life * (.17 + uEnergy * .46 + uWind * .012);
+    float settle = life * life * (.12 + (1.0 - min(uWind / 24.0, 1.0)) * .2);
+
+    vec3 transformed;
+    transformed.x = across
+      + uWindCross * windTravel
+      + flutter * (.025 + life * .055);
+    transformed.y = uFaceHeight * (.88 + position.z * .035)
+      + lift
+      - settle;
+    transformed.z = -(section + curvedSection + across * uPeel * .16);
+    transformed.z -= uCurl * (.14 + uFaceHeight * .17);
+    transformed.z += uWindNormal * windTravel + position.z * (.045 + life * .08);
+
+    vec4 viewPosition = modelViewMatrix * vec4(transformed, 1.0);
+    float perspective = clamp(48.0 / max(1.0, -viewPosition.z), .52, 2.7);
+    float particleScale = 1.1 + uEnergy * 1.25 + (1.0 - life) * .8;
+    gl_PointSize = clamp(particleScale * perspective * uPixelRatio, 1.0, 7.2);
+    gl_Position = projectionMatrix * viewPosition;
+    vLife = life;
+    vBreakup = .55 + .45 * sin(across * .37 + position.z * 13.0 + uSeed * 7.0);
+    vDepthFade = 1.0 - smoothstep(18.0, 420.0, -viewPosition.z);
+  }
+`;
+
+const LINEUP_SPINDRIFT_FRAGMENT = /* glsl */ `
+  uniform float uOpacity;
+  uniform float uEnergy;
+  uniform float uBreak;
+  uniform float uLight;
+  uniform float uCloud;
+
+  varying float vLife;
+  varying float vBreakup;
+  varying float vDepthFade;
+
+  void main() {
+    vec2 centered = gl_PointCoord - .5;
+    float droplet = 1.0 - smoothstep(.08, .5, length(centered));
+    float birth = smoothstep(0.0, .09, vLife);
+    float decay = 1.0 - smoothstep(.58, 1.0, vLife);
+    float breaking = smoothstep(.22, .78, uEnergy) * smoothstep(.32, .88, uBreak);
+    float breakup = smoothstep(.12, .86, vBreakup + uEnergy * .24);
+    float alpha = droplet * birth * decay * breaking * breakup * vDepthFade;
+    alpha *= uOpacity * (1.7 + uEnergy * 1.35);
+    if (alpha < .006) discard;
+    vec3 shade = mix(vec3(.56, .78, .79), vec3(.94, 1.0, .96), uLight);
+    shade *= 1.0 - uCloud * .12;
+    gl_FragColor = vec4(shade, min(alpha, .7));
+  }
+`;
+
 function LineupWaveSetVolume({
   motion,
   settings,
@@ -1168,6 +1252,7 @@ function LineupWaveSetVolume({
 }) {
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
+  const { gl } = useThree();
   const crestCount = mobile
     ? quality === "reduced" ? 2 : 3
     : quality === "high" ? 4 : 3;
@@ -1196,9 +1281,27 @@ function LineupWaveSetVolume({
       uOpacity: { value: 0 },
       uLight: { value: light },
       uCloud: { value: cloudCover / 100 },
+      uBreak: { value: 0 },
+      uWind: { value: settings.windSpeed },
+      uWindCross: { value: 0 },
+      uWindNormal: { value: 0 },
+      uPixelRatio: { value: 1 },
     })),
-    [character.peel, character.variability, cloudCover, crestOffsets, light, mobile, settings.coastHeading, settings.waveDirection, tideResponse.variabilityScale],
+    [character.peel, character.variability, cloudCover, crestOffsets, light, mobile, settings.coastHeading, settings.waveDirection, settings.windSpeed, tideResponse.variabilityScale],
   );
+  const sprayCount = mobile
+    ? quality === "reduced" ? 24 : 42
+    : quality === "high" ? 88 : 62;
+  const sprayPositions = useMemo(() => {
+    const positions = new Float32Array(sprayCount * 3);
+    for (let index = 0; index < sprayCount; index += 1) {
+      const offset = index * 3;
+      positions[offset] = seededRandom(index, 19.4) - .5;
+      positions[offset + 1] = seededRandom(index, 31.7);
+      positions[offset + 2] = seededRandom(index, 47.2) * 2 - 1;
+    }
+    return positions;
+  }, [sprayCount]);
 
   useFrame(({ clock }, delta) => {
     const elapsed = clock.elapsedTime;
@@ -1244,6 +1347,7 @@ function LineupWaveSetVolume({
         ? THREE.MathUtils.smoothstep(distanceToFocus, 17, 38)
         : 1;
       const energy = setState.energy;
+      const windAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
       const faceHeight = THREE.MathUtils.clamp(
         settings.waveHeight
           * tideResponse.faceScale
@@ -1287,6 +1391,11 @@ function LineupWaveSetVolume({
       values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, 7, delta);
       values.uLight.value = light;
       values.uCloud.value = cloudCover / 100;
+      values.uBreak.value = THREE.MathUtils.damp(values.uBreak.value, shoaling, 6, delta);
+      values.uWind.value = THREE.MathUtils.damp(values.uWind.value, settings.windSpeed, 5, delta);
+      values.uWindCross.value = Math.sin(windAngle);
+      values.uWindNormal.value = Math.cos(windAngle);
+      values.uPixelRatio.value = Math.min(gl.getPixelRatio(), mobile ? 1.3 : 1.7);
     });
   });
 
@@ -1316,6 +1425,18 @@ function LineupWaveSetVolume({
               side={THREE.DoubleSide}
             />
           </mesh>
+          <points frustumCulled={false} renderOrder={2.2}>
+            <bufferGeometry>
+              <bufferAttribute attach="attributes-position" args={[sprayPositions, 3]} />
+            </bufferGeometry>
+            <shaderMaterial
+              uniforms={uniforms[index]}
+              vertexShader={LINEUP_SPINDRIFT_VERTEX}
+              fragmentShader={LINEUP_SPINDRIFT_FRAGMENT}
+              transparent
+              depthWrite={false}
+            />
+          </points>
         </group>
       ))}
     </group>
