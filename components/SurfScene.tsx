@@ -2267,14 +2267,21 @@ const CARVE_TRACK_COUNT = 64;
 const IMPACT_RING_COUNT = 10;
 
 function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; mobile: boolean }) {
+  const quality = useRenderQuality();
   const wake = useRef<THREE.Group>(null);
   const wakeMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
+  const railSheets = useRef<Array<THREE.Mesh | null>>([]);
+  const railSheetMaterials = useRef<Array<THREE.MeshBasicMaterial | null>>([]);
   const spray = useRef<THREE.Points>(null);
   const sprayMaterial = useRef<THREE.PointsMaterial>(null);
   const bubbles = useRef<THREE.Points>(null);
   const bubbleMaterial = useRef<THREE.PointsMaterial>(null);
-  const particleCount = mobile ? 44 : 88;
-  const bubbleCount = mobile ? 28 : 56;
+  const particleCount = mobile
+    ? quality === "reduced" ? 34 : quality === "high" ? 72 : 52
+    : quality === "reduced" ? 72 : quality === "balanced" ? 112 : 152;
+  const bubbleCount = mobile
+    ? quality === "reduced" ? 20 : quality === "high" ? 42 : 30
+    : quality === "reduced" ? 38 : quality === "balanced" ? 58 : 76;
   const positions = useMemo(() => {
     const values = new Float32Array(particleCount * 3);
     for (let index = 0; index < particleCount; index += 1) values[index * 3 + 1] = -20;
@@ -2298,6 +2305,21 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   const bubbleLife = useRef(new Float32Array(bubbleCount));
   const bubbleCursor = useRef(0);
   const bubbleEmission = useRef(0);
+
+  useEffect(() => {
+    velocities.current = new Float32Array(particleCount * 3);
+    life.current = new Float32Array(particleCount);
+    cursor.current = 0;
+    emission.current = 0;
+  }, [particleCount]);
+
+  useEffect(() => {
+    bubbleVelocities.current = new Float32Array(bubbleCount * 3);
+    bubbleLife.current = new Float32Array(bubbleCount);
+    bubbleCursor.current = 0;
+    bubbleEmission.current = 0;
+  }, [bubbleCount]);
+
   const wakeTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 96;
@@ -2348,6 +2370,50 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
     texture.colorSpace = THREE.SRGBColorSpace;
     return texture;
   }, []);
+  const railSheetTexture = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (context) {
+      const body = context.createLinearGradient(64, 252, 64, 0);
+      body.addColorStop(0, "rgba(232,255,251,.92)");
+      body.addColorStop(.22, "rgba(198,251,243,.58)");
+      body.addColorStop(.72, "rgba(160,239,230,.14)");
+      body.addColorStop(1, "rgba(150,230,222,0)");
+      context.fillStyle = body;
+      context.beginPath();
+      context.moveTo(57, 254);
+      context.bezierCurveTo(42, 190, 20, 94, 2, 12);
+      context.bezierCurveTo(34, 38, 74, 122, 70, 254);
+      context.closePath();
+      context.fill();
+      context.globalCompositeOperation = "screen";
+      context.lineCap = "round";
+      for (let streak = 0; streak < 28; streak += 1) {
+        const startX = 57 + (seededRandom(streak, 611) - .5) * 13;
+        const endX = 4 + seededRandom(streak, 612) * 76;
+        const endY = 4 + seededRandom(streak, 613) * 132;
+        context.strokeStyle = `rgba(240,255,252,${(.12 + seededRandom(streak, 614) * .55).toFixed(2)})`;
+        context.lineWidth = .7 + seededRandom(streak, 615) * 2.2;
+        context.beginPath();
+        context.moveTo(startX, 250 - seededRandom(streak, 616) * 18);
+        context.quadraticCurveTo(44 + seededRandom(streak, 617) * 28, 156, endX, endY);
+        context.stroke();
+      }
+      context.globalCompositeOperation = "destination-out";
+      for (let gap = 0; gap < 22; gap += 1) {
+        const x = 8 + seededRandom(gap, 621) * 70;
+        const y = 18 + seededRandom(gap, 622) * 178;
+        context.beginPath();
+        context.ellipse(x, y, 1.5 + seededRandom(gap, 623) * 4.5, 5 + seededRandom(gap, 624) * 13, -.3, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, []);
   const bubbleTexture = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 64;
@@ -2371,8 +2437,9 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
   useEffect(() => () => {
     bubbleTexture.dispose();
     particleTexture.dispose();
+    railSheetTexture.dispose();
     wakeTexture.dispose();
-  }, [bubbleTexture, particleTexture, wakeTexture]);
+  }, [bubbleTexture, particleTexture, railSheetTexture, wakeTexture]);
 
   useFrame(({ clock }, delta) => {
     const state = motion.current;
@@ -2395,6 +2462,31 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       const loadedRail = index < 2 && Math.abs(state.rail) > .08 ? (Math.sign(state.rail) === side ? 1.22 : .54) : 1;
       const stagger = index > 1 ? 0.68 : loadedRail;
       material.opacity = THREE.MathUtils.damp(material.opacity, targetOpacity * stagger, 7, delta);
+    });
+    const railEnergy = riding
+      ? THREE.MathUtils.smoothstep(state.speed, 6.5, 15.5) * (Math.abs(state.rail) * .72 + state.slip * .35 + state.compression * .12) * waterContact
+      : 0;
+    const impactEnergy = riding ? Math.max(state.impact * .48, state.maneuver * .18) * waterContact : 0;
+    const loadedSide = Math.abs(state.rail) > .06 ? -Math.sign(state.rail) : state.maneuverSide || 1;
+    railSheets.current.forEach((sheet, index) => {
+      const material = railSheetMaterials.current[index];
+      if (!sheet || !material) return;
+      const side = index === 0 ? -1 : 1;
+      const sideLoad = side === loadedSide ? railEnergy : railEnergy * .08;
+      const energy = THREE.MathUtils.clamp(sideLoad + impactEnergy * (state.impact > .55 ? 1 : side === loadedSide ? .72 : .28), 0, 1.15);
+      const targetSheetOpacity = riding ? (.025 + energy * .46) * waterContact : 0;
+      material.opacity = THREE.MathUtils.damp(material.opacity, targetSheetOpacity, targetSheetOpacity > material.opacity ? 13 : 6, delta);
+      const widthScale = .34 + energy * .82;
+      const heightScale = .18 + energy * 1.02;
+      sheet.scale.x = THREE.MathUtils.damp(sheet.scale.x, widthScale, 10, delta);
+      sheet.scale.y = THREE.MathUtils.damp(sheet.scale.y, heightScale, 10, delta);
+      sheet.position.x = THREE.MathUtils.damp(sheet.position.x, side * (.27 + energy * .11), 11, delta);
+      sheet.position.y = THREE.MathUtils.damp(sheet.position.y, .035 + 1.2 * heightScale, 11, delta);
+      sheet.position.z = THREE.MathUtils.damp(sheet.position.z, -.42 - energy * .25, 10, delta);
+      sheet.rotation.x = THREE.MathUtils.damp(sheet.rotation.x, -.44 - energy * .18, 9, delta);
+      sheet.rotation.y = THREE.MathUtils.damp(sheet.rotation.y, side * (.16 + energy * .2), 9, delta);
+      sheet.rotation.z = THREE.MathUtils.damp(sheet.rotation.z, side * (-.26 - energy * .28), 9, delta);
+      sheet.visible = material.opacity > .004;
     });
     const positionAttribute = spray.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     const particlePositions = positionAttribute?.array as Float32Array | undefined;
@@ -2542,6 +2634,32 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
             transparent
             opacity={0}
             depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      {[-1, 1].map((side, index) => (
+        <mesh
+          key={`rail-sheet-${side}`}
+          ref={(mesh) => { railSheets.current[index] = mesh; }}
+          position={[side * .27, .25, -.42]}
+          rotation={[-.44, side * .16, side * -.26]}
+          scale={[.34, .18, 1]}
+          visible={false}
+          frustumCulled={false}
+          renderOrder={4.6}
+        >
+          <planeGeometry args={[1.5, 2.4]} />
+          <meshBasicMaterial
+            ref={(material) => { railSheetMaterials.current[index] = material; }}
+            map={railSheetTexture}
+            color={index ? "#d9fff8" : "#a9f4e9"}
+            side={THREE.DoubleSide}
+            transparent
+            opacity={0}
+            alphaTest={.018}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
             toneMapped={false}
           />
         </mesh>
