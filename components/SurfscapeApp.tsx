@@ -43,6 +43,7 @@ import {
   compassDirection,
   formatClock,
   INITIAL_STATS,
+  MAX_OFFSHORE_DISTANCE,
   settingsFromConditions,
   type BoardType,
   type GameMode,
@@ -553,7 +554,7 @@ export default function SurfscapeApp() {
       controls.current.gamepadActive = false;
       const yaw = controls.current.lookYaw - event.movementX * .00235;
       controls.current.lookYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
-      controls.current.lookPitch = THREEClamp(controls.current.lookPitch + event.movementY * .00205, -1.35, 1.35);
+      controls.current.lookPitch = THREEClamp(controls.current.lookPitch - event.movementY * .00205, -1.35, 1.35);
     };
     document.addEventListener("pointerlockchange", onPointerLockChange);
     document.addEventListener("mousemove", onLockedMouseMove);
@@ -815,7 +816,7 @@ export default function SurfscapeApp() {
       if (Math.abs(lookX) > .01 || Math.abs(lookY) > .01) {
         const yaw = controls.current.lookYaw - lookX * delta * 2.42;
         controls.current.lookYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
-        controls.current.lookPitch = THREEClamp(controls.current.lookPitch + lookY * delta * 1.62, -1.35, 1.35);
+        controls.current.lookPitch = THREEClamp(controls.current.lookPitch - lookY * delta * 1.62, -1.35, 1.35);
       }
 
       const nextCameraButton = Boolean(gamepad.buttons[5]?.pressed);
@@ -1341,7 +1342,7 @@ export default function SurfscapeApp() {
     const verticalSpan = Math.max(260, Math.min(window.innerHeight, 700));
     const yaw = gesture.yaw - ((event.clientX - gesture.x) / span) * Math.PI * 2.2;
     controls.current.lookYaw = Math.atan2(Math.sin(yaw), Math.cos(yaw));
-    controls.current.lookPitch = THREEClamp(gesture.pitch + ((event.clientY - gesture.y) / verticalSpan) * 2.7, -1.35, 1.35);
+    controls.current.lookPitch = THREEClamp(gesture.pitch - ((event.clientY - gesture.y) / verticalSpan) * 2.7, -1.35, 1.35);
   };
 
   const endCameraLook = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1907,11 +1908,18 @@ export default function SurfscapeApp() {
             </div>
             <div className="set-meter"><i style={{ width: `${Math.round(stats.setEnergy * 100)}%` }} /></div>
             {stats.phase === "paddling" && (
-              <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
-                <span>{stats.inLineup ? "TAKEOFF" : "SHOREBREAK"}</span>
-                <i><b style={{ width: `${stats.inLineup ? Math.round(stats.takeoffQuality * 100) : shorebreakTiming}%` }} /></i>
-                <strong>{stats.duckDiveReady ? "DIVE" : stats.catchReady ? "GO" : stats.inLineup ? `${Math.round(stats.takeoffQuality * 100)}%` : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 3 ? `${stats.shorebreakSeconds.toFixed(1)}s` : "READ"}</strong>
-              </div>
+              <>
+                <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
+                  <span>{stats.inLineup ? "TAKEOFF" : "SHOREBREAK"}</span>
+                  <i><b style={{ width: `${stats.inLineup ? Math.round(stats.takeoffQuality * 100) : shorebreakTiming}%` }} /></i>
+                  <strong>{stats.duckDiveReady ? "DIVE" : stats.catchReady ? "GO" : stats.inLineup ? `${Math.round(stats.takeoffQuality * 100)}%` : stats.shorebreakSeconds > 0 && stats.shorebreakSeconds < 3 ? `${stats.shorebreakSeconds.toFixed(1)}s` : "READ"}</strong>
+                </div>
+                <div className={`offshore-readout ${stats.inLineup ? "is-lineup" : ""}`}>
+                  <div><MapPin /><span>OFFSHORE</span><strong>{Math.round(stats.offshoreDistance)} m</strong></div>
+                  <i><b style={{ width: `${Math.min(100, stats.offshoreDistance / MAX_OFFSHORE_DISTANCE * 100)}%` }} /></i>
+                  <small>{stats.inLineup ? "OUTSIDE THE BREAK" : "PADDLING THROUGH THE BREAK"}</small>
+                </div>
+              </>
             )}
             <div className="stamina-row">
               <span><BatteryMedium /> STAMINA</span>
@@ -2021,7 +2029,11 @@ export default function SurfscapeApp() {
             <div><Wind /><span>PERIOD</span><strong>{settings.wavePeriod.toFixed(1)} s</strong></div>
             <div><ArrowRight /><span>BREAK LINE</span><strong>{activeLine}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
-            <div><Crosshair /><span>DISTANCE</span><strong>{stats.rideDistance.toFixed(0)} m</strong></div>
+            <div>
+              <Crosshair />
+              <span>{stats.phase === "paddling" ? "OFFSHORE" : "DISTANCE"}</span>
+              <strong>{stats.phase === "paddling" ? stats.offshoreDistance.toFixed(0) : stats.rideDistance.toFixed(0)} m</strong>
+            </div>
             <div><CloudSun /><span>SKY</span><strong>{weatherLabel(sessionWeatherCode)}</strong></div>
           </div>
 

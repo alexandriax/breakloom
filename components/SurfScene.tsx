@@ -8,7 +8,7 @@ import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.j
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
-import { BOARD_SPECS, primaryWavePhaseAt, sessionGrade, shorelineShiftForTide, waveHeightAt, waveSetState } from "@/lib/game";
+import { BOARD_SPECS, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, waveHeightAt, waveSetState } from "@/lib/game";
 
 export type ControlState = {
   forward: boolean;
@@ -37,8 +37,9 @@ type RenderQuality = "reduced" | "balanced" | "high";
 const RenderQualityContext = createContext<RenderQuality>("high");
 
 const LINEUP_ENTRY_Z = -30;
-const OUTER_PADDLE_LIMIT_Z = -238;
 const WATER_SIDE_LIMIT = 112;
+const OCEAN_PLANE_DEPTH = 1250;
+const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z - OCEAN_PLANE_DEPTH * .5;
 
 function useRenderQuality() {
   return useContext(RenderQualityContext);
@@ -337,7 +338,7 @@ const OCEAN_VERTEX = /* glsl */ `
 
   void main() {
     vec2 origin = position.xy;
-    vec2 surfaceOrigin = vec2(origin.x, -origin.y - 157.0);
+    vec2 surfaceOrigin = vec2(origin.x, -origin.y + ${OCEAN_CENTER_Z.toFixed(1)});
     vec3 p = position;
     float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
     vec2 waveDir = coastalVector(uWaveDirection);
@@ -349,6 +350,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
     float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
     float shallowCompression = mix(1.0, mix(.82, .69, uSteepness), smoothstep(-32.0, 9.0, breakCoord));
+    float primaryWavelength = clamp(1.56 * uPeriod * uPeriod, 48.0, 320.0) * shallowCompression;
     float setEnergy = setEnvelope();
     float setLift = .78 + setEnergy * .34;
     float amplitude = max(.12, uHeight * .62) * uPower;
@@ -359,10 +361,10 @@ const OCEAN_VERTEX = /* glsl */ `
       p,
       curvedOrigin,
       normalize(vec2(.095 + uPeel * .075 + waveDir.x * .42 + currentDir.x * .035, max(.45, waveDir.y))),
-      33.0 * shallowCompression,
+      primaryWavelength,
       amplitude * .64 * shore * setLift,
       clamp(.46 + uSteepness * .32, .58, .88),
-      angularSpeed * 5.4,
+      angularSpeed,
       0.0
     );
     float secondary = gerstner(
@@ -561,9 +563,12 @@ function Ocean({
   const material = useRef<THREE.ShaderMaterial>(null);
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
-  const segments = mobile
+  const crossShoreSegments = mobile
     ? quality === "reduced" ? 42 : quality === "high" ? 66 : 54
     : quality === "reduced" ? 92 : quality === "balanced" ? 112 : 132;
+  const offshoreSegments = mobile
+    ? quality === "reduced" ? 96 : quality === "high" ? 150 : 120
+    : quality === "reduced" ? 190 : quality === "balanced" ? 238 : 280;
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -596,7 +601,7 @@ function Ocean({
 
   useFrame(({ clock }, delta) => {
     if (!material.current) return;
-    if (ocean.current) ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, -157 + tideShift, 2.8, delta);
+    if (ocean.current) ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, OCEAN_CENTER_Z + tideShift, 2.8, delta);
     const values = material.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
@@ -623,8 +628,8 @@ function Ocean({
   });
 
   return (
-    <mesh ref={ocean} position={[0, -0.08, -157 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[250, 330, segments, segments]} />
+    <mesh ref={ocean} position={[0, -0.08, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <planeGeometry args={[280, OCEAN_PLANE_DEPTH, crossShoreSegments, offshoreSegments]} />
       <shaderMaterial
         ref={material}
         uniforms={uniforms}
@@ -1635,7 +1640,11 @@ function PremiumSurferBody({
 
   useEffect(() => () => neopreneBump.dispose(), [neopreneBump]);
 
-  return <group ref={locomotionRoot}><primitive object={model} scale={0.94} /></group>;
+  return (
+    <group ref={locomotionRoot}>
+      <primitive object={model} scale={0.94} rotation={[0, -Math.PI / 2, 0]} />
+    </group>
+  );
 }
 
 useGLTF.preload(SURFER_MODEL_URL);
@@ -3760,6 +3769,8 @@ function FootprintTrail({
     heading: 0,
     moisture: 0,
     strength: 0,
+    widthScale: 1,
+    lengthScale: 1,
   })));
   const footprintTextures = useMemo(() => {
     const createCanvas = () => {
@@ -3878,21 +3889,30 @@ function FootprintTrail({
         const side = footSide.current;
         footSide.current *= -1;
         traveled.current %= spacing;
-        const heading = playerHeading.current;
-        const rightX = Math.cos(heading);
-        const rightZ = -Math.sin(heading);
-        const forwardX = -Math.sin(heading);
-        const forwardZ = -Math.cos(heading);
+        const movementHeading = stepDistance > .008
+          ? Math.atan2(movementX, movementZ)
+          : playerHeading.current;
+        const gaitIndex = cursor.current;
+        const gaitNoise = Math.sin(gaitIndex * 1.618 + current.x * .031 + current.z * .017);
+        const toeOut = side * (.052 + state.run * .026) + gaitNoise * .018;
+        const rightX = Math.cos(movementHeading);
+        const rightZ = -Math.sin(movementHeading);
+        const forwardX = Math.sin(movementHeading);
+        const forwardZ = Math.cos(movementHeading);
         const print = prints.current[cursor.current++ % footprintCount];
-        print.x = current.x + rightX * side * .17 - forwardX * .035;
-        print.z = current.z + rightZ * side * .17 - forwardZ * .035;
+        const lateralSpacing = .165 + state.run * .025 + Math.abs(gaitNoise) * .008;
+        const strideLag = .04 + state.run * .025 + (side > 0 ? .006 : -.006);
+        print.x = current.x + rightX * side * lateralSpacing - forwardX * strideLag;
+        print.z = current.z + rightZ * side * lateralSpacing - forwardZ * strideLag;
         print.y = THREE.MathUtils.lerp(-.39, -.465, THREE.MathUtils.smoothstep(coastalZ, 24, 36));
         print.moisture = 1 - THREE.MathUtils.smoothstep(coastalZ, 20, 39);
         print.maxAge = 10 + print.moisture * 10;
         print.age = print.maxAge;
         print.side = side;
-        print.heading = heading;
+        print.heading = movementHeading + toeOut;
         print.strength = THREE.MathUtils.clamp(.62 + state.run * .22 + print.moisture * .18, .58, 1);
+        print.widthScale = .94 + gaitNoise * .035 + state.run * .025;
+        print.lengthScale = .96 - gaitNoise * .025 + state.run * .055;
 
         const particlePositions = grains.current?.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
         const activeGrains = particlePositions?.array as Float32Array | undefined;
@@ -3937,13 +3957,21 @@ function FootprintTrail({
         depressionColor.copy(sandBase).lerp(depressionTarget, fade * print.strength);
         rimColor.copy(sandBase).lerp(rimTarget, fade * (.44 + print.strength * .36));
         dummy.position.set(print.x, print.y, print.z);
-        dummy.rotation.set(-Math.PI / 2, 0, -print.heading + print.side * .045);
-        dummy.scale.set(.31 * (.96 + print.strength * .05), .58 * (1 + print.strength * .035), 1);
+        dummy.rotation.set(-Math.PI / 2, 0, -print.heading);
+        dummy.scale.set(
+          print.side * .31 * (.96 + print.strength * .05) * print.widthScale,
+          .58 * (1 + print.strength * .035) * print.lengthScale,
+          1,
+        );
         dummy.updateMatrix();
         depressionMesh.current.setMatrixAt(index, dummy.matrix);
         rimDummy.position.set(print.x, print.y + .003, print.z);
-        rimDummy.rotation.set(-Math.PI / 2, 0, -print.heading + print.side * .045);
-        rimDummy.scale.set(.31 * (.96 + print.strength * .05) * 1.055, .58 * (1 + print.strength * .035) * 1.055, 1);
+        rimDummy.rotation.set(-Math.PI / 2, 0, -print.heading);
+        rimDummy.scale.set(
+          print.side * .31 * (.96 + print.strength * .05) * print.widthScale * 1.055,
+          .58 * (1 + print.strength * .035) * print.lengthScale * 1.055,
+          1,
+        );
         rimDummy.updateMatrix();
         rimMesh.current.setMatrixAt(index, rimDummy.matrix);
       }
@@ -3997,6 +4025,7 @@ function FootprintTrail({
           toneMapped={false}
           polygonOffset
           polygonOffsetFactor={-2}
+          side={THREE.DoubleSide}
         />
       </instancedMesh>
       <instancedMesh ref={rimMesh} args={[undefined, undefined, footprintCount]} frustumCulled={false} renderOrder={3.1}>
@@ -4011,6 +4040,7 @@ function FootprintTrail({
           toneMapped={false}
           polygonOffset
           polygonOffsetFactor={-3}
+          side={THREE.DoubleSide}
         />
       </instancedMesh>
       <points ref={grains} frustumCulled={false} renderOrder={4}>
@@ -6358,7 +6388,8 @@ function Simulation({
   const barrelTime = useRef(0);
   const rideStartScore = useRef(0);
   const rideOriginX = useRef(0);
-  const rideOriginZ = useRef(0);
+  const rideWavePhase = useRef(0);
+  const ridePocketOffsetX = useRef(0);
   const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
   const rideHeading = useRef(0);
   const pocketDistance = useRef(0);
@@ -6811,15 +6842,29 @@ function Simulation({
             rideDistance.current = 0;
             pocketDistance.current = 0;
             rideOriginX.current = position.current.x;
-            rideOriginZ.current = position.current.z;
+            rideWavePhase.current = primaryWavePhaseAt(
+              position.current.x,
+              position.current.z,
+              t,
+              settings,
+              character,
+            );
+            ridePocketOffsetX.current = 0;
             rideLineSide.current = Math.abs(character.peel) >= .18
               ? Math.sign(character.peel)
               : Math.abs(steer) > .16
                 ? Math.sign(steer)
                 : position.current.x < 0 ? -1 : 1;
+            const catchTransport = primaryWaveVelocityAt(
+              position.current.x,
+              position.current.z,
+              t,
+              settings,
+              character,
+            );
             rideHeading.current = Math.atan2(
-              rideLineSide.current * (.56 + character.length * .026 + Math.abs(character.peel) * .08),
-              .23,
+              catchTransport.x + rideLineSide.current * catchTransport.speed * (.56 + character.length * .026 + Math.abs(character.peel) * .08),
+              catchTransport.z,
             );
             barrelTime.current = 0;
             stance.current = 0;
@@ -6854,7 +6899,35 @@ function Simulation({
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
         const finishing = finishAt.current >= 0;
-        const waveSpeed = (8.4 + settings.waveHeight * 2.2 + Math.min(settings.wavePeriod, 18) * 0.1) * (.88 + character.power * .12);
+        const waveTransport = primaryWaveVelocityAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const currentWavePhase = primaryWavePhaseAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const phaseError = Math.atan2(
+          Math.sin(currentWavePhase - rideWavePhase.current),
+          Math.cos(currentWavePhase - rideWavePhase.current),
+        );
+        const waveNumber = Math.PI * 2 / waveTransport.wavelength;
+        const phaseCorrection = THREE.MathUtils.clamp(
+          -phaseError * 1.72 / Math.max(.08, waveNumber),
+          -3.2,
+          3.2,
+        );
+        const peelVelocity = rideLineSide.current
+          * waveTransport.speed
+          * (.38 + Math.abs(character.peel) * .22 + character.length * .018);
+        ridePocketOffsetX.current += (waveTransport.x + peelVelocity) * delta;
+        const waveSpeed = waveTransport.speed * (.88 + character.power * .12);
         const pumping = !finishing && move > 0.08 && stamina.current > 1;
         if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
         else if (move < -0.08) stance.current = Math.max(-1, stance.current + delta * 0.86 * move);
@@ -6863,10 +6936,8 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
         const breakTravel = rideDistance.current;
-        const swellCrossing = Math.sin(((settings.waveDirection - settings.coastHeading) * Math.PI) / 180);
-        const pocketSweep = rideLineSide.current * breakTravel * (.82 + Math.abs(character.peel) * .1 + character.length * .015) + swellCrossing * breakTravel * .04;
         const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginX.current * .07) * character.variability * 1.1;
-        const pocketX = rideOriginX.current + pocketSweep + pocketPulse;
+        const pocketX = rideOriginX.current + ridePocketOffsetX.current + pocketPulse;
         const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * .46 + (1 - character.steepness) * .9, 3.6, 6.7);
         const signedPocketDistance = (position.current.x - pocketX) * rideLineSide.current;
         linePosition = THREE.MathUtils.clamp(signedPocketDistance / pocketWidth, -1.5, 1.5);
@@ -6896,12 +6967,16 @@ function Simulation({
         const drift = Math.sign(steer) * railSlip.current * (1.15 + speed * .045);
         const railTurn = railLoad * boardSpec.turn * (4.4 + speed * .18) * (1 + tailPressure * .38 - nosePressure * .12) * turnGrip + drift;
         const trimDrive = rideLineSide.current * speed * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
-        const lateralVelocity = trimDrive + railTurn;
-        const shorewardVelocity = speed * (.23 + nosePressure * .055 - tailPressure * .035 + Math.abs(railLoad) * .025);
+        const lateralVelocity = waveTransport.x + trimDrive + railTurn;
+        const shorewardVelocity = Math.max(
+          2.4,
+          waveTransport.z + phaseCorrection,
+        ) * (1 + nosePressure * .025 - tailPressure * .018 + Math.abs(railLoad) * .012);
         rideHeading.current = dampAngle(rideHeading.current, Math.atan2(lateralVelocity, shorewardVelocity), 4.8, delta);
         position.current.x += lateralVelocity * delta;
         position.current.z += shorewardVelocity * delta;
         const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
+        speed = rideStep / Math.max(.001, delta);
         rideDistance.current += rideStep;
         if (lineControl > .5) pocketDistance.current += rideStep;
         balanceTarget =
@@ -7545,6 +7620,13 @@ function Simulation({
     const cameraShake = cameraShakeBase * (cameraMode === "cinematic" ? .32 : cameraMode === "immersive" ? 1.08 : 1);
     cameraPosition.current.x += Math.sin(t * 31) * cameraShake;
     cameraPosition.current.y += Math.cos(t * 37) * cameraShake * 0.55;
+    if (submersion < .08) {
+      const cameraCoastalZ = cameraPosition.current.z - tideShift;
+      const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
+        ? waveHeightAt(cameraPosition.current.x, cameraPosition.current.z, t, settings, character) + .14
+        : .18;
+      cameraPosition.current.y = Math.max(cameraPosition.current.y, cameraFloor);
+    }
     const cameraResponse = sessionIntroProgress < 1
       ? 5.4
       : submersion > .03
@@ -7560,6 +7642,17 @@ function Simulation({
     } else {
       camera.position.lerp(cameraPosition.current, 1 - Math.exp(-delta * cameraResponse));
       cameraLookTarget.current.lerp(cameraTarget.current, 1 - Math.exp(-delta * (sessionIntroProgress < 1 ? 5 : submersion > .03 ? 12 : cameraMode === "cinematic" ? 2.45 : 4.8)));
+    }
+    if (submersion < .08) {
+      const cameraCoastalZ = camera.position.z - tideShift;
+      const cameraFloor = cameraCoastalZ < SHORELINE_REFERENCE_Z + 1.5
+        ? waveHeightAt(camera.position.x, camera.position.z, t, settings, character) + .12
+        : .16;
+      camera.position.set(
+        camera.position.x,
+        Math.max(camera.position.y, cameraFloor),
+        camera.position.z,
+      );
     }
     camera.lookAt(cameraLookTarget.current);
     const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "immersive" ? 1.16 : 1;
@@ -7601,6 +7694,10 @@ function Simulation({
         combo: Number(combo.current.toFixed(1)),
         rideDistance: Number(rideDistance.current.toFixed(1)),
         pocketDistance: Number(pocketDistance.current.toFixed(1)),
+        offshoreDistance: Number(Math.max(
+          0,
+          SHORELINE_REFERENCE_Z - (position.current.z - tideShift),
+        ).toFixed(1)),
         speed: Math.max(0, speed),
         paddleEffort: motion.current.paddleEffort,
         balance: balanceInput,

@@ -1298,6 +1298,16 @@ input:focus-visible {
 .takeoff-window.is-open > i b { background: #a9fff3; box-shadow: 0 0 9px #71e1d3; }
 .takeoff-window.is-dive > span, .takeoff-window.is-dive > strong { color: #ffe1ae; text-shadow: 0 0 9px rgba(255, 190, 103, .68); }
 .takeoff-window.is-dive > i b { background: linear-gradient(90deg, #da7b48, #ffd99a); box-shadow: 0 0 10px rgba(255, 187, 91, .66); }
+.offshore-readout { margin: -1px 0 11px; padding: 8px 9px 7px; border: 1px solid rgba(113, 225, 211, .18); background: linear-gradient(105deg, rgba(27, 92, 95, .17), rgba(3, 16, 22, .08)); }
+.offshore-readout > div { display: grid; grid-template-columns: 13px 1fr auto; align-items: center; gap: 5px; }
+.offshore-readout svg { width: 11px; color: #71e1d3; filter: drop-shadow(0 0 5px rgba(113, 225, 211, .35)); }
+.offshore-readout span { color: rgba(255, 255, 255, .5); font-size: 5px; font-weight: 850; letter-spacing: .12em; }
+.offshore-readout strong { color: #c5fff7; font-family: Impact, sans-serif; font-size: 11px; font-weight: 500; letter-spacing: .07em; }
+.offshore-readout > i { display: block; height: 2px; margin: 6px 0 5px; overflow: hidden; background: rgba(255, 255, 255, .09); }
+.offshore-readout > i b { display: block; height: 100%; min-width: 2px; background: linear-gradient(90deg, #2c7681, #8ef4e5); box-shadow: 0 0 8px rgba(113, 225, 211, .55); transition: width .18s linear; }
+.offshore-readout small { display: block; overflow: hidden; color: rgba(255, 255, 255, .36); font-size: 4.5px; font-weight: 800; letter-spacing: .1em; text-overflow: ellipsis; white-space: nowrap; }
+.offshore-readout.is-lineup { border-color: rgba(164, 255, 237, .34); background: linear-gradient(105deg, rgba(38, 112, 105, .24), rgba(3, 16, 22, .09)); }
+.offshore-readout.is-lineup small { color: #9feee2; }
 .stamina-row { display: grid; grid-template-columns: auto 1fr 24px; align-items: center; gap: 7px; }
 .stamina-row > span { display: flex; align-items: center; gap: 3px; color: var(--muted); font-size: 5px; letter-spacing: 0.1em; }
 .stamina-row svg { width: 10px; color: var(--spot-accent); }

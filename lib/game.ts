@@ -5,6 +5,9 @@ export type GameMode = "training" | "advanced" | "playground";
 export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
 export type SessionGrade = "C" | "B" | "A" | "S";
 export type BoardType = "performance" | "fish" | "longboard";
+export const SHORELINE_REFERENCE_Z = 8;
+export const OUTER_PADDLE_LIMIT_Z = -900;
+export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
 
 export const BOARD_SPECS: Record<BoardType, {
   name: string;
@@ -93,6 +96,7 @@ export type GameStats = {
   combo: number;
   rideDistance: number;
   pocketDistance: number;
+  offshoreDistance: number;
   speed: number;
   paddleEffort: number;
   balance: number;
@@ -159,6 +163,7 @@ export const INITIAL_STATS: GameStats = {
   combo: 1,
   rideDistance: 0,
   pocketDistance: 0,
+  offshoreDistance: 0,
   speed: 0,
   paddleEffort: 0,
   balance: 0,
@@ -299,6 +304,10 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return normalized * normalized * (3 - 2 * normalized);
 }
 
+function primaryWaveWavelength(period: number, compression: number) {
+  return Math.max(48, Math.min(320, 1.56 * period * period)) * compression;
+}
+
 export function primaryWavePhaseAt(
   x: number,
   z: number,
@@ -321,9 +330,40 @@ export function primaryWavePhaseAt(
   const directionZ = Math.max(.45, Math.cos(waveAngle));
   const directionLength = Math.hypot(directionX, directionZ);
   const curvedZ = breakZ + Math.sin(waveAngle) * .0019 * x * x;
-  const waveNumber = (Math.PI * 2) / (33 * compression);
+  const waveNumber = (Math.PI * 2) / primaryWaveWavelength(settings.wavePeriod, compression);
   const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
-  return (x * directionX / directionLength + curvedZ * directionZ / directionLength) * waveNumber - elapsed * angularSpeed * 5.4;
+  return (x * directionX / directionLength + curvedZ * directionZ / directionLength) * waveNumber - elapsed * angularSpeed;
+}
+
+export function primaryWaveVelocityAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+) {
+  const steepness = character?.steepness ?? .7;
+  const peel = character?.peel ?? 0;
+  const variability = character?.variability ?? .4;
+  const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
+  const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
+  const coastalZ = z - shorelineShiftForTide(settings.tide);
+  const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
+  const breakZ = coastalZ + x * peel * .16 + section;
+  const shoaling = smoothstep(-32, 9, breakZ);
+  const shallowScale = .82 + (.69 - .82) * steepness;
+  const compression = 1 + (shallowScale - 1) * shoaling;
+  const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
+  const directionZ = Math.max(.45, Math.cos(waveAngle));
+  const directionLength = Math.hypot(directionX, directionZ);
+  const wavelength = primaryWaveWavelength(settings.wavePeriod, compression);
+  const phaseSpeed = wavelength / Math.max(4, settings.wavePeriod);
+  return {
+    x: directionX / directionLength * phaseSpeed,
+    z: directionZ / directionLength * phaseSpeed,
+    speed: phaseSpeed,
+    wavelength,
+  };
 }
 
 export function compassDirection(degrees: number) {
