@@ -1,10 +1,11 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Lightformer, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
+import { Effects, Environment, Lightformer, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
 import { createContext, MutableRefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings } from "@/lib/game";
@@ -7059,6 +7060,202 @@ function UnderwaterAtmosphere({
   return null;
 }
 
+const CINEMATIC_GRADE_SHADER = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uContrast: { value: 1 },
+    uSaturation: { value: 1 },
+    uWarmth: { value: 0 },
+    uVignette: { value: .05 },
+    uGrain: { value: .002 },
+    uUnderwater: { value: 0 },
+    uStorm: { value: 0 },
+    uNight: { value: 0 },
+    uSpray: { value: 0 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float uTime;
+    uniform float uContrast;
+    uniform float uSaturation;
+    uniform float uWarmth;
+    uniform float uVignette;
+    uniform float uGrain;
+    uniform float uUnderwater;
+    uniform float uStorm;
+    uniform float uNight;
+    uniform float uSpray;
+    varying vec2 vUv;
+
+    float luminance(vec3 color) {
+      return dot(color, vec3(.2126, .7152, .0722));
+    }
+
+    float interleavedGradientNoise(vec2 pixel, float frame) {
+      return fract(52.9829189 * fract(dot(pixel + frame * vec2(.067, .113), vec2(.06711056, .00583715))));
+    }
+
+    void main() {
+      vec4 source = texture2D(tDiffuse, vUv);
+      vec3 color = max(source.rgb, vec3(0.0));
+      float initialLuma = luminance(color);
+
+      // A restrained display curve keeps the ACES highlight roll-off while
+      // restoring just enough separation in wet materials and distant haze.
+      color = (color - vec3(.18)) * uContrast + vec3(.18);
+      float gradedLuma = luminance(color);
+      color = mix(vec3(gradedLuma), color, uSaturation);
+
+      float highlightWeight = smoothstep(.16, .78, initialLuma);
+      float shadowWeight = 1.0 - smoothstep(.04, .42, initialLuma);
+      color += vec3(.020, .006, -.017) * uWarmth * highlightWeight;
+      color += vec3(-.008, .003, .015) * uWarmth * -shadowWeight * .42;
+
+      float stormMix = uStorm * (.18 + shadowWeight * .12);
+      vec3 stormColor = mix(vec3(luminance(color)), color, .62) * vec3(.91, .995, 1.04);
+      color = mix(color, stormColor, stormMix);
+
+      vec3 nightColor = color * vec3(.84, .96, 1.08);
+      nightColor += vec3(.002, .008, .018) * shadowWeight;
+      color = mix(color, nightColor, uNight * .22);
+
+      // Approximate the wavelength loss that occurs beneath the surface:
+      // red falls away first, while suspended light lifts cyan-green mids.
+      vec3 absorbed = color * vec3(.52, .86, .96);
+      float underwaterLuma = luminance(absorbed);
+      absorbed = mix(vec3(underwaterLuma) * vec3(.55, 1.04, 1.08), absorbed, .68);
+      absorbed += vec3(0.0, .018, .024) * (1.0 - smoothstep(.2, .92, underwaterLuma));
+      color = mix(color, absorbed, uUnderwater);
+
+      float sprayVeil = uSpray * (1.0 - initialLuma) * .032;
+      color += vec3(.80, .94, .98) * sprayVeil;
+
+      vec2 centered = vUv * 2.0 - 1.0;
+      float edge = smoothstep(.2, 1.34, dot(centered, centered));
+      color *= 1.0 - edge * uVignette;
+
+      float noise = interleavedGradientNoise(gl_FragCoord.xy, uTime) - .5;
+      float shadowGrain = mix(.72, 1.42, 1.0 - smoothstep(.04, .68, luminance(color)));
+      color += noise * (uGrain * shadowGrain + 1.1 / 255.0);
+      color = max(color, vec3(0.0));
+
+      gl_FragColor = sRGBTransferOETF(vec4(color, source.a));
+    }
+  `,
+};
+
+function AdaptiveImagePipeline({
+  motion,
+  cloudFactor,
+  weather,
+  solarElevation,
+  mobile,
+  reducedMotion,
+}: {
+  motion: MutableRefObject<MotionState>;
+  cloudFactor: number;
+  weather: WeatherProfile;
+  solarElevation: number;
+  mobile: boolean;
+  reducedMotion: boolean;
+}) {
+  const quality = useRenderQuality();
+  const pass = useRef<ShaderPass>(null);
+  const exposure = useRef(1.08);
+  const targets = useRef({
+    contrast: 1,
+    saturation: 1,
+    warmth: 0,
+    vignette: .05,
+    grain: .002,
+    underwater: 0,
+    storm: 0,
+    night: 0,
+    spray: 0,
+  });
+  const gradeEnabled = !(mobile && quality === "reduced");
+
+  useFrame(({ clock, gl: renderer }, delta) => {
+    const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
+    const night = 1 - THREE.MathUtils.smoothstep(solarElevation, -.05, .18);
+    const goldenHour = 1 - THREE.MathUtils.smoothstep(Math.abs(solarElevation - .12), .04, .48);
+    const storm = weather.storm
+      ? 1
+      : THREE.MathUtils.clamp(weather.intensity * .52 + (weather.fog ? .28 : 0), 0, .72);
+    const spray = THREE.MathUtils.clamp(
+      Math.max(
+        motion.current.impact * .9,
+        motion.current.shorebreak * .58,
+        motion.current.wipeout * .78,
+        motion.current.barrel * .32,
+      ) * (1 - depth * .7),
+      0,
+      1,
+    );
+    const targetExposure = 1.055
+      + night * .19
+      + goldenHour * .045
+      - cloudFactor * .022
+      - storm * .052
+      - depth * .11;
+    exposure.current = THREE.MathUtils.damp(exposure.current, targetExposure, depth > .04 ? 7.5 : 2.8, delta);
+    renderer.toneMappingExposure = exposure.current;
+
+    const values = targets.current;
+    values.contrast = 1.025 + storm * .025 + depth * .018;
+    values.saturation = 1.035 - cloudFactor * .035 - storm * .085 - night * .045 - depth * .035;
+    values.warmth = goldenHour * .78 - storm * .34 - depth * .5;
+    values.vignette = .045 + motion.current.barrel * .028 + depth * .04 + storm * .012;
+    values.grain = reducedMotion ? .0012 : mobile ? .00165 : .00215;
+    values.underwater = depth;
+    values.storm = storm;
+    values.night = night;
+    values.spray = spray;
+
+    const uniforms = pass.current?.uniforms;
+    if (!uniforms) return;
+    uniforms.uTime.value = reducedMotion ? 0 : clock.elapsedTime * 37;
+    uniforms.uContrast.value = THREE.MathUtils.damp(uniforms.uContrast.value, values.contrast, 3.5, delta);
+    uniforms.uSaturation.value = THREE.MathUtils.damp(uniforms.uSaturation.value, values.saturation, 3.5, delta);
+    uniforms.uWarmth.value = THREE.MathUtils.damp(uniforms.uWarmth.value, values.warmth, 3.2, delta);
+    uniforms.uVignette.value = THREE.MathUtils.damp(uniforms.uVignette.value, values.vignette, 4, delta);
+    uniforms.uGrain.value = values.grain;
+    uniforms.uUnderwater.value = THREE.MathUtils.damp(uniforms.uUnderwater.value, values.underwater, 9, delta);
+    uniforms.uStorm.value = THREE.MathUtils.damp(uniforms.uStorm.value, values.storm, 2.5, delta);
+    uniforms.uNight.value = THREE.MathUtils.damp(uniforms.uNight.value, values.night, 2.5, delta);
+    uniforms.uSpray.value = THREE.MathUtils.damp(
+      uniforms.uSpray.value,
+      values.spray,
+      values.spray > uniforms.uSpray.value ? 10 : 3.5,
+      delta,
+    );
+  });
+
+  if (!gradeEnabled) return null;
+
+  return (
+    <Effects
+      key={`cinematic-${mobile ? "mobile" : "desktop"}-${quality}`}
+      multisamping={mobile ? 0 : quality === "high" ? 2 : 0}
+      type={mobile ? THREE.UnsignedByteType : THREE.HalfFloatType}
+      depthBuffer
+      stencilBuffer={false}
+      disableGamma
+    >
+      <shaderPass ref={pass} args={[CINEMATIC_GRADE_SHADER]} />
+    </Effects>
+  );
+}
+
 function UnderwaterSuspendedMatter({
   motion,
   settings,
@@ -9114,6 +9311,14 @@ function Simulation({
       {sunHeight < 0.22 && (
         <Sparkles count={renderQuality === "reduced" ? 34 : renderQuality === "balanced" ? 52 : 70} scale={[180, 48, 140]} position={[0, 20, -50]} size={0.7} speed={0.05} opacity={Math.max(.06, .45 * (1 - cloudFactor * .86))} color="#dcefff" />
       )}
+      <AdaptiveImagePipeline
+        motion={motion}
+        cloudFactor={cloudFactor}
+        weather={weather}
+        solarElevation={solarElevation}
+        mobile={mobileRenderer}
+        reducedMotion={reducedMotion}
+      />
     </>
   );
 }
