@@ -456,6 +456,30 @@ const centeredSteepDrop = advanceSurfboardDynamics(
 if (steepNosePressure.pearlingRisk < .4 || centeredSteepDrop.pearlingRisk > .01) {
   throw new Error("Steep-face nose pressure is not producing a distinct pearling risk");
 }
+const clearNoseContact = advanceSurfboardDynamics(
+  { velocityX: 0, velocityZ: 6, heading: 0, yawRate: 0 },
+  {
+    ...dynamicsSample,
+    stance: .68,
+    waveContact: .9,
+    noseImmersion: 0,
+  },
+);
+const immersedNoseContact = advanceSurfboardDynamics(
+  { velocityX: 0, velocityZ: 6, heading: 0, yawRate: 0 },
+  {
+    ...dynamicsSample,
+    stance: .68,
+    waveContact: .9,
+    noseImmersion: .15,
+  },
+);
+if (
+  immersedNoseContact.pearlingRisk < .35
+  || immersedNoseContact.accelerationZ >= clearNoseContact.accelerationZ - .25
+) {
+  throw new Error("Measured nose immersion is not creating additional hydrodynamic deceleration");
+}
 const lowSpeedTailPressure = advanceSurfboardDynamics(
   { velocityX: 0, velocityZ: 1, heading: 0, yawRate: 0 },
   {
@@ -764,6 +788,8 @@ console.log(JSON.stringify({
     longboardTurnRadians: longboardTurn.heading,
     currentDrift: currentDrift.velocityX,
     steepNosePearlingRisk: steepNosePressure.pearlingRisk,
+    immersedNosePearlingRisk: immersedNoseContact.pearlingRisk,
+    immersedNoseDeceleration: immersedNoseContact.accelerationZ,
     lowSpeedTailStall: lowSpeedTailPressure.tailStall,
   },
   paddlingDynamics: {

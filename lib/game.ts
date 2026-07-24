@@ -245,6 +245,8 @@ export type SurfboardDynamicsSample = {
   stance: number;
   railGrip: number;
   whitewater: number;
+  noseImmersion?: number;
+  tailImmersion?: number;
   turbulenceX?: number;
   turbulenceZ?: number;
   boardLength: number;
@@ -810,15 +812,32 @@ export function advanceSurfboardDynamics(
     + gravityAccelerationZ * forwardZ;
   const slopeAlongBoard = sample.surfaceSlopeX * forwardX
     + sample.surfaceSlopeZ * forwardZ;
-  const pearlingRisk = contact
+  const slopePearlingRisk = contact
     * smoothstep(.44, .92, nosePressure)
     * smoothstep(.075, .3, -slopeAlongBoard)
     * smoothstep(2.35, 6.8, Math.abs(forwardSpeed))
     * (.72 + whitewater * .28);
-  const tailStall = contact
+  const immersionPearlingRisk = contact
+    * smoothstep(.018, .17, Math.max(0, sample.noseImmersion ?? 0))
+    * smoothstep(1.65, 6.4, Math.abs(forwardSpeed))
+    * (.55 + nosePressure * .28 + whitewater * .17);
+  const pearlingRisk = Math.min(
+    1,
+    Math.max(slopePearlingRisk, immersionPearlingRisk),
+  );
+  const pressureTailStall = contact
     * smoothstep(.42, .94, tailPressure)
     * (1 - planing)
     * (1 - smoothstep(1.5, 4.2, Math.abs(forwardSpeed)));
+  const immersionTailStall = contact
+    * smoothstep(.016, .18, Math.max(0, sample.tailImmersion ?? 0))
+    * (1 - planing * .72)
+    * (1 - smoothstep(1.6, 4.6, Math.abs(forwardSpeed)))
+    * (.48 + tailPressure * .52 + whitewater * .12);
+  const tailStall = Math.min(
+    1,
+    Math.max(pressureTailStall, immersionTailStall),
+  );
 
   const normalSpeed = state.velocityX * waveNormalX
     + state.velocityZ * waveNormalZ;
@@ -828,7 +847,7 @@ export function advanceSurfboardDynamics(
     * waveDeficit
     * (.48 + Math.max(0, headingAlignment) * .72)
     * (.72 + Math.max(.25, sample.waveHeight) * .11)
-    * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .22);
+    * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .42);
   const wavePressureX = waveNormalX * wavePressure;
   const wavePressureZ = waveNormalZ * wavePressure;
 
@@ -838,7 +857,13 @@ export function advanceSurfboardDynamics(
     * lengthDragScale
     * widthDragScale
     * (1 - planing * .52)
-    * (1 + tailPressure * .22 - nosePressure * .06 + pearlingRisk * .7);
+    * (
+      1
+        + tailPressure * .22
+        - nosePressure * .06
+        + pearlingRisk * 2.2
+        + tailStall * .48
+    );
   const lateralDrag = (
     .2
       + grip * (.29 + planing * .24)
@@ -1353,6 +1378,11 @@ export type GameStats = {
   rollRate: number;
   rollEdgeRisk: number;
   capsizeRisk: number;
+  pitchAngle: number;
+  pitchRate: number;
+  noseImmersion: number;
+  tailImmersion: number;
+  pitchOverRisk: number;
   pearlingRisk: number;
   tailStall: number;
   waveQuality: number;
@@ -1456,6 +1486,11 @@ export const INITIAL_STATS: GameStats = {
   rollRate: 0,
   rollEdgeRisk: 0,
   capsizeRisk: 0,
+  pitchAngle: 0,
+  pitchRate: 0,
+  noseImmersion: 0,
+  tailImmersion: 0,
+  pitchOverRisk: 0,
   pearlingRisk: 0,
   tailStall: 0,
   waveQuality: 0,
