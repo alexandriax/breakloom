@@ -1,4 +1,5 @@
 import {
+  advanceSurfboardDynamics,
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
   evaluateBoardWaterInteraction,
@@ -334,6 +335,104 @@ if (backwardsBoard.outcome === "capture" || backwardsBoard.capture > .02) {
   throw new Error(`A board facing offshore captured the wave: ${JSON.stringify(backwardsBoard)}`);
 }
 
+const dynamicsSample = {
+  deltaSeconds: 1 / 60,
+  surfaceSlopeX: 0,
+  surfaceSlopeZ: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  currentVelocityX: 0,
+  currentVelocityZ: 0,
+  waveContact: .8,
+  railInput: 0,
+  stance: 0,
+  railGrip: .9,
+  whitewater: 0,
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  boardStability: 1,
+  waveHeight: 2,
+};
+const dynamicsState = {
+  velocityX: 0,
+  velocityZ: 2,
+  heading: 0,
+  yawRate: 0,
+};
+const flatDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveContact: 0,
+});
+if (flatDynamics.velocityZ >= dynamicsState.velocityZ || flatDynamics.velocityZ < 1.9) {
+  throw new Error(`Flat-water dynamics created thrust or excessive drag: ${JSON.stringify(flatDynamics)}`);
+}
+const downhillDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  surfaceSlopeZ: -.2,
+});
+const uphillDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  surfaceSlopeZ: .2,
+});
+if (
+  downhillDynamics.gravityDrive <= 0
+  || uphillDynamics.gravityDrive >= 0
+  || downhillDynamics.accelerationZ <= uphillDynamics.accelerationZ
+) {
+  throw new Error("Polygon slope is not producing directional gravity along the board");
+}
+if (downhillDynamics.velocityZ > dynamicsState.velocityZ + .2) {
+  throw new Error("One dynamics step snapped the board toward crest phase speed");
+}
+
+function dynamicsAfterOneSecond(board) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 5,
+    heading: 0,
+    yawRate: 0,
+  };
+  for (let frame = 0; frame < 60; frame += 1) {
+    state = advanceSurfboardDynamics(state, {
+      ...dynamicsSample,
+      railInput: 1,
+      stance: -.3,
+      ...board,
+    });
+  }
+  return state;
+}
+const performanceTurn = dynamicsAfterOneSecond({
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  boardStability: 1,
+});
+const longboardTurn = dynamicsAfterOneSecond({
+  boardLength: 3.45,
+  boardWidth: .43,
+  boardTurn: .82,
+  boardStability: 1.28,
+});
+if (performanceTurn.heading < .3) {
+  throw new Error(`A loaded performance rail failed to redirect momentum: ${performanceTurn.heading.toFixed(2)}rad`);
+}
+if (longboardTurn.heading >= performanceTurn.heading * .78) {
+  throw new Error("Longboard yaw inertia no longer distinguishes it from a shortboard");
+}
+const currentDrift = advanceSurfboardDynamics(
+  { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
+  {
+    ...dynamicsSample,
+    waveContact: 0,
+    currentVelocityX: .8,
+  },
+);
+if (currentDrift.velocityX <= 0) {
+  throw new Error("A resting board did not begin drifting with the current");
+}
+
 let marginalCapture = .22 + marginalTraining.averageQuality * .22;
 let marginalCaptureElapsed = 0;
 const marginalCaptureStrength = Math.min(
@@ -397,5 +496,12 @@ console.log(JSON.stringify({
       capture: reading.capture,
       crossWaveLoad: reading.crossWaveLoad,
     })),
+  },
+  dynamics: {
+    downhillAcceleration: downhillDynamics.accelerationZ,
+    uphillAcceleration: uphillDynamics.accelerationZ,
+    performanceTurnRadians: performanceTurn.heading,
+    longboardTurnRadians: longboardTurn.heading,
+    currentDrift: currentDrift.velocityX,
   },
 }, null, 2));

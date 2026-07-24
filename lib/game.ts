@@ -225,6 +225,236 @@ export type BoardWaterReading = {
   balanceTarget: number;
 };
 
+export type SurfboardDynamicsState = {
+  velocityX: number;
+  velocityZ: number;
+  heading: number;
+  yawRate: number;
+};
+
+export type SurfboardDynamicsSample = {
+  deltaSeconds: number;
+  surfaceSlopeX: number;
+  surfaceSlopeZ: number;
+  waveVelocityX: number;
+  waveVelocityZ: number;
+  currentVelocityX: number;
+  currentVelocityZ: number;
+  waveContact: number;
+  railInput: number;
+  stance: number;
+  railGrip: number;
+  whitewater: number;
+  turbulenceX?: number;
+  turbulenceZ?: number;
+  boardLength: number;
+  boardWidth: number;
+  boardTurn: number;
+  boardStability: number;
+  waveHeight: number;
+};
+
+export type SurfboardDynamicsReading = SurfboardDynamicsState & {
+  accelerationX: number;
+  accelerationZ: number;
+  forwardSpeed: number;
+  lateralSpeed: number;
+  planing: number;
+  railLoad: number;
+  sideslip: number;
+  gravityDrive: number;
+  wavePressure: number;
+};
+
+/**
+ * Integrates one horizontal surfboard step from forces at the sampled water
+ * polygon. Phase velocity is never assigned to the board. The board can only
+ * acquire it through breaking-wave pressure, projected gravity, and its own
+ * retained momentum; fins and the loaded rail then turn that momentum.
+ */
+export function advanceSurfboardDynamics(
+  state: SurfboardDynamicsState,
+  sample: SurfboardDynamicsSample,
+): SurfboardDynamicsReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const safeWidth = Math.max(.24, sample.boardWidth);
+  const stability = Math.max(.55, sample.boardStability);
+  const turn = Math.max(.45, sample.boardTurn);
+  const contact = Math.max(0, Math.min(1, sample.waveContact));
+  const grip = Math.max(0, Math.min(1, sample.railGrip));
+  const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const stance = Math.max(-1, Math.min(1, sample.stance));
+  const railInput = Math.max(-1, Math.min(1, sample.railInput));
+  const waveSpeed = Math.max(
+    .001,
+    Math.hypot(sample.waveVelocityX, sample.waveVelocityZ),
+  );
+  const waveNormalX = sample.waveVelocityX / waveSpeed;
+  const waveNormalZ = sample.waveVelocityZ / waveSpeed;
+
+  const initialForwardX = Math.sin(state.heading);
+  const initialForwardZ = Math.cos(state.heading);
+  const currentRelativeX = state.velocityX - sample.currentVelocityX;
+  const currentRelativeZ = state.velocityZ - sample.currentVelocityZ;
+  const initialForwardSpeed = currentRelativeX * initialForwardX
+    + currentRelativeZ * initialForwardZ;
+  const lengthPlaningScale = Math.sqrt(safeLength / 2.5);
+  const widthPlaningScale = Math.pow(safeWidth / .34, .16);
+  const planingThreshold = 2.45 / Math.max(.72, lengthPlaningScale * widthPlaningScale);
+  const planing = smoothstep(
+    .48,
+    Math.max(.5, planingThreshold * 1.55),
+    Math.abs(initialForwardSpeed),
+  ) * (.36 + contact * .64);
+
+  const speedAuthority = smoothstep(
+    .42,
+    Math.max(.43, 4.7 / Math.sqrt(turn)),
+    Math.abs(initialForwardSpeed),
+  );
+  const tailPressure = Math.max(0, -stance);
+  const nosePressure = Math.max(0, stance);
+  const lengthYawInertia = Math.pow(safeLength / 2.5, 1.28);
+  const targetYawRate = railInput
+    * turn
+    * speedAuthority
+    * (.32 + Math.abs(initialForwardSpeed) * .055)
+    * (.34 + grip * .66)
+    * (1 + tailPressure * .34 - nosePressure * .12)
+    / lengthYawInertia;
+  const yawResponse = (
+    2.15
+      + Math.abs(initialForwardSpeed) * .23
+      + grip * 1.15
+  ) / Math.sqrt(lengthYawInertia);
+  let yawRate = state.yawRate + (
+    targetYawRate - state.yawRate
+  ) * (1 - Math.exp(-yawResponse * delta));
+  yawRate *= Math.exp(-delta * (.42 + (1 - speedAuthority) * 1.8));
+  const heading = state.heading + yawRate * delta;
+  const forwardX = Math.sin(heading);
+  const forwardZ = Math.cos(heading);
+  const rightX = Math.cos(heading);
+  const rightZ = -Math.sin(heading);
+
+  // Surface particles move far slower than the crest itself. A small orbital
+  // component gives the board moving water to react against without making the
+  // phase speed a conveyor belt.
+  const orbitalCoupling = .035 + contact * (
+    .09 + Math.max(0, sample.waveHeight) * .018
+  );
+  const waterVelocityX = sample.currentVelocityX
+    + sample.waveVelocityX * orbitalCoupling;
+  const waterVelocityZ = sample.currentVelocityZ
+    + sample.waveVelocityZ * orbitalCoupling;
+  const relativeX = state.velocityX - waterVelocityX;
+  const relativeZ = state.velocityZ - waterVelocityZ;
+  const forwardSpeed = relativeX * forwardX + relativeZ * forwardZ;
+  const lateralSpeed = relativeX * rightX + relativeZ * rightZ;
+
+  const slopeMagnitudeSquared = sample.surfaceSlopeX * sample.surfaceSlopeX
+    + sample.surfaceSlopeZ * sample.surfaceSlopeZ;
+  const gravityScale = 9.81 / Math.max(1, 1 + slopeMagnitudeSquared);
+  const gravityAccelerationX = -sample.surfaceSlopeX
+    * gravityScale
+    * (.74 + planing * .26);
+  const gravityAccelerationZ = -sample.surfaceSlopeZ
+    * gravityScale
+    * (.74 + planing * .26);
+  const gravityDrive = gravityAccelerationX * forwardX
+    + gravityAccelerationZ * forwardZ;
+
+  const normalSpeed = state.velocityX * waveNormalX
+    + state.velocityZ * waveNormalZ;
+  const waveDeficit = Math.max(0, waveSpeed - normalSpeed);
+  const headingAlignment = forwardX * waveNormalX + forwardZ * waveNormalZ;
+  const wavePressure = contact
+    * waveDeficit
+    * (.48 + Math.max(0, headingAlignment) * .72)
+    * (.72 + Math.max(.25, sample.waveHeight) * .11);
+  const wavePressureX = waveNormalX * wavePressure;
+  const wavePressureZ = waveNormalZ * wavePressure;
+
+  const lengthDragScale = Math.pow(2.5 / safeLength, .58);
+  const widthDragScale = Math.pow(safeWidth / .34, .46);
+  const longitudinalDrag = (.033 + whitewater * .035)
+    * lengthDragScale
+    * widthDragScale
+    * (1 - planing * .52);
+  const lateralDrag = (
+    .2
+      + grip * (.29 + planing * .24)
+      + Math.abs(railInput) * grip * .12
+  ) * widthDragScale / Math.sqrt(stability);
+  const dragForward = -forwardSpeed
+    * Math.abs(forwardSpeed)
+    * longitudinalDrag;
+  const dragLateral = -lateralSpeed
+    * Math.abs(lateralSpeed)
+    * lateralDrag;
+  const turbulenceX = (sample.turbulenceX ?? 0)
+    * whitewater
+    / Math.sqrt(stability);
+  const turbulenceZ = (sample.turbulenceZ ?? 0)
+    * whitewater
+    / Math.sqrt(stability);
+  let accelerationX = gravityAccelerationX
+    + wavePressureX
+    + forwardX * dragForward
+    + rightX * dragLateral
+    + turbulenceX;
+  let accelerationZ = gravityAccelerationZ
+    + wavePressureZ
+    + forwardZ * dragForward
+    + rightZ * dragLateral
+    + turbulenceZ;
+  const accelerationMagnitude = Math.hypot(accelerationX, accelerationZ);
+  const accelerationLimit = 13.5 + whitewater * 4;
+  if (accelerationMagnitude > accelerationLimit) {
+    const scale = accelerationLimit / accelerationMagnitude;
+    accelerationX *= scale;
+    accelerationZ *= scale;
+  }
+
+  let velocityX = state.velocityX + accelerationX * delta;
+  let velocityZ = state.velocityZ + accelerationZ * delta;
+  const speed = Math.hypot(velocityX, velocityZ);
+  const speedLimit = Math.max(18, waveSpeed * 1.62 + sample.waveHeight * .8);
+  if (speed > speedLimit) {
+    const scale = speedLimit / speed;
+    velocityX *= scale;
+    velocityZ *= scale;
+  }
+  const sideslip = Math.max(
+    0,
+    Math.min(
+      1,
+      Math.abs(lateralSpeed) / Math.max(1.2, Math.abs(forwardSpeed) + .4),
+    ),
+  );
+  const railLoad = railInput
+    * speedAuthority
+    * grip
+    * (1 + tailPressure * .18)
+    * (1 - sideslip * .28);
+  return {
+    velocityX,
+    velocityZ,
+    heading: Math.atan2(Math.sin(heading), Math.cos(heading)),
+    yawRate,
+    accelerationX,
+    accelerationZ,
+    forwardSpeed,
+    lateralSpeed,
+    planing,
+    railLoad,
+    sideslip,
+    gravityDrive,
+    wavePressure,
+  };
+}
+
 /**
  * Resolves what the water is physically doing to the board at its current
  * position. This deliberately has no lineup, tutorial, or action-button input:
