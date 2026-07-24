@@ -734,9 +734,71 @@ export type PaddleboardDynamicsState = {
   yawRate: number;
 };
 
+export type PaddleStrokeCycleState = {
+  phase: number;
+};
+
+export type PaddleStrokeCycleSample = {
+  deltaSeconds: number;
+  effort: number;
+  steer: number;
+  stamina: number;
+};
+
+export type PaddleStrokeCycleReading = PaddleStrokeCycleState & {
+  drive: number;
+  pull: number;
+  strokeSide: number;
+  cadence: number;
+};
+
+/**
+ * Resolves alternating prone paddle strokes. Input expresses effort, while
+ * force exists only through each hand's pull phase; recovery advances the arm
+ * without propelling the board.
+ */
+export function advancePaddleStrokeCycle(
+  state: PaddleStrokeCycleState,
+  sample: PaddleStrokeCycleSample,
+): PaddleStrokeCycleReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const effort = Math.max(0, Math.min(1, sample.effort));
+  const steer = Math.max(-1, Math.min(1, sample.steer));
+  const stamina = Math.max(0, Math.min(100, sample.stamina));
+  const cadence = 1.16
+    + effort * .58
+    + stamina * .0022;
+  const phase = effort > .015
+    ? (state.phase + cadence * delta) % 2
+    : state.phase;
+  const strokeSide = phase < 1 ? -1 : 1;
+  const localPhase = phase % 1;
+  const pullProgress = (localPhase - .1) / .74;
+  const pull = pullProgress > 0 && pullProgress < 1
+    ? Math.sin(pullProgress * Math.PI)
+    : 0;
+  const steeringBias = Math.max(
+    .48,
+    Math.min(1.52, 1 + strokeSide * steer * .42),
+  );
+  const fatigueScale = .72 + stamina * .0028;
+  const drive = Math.max(
+    0,
+    Math.min(1, effort * pull * steeringBias * fatigueScale),
+  );
+  return {
+    phase,
+    drive,
+    pull,
+    strokeSide,
+    cadence,
+  };
+}
+
 export type PaddleboardDynamicsSample = {
   deltaSeconds: number;
   stroke: number;
+  strokeSide?: number;
   steer: number;
   surfaceSlopeX: number;
   surfaceSlopeZ: number;
@@ -769,6 +831,10 @@ export function advancePaddleboardDynamics(
 ): PaddleboardDynamicsReading {
   const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
   const stroke = Math.max(-1, Math.min(1, sample.stroke));
+  const strokeSide = Math.max(
+    -1,
+    Math.min(1, sample.strokeSide ?? 0),
+  );
   const steer = Math.max(-1, Math.min(1, sample.steer));
   const safeLength = Math.max(1.6, sample.boardLength);
   const safeWidth = Math.max(.24, sample.boardWidth);
@@ -781,7 +847,17 @@ export function advancePaddleboardDynamics(
       + Math.min(1.2, speed * .16)
       + Math.abs(stroke) * .3
   ) * turn / yawInertia;
-  const targetYawRate = -steer * yawAuthority;
+  const steeringTorque = -steer
+    * (
+      .24
+        + Math.abs(stroke) * .54
+        + Math.min(.34, speed * .055)
+    );
+  const alternatingStrokeTorque = -strokeSide
+    * Math.max(0, stroke)
+    * .16;
+  const targetYawRate = (steeringTorque + alternatingStrokeTorque)
+    * yawAuthority;
   const yawResponse = (2.2 + Math.abs(stroke) * 1.4) / Math.sqrt(yawInertia);
   let yawRate = state.yawRate + (
     targetYawRate - state.yawRate
@@ -803,7 +879,7 @@ export function advancePaddleboardDynamics(
   const forwardSpeed = relativeX * forwardX + relativeZ * forwardZ;
   const lateralSpeed = relativeX * rightX + relativeZ * rightZ;
   const strokeForce = stroke >= 0
-    ? stroke * (2.55 + paddleEfficiency * 1.05)
+    ? stroke * (4.8 + paddleEfficiency * 2.1)
     : stroke * 1.45;
   const lengthDragScale = Math.pow(2.5 / safeLength, .62);
   const widthDragScale = Math.pow(safeWidth / .34, .42);

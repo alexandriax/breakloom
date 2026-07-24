@@ -511,7 +511,7 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
 
 const TRAINING_STEPS = [
   { title: "Enter the shallows", detail: "Move from the sand into the water." },
-  { title: "Paddle with intent", detail: "Hold W for alternating strokes, steer with A/D, and dive under committed lips." },
+  { title: "Paddle with intent", detail: "Hold W for alternating pulls. A/D biases the outside hand to rotate the board; release W to coast." },
   { title: "Reach the lineup", detail: "Keep the nose aimed offshore and paddle beyond the breaking water." },
   { title: "Turn for shore", detail: "Follow the heading arrow until the board points with the approaching wave." },
   { title: "Choose when to stand", detail: "Space always stands. Flat water stalls; a matched face captures; a broadside wall tumbles you." },
@@ -3106,7 +3106,7 @@ export default function SurfscapeApp() {
           : !stats.inLineup
             ? {
                 cue: "PADDLE OUT",
-                detail: "Hold W · use A/D to keep the nose aimed through the whitewater.",
+                detail: "Hold W for left/right pull-and-recovery cycles · A/D shifts force between hands.",
                 rotation: -90,
                 tone: "paddle",
               }
@@ -3127,7 +3127,7 @@ export default function SurfscapeApp() {
                 : stats.crestDistance > -.8 && stats.crestDistance < 11 && stats.speed < 1.6
                   ? {
                       cue: "BUILD BOARD SPEED",
-                      detail: "Each W stroke adds force; keep the nose aligned and carry momentum into the pop-up.",
+                      detail: "Each hand only drives during its pull. Keep W held, align the nose, and carry the pulsed momentum.",
                       rotation: -90,
                       tone: "paddle",
                     }

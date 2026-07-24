@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -348,6 +348,7 @@ type MotionState = {
   wetness: number;
   exertion: number;
   paddleEffort: number;
+  paddleStroke: number;
   waveQuality: number;
   facePosition: number;
   linePosition: number;
@@ -3260,10 +3261,15 @@ function PremiumSurferBody({
         surface.clearcoatRoughness = THREE.MathUtils.damp(surface.clearcoatRoughness, THREE.MathUtils.lerp(baseClearcoatRoughness, isHair ? .12 : .2, surfaceWetness), 4, delta);
       }
     });
-    const paddlePhase = t * (4.2 + state.paddleEffort * 2.4);
-    const stroke = paddle ? Math.sin(paddlePhase) * state.paddleEffort * (1 - takeoffPlant) : 0;
-    const leftPull = paddle ? Math.max(0, -Math.sin(paddlePhase)) * state.paddleEffort : 0;
-    const rightPull = paddle ? Math.max(0, Math.sin(paddlePhase)) * state.paddleEffort : 0;
+    const stroke = paddle
+      ? state.paddleStroke * (1 - takeoffPlant)
+      : 0;
+    const leftPull = paddle
+      ? Math.max(0, -state.paddleStroke) * (1 - takeoffPlant)
+      : 0;
+    const rightPull = paddle
+      ? Math.max(0, state.paddleStroke) * (1 - takeoffPlant)
+      : 0;
     const paddleRoll = paddle ? stroke * .085 * (1 - state.duckDive) : 0;
     const stride = walking ? THREE.MathUtils.smoothstep(state.speed, .12, 1.3) : 0;
     const cadence = 2.5 + state.speed * (1.48 + state.run * .26);
@@ -5321,11 +5327,9 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       }
     };
 
-    const paddlePhase = clock.elapsedTime * (4.2 + state.paddleEffort * 2.4);
-    const paddleWave = Math.sin(paddlePhase);
     const paddlePulls = [
-      paddling ? Math.max(0, -paddleWave) * state.paddleEffort * (1 - state.duckDive) : 0,
-      paddling ? Math.max(0, paddleWave) * state.paddleEffort * (1 - state.duckDive) : 0,
+      paddling ? Math.max(0, -state.paddleStroke) * (1 - state.duckDive) : 0,
+      paddling ? Math.max(0, state.paddleStroke) * (1 - state.duckDive) : 0,
     ];
     paddlePulls.forEach((pull, index) => {
       if (pull > .38 && previousPaddlePull.current[index] <= .38) {
@@ -9343,6 +9347,7 @@ function VanDriver({
     driverMotion.current.run = 0;
     driverMotion.current.waterDepth = 0;
     driverMotion.current.paddleEffort = 0;
+    driverMotion.current.paddleStroke = 0;
 
     root.current.visible = driving || transitioning;
     if (transitioning) {
@@ -10671,6 +10676,7 @@ function Simulation({
   const paddleHeading = useRef(0);
   const paddleVelocity = useRef(new THREE.Vector2());
   const paddleYawRate = useRef(0);
+  const paddleStrokeCycle = useRef({ phase: 0 });
   const rideVelocity = useRef(new THREE.Vector2());
   const rideAcceleration = useRef(new THREE.Vector2());
   const rideYawRate = useRef(0);
@@ -10757,6 +10763,7 @@ function Simulation({
     wetness: 0,
     exertion: 0,
     paddleEffort: 0,
+    paddleStroke: 0,
     waveQuality: 0,
     facePosition: 0,
     linePosition: 0,
@@ -11261,6 +11268,7 @@ function Simulation({
     let landingWindow = 0;
     let runBlend = 0;
     let paddleEffort = 0;
+    let physicalPaddleStroke = 0;
     let rideOutProgress = 0;
     let takeoffCommitProgress = 0;
     let boardAlignment = 1;
@@ -11507,6 +11515,7 @@ function Simulation({
           phase.current = "paddling";
           paddleHeading.current = playerHeading.current;
           paddleYawRate.current = 0;
+          paddleStrokeCycle.current.phase = 0;
           paddleVelocity.current.copy(landVelocity.current).multiplyScalar(.55);
           nextShorebreakAt.current = t + (settings.mode === "training" ? 3.2 : 2.55);
           shorebreakResult.current = "";
@@ -11520,6 +11529,18 @@ function Simulation({
           100,
         );
         paddleEffort = Math.max(0, move);
+        const paddleStroke = advancePaddleStrokeCycle(
+          paddleStrokeCycle.current,
+          {
+            deltaSeconds: delta,
+            effort: paddleEffort,
+            steer,
+            stamina: stamina.current,
+          },
+        );
+        paddleStrokeCycle.current.phase = paddleStroke.phase;
+        physicalPaddleStroke = paddleStroke.strokeSide
+          * paddleStroke.drive;
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
         const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
         const currentSpeed = settings.currentStrength / 3.6;
@@ -11544,7 +11565,8 @@ function Simulation({
           },
           {
             deltaSeconds: delta,
-            stroke: move,
+            stroke: move >= 0 ? paddleStroke.drive : move,
+            strokeSide: paddleStroke.strokeSide,
             steer,
             surfaceSlopeX: paddleSurface.slopeX,
             surfaceSlopeZ: paddleSurface.slopeZ,
@@ -13858,6 +13880,12 @@ function Simulation({
       delta,
     );
     motion.current.paddleEffort = THREE.MathUtils.damp(motion.current.paddleEffort, paddleEffort, 9, delta);
+    motion.current.paddleStroke = THREE.MathUtils.damp(
+      motion.current.paddleStroke,
+      phase.current === "paddling" ? physicalPaddleStroke : 0,
+      18,
+      delta,
+    );
     const exertionTarget = THREE.MathUtils.clamp(
       runBlend * .48
         + Math.min(Math.abs(speed) / 13, 1) * .16

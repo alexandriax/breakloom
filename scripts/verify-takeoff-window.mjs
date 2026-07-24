@@ -3,6 +3,7 @@ import {
   advanceBoardPitchDynamics,
   advanceBoardRollDynamics,
   advancePaddleboardDynamics,
+  advancePaddleStrokeCycle,
   advanceSurfboardDynamics,
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
@@ -795,13 +796,25 @@ function paddleForFrames(frameCount, sample = paddlingSample) {
     heading: 0,
     yawRate: 0,
   };
+  let strokeCycle = { phase: 0 };
   for (let frame = 0; frame < frameCount; frame += 1) {
-    state = advancePaddleboardDynamics(state, sample);
+    const cycle = advancePaddleStrokeCycle(strokeCycle, {
+      deltaSeconds: sample.deltaSeconds,
+      effort: Math.max(0, sample.stroke),
+      steer: sample.steer,
+      stamina: 82,
+    });
+    strokeCycle = cycle;
+    state = advancePaddleboardDynamics(state, {
+      ...sample,
+      stroke: sample.stroke > 0 ? cycle.drive : sample.stroke,
+      strokeSide: cycle.strokeSide,
+    });
   }
   return state;
 }
 const steadyPaddle = paddleForFrames(600);
-if (steadyPaddle.velocityZ < 2.6 || steadyPaddle.velocityZ > 4.2) {
+if (steadyPaddle.velocityZ < 2 || steadyPaddle.velocityZ > 3.4) {
   throw new Error(`Human paddle force produced an implausible terminal speed: ${steadyPaddle.velocityZ.toFixed(2)}m/s`);
 }
 let paddleCoast = steadyPaddle;
@@ -841,6 +854,79 @@ if (
   || Math.abs(longboardPaddleTurn.heading) >= Math.abs(performancePaddleTurn.heading) * .78
 ) {
   throw new Error("Prone board yaw inertia no longer distinguishes a longboard from a shortboard");
+}
+let cycleProbe = { phase: 0 };
+let leftStrokeImpulse = 0;
+let rightStrokeImpulse = 0;
+let neutralDriveIntegral = 0;
+for (let frame = 0; frame < 1200; frame += 1) {
+  const cycle = advancePaddleStrokeCycle(cycleProbe, {
+    deltaSeconds: 1 / 60,
+    effort: 1,
+    steer: 0,
+    stamina: 82,
+  });
+  cycleProbe = cycle;
+  neutralDriveIntegral += cycle.drive;
+  if (cycle.strokeSide < 0) leftStrokeImpulse += cycle.drive;
+  else rightStrokeImpulse += cycle.drive;
+}
+const averageStrokeDrive = neutralDriveIntegral / 1200;
+if (
+  averageStrokeDrive < .4
+  || averageStrokeDrive > .55
+  || Math.abs(leftStrokeImpulse - rightStrokeImpulse)
+    / Math.max(1, leftStrokeImpulse + rightStrokeImpulse) > .025
+) {
+  throw new Error("Alternating paddle cadence no longer produces balanced pulsed thrust");
+}
+let steeringCycle = { phase: 0 };
+let steeringLeftImpulse = 0;
+let steeringRightImpulse = 0;
+for (let frame = 0; frame < 360; frame += 1) {
+  const cycle = advancePaddleStrokeCycle(steeringCycle, {
+    deltaSeconds: 1 / 60,
+    effort: 1,
+    steer: 1,
+    stamina: 82,
+  });
+  steeringCycle = cycle;
+  if (cycle.strokeSide < 0) steeringLeftImpulse += cycle.drive;
+  else steeringRightImpulse += cycle.drive;
+}
+if (Math.abs(steeringLeftImpulse - steeringRightImpulse) < 20) {
+  throw new Error("Paddle steering is not biasing force between left and right pulls");
+}
+const leftHandPull = advancePaddleboardDynamics(
+  {
+    velocityX: 0,
+    velocityZ: 1.4,
+    heading: 0,
+    yawRate: 0,
+  },
+  {
+    ...paddlingSample,
+    stroke: .8,
+    strokeSide: -1,
+    steer: 0,
+  },
+);
+const rightHandPull = advancePaddleboardDynamics(
+  {
+    velocityX: 0,
+    velocityZ: 1.4,
+    heading: 0,
+    yawRate: 0,
+  },
+  {
+    ...paddlingSample,
+    stroke: .8,
+    strokeSide: 1,
+    steer: 0,
+  },
+);
+if (leftHandPull.yawRate <= 0 || rightHandPull.yawRate >= 0) {
+  throw new Error("Paddle-side torque is rotating the board toward the pulling hand");
 }
 
 let marginalCapture = .22 + marginalTraining.averageQuality * .22;
@@ -925,6 +1011,8 @@ console.log(JSON.stringify({
     currentDrift: paddleCurrent.velocityX,
     performanceTurnRadians: performancePaddleTurn.heading,
     longboardTurnRadians: longboardPaddleTurn.heading,
+    averageStrokeDrive,
+    steeringImpulseDifference: steeringRightImpulse - steeringLeftImpulse,
   },
   rollDynamics: {
     performanceRailAngle: loadedPerformanceRail.rollAngle,
