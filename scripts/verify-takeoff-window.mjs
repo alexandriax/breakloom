@@ -433,6 +433,38 @@ const currentDrift = advanceSurfboardDynamics(
 if (currentDrift.velocityX <= 0) {
   throw new Error("A resting board did not begin drifting with the current");
 }
+const steepNosePressure = advanceSurfboardDynamics(
+  { velocityX: 0, velocityZ: 6, heading: 0, yawRate: 0 },
+  {
+    ...dynamicsSample,
+    surfaceSlopeZ: -.28,
+    stance: .92,
+    waveContact: .9,
+  },
+);
+const centeredSteepDrop = advanceSurfboardDynamics(
+  { velocityX: 0, velocityZ: 6, heading: 0, yawRate: 0 },
+  {
+    ...dynamicsSample,
+    surfaceSlopeZ: -.28,
+    stance: 0,
+    waveContact: .9,
+  },
+);
+if (steepNosePressure.pearlingRisk < .4 || centeredSteepDrop.pearlingRisk > .01) {
+  throw new Error("Steep-face nose pressure is not producing a distinct pearling risk");
+}
+const lowSpeedTailPressure = advanceSurfboardDynamics(
+  { velocityX: 0, velocityZ: 1, heading: 0, yawRate: 0 },
+  {
+    ...dynamicsSample,
+    stance: -.92,
+    waveContact: .9,
+  },
+);
+if (lowSpeedTailPressure.tailStall < .3) {
+  throw new Error("Heavy tail pressure at low speed is not stalling the board");
+}
 
 const paddlingSample = {
   deltaSeconds: 1 / 60,
@@ -574,6 +606,8 @@ console.log(JSON.stringify({
     performanceTurnRadians: performanceTurn.heading,
     longboardTurnRadians: longboardTurn.heading,
     currentDrift: currentDrift.velocityX,
+    steepNosePearlingRisk: steepNosePressure.pearlingRisk,
+    lowSpeedTailStall: lowSpeedTailPressure.tailStall,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,

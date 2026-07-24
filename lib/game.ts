@@ -264,6 +264,8 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   sideslip: number;
   gravityDrive: number;
   wavePressure: number;
+  pearlingRisk: number;
+  tailStall: number;
 };
 
 export type PaddleboardDynamicsState = {
@@ -418,9 +420,13 @@ export function advanceSurfboardDynamics(
   const currentRelativeZ = state.velocityZ - sample.currentVelocityZ;
   const initialForwardSpeed = currentRelativeX * initialForwardX
     + currentRelativeZ * initialForwardZ;
+  const tailPressure = Math.max(0, -stance);
+  const nosePressure = Math.max(0, stance);
   const lengthPlaningScale = Math.sqrt(safeLength / 2.5);
   const widthPlaningScale = Math.pow(safeWidth / .34, .16);
-  const planingThreshold = 2.45 / Math.max(.72, lengthPlaningScale * widthPlaningScale);
+  const planingThreshold = 2.45
+    * (1 + tailPressure * .16 - nosePressure * .08)
+    / Math.max(.72, lengthPlaningScale * widthPlaningScale);
   const planing = smoothstep(
     .48,
     Math.max(.5, planingThreshold * 1.55),
@@ -432,8 +438,6 @@ export function advanceSurfboardDynamics(
     Math.max(.43, 4.7 / Math.sqrt(turn)),
     Math.abs(initialForwardSpeed),
   );
-  const tailPressure = Math.max(0, -stance);
-  const nosePressure = Math.max(0, stance);
   const lengthYawInertia = Math.pow(safeLength / 2.5, 1.28);
   const targetYawRate = railInput
     * turn
@@ -483,6 +487,17 @@ export function advanceSurfboardDynamics(
     * (.74 + planing * .26);
   const gravityDrive = gravityAccelerationX * forwardX
     + gravityAccelerationZ * forwardZ;
+  const slopeAlongBoard = sample.surfaceSlopeX * forwardX
+    + sample.surfaceSlopeZ * forwardZ;
+  const pearlingRisk = contact
+    * smoothstep(.44, .92, nosePressure)
+    * smoothstep(.075, .3, -slopeAlongBoard)
+    * smoothstep(2.35, 6.8, Math.abs(forwardSpeed))
+    * (.72 + whitewater * .28);
+  const tailStall = contact
+    * smoothstep(.42, .94, tailPressure)
+    * (1 - planing)
+    * (1 - smoothstep(1.5, 4.2, Math.abs(forwardSpeed)));
 
   const normalSpeed = state.velocityX * waveNormalX
     + state.velocityZ * waveNormalZ;
@@ -491,7 +506,8 @@ export function advanceSurfboardDynamics(
   const wavePressure = contact
     * waveDeficit
     * (.48 + Math.max(0, headingAlignment) * .72)
-    * (.72 + Math.max(.25, sample.waveHeight) * .11);
+    * (.72 + Math.max(.25, sample.waveHeight) * .11)
+    * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .22);
   const wavePressureX = waveNormalX * wavePressure;
   const wavePressureZ = waveNormalZ * wavePressure;
 
@@ -500,7 +516,8 @@ export function advanceSurfboardDynamics(
   const longitudinalDrag = (.033 + whitewater * .035)
     * lengthDragScale
     * widthDragScale
-    * (1 - planing * .52);
+    * (1 - planing * .52)
+    * (1 + tailPressure * .22 - nosePressure * .06 + pearlingRisk * .7);
   const lateralDrag = (
     .2
       + grip * (.29 + planing * .24)
@@ -571,6 +588,8 @@ export function advanceSurfboardDynamics(
     sideslip,
     gravityDrive,
     wavePressure,
+    pearlingRisk,
+    tailStall,
   };
 }
 
@@ -1009,6 +1028,8 @@ export type GameStats = {
   boardWaveAngle: number;
   crossWaveLoad: number;
   planing: number;
+  pearlingRisk: number;
+  tailStall: number;
   waveQuality: number;
   facePosition: number;
   linePosition: number;
@@ -1106,6 +1127,8 @@ export const INITIAL_STATS: GameStats = {
   boardWaveAngle: 0,
   crossWaveLoad: 0,
   planing: 0,
+  pearlingRisk: 0,
+  tailStall: 0,
   waveQuality: 0,
   facePosition: 0,
   linePosition: 0,

@@ -11205,6 +11205,8 @@ function Simulation({
     let boardWaveAngle = 0;
     let crossWaveLoad = 0;
     let boardPlaning = 0;
+    let pearlingRisk = 0;
+    let tailStall = 0;
     if (currentPhase !== "wipeout") {
       breath.current = Math.min(100, breath.current + delta * 28);
       wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
@@ -12073,6 +12075,8 @@ function Simulation({
           );
           rideHeading.current = standingDynamics.heading;
           rideYawRate.current = standingDynamics.yawRate;
+          pearlingRisk = standingDynamics.pearlingRisk;
+          tailStall = standingDynamics.tailStall;
           position.current.x += rideVelocity.current.x * delta;
           position.current.z += rideVelocity.current.y * delta;
           speed = rideVelocity.current.length();
@@ -12140,6 +12144,8 @@ function Simulation({
                 balanceFailure * 2.2
                   + standingReading.wipeoutRisk * 1.65
                   + Math.max(0, standingReading.crossWaveLoad - .36) * .72
+                  + pearlingRisk * 1.45
+                  + tailStall * .42
                   - (balanceFailure <= .001 ? .48 : 0)
               ),
           );
@@ -12265,7 +12271,11 @@ function Simulation({
               unstableFor.current = 0;
               prompt = "Back prone — paddle to reposition";
             } else if (standingReading.waveContact > .18) {
-              prompt = standingReading.broadside > .58
+              prompt = pearlingRisk > .34
+                ? "Too much nose pressure on the drop — shift back before the nose buries"
+                : tailStall > .42
+                  ? "The tail is sinking — center your stance to restore glide"
+              : standingReading.broadside > .58
                 ? `Wave loading the ${standingReading.crossWaveSide > 0 ? "right" : "left"} rail — turn the nose or counterweight`
                 : standingReading.headingAlignment < .18
                   ? "Point the nose with the wave before the wall reaches you"
@@ -12536,6 +12546,8 @@ function Simulation({
         );
         rideHeading.current = dynamics.heading;
         rideYawRate.current = dynamics.yawRate;
+        pearlingRisk = dynamics.pearlingRisk;
+        tailStall = dynamics.tailStall;
         gravityPlaning = Math.max(gravityPlaning, dynamics.planing);
         const dynamicSlip = dynamics.sideslip * (
           settings.mode === "training" ? .46 : settings.mode === "advanced" ? .95 : .74
@@ -12741,6 +12753,12 @@ function Simulation({
         unstableFor.current += broadsideFailure * delta * (
           settings.mode === "training" ? .42 : settings.mode === "advanced" ? 1.35 : .86
         );
+        unstableFor.current += pearlingRisk * delta * (
+          settings.mode === "training" ? 1.2 : settings.mode === "advanced" ? 3.5 : 2.3
+        );
+        unstableFor.current += tailStall * delta * (
+          settings.mode === "training" ? .08 : settings.mode === "advanced" ? .34 : .2
+        );
         const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
         const lineMatch = THREE.MathUtils.clamp(
           .64 + lineControl * .36 - whitewaterPressure * .12,
@@ -12925,6 +12943,10 @@ function Simulation({
             ? `Board loaded ${Math.round(trickCharge.current * 100)}% · release to throw the move`
           : actionReleased && railSlip.current >= .78
           ? "Fins released — reconnect the rail before the next move"
+          : pearlingRisk > .34
+            ? "Nose burying — shift weight back before the board pearls"
+          : tailStall > .42
+            ? "Tail stalled — center your weight and point down the slope"
           : crossWaveLoad > .72
             ? `The wall is loading the board broadside — point the nose ${boardWaveAngle > 0 ? "right" : "left"} or expect a tumble`
           : whitewaterPressure > .58
@@ -12971,7 +12993,8 @@ function Simulation({
               + shoulderStall * .035
               + railSlip.current * .08
               + Math.min(1, crossWaveLoad) * .13
-              + dynamics.sideslip * .08,
+              + dynamics.sideslip * .08
+              + pearlingRisk * .16,
             0,
             1,
           );
@@ -14247,6 +14270,8 @@ function Simulation({
         boardWaveAngle,
         crossWaveLoad,
         planing: boardPlaning,
+        pearlingRisk,
+        tailStall,
         waveQuality,
         facePosition: motion.current.facePosition,
         linePosition: motion.current.linePosition,

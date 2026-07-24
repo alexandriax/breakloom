@@ -2986,9 +2986,13 @@ export default function SurfscapeApp() {
         { label: "Finish a clean line", done: currentCoastRecord.mastery >= 2 || stats.rideResult === "clean" },
         { label: "Earn A · 25 m pocket · 2 moves or 2s tube", done: currentCoastRecord.mastery >= 3 || liveMasteryThree },
       ];
-  const stanceLabel = stats.stance > 0.42 ? "NOSE DRIVE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
-  const hydrodynamicLoadLabel = stats.whitewaterPressure > .35
-    ? `WHITEWATER ${Math.round(stats.whitewaterPressure * 100)}%`
+  const stanceLabel = stats.stance > 0.42 ? "NOSE PRESSURE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
+  const hydrodynamicLoadLabel = stats.pearlingRisk > .32
+    ? `NOSE BURIAL ${Math.round(stats.pearlingRisk * 100)}%`
+    : stats.tailStall > .38
+      ? `TAIL STALL ${Math.round(stats.tailStall * 100)}%`
+    : stats.whitewaterPressure > .35
+      ? `WHITEWATER ${Math.round(stats.whitewaterPressure * 100)}%`
     : stats.barrelIntensity > .25
       ? `TUBE PRESSURE ${Math.round(stats.barrelIntensity * 100)}%`
     : Math.abs(stats.lateralForce) > .52
@@ -3084,7 +3088,21 @@ export default function SurfscapeApp() {
                     tone: "align",
                   }
         : standingOnBoard
-          ? stats.crossWaveLoad > .28
+          ? stats.pearlingRisk > .32
+            ? {
+                cue: "NOSE BURYING · SHIFT BACK",
+                detail: `${Math.round(stats.pearlingRisk * 100)}% pearl risk · move pressure toward the tail.`,
+                rotation: 90,
+                tone: "danger",
+              }
+            : stats.tailStall > .38
+              ? {
+                  cue: "TAIL SINKING · RECENTER",
+                  detail: "The board is below planing speed; center your stance before turning.",
+                  rotation: -90,
+                  tone: "align",
+                }
+          : stats.crossWaveLoad > .28
             ? {
                 cue: `RAIL HIT · TURN ${headingTurn}`,
                 detail: `Cross-wave load ${Math.round(stats.crossWaveLoad * 100)}% · Q/E counterweights the roll.`,
@@ -3098,7 +3116,21 @@ export default function SurfscapeApp() {
                 tone: "balance",
               }
           : stats.phase === "riding" && stats.waveEngaged
-            ? stats.crossWaveLoad > .48
+            ? stats.pearlingRisk > .32
+              ? {
+                  cue: "NOSE BURYING · SHIFT BACK",
+                  detail: `${Math.round(stats.pearlingRisk * 100)}% pearl risk on this slope · ease off the nose.`,
+                  rotation: 90,
+                  tone: "danger",
+                }
+              : stats.tailStall > .38
+                ? {
+                    cue: "TAIL STALL · RECENTER",
+                    detail: "Too much rear pressure at low speed is sinking the tail and killing the plane.",
+                    rotation: -90,
+                    tone: "align",
+                  }
+            : stats.crossWaveLoad > .48
               ? {
                   cue: `BOARD BROADSIDE · TURN ${headingTurn}`,
                   detail: `${Math.round(stats.crossWaveLoad * 100)}% wall load · point the nose before the rail trips.`,
