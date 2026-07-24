@@ -326,7 +326,6 @@ export function advanceBoardRollDynamics(
     * crossWaveLoad
     * (1.75 + whitewater * .85);
   const turbulenceTorque = (sample.turbulenceTorque ?? 0)
-    * whitewater
     / Math.sqrt(stability);
   const externalTorque = surfaceTorque
     + accelerationTorque
@@ -1178,6 +1177,10 @@ export type GameStats = {
   boardWaveAngle: number;
   crossWaveLoad: number;
   planing: number;
+  rollAngle: number;
+  rollRate: number;
+  rollEdgeRisk: number;
+  capsizeRisk: number;
   pearlingRisk: number;
   tailStall: number;
   waveQuality: number;
@@ -1277,6 +1280,10 @@ export const INITIAL_STATS: GameStats = {
   boardWaveAngle: 0,
   crossWaveLoad: 0,
   planing: 0,
+  rollAngle: 0,
+  rollRate: 0,
+  rollEdgeRisk: 0,
+  capsizeRisk: 0,
   pearlingRisk: 0,
   tailStall: 0,
   waveQuality: 0,

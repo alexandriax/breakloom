@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advancePaddleboardDynamics, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceBoardRollDynamics, advancePaddleboardDynamics, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -61,6 +61,7 @@ export type ReplayTelemetry = {
   linePosition: number;
   railGrip: number;
   railLoad: number;
+  rollAngle: number;
   whitewater: number;
   stance: number;
   power: number;
@@ -368,6 +369,7 @@ type MotionState = {
   stance: number;
   barrel: number;
   rail: number;
+  roll: number;
   compression: number;
   slip: number;
   impact: number;
@@ -405,6 +407,8 @@ type ReplayRestoreState = {
   rideVelocity: THREE.Vector2;
   rideAcceleration: THREE.Vector2;
   rideYawRate: number;
+  boardRollAngle: number;
+  boardRollRate: number;
   wipeoutVelocity: THREE.Vector2;
   phase: GamePhase;
   playerHeading: number;
@@ -488,6 +492,7 @@ function replayTelemetryFromMotion(motion: MotionState): ReplayTelemetry {
     linePosition: THREE.MathUtils.clamp(motion.linePosition, -1, 1),
     railGrip: THREE.MathUtils.clamp(1 - motion.slip, 0, 1),
     railLoad: THREE.MathUtils.clamp(motion.rail, -1, 1),
+    rollAngle: motion.roll,
     whitewater: THREE.MathUtils.clamp(motion.whitewater, 0, 1),
     stance: THREE.MathUtils.clamp(motion.stance, -1, 1),
     power: THREE.MathUtils.clamp(
@@ -4263,13 +4268,13 @@ function SurferModel({
       carrying
         ? (-.12 + carryStep * .026) * carryBlend
         : riding
-          ? (state.rail * -.27 - state.maneuverSide * state.maneuver * .22 - state.lateralForce * .045 + foamChatter * .032) * (1 - rideSettle * .88)
+          ? (-state.maneuverSide * state.maneuver * .22 - state.lateralForce * .045 + foamChatter * .032) * (1 - rideSettle * .88)
           : 0
     ) + rig.current.rotation.z;
     const dynamics = boardDynamics.current;
 
     if (wipeout && !dynamics.active) {
-      const throwSide = Math.sign(state.lineSide || state.rail || 1);
+      const throwSide = Math.sign(state.roll || state.lineSide || state.rail || 1);
       const throwPower = 1 + state.impact * .78 + state.slip * .42 + state.wipeoutPower * .58;
       dynamics.active = true;
       dynamics.offset.set(
@@ -10638,6 +10643,8 @@ function Simulation({
   const rideVelocity = useRef(new THREE.Vector2());
   const rideAcceleration = useRef(new THREE.Vector2());
   const rideYawRate = useRef(0);
+  const boardRollAngle = useRef(0);
+  const boardRollRate = useRef(0);
   const rideEngaged = useRef(false);
   const cameraForward = useRef(new THREE.Vector3(0, 0, -1));
   const cameraRight = useRef(new THREE.Vector3(1, 0, 0));
@@ -10741,6 +10748,7 @@ function Simulation({
     stance: 0,
     barrel: 0,
     rail: 0,
+    roll: 0,
     compression: 0,
     slip: 0,
     impact: 0,
@@ -10877,6 +10885,8 @@ function Simulation({
         rideVelocity.current.copy(restore.rideVelocity);
         rideAcceleration.current.copy(restore.rideAcceleration);
         rideYawRate.current = restore.rideYawRate;
+        boardRollAngle.current = restore.boardRollAngle;
+        boardRollRate.current = restore.boardRollRate;
         wipeoutVelocity.current.copy(restore.wipeoutVelocity);
         phase.current = restore.phase;
         playerHeading.current = restore.playerHeading;
@@ -10955,6 +10965,8 @@ function Simulation({
           rideVelocity: rideVelocity.current.clone(),
           rideAcceleration: rideAcceleration.current.clone(),
           rideYawRate: rideYawRate.current,
+          boardRollAngle: boardRollAngle.current,
+          boardRollRate: boardRollRate.current,
           wipeoutVelocity: wipeoutVelocity.current.clone(),
           phase: phase.current,
           playerHeading: playerHeading.current,
@@ -11082,6 +11094,8 @@ function Simulation({
         );
         rideAcceleration.current.set(0, 0);
         rideYawRate.current = 0;
+        boardRollAngle.current = 0;
+        boardRollRate.current = 0;
         rideHeading.current = Math.atan2(rideVelocity.current.x, rideVelocity.current.y);
         catchQuality.current = .92;
         rideTakeoffQuality.current = .92;
@@ -11207,6 +11221,10 @@ function Simulation({
     let boardPlaning = 0;
     let pearlingRisk = 0;
     let tailStall = 0;
+    let physicalRollAngle = boardRollAngle.current;
+    let physicalRollRate = boardRollRate.current;
+    let rollEdgeRisk = 0;
+    let rollCapsizeRisk = 0;
     if (currentPhase !== "wipeout") {
       breath.current = Math.min(100, breath.current + delta * 28);
       wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
@@ -11715,6 +11733,8 @@ function Simulation({
           rideVelocity.current.copy(paddleVelocity.current);
           rideAcceleration.current.set(0, 0);
           rideYawRate.current = 0;
+          boardRollAngle.current = 0;
+          boardRollRate.current = 0;
           rideHeading.current = paddleHeading.current;
           barrelTime.current = 0;
           stance.current = 0;
@@ -12036,6 +12056,46 @@ function Simulation({
           const standingCurrentSpeed = settings.currentStrength / 3.6;
           const standingCurrentX = Math.sin(standingCurrentAngle) * standingCurrentSpeed;
           const standingCurrentZ = -Math.cos(standingCurrentAngle) * standingCurrentSpeed;
+          const standingRollRightX = Math.cos(rideHeading.current);
+          const standingRollRightZ = -Math.sin(rideHeading.current);
+          const standingCrossSlope = standingSurface.slopeX * standingRollRightX
+            + standingSurface.slopeZ * standingRollRightZ;
+          const standingLateralAcceleration = rideAcceleration.current.x * standingRollRightX
+            + rideAcceleration.current.y * standingRollRightZ;
+          const standingTurbulenceTorque = (
+            Math.sin(t * 1.73 + position.current.x * .08) * .32
+              + Math.sin(t * 2.41 - position.current.z * .06) * .18
+          ) * (
+            .42 + Math.min(1, settings.windSpeed / 18) * .58
+          );
+          const standingRoll = advanceBoardRollDynamics(
+            {
+              rollAngle: boardRollAngle.current,
+              rollRate: boardRollRate.current,
+            },
+            {
+              deltaSeconds: delta,
+              railInput: standingSteer,
+              counterweight: balanceInput,
+              crossSlope: standingCrossSlope,
+              lateralAcceleration: standingLateralAcceleration,
+              crossWaveLoad: standingReading.crossWaveLoad,
+              crossWaveSide: standingReading.crossWaveSide,
+              turbulenceTorque: standingTurbulenceTorque,
+              speed: rideVelocity.current.length(),
+              planing: standingReading.planing,
+              boardWidth: boardSpec.width,
+              boardStability: boardSpec.stability,
+              whitewater: standingReading.wipeoutRisk,
+            },
+          );
+          boardRollAngle.current = standingRoll.rollAngle;
+          boardRollRate.current = standingRoll.rollRate;
+          physicalRollAngle = standingRoll.rollAngle;
+          physicalRollRate = standingRoll.rollRate;
+          rollEdgeRisk = standingRoll.edgeRisk;
+          rollCapsizeRisk = standingRoll.capsizeRisk;
+          balanceTarget = standingRoll.balanceTarget;
           const previousStandingVelocityX = rideVelocity.current.x;
           const previousStandingVelocityZ = rideVelocity.current.y;
           const standingDynamics = advanceSurfboardDynamics(
@@ -12054,7 +12114,7 @@ function Simulation({
               currentVelocityX: standingCurrentX,
               currentVelocityZ: standingCurrentZ,
               waveContact: standingReading.waveContact,
-              railInput: standingSteer,
+              railInput: standingRoll.effectiveRail,
               stance: stance.current,
               railGrip: THREE.MathUtils.clamp(
                 1 - railSlip.current * .72 - standingReading.crossWaveLoad * .16,
@@ -12114,46 +12174,28 @@ function Simulation({
             1,
           );
 
-          const chopBalance = (
-            Math.sin(t * 1.73 + position.current.x * .08) * .12
-              + Math.sin(t * 2.41 - position.current.z * .06) * .07
-          ) * (
-            .42 + Math.min(1, settings.windSpeed / 18) * .58
-          );
-          balanceTarget = THREE.MathUtils.clamp(
-            standingReading.balanceTarget + chopBalance,
-            -.92,
-            .92,
-          );
           const standingBalanceError = Math.abs(balanceInput - balanceTarget);
-          const standingFailThreshold = (
-            settings.mode === "training"
-              ? .58
-              : settings.mode === "advanced"
-                ? .4
-                : .48
-          ) * Math.sqrt(boardSpec.stability);
-          const balanceFailure = Math.max(
-            0,
-            standingBalanceError - standingFailThreshold,
-          );
           unstableFor.current = Math.max(
             0,
             unstableFor.current
               + delta * (
-                balanceFailure * 2.2
-                  + standingReading.wipeoutRisk * 1.65
+                rollEdgeRisk * (
+                  settings.mode === "training" ? .52 : settings.mode === "advanced" ? 1.5 : .92
+                )
+                  + rollCapsizeRisk * 2.4
+                  + Math.max(0, Math.abs(physicalRollRate) - 1.15) * .16
+                  + standingReading.wipeoutRisk * .72
                   + Math.max(0, standingReading.crossWaveLoad - .36) * .72
                   + pearlingRisk * 1.45
                   + tailStall * .42
-                  - (balanceFailure <= .001 ? .48 : 0)
+                  - (rollEdgeRisk < .08 ? .48 : 0)
               ),
           );
           railSlip.current = THREE.MathUtils.damp(
             railSlip.current,
             THREE.MathUtils.clamp(
               standingReading.crossWaveLoad * .54
-                + standingBalanceError * .24
+                + rollEdgeRisk * .28
                 + standingDynamics.sideslip * .32,
               0,
               1,
@@ -12226,7 +12268,7 @@ function Simulation({
                 standingReading.wipeoutRisk > .78
                 || unstableFor.current > .22
               );
-            if (standingTumble || unstableFor.current > (
+            if (standingTumble || rollCapsizeRisk > .72 || unstableFor.current > (
               settings.mode === "training" ? .82 : settings.mode === "advanced" ? .38 : .56
             )) {
               phase.current = "wipeout";
@@ -12236,6 +12278,7 @@ function Simulation({
                 .18
                   + standingReading.wipeoutRisk * .58
                   + standingReading.crossWaveLoad * .2
+                  + rollCapsizeRisk * .18
                   + setState.energy * .08,
                 .18,
                 1,
@@ -12456,11 +12499,6 @@ function Simulation({
         }
         const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const railDemand = Math.abs(rideSteer)
-          * (.72 + speed * .035)
-          * (1 + nosePressure * .16 - tailPressure * .12)
-          * (.92 + tideSteepness * .1)
-          * (1 + highFace * .08 + tubePressure * .1);
         const railGrip = gripBase
           + priorWaveQuality * .2
           + tailPressure * .08
@@ -12468,9 +12506,6 @@ function Simulation({
           - highFace * .045
           - tubePressure * .035
           - whitewaterPressure * (.12 + onshoreChop * .045);
-        const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
-        const assistedSlip = settings.mode === "training" ? rawSlip * .34 : rawSlip;
-        railSlip.current = THREE.MathUtils.damp(railSlip.current, assistedSlip, assistedSlip > railSlip.current ? 7.5 : 3.4, delta);
         const foamCrossChop = Math.sin(
           t * (8.8 + setState.energy * 1.6)
             + position.current.x * .19
@@ -12509,6 +12544,62 @@ function Simulation({
           boardStability: boardSpec.stability,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
         });
+        const rollRightX = Math.cos(rideHeading.current);
+        const rollRightZ = -Math.sin(rideHeading.current);
+        const rollCrossSlope = rideSurface.slopeX * rollRightX
+          + rideSurface.slopeZ * rollRightZ;
+        const priorLateralAcceleration = rideAcceleration.current.x * rollRightX
+          + rideAcceleration.current.y * rollRightZ;
+        const rollPlaningEstimate = Math.max(
+          gravityPlaning,
+          THREE.MathUtils.clamp(
+            speed / Math.max(1.4, waveTransport.speed * .72),
+            0,
+            1,
+          ),
+        );
+        const rideRoll = advanceBoardRollDynamics(
+          {
+            rollAngle: boardRollAngle.current,
+            rollRate: boardRollRate.current,
+          },
+          {
+            deltaSeconds: delta,
+            railInput: rideSteer,
+            counterweight: balanceInput,
+            crossSlope: rollCrossSlope,
+            lateralAcceleration: priorLateralAcceleration,
+            crossWaveLoad: rideInteraction.crossWaveLoad,
+            crossWaveSide: rideInteraction.crossWaveSide,
+            turbulenceTorque: brokenWaterTangent * whitewaterPressure * .22,
+            speed,
+            planing: rollPlaningEstimate,
+            boardWidth: boardSpec.width,
+            boardStability: boardSpec.stability,
+            whitewater: whitewaterPressure,
+          },
+        );
+        boardRollAngle.current = rideRoll.rollAngle;
+        boardRollRate.current = rideRoll.rollRate;
+        physicalRollAngle = rideRoll.rollAngle;
+        physicalRollRate = rideRoll.rollRate;
+        rollEdgeRisk = rideRoll.edgeRisk;
+        rollCapsizeRisk = rideRoll.capsizeRisk;
+        balanceTarget = rideRoll.balanceTarget;
+        const physicalRailInput = rideRoll.effectiveRail;
+        const railDemand = Math.abs(physicalRailInput)
+          * (.72 + speed * .035)
+          * (1 + nosePressure * .16 - tailPressure * .12)
+          * (.92 + tideSteepness * .1)
+          * (1 + highFace * .08 + tubePressure * .1);
+        const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
+        const assistedSlip = settings.mode === "training" ? rawSlip * .34 : rawSlip;
+        railSlip.current = THREE.MathUtils.damp(
+          railSlip.current,
+          assistedSlip,
+          assistedSlip > railSlip.current ? 7.5 : 3.4,
+          delta,
+        );
         const previousRideVelocityX = rideVelocity.current.x;
         const previousRideVelocityZ = rideVelocity.current.y;
         const dynamics = advanceSurfboardDynamics(
@@ -12527,7 +12618,7 @@ function Simulation({
             currentVelocityX: rideCurrentX,
             currentVelocityZ: rideCurrentZ,
             waveContact: rideInteraction.waveContact * (1 - rideOutProgress * .72),
-            railInput: rideSteer,
+            railInput: physicalRailInput,
             stance: stance.current,
             railGrip: THREE.MathUtils.clamp(1 - railSlip.current * .78, .08, 1),
             whitewater: whitewaterPressure,
@@ -12552,7 +12643,11 @@ function Simulation({
         const dynamicSlip = dynamics.sideslip * (
           settings.mode === "training" ? .46 : settings.mode === "advanced" ? .95 : .74
         );
-        const slipTarget = Math.max(assistedSlip, dynamicSlip);
+        const slipTarget = Math.max(
+          assistedSlip,
+          dynamicSlip,
+          rollEdgeRisk * (settings.mode === "training" ? .3 : .56),
+        );
         railSlip.current = THREE.MathUtils.damp(
           railSlip.current,
           slipTarget,
@@ -12675,36 +12770,8 @@ function Simulation({
         speed = rideStep / Math.max(.001, delta);
         rideDistance.current += rideStep;
         if (lineControl > .5) pocketDistance.current += rideStep;
-        const balanceSurface = waveSurfaceFrameAt(
-          position.current.x,
-          position.current.z,
-          t,
-          settings,
-          character,
-        );
         const boardRightX = Math.cos(rideHeading.current);
         const boardRightZ = -Math.sin(rideHeading.current);
-        const crossFaceSlope = balanceSurface.slopeX * boardRightX
-          + balanceSurface.slopeZ * boardRightZ;
-        const physicalBalanceTarget = (
-          crossFaceSlope * .34
-          - rideLateralForce * .18
-          - railLoad * .07
-          + stance.current * .035
-          + Math.sign(rideSteer || 1) * railSlip.current * .08
-          + Math.sin(t * 9.4 + position.current.x * .16) * whitewaterPressure * .13
-          + Math.sin(t * 11.2 - position.current.z * .09) * tubePressure * .045
-        ) / Math.sqrt(boardSpec.stability);
-        const balanceAssist = settings.mode === "training"
-          ? .48
-          : settings.mode === "advanced"
-            ? 1
-            : .76;
-        balanceTarget = THREE.MathUtils.clamp(
-          physicalBalanceTarget * balanceAssist,
-          -.72,
-          .72,
-        );
         const attempt = activeManeuver.current;
         const loadAvailable = !finishing && !attempt && t - lastManeuverAt.current > .72 && stamina.current > 5 && railSlip.current < .8;
         if (loadAvailable && state.action) {
@@ -12737,7 +12804,17 @@ function Simulation({
         }
         const balanceError = Math.abs(balanceInput - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.42 : settings.mode === "advanced" ? .76 : 1) * Math.sqrt(boardSpec.stability);
-        unstableFor.current = balanceError > failThreshold ? unstableFor.current + delta : Math.max(0, unstableFor.current - delta * 1.8);
+        const rollFailureLoad = rollEdgeRisk * (
+          settings.mode === "training" ? .46 : settings.mode === "advanced" ? 1.35 : .82
+        )
+          + rollCapsizeRisk * 2.65
+          + Math.max(0, Math.abs(physicalRollRate) - 1.35) * .14;
+        unstableFor.current = Math.max(
+          0,
+          unstableFor.current + delta * (
+            rollFailureLoad - (rollEdgeRisk < .08 ? 1.8 : 0)
+          ),
+        );
         unstableFor.current += whitewaterPressure * delta * (
           settings.mode === "training" ? .16 : settings.mode === "advanced" ? .72 : .46
         );
@@ -12859,7 +12936,7 @@ function Simulation({
         const wantsRelease = !attempt && actionReleased;
         if (!finishing && wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
           const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
-          const rail = Math.abs(steer);
+          const rail = Math.abs(physicalRailInput);
           let name = rideFacePosition.current < -.42 ? "Bottom Turn" : "High Line";
           let family: ManeuverAttempt["family"] = rideFacePosition.current < -.42 ? "carve" : "trim";
           let base = rideFacePosition.current < -.42 ? 185 : 150;
@@ -12910,7 +12987,7 @@ function Simulation({
           maneuverScore.current = 0;
           maneuverQuality.current = 0;
           lastManeuverAt.current = t;
-          const side = steer || (balanceInput >= 0 ? 1 : -1);
+          const side = physicalRailInput || (balanceInput >= 0 ? 1 : -1);
           const baseDuration = family === "air" ? 1.04 : name === "Nose Ride" ? .92 : name === "Foam Floater" ? .8 : family === "carve" ? .78 : .7;
           const timingScale = settings.mode === "training" ? 1.12 : settings.mode === "advanced" ? .94 : 1;
           activeManeuver.current = {
@@ -12947,12 +13024,16 @@ function Simulation({
             ? "Nose burying — shift weight back before the board pearls"
           : tailStall > .42
             ? "Tail stalled — center your weight and point down the slope"
+          : rollCapsizeRisk > .62
+            ? "Board rolling past its righting limit — counterweight now"
+          : rollEdgeRisk > .46
+            ? `Rail angle ${Math.round(Math.abs(physicalRollAngle) * 180 / Math.PI)}° — ease the lean before the edge catches`
           : crossWaveLoad > .72
             ? `The wall is loading the board broadside — point the nose ${boardWaveAngle > 0 ? "right" : "left"} or expect a tumble`
           : whitewaterPressure > .58
             ? `Whitewater on the rail · drive ${rideLineSide.current > 0 ? "right" : "left"} toward the open face`
           : balanceError > failThreshold * 0.76
-          ? "Shift your weight toward the marker"
+          ? "Counterweight toward the marker to cancel the roll torque"
           : railSlip.current > .55
             ? "Rail releasing — soften the turn or load the tail"
           : inBarrel
@@ -12976,9 +13057,16 @@ function Simulation({
                 : Math.abs(character.peel) > .18
                   ? `${character.peel > 0 ? "Right" : "Left"} shoulder opening · set the rail toward the caustic seam`
                   : "W nose pressure · S tail pressure · A/D load the rail";
-        if (!qaScenario && !finishing && unstableFor.current > (
-          settings.mode === "training" ? 2.35 : settings.mode === "advanced" ? .86 : 1.42
-        )) {
+        if (
+          !qaScenario
+          && !finishing
+          && (
+            rollCapsizeRisk > .9
+            || unstableFor.current > (
+              settings.mode === "training" ? 2.35 : settings.mode === "advanced" ? .86 : 1.42
+            )
+          )
+        ) {
           phase.current = "wipeout";
           rideEngaged.current = false;
           wipeoutAt.current = t;
@@ -12994,7 +13082,9 @@ function Simulation({
               + railSlip.current * .08
               + Math.min(1, crossWaveLoad) * .13
               + dynamics.sideslip * .08
-              + pearlingRisk * .16,
+              + pearlingRisk * .16
+              + rollCapsizeRisk * .18
+              + rollEdgeRisk * .08,
             0,
             1,
           );
@@ -13217,6 +13307,8 @@ function Simulation({
         whitewaterPressure = replayMotion.whitewater;
         barrelIntensity = replayMotion.barrel;
         railLoad = replayMotion.rail;
+        physicalRollAngle = replayMotion.roll;
+        physicalRollRate = 0;
         compression = replayMotion.compression;
         rideDrive = replayMotion.acceleration;
         rideLateralForce = replayMotion.lateralForce;
@@ -13262,6 +13354,10 @@ function Simulation({
       rideVelocity.current.y = THREE.MathUtils.damp(rideVelocity.current.y, 0, 5.5, delta);
       rideAcceleration.current.x = THREE.MathUtils.damp(rideAcceleration.current.x, 0, 7, delta);
       rideAcceleration.current.y = THREE.MathUtils.damp(rideAcceleration.current.y, 0, 7, delta);
+      boardRollRate.current = THREE.MathUtils.damp(boardRollRate.current, 0, 6.5, delta);
+      boardRollAngle.current = THREE.MathUtils.damp(boardRollAngle.current, 0, 4.2, delta);
+      physicalRollAngle = boardRollAngle.current;
+      physicalRollRate = boardRollRate.current;
       rideDrive = 0;
       rideLateralForce = 0;
       railLoad = 0;
@@ -13353,7 +13449,7 @@ function Simulation({
     );
     player.current.rotation.z = THREE.MathUtils.damp(
       player.current.rotation.z,
-      surfaceRoll + (phase.current === "riding" ? -balanceInput * 0.17 : 0),
+      surfaceRoll + (phase.current === "riding" ? -motion.current.roll : 0),
       phase.current === "riding" ? 8 : 5.8,
       delta,
     );
@@ -13472,6 +13568,12 @@ function Simulation({
     motion.current.stance = stance.current;
     motion.current.barrel = THREE.MathUtils.damp(motion.current.barrel, barrelIntensity, 6, delta);
     motion.current.rail = THREE.MathUtils.damp(motion.current.rail, railLoad, 8, delta);
+    motion.current.roll = THREE.MathUtils.damp(
+      motion.current.roll,
+      phase.current === "riding" ? physicalRollAngle : 0,
+      phase.current === "riding" ? 13 : 6,
+      delta,
+    );
     motion.current.compression = THREE.MathUtils.damp(motion.current.compression, compression, 7, delta);
     motion.current.slip = THREE.MathUtils.damp(motion.current.slip, railSlip.current, 8, delta);
     motion.current.impact = Math.max(0, motion.current.impact - delta * 1.9);
@@ -14185,7 +14287,7 @@ function Simulation({
     camera.lookAt(cameraLookTarget.current);
     const rollScale = cameraMode === "cinematic" ? .48 : cameraMode === "pov" ? .7 : cameraMode === "immersive" ? 1.16 : 1;
     const cameraBankTarget = (riding
-      ? -motion.current.rail * .022 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012
+      ? -motion.current.roll * .07 - motion.current.maneuverSide * motion.current.maneuver * .025 - Math.sign(motion.current.rail) * motion.current.slip * .012
       : driving
         ? -vanMotion.current.lateralG * .034 - Math.sign(vanMotion.current.steer || 1) * vanMotion.current.slip * .012
         : phase.current === "wipeout"
@@ -14270,6 +14372,10 @@ function Simulation({
         boardWaveAngle,
         crossWaveLoad,
         planing: boardPlaning,
+        rollAngle: physicalRollAngle,
+        rollRate: physicalRollRate,
+        rollEdgeRisk,
+        capsizeRisk: rollCapsizeRisk,
         pearlingRisk,
         tailStall,
         waveQuality,
