@@ -1,4 +1,5 @@
 import {
+  advanceBoardRollDynamics,
   advancePaddleboardDynamics,
   advanceSurfboardDynamics,
   advanceRideCaptureState,
@@ -466,6 +467,93 @@ if (lowSpeedTailPressure.tailStall < .3) {
   throw new Error("Heavy tail pressure at low speed is not stalling the board");
 }
 
+const rollSample = {
+  deltaSeconds: 1 / 60,
+  railInput: 0,
+  counterweight: 0,
+  crossSlope: 0,
+  lateralAcceleration: 0,
+  crossWaveLoad: 0,
+  crossWaveSide: 1,
+  speed: 5,
+  planing: .82,
+  boardWidth: .32,
+  boardStability: .9,
+  whitewater: 0,
+};
+function rollForFrames(frameCount, sample = rollSample, initial = {
+  rollAngle: 0,
+  rollRate: 0,
+}) {
+  let state = initial;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    state = advanceBoardRollDynamics(state, sample);
+  }
+  return state;
+}
+const centeredRoll = rollForFrames(180);
+if (Math.abs(centeredRoll.rollAngle) > .001 || Math.abs(centeredRoll.rollRate) > .001) {
+  throw new Error("A centered board developed roll without an applied torque");
+}
+const loadedPerformanceRail = rollForFrames(60, {
+  ...rollSample,
+  railInput: .8,
+});
+const loadedLongboardRail = rollForFrames(60, {
+  ...rollSample,
+  railInput: .8,
+  boardWidth: .43,
+  boardStability: 1.28,
+});
+if (
+  loadedPerformanceRail.effectiveRail < .32
+  || loadedLongboardRail.rollAngle >= loadedPerformanceRail.rollAngle * .84
+) {
+  throw new Error("Board width and stability no longer produce distinct roll inertia");
+}
+const recoveredRail = rollForFrames(
+  150,
+  rollSample,
+  loadedPerformanceRail,
+);
+if (Math.abs(recoveredRail.rollAngle) >= Math.abs(loadedPerformanceRail.rollAngle) * .45) {
+  throw new Error("Hydrodynamic righting force did not recover a released rail");
+}
+const crossWaveProbe = advanceBoardRollDynamics(
+  { rollAngle: 0, rollRate: 0 },
+  {
+    ...rollSample,
+    speed: 1.2,
+    planing: .12,
+    crossSlope: .12,
+    crossWaveLoad: .72,
+    whitewater: .3,
+  },
+);
+const unbalancedCrossWave = rollForFrames(75, {
+  ...rollSample,
+  speed: 1.2,
+  planing: .12,
+  crossSlope: .12,
+  crossWaveLoad: .72,
+  whitewater: .3,
+});
+const counterweightedCrossWave = rollForFrames(75, {
+  ...rollSample,
+  speed: 1.2,
+  planing: .12,
+  crossSlope: .12,
+  crossWaveLoad: .72,
+  whitewater: .3,
+  counterweight: crossWaveProbe.balanceTarget,
+});
+if (
+  unbalancedCrossWave.edgeRisk < .35
+  || Math.abs(counterweightedCrossWave.rollAngle) >= Math.abs(unbalancedCrossWave.rollAngle) * .55
+) {
+  throw new Error("Counterweight is not physically opposing cross-wave roll torque");
+}
+
 const paddlingSample = {
   deltaSeconds: 1 / 60,
   stroke: 1,
@@ -615,5 +703,12 @@ console.log(JSON.stringify({
     currentDrift: paddleCurrent.velocityX,
     performanceTurnRadians: performancePaddleTurn.heading,
     longboardTurnRadians: longboardPaddleTurn.heading,
+  },
+  rollDynamics: {
+    performanceRailAngle: loadedPerformanceRail.rollAngle,
+    longboardRailAngle: loadedLongboardRail.rollAngle,
+    releasedRailAngle: recoveredRail.rollAngle,
+    crossWaveEdgeRisk: unbalancedCrossWave.edgeRisk,
+    counterweightedAngle: counterweightedCrossWave.rollAngle,
   },
 }, null, 2));

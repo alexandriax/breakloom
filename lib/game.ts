@@ -268,6 +268,156 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   tailStall: number;
 };
 
+export type BoardRollState = {
+  rollAngle: number;
+  rollRate: number;
+};
+
+export type BoardRollSample = {
+  deltaSeconds: number;
+  railInput: number;
+  counterweight: number;
+  crossSlope: number;
+  lateralAcceleration: number;
+  crossWaveLoad: number;
+  crossWaveSide: number;
+  turbulenceTorque?: number;
+  speed: number;
+  planing: number;
+  boardWidth: number;
+  boardStability: number;
+  whitewater: number;
+};
+
+export type BoardRollReading = BoardRollState & {
+  rollAcceleration: number;
+  effectiveRail: number;
+  balanceTarget: number;
+  externalTorque: number;
+  rightingMoment: number;
+  edgeRisk: number;
+  capsizeRisk: number;
+};
+
+/**
+ * Integrates board roll around its longitudinal axis. Rider rail pressure and
+ * impact torque must overcome buoyant/planing righting moments; counterweight
+ * acts as an opposing body torque rather than a direct success-meter value.
+ */
+export function advanceBoardRollDynamics(
+  state: BoardRollState,
+  sample: BoardRollSample,
+): BoardRollReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const railInput = Math.max(-1, Math.min(1, sample.railInput));
+  const counterweight = Math.max(-1, Math.min(1, sample.counterweight));
+  const stability = Math.max(.55, sample.boardStability);
+  const widthScale = Math.max(.7, sample.boardWidth / .34);
+  const planing = Math.max(0, Math.min(1, sample.planing));
+  const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const crossWaveLoad = Math.max(0, Math.min(1.5, sample.crossWaveLoad));
+  const crossWaveSide = Math.sign(sample.crossWaveSide) || 1;
+  const speedAuthority = smoothstep(.45, 5.2, Math.max(0, sample.speed));
+  const inertia = Math.pow(widthScale, .86) * Math.sqrt(stability);
+
+  const surfaceTorque = sample.crossSlope * 4.4;
+  const accelerationTorque = -sample.lateralAcceleration * .21;
+  const waveTorque = crossWaveSide
+    * crossWaveLoad
+    * (1.75 + whitewater * .85);
+  const turbulenceTorque = (sample.turbulenceTorque ?? 0)
+    * whitewater
+    / Math.sqrt(stability);
+  const externalTorque = surfaceTorque
+    + accelerationTorque
+    + waveTorque
+    + turbulenceTorque;
+  const counterweightAuthority = 2.25 / Math.pow(stability, .22);
+  const balanceTarget = Math.max(
+    -1,
+    Math.min(1, externalTorque / counterweightAuthority),
+  );
+
+  const riderRailTorque = railInput
+    * (1.12 + speedAuthority * 2.35)
+    / inertia;
+  const rightingStiffness = (
+    .92
+      + planing * (3.1 + speedAuthority * 2.15)
+  ) * stability * Math.pow(widthScale, 1.18);
+  const rightingMoment = -state.rollAngle * rightingStiffness;
+  const angularDamping = (
+    1.05
+      + planing * 2.2
+      + speedAuthority * .72
+      + whitewater * .32
+  ) * Math.sqrt(stability * widthScale);
+  const counterweightTorque = -counterweight * counterweightAuthority;
+  const rollAcceleration = clampValue(
+    (
+      riderRailTorque
+        + externalTorque
+        + counterweightTorque
+        + rightingMoment
+        - state.rollRate * angularDamping
+    ) / inertia,
+    -11,
+    11,
+  );
+  const rollRate = clampValue(
+    state.rollRate + rollAcceleration * delta,
+    -4.6,
+    4.6,
+  );
+  const rollAngle = clampValue(
+    state.rollAngle + rollRate * delta,
+    -1.22,
+    1.22,
+  );
+  const effectiveRail = Math.max(
+    -1,
+    Math.min(1, Math.sin(rollAngle) / Math.sin(.43)),
+  );
+  const tipAngle = (
+    .34
+      + Math.min(.12, (stability - .55) * .085)
+      + planing * .13
+      + Math.min(.08, (widthScale - .7) * .08)
+  );
+  const edgeRisk = smoothstep(
+    tipAngle * .62,
+    tipAngle * 1.18,
+    Math.abs(rollAngle),
+  ) * (
+    .72
+      + crossWaveLoad * .24
+      + whitewater * .16
+  );
+  const capsizeRisk = Math.max(
+    0,
+    Math.min(
+      1,
+      smoothstep(tipAngle * .92, tipAngle * 1.65, Math.abs(rollAngle))
+        * (.72 + Math.abs(rollRate) * .16 + crossWaveLoad * .18),
+    ),
+  );
+  return {
+    rollAngle,
+    rollRate,
+    rollAcceleration,
+    effectiveRail,
+    balanceTarget,
+    externalTorque,
+    rightingMoment,
+    edgeRisk: Math.max(0, Math.min(1, edgeRisk)),
+    capsizeRisk,
+  };
+}
+
+function clampValue(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
 export type PaddleboardDynamicsState = {
   velocityX: number;
   velocityZ: number;
