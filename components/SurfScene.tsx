@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11289,19 +11289,22 @@ function Simulation({
     let noseImmersion = 0;
     let tailImmersion = 0;
     let pitchOverRisk = 0;
-    let boardWaterContact = currentPhase === "riding"
+    const boardAttitudeInWater = currentPhase === "riding"
+      || currentPhase === "paddling";
+    let boardWaterContact = boardAttitudeInWater
       ? THREE.MathUtils.clamp(waterRide.current.contact, 0, 1)
       : 1;
-    let airborneHeight = currentPhase === "riding"
+    let airborneHeight = boardAttitudeInWater
       ? Math.max(
           0,
           waterRide.current.elevation - (waterRide.current.surfaceHeight + .3),
         )
       : 0;
-    let verticalVelocity = currentPhase === "riding"
+    let verticalVelocity = boardAttitudeInWater
       ? waterRide.current.velocity
       : 0;
     let landingImpact = 0;
+    let proneHeaveIntegrated = false;
     if (currentPhase !== "wipeout") {
       breath.current = Math.min(100, breath.current + delta * 28);
       wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
@@ -11706,6 +11709,207 @@ function Simulation({
           0,
           1,
         );
+        const proneInteraction = evaluateBoardWaterInteraction({
+          boardHeading: paddleHeading.current,
+          velocityX: paddleVelocity.current.x,
+          velocityZ: paddleVelocity.current.y,
+          waveVelocityX: localWaveTransport.x,
+          waveVelocityZ: localWaveTransport.z,
+          slopeX: takeoffSurface.slopeX,
+          slopeZ: takeoffSurface.slopeZ,
+          surfaceRise,
+          surfaceLift,
+          crestDistance,
+          crestEnergy: setState.crestEnergy,
+          crestSurfable: setState.crestSurfable,
+          boardStability: boardSpec.stability,
+          waveHeight: settings.waveHeight * tideResponse.faceScale,
+        });
+        boardPlaning = Math.max(
+          boardPlaning,
+          proneInteraction.planing * .82,
+        );
+        const paddleRightX = Math.cos(paddleHeading.current);
+        const paddleRightZ = -Math.sin(paddleHeading.current);
+        const proneLongitudinalAcceleration = paddlingDynamics.accelerationX * paddleForwardX
+          + paddlingDynamics.accelerationZ * paddleForwardZ;
+        const proneLateralAcceleration = paddlingDynamics.accelerationX * paddleRightX
+          + paddlingDynamics.accelerationZ * paddleRightZ;
+        const proneHalfContact = boardSpec.length * .43;
+        const proneHalfRail = Math.max(.12, boardSpec.width * .46);
+        const proneNoseHeight = waveHeightAt(
+          position.current.x + paddleForwardX * proneHalfContact,
+          position.current.z + paddleForwardZ * proneHalfContact,
+          t,
+          settings,
+          character,
+        );
+        const proneTailHeight = waveHeightAt(
+          position.current.x - paddleForwardX * proneHalfContact,
+          position.current.z - paddleForwardZ * proneHalfContact,
+          t,
+          settings,
+          character,
+        );
+        const proneRightRailHeight = waveHeightAt(
+          position.current.x + paddleRightX * proneHalfRail,
+          position.current.z + paddleRightZ * proneHalfRail,
+          t,
+          settings,
+          character,
+        );
+        const proneLeftRailHeight = waveHeightAt(
+          position.current.x - paddleRightX * proneHalfRail,
+          position.current.z - paddleRightZ * proneHalfRail,
+          t,
+          settings,
+          character,
+        );
+        const proneCrossSlope = (
+          proneRightRailHeight - proneLeftRailHeight
+        ) / (proneHalfRail * 2);
+        const proneRailWarp = (
+          (proneRightRailHeight + proneLeftRailHeight) * .5
+        ) - takeoffSurface.height;
+        const proneSlopeAlong = takeoffSurface.slopeX * paddleForwardX
+          + takeoffSurface.slopeZ * paddleForwardZ;
+        const proneCommitPlant = takeoffCommitting
+          ? THREE.MathUtils.smootherstep(takeoffCapture.current, .26, .88)
+          : 0;
+        const proneTrim = THREE.MathUtils.lerp(-.06, .12, proneCommitPlant);
+        const proneDiveProgress = THREE.MathUtils.clamp(
+          1 - (duckDiveUntil.current - t) / 1.12,
+          0,
+          1,
+        );
+        const proneDiveEnvelope = duckDiveActive
+          ? Math.sin(proneDiveProgress * Math.PI)
+          : 0;
+        if (
+          !waterRide.current.engaged
+          || Math.abs(
+            takeoffSurface.height + .16 - waterRide.current.elevation
+          ) > 2.2
+          || delta > .12
+        ) {
+          waterRide.current.elevation = takeoffSurface.height + .16;
+          waterRide.current.velocity = 0;
+          waterRide.current.surfaceHeight = takeoffSurface.height;
+          waterRide.current.contact = 1;
+          waterRide.current.engaged = true;
+        }
+        const proneAttitude = advanceProneBoardAttitude(
+          {
+            roll: {
+              rollAngle: boardRollAngle.current,
+              rollRate: boardRollRate.current,
+            },
+            pitch: {
+              pitchAngle: boardPitchAngle.current,
+              pitchRate: boardPitchRate.current,
+            },
+            heave: {
+              elevation: waterRide.current.elevation,
+              verticalVelocity: waterRide.current.velocity,
+              previousSurfaceHeight: waterRide.current.surfaceHeight,
+              waterContact: waterRide.current.contact,
+            },
+          },
+          {
+            deltaSeconds: delta,
+            balance: balanceInput,
+            trim: proneTrim,
+            crossSlope: proneCrossSlope,
+            lateralAcceleration: proneLateralAcceleration,
+            longitudinalAcceleration: proneLongitudinalAcceleration,
+            crossWaveLoad: proneInteraction.crossWaveLoad,
+            crossWaveSide: proneInteraction.crossWaveSide,
+            noseSurfaceOffset: proneNoseHeight
+              - takeoffSurface.height
+              - proneSlopeAlong * proneHalfContact,
+            tailSurfaceOffset: proneTailHeight
+              - takeoffSurface.height
+              + proneSlopeAlong * proneHalfContact,
+            turbulenceTorque: (
+              paddleStroke.strokeSide * paddleStroke.drive * .16
+                + proneRailWarp * 2.1
+                + Math.sin(t * 6.7 + position.current.x * .08)
+                  * shorebreakIntensity
+                  * .34
+            ),
+            speed,
+            planing: boardPlaning,
+            waveContact: THREE.MathUtils.clamp(
+              .22 + proneInteraction.waveContact * .78,
+              .22,
+              1,
+            ),
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+            boardStability: boardSpec.stability,
+            whitewater: Math.max(
+              shorebreakIntensity,
+              proneInteraction.wipeoutRisk * .42,
+            ),
+            surfaceHeight: takeoffSurface.height,
+            flotationOffset: .3 - proneDiveEnvelope * .42,
+            verticalWaterAcceleration: -proneDiveEnvelope * 7.8
+              + shorebreakIntensity
+                * Math.sin(t * 9.1 - position.current.z * .07)
+                * 2.6,
+          },
+        );
+        boardRollAngle.current = proneAttitude.roll.rollAngle;
+        boardRollRate.current = proneAttitude.roll.rollRate;
+        physicalRollAngle = proneAttitude.roll.rollAngle;
+        physicalRollRate = proneAttitude.roll.rollRate;
+        rollEdgeRisk = proneAttitude.roll.edgeRisk;
+        rollCapsizeRisk = proneAttitude.roll.capsizeRisk;
+        balanceTarget = proneAttitude.roll.balanceTarget;
+        boardPitchAngle.current = proneAttitude.pitch.pitchAngle;
+        boardPitchRate.current = proneAttitude.pitch.pitchRate;
+        physicalPitchAngle = proneAttitude.pitch.pitchAngle;
+        physicalPitchRate = proneAttitude.pitch.pitchRate;
+        noseImmersion = proneAttitude.pitch.noseImmersion;
+        tailImmersion = proneAttitude.pitch.tailImmersion;
+        pearlingRisk = proneAttitude.pitch.pearlingRisk;
+        tailStall = proneAttitude.pitch.tailStallRisk;
+        pitchOverRisk = proneAttitude.pitch.pitchOverRisk;
+        waterRide.current.elevation = proneAttitude.heave.elevation;
+        waterRide.current.velocity = proneAttitude.heave.verticalVelocity;
+        waterRide.current.surfaceHeight = proneAttitude.heave.previousSurfaceHeight;
+        waterRide.current.contact = proneAttitude.heave.waterContact;
+        boardWaterContact = proneAttitude.heave.waterContact;
+        airborneHeight = proneAttitude.heave.airborneHeight;
+        verticalVelocity = proneAttitude.heave.verticalVelocity;
+        landingImpact = proneAttitude.heave.landingImpact;
+        crossWaveLoad = proneInteraction.crossWaveLoad * boardWaterContact;
+        proneHeaveIntegrated = true;
+        const proneAttitudeQuality = THREE.MathUtils.clamp(
+          1
+            - Math.abs(physicalRollAngle) * .7
+            - Math.abs(physicalPitchAngle) * .42
+            - rollCapsizeRisk * .34
+            - pitchOverRisk * .38,
+          .04,
+          1,
+        );
+        if (landingImpact > 0) {
+          motion.current.impact = Math.max(
+            motion.current.impact,
+            .18 + landingImpact * .56,
+          );
+        }
+        const proneFailure = evaluateProneBoardFailure({
+          capsizeRisk: rollCapsizeRisk,
+          pitchOverRisk,
+          crossWaveLoad: proneInteraction.crossWaveLoad,
+          whitewater: Math.max(
+            shorebreakIntensity,
+            proneInteraction.wipeoutRisk * .42,
+          ),
+          waveEnergy: setState.energy,
+        });
         const paddleMatchTarget = THREE.MathUtils.clamp(
           localWaveTransport.speed * .31,
           1.45,
@@ -11720,6 +11924,10 @@ function Simulation({
           paddleDrive + Math.max(0, move) * .38,
           0,
           1,
+        ) * (
+          .72 + proneAttitudeQuality * .28
+        ) * (
+          .38 + boardWaterContact * .62
         );
         const takeoffReading = evaluateWaveTakeoff({
           mode: settings.mode,
@@ -11743,13 +11951,22 @@ function Simulation({
         const touchQuality = mobileRenderer ? .025 : 0;
         takeoffQuality = takeoffReading.surfable
           ? THREE.MathUtils.clamp(
-              takeoffReading.quality * staminaQuality * windQuality + touchQuality,
+              (
+                takeoffReading.quality
+                  * staminaQuality
+                  * windQuality
+              ) * (
+                .68 + proneAttitudeQuality * .32
+              ) + touchQuality,
               .12,
               1,
             )
           : 0;
         const catchWindowCandidate = !takeoffCommitting
-          && takeoffReading.catchable;
+          && takeoffReading.catchable
+          && boardWaterContact > .28
+          && rollCapsizeRisk < .78
+          && pitchOverRisk < .8;
         if (catchWindowCandidate) {
           catchWindowOpen.current = true;
           catchWindowQuality.current = takeoffQuality;
@@ -11822,12 +12039,11 @@ function Simulation({
           // board retains the exact paddling momentum it had at hand release;
           // the live face must supply every subsequent increment of speed.
           rideVelocity.current.copy(paddleVelocity.current);
-          rideAcceleration.current.set(0, 0);
-          rideYawRate.current = 0;
-          boardRollAngle.current = 0;
-          boardRollRate.current = 0;
-          boardPitchAngle.current = 0;
-          boardPitchRate.current = 0;
+          rideAcceleration.current.set(
+            paddlingDynamics.accelerationX,
+            paddlingDynamics.accelerationZ,
+          );
+          rideYawRate.current = paddleYawRate.current;
           rideHeading.current = paddleHeading.current;
           barrelTime.current = 0;
           stance.current = 0;
@@ -11861,7 +12077,14 @@ function Simulation({
           paddleVelocity.current.set(0, 0);
         };
 
-        if (takeoffCommitting) {
+        if (proneFailure.failed && !qaScenario) {
+          catchWindowOpen.current = false;
+          catchWindowQuality.current = 0;
+          catchReady = false;
+          prompt = rollCapsizeRisk >= pitchOverRisk
+            ? "The loaded rail passed its righting limit — protect your head"
+            : "The buried nose pitched the board over — protect your head";
+        } else if (takeoffCommitting) {
           const commitElapsed = Math.max(0, t - takeoffCommitAt.current);
           const catchTransport = primaryWaveVelocityAt(
             position.current.x,
@@ -11948,9 +12171,16 @@ function Simulation({
               + speedMatch * .2,
             0,
             1,
+          ) * (
+            .58 + proneAttitudeQuality * .42
+          ) * (
+            .34 + boardWaterContact * .66
           );
           const boardStillEngaged = caughtReading.faceEnvelope > .025
-            && caughtReading.physicalLift > .04;
+            && caughtReading.physicalLift > .04
+            && boardWaterContact > .22
+            && rollCapsizeRisk < .88
+            && pitchOverRisk < .9;
           takeoffCapture.current = advanceWaveTakeoffCapture(
             takeoffCapture.current,
             delta,
@@ -11981,9 +12211,10 @@ function Simulation({
           );
           stamina.current = Math.max(0, stamina.current - delta * (1.35 + setState.crestEnergy * .65));
           takeoffQuality = THREE.MathUtils.clamp(
-            takeoffCommitQuality.current * .56
-              + caughtReading.quality * .3
-              + speedMatch * .14,
+            takeoffCommitQuality.current * .5
+              + caughtReading.quality * .27
+              + speedMatch * .14
+              + proneAttitudeQuality * .09,
             .12,
             1,
           );
@@ -12016,10 +12247,11 @@ function Simulation({
               1,
             );
             const committedQuality = THREE.MathUtils.clamp(
-              takeoffCommitQuality.current * .5
-                + caughtReading.quality * .28
+              takeoffCommitQuality.current * .44
+                + caughtReading.quality * .25
                 + captureStrength * .1
-                + planingMatch * .12,
+                + planingMatch * .12
+                + proneAttitudeQuality * .09,
               .14,
               1,
             );
@@ -12028,6 +12260,10 @@ function Simulation({
         } else {
           prompt = duckDiveReady
             ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SHIFT now`
+            : rollCapsizeRisk > .46
+              ? `Broadside load is rolling the prone board ${Math.round(Math.abs(physicalRollAngle) * 180 / Math.PI)}° · point the nose and counterweight`
+            : pitchOverRisk > .4
+              ? `Nose contact ${Math.round(noseImmersion * 100)} cm · lift your chest before the board pearls`
             : takeoffReading.headingQuality < .16 && takeoffReading.physicalLift > .1
               ? "Wave approaching across the rail — point the nose with A/D"
               : catchReady
@@ -12036,33 +12272,26 @@ function Simulation({
                   ? `Face rising ${Math.round(takeoffReading.physicalLift * 100)}% · paddle to match its speed`
                   : `POP is always available · ${waveReadCopy}`;
           if (actionPressed && !duckDiveActive) {
-            const popReading = evaluateBoardWaterInteraction({
-              boardHeading: paddleHeading.current,
-              velocityX: paddleVelocity.current.x,
-              velocityZ: paddleVelocity.current.y,
-              waveVelocityX: localWaveTransport.x,
-              waveVelocityZ: localWaveTransport.z,
-              slopeX: takeoffSurface.slopeX,
-              slopeZ: takeoffSurface.slopeZ,
-              surfaceRise,
-              surfaceLift,
-              crestDistance,
-              crestEnergy: setState.crestEnergy,
-              crestSurfable: setState.crestSurfable,
-              boardStability: boardSpec.stability,
-              waveHeight: settings.waveHeight * tideResponse.faceScale,
-            });
-            const engaged = popReading.outcome === "capture";
+            const popReading = proneInteraction;
+            const engaged = popReading.outcome === "capture"
+              && boardWaterContact > .24
+              && rollCapsizeRisk < .76
+              && pitchOverRisk < .78;
             const committedQuality = engaged
               ? THREE.MathUtils.clamp(
-                  takeoffQuality * .58
-                    + popReading.capture * .28
-                    + popReading.planing * .14,
+                  takeoffQuality * .5
+                    + popReading.capture * .25
+                    + popReading.planing * .12
+                    + proneAttitudeQuality * .13,
                   .14,
                   1,
                 )
               : .12;
-            unstableFor.current = popReading.wipeoutRisk * 1.25;
+            unstableFor.current = Math.max(
+              popReading.wipeoutRisk,
+              rollCapsizeRisk,
+              pitchOverRisk,
+            ) * 1.25;
             balanceTarget = popReading.balanceTarget;
             stamina.current = Math.max(0, stamina.current - (engaged ? 2.4 : .6));
             if (engaged) {
@@ -12098,7 +12327,43 @@ function Simulation({
             catchReady = false;
           }
         }
-        if (position.current.z > 1 + tideShift) {
+        if (proneFailure.failed && !qaScenario) {
+          phase.current = "wipeout";
+          rideEngaged.current = false;
+          takeoffCommitAt.current = -1;
+          takeoffCapture.current = 0;
+          takeoffCommitProgress = 0;
+          wipeoutAt.current = t;
+          wipeoutPower.current = proneFailure.power;
+          wipeoutDuration.current = THREE.MathUtils.lerp(
+            1.2,
+            3.55,
+            proneFailure.power,
+          );
+          const proneRailThrow = proneInteraction.crossWaveSide
+            * proneInteraction.crossWaveLoad
+            * (1.05 + proneFailure.power * 1.9);
+          const proneWashSpeed = .75
+            + proneFailure.power * 3.4
+            + shorebreakIntensity * 1.4;
+          wipeoutVelocity.current.set(
+            paddleVelocity.current.x * .64
+              + takeoffWaveNormalX * proneWashSpeed
+              + paddleRightX * proneRailThrow,
+            paddleVelocity.current.y * .64
+              + takeoffWaveNormalZ * proneWashSpeed
+              + paddleRightZ * proneRailThrow,
+          );
+          breath.current = 100;
+          combo.current = 1;
+          motion.current.wipeout = 0;
+          motion.current.wipeoutProgress = 0;
+          motion.current.wipeoutPower = proneFailure.power;
+          motion.current.impact = Math.max(
+            motion.current.impact,
+            .68 + proneFailure.power * .32,
+          );
+        } else if (position.current.z > 1 + tideShift) {
           phase.current = "wading";
           takeoffCommitAt.current = -1;
           takeoffCapture.current = 0;
@@ -13737,14 +14002,16 @@ function Simulation({
       rideVelocity.current.y = THREE.MathUtils.damp(rideVelocity.current.y, 0, 5.5, delta);
       rideAcceleration.current.x = THREE.MathUtils.damp(rideAcceleration.current.x, 0, 7, delta);
       rideAcceleration.current.y = THREE.MathUtils.damp(rideAcceleration.current.y, 0, 7, delta);
-      boardRollRate.current = THREE.MathUtils.damp(boardRollRate.current, 0, 6.5, delta);
-      boardRollAngle.current = THREE.MathUtils.damp(boardRollAngle.current, 0, 4.2, delta);
-      physicalRollAngle = boardRollAngle.current;
-      physicalRollRate = boardRollRate.current;
-      boardPitchRate.current = THREE.MathUtils.damp(boardPitchRate.current, 0, 6.8, delta);
-      boardPitchAngle.current = THREE.MathUtils.damp(boardPitchAngle.current, 0, 4.4, delta);
-      physicalPitchAngle = boardPitchAngle.current;
-      physicalPitchRate = boardPitchRate.current;
+      if (phase.current !== "paddling") {
+        boardRollRate.current = THREE.MathUtils.damp(boardRollRate.current, 0, 6.5, delta);
+        boardRollAngle.current = THREE.MathUtils.damp(boardRollAngle.current, 0, 4.2, delta);
+        physicalRollAngle = boardRollAngle.current;
+        physicalRollRate = boardRollRate.current;
+        boardPitchRate.current = THREE.MathUtils.damp(boardPitchRate.current, 0, 6.8, delta);
+        boardPitchAngle.current = THREE.MathUtils.damp(boardPitchAngle.current, 0, 4.4, delta);
+        physicalPitchAngle = boardPitchAngle.current;
+        physicalPitchRate = boardPitchRate.current;
+      }
       rideDrive = 0;
       rideLateralForce = 0;
       railLoad = 0;
@@ -13754,7 +14021,15 @@ function Simulation({
     const buoyancy = waterRide.current;
     let playerY = 0;
     if (isWater) {
-      if (phase.current === "riding" && replayMotion) {
+      if (proneHeaveIntegrated) {
+        boardWaterContact = buoyancy.contact;
+        airborneHeight = Math.max(
+          0,
+          buoyancy.elevation - (buoyancy.surfaceHeight + .3),
+        );
+        verticalVelocity = buoyancy.velocity;
+        playerY = buoyancy.elevation;
+      } else if (phase.current === "riding" && replayMotion) {
         airborneHeight = replayMotion.airborne;
         verticalVelocity = replayMotion.verticalVelocity;
         boardWaterContact = replayMotion.waterContact;
@@ -13891,7 +14166,7 @@ function Simulation({
     const surfaceContact = phase.current === "riding"
       ? boardWaterContact * .88
       : phase.current === "paddling"
-        ? .62 * (1 - motion.current.duckDive * .52)
+        ? boardWaterContact * .76 * (1 - motion.current.duckDive * .52)
         : 0;
     const headingForwardX = Math.sin(targetPlayerHeading);
     const headingForwardZ = Math.cos(targetPlayerHeading);
@@ -13915,14 +14190,22 @@ function Simulation({
     );
     player.current.rotation.x = THREE.MathUtils.damp(
       player.current.rotation.x,
-      surfacePitch + (phase.current === "riding" ? motion.current.pitch : 0),
-      phase.current === "riding" ? 8 : 5.8,
+      surfacePitch + (
+        phase.current === "riding" || phase.current === "paddling"
+          ? motion.current.pitch
+          : 0
+      ),
+      phase.current === "riding" || phase.current === "paddling" ? 8 : 5.8,
       delta,
     );
     player.current.rotation.z = THREE.MathUtils.damp(
       player.current.rotation.z,
-      surfaceRoll + (phase.current === "riding" ? -motion.current.roll : 0),
-      phase.current === "riding" ? 8 : 5.8,
+      surfaceRoll + (
+        phase.current === "riding" || phase.current === "paddling"
+          ? -motion.current.roll
+          : 0
+      ),
+      phase.current === "riding" || phase.current === "paddling" ? 8 : 5.8,
       delta,
     );
     if (waveStage.current) {
@@ -14053,31 +14336,41 @@ function Simulation({
     motion.current.rail = THREE.MathUtils.damp(motion.current.rail, railLoad, 8, delta);
     motion.current.roll = THREE.MathUtils.damp(
       motion.current.roll,
-      phase.current === "riding" ? physicalRollAngle : 0,
-      phase.current === "riding" ? 13 : 6,
+      phase.current === "riding" || phase.current === "paddling"
+        ? physicalRollAngle
+        : 0,
+      phase.current === "riding" || phase.current === "paddling" ? 13 : 6,
       delta,
     );
     motion.current.pitch = THREE.MathUtils.damp(
       motion.current.pitch,
-      phase.current === "riding" ? physicalPitchAngle : 0,
-      phase.current === "riding" ? 12 : 6,
+      phase.current === "riding" || phase.current === "paddling"
+        ? physicalPitchAngle
+        : 0,
+      phase.current === "riding" || phase.current === "paddling" ? 12 : 6,
       delta,
     );
     motion.current.airborne = THREE.MathUtils.damp(
       motion.current.airborne,
-      phase.current === "riding" ? airborneHeight : 0,
+      phase.current === "riding" || phase.current === "paddling"
+        ? airborneHeight
+        : 0,
       airborneHeight > motion.current.airborne ? 18 : 12,
       delta,
     );
     motion.current.verticalVelocity = THREE.MathUtils.damp(
       motion.current.verticalVelocity,
-      phase.current === "riding" ? verticalVelocity : 0,
+      phase.current === "riding" || phase.current === "paddling"
+        ? verticalVelocity
+        : 0,
       14,
       delta,
     );
     motion.current.waterContact = THREE.MathUtils.damp(
       motion.current.waterContact,
-      phase.current === "riding" ? boardWaterContact : 1,
+      phase.current === "riding" || phase.current === "paddling"
+        ? boardWaterContact
+        : 1,
       boardWaterContact < motion.current.waterContact ? 18 : 14,
       delta,
     );

@@ -4,10 +4,12 @@ import {
   advanceBoardRollDynamics,
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
+  advanceProneBoardAttitude,
   advanceSurfboardDynamics,
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
   evaluateBoardWaterInteraction,
+  evaluateProneBoardFailure,
   evaluateWaveTakeoff,
   initialWavePopUpCapture,
   paddlingStaminaDelta,
@@ -775,6 +777,124 @@ const risingSurface = advanceBoardHeaveDynamics(staticHeave, {
 if (risingSurface.verticalAcceleration < 3) {
   throw new Error("A rising polygon did not transfer upward pressure into the hull");
 }
+const proneSample = {
+  deltaSeconds: 1 / 60,
+  balance: 0,
+  trim: -.06,
+  crossSlope: 0,
+  lateralAcceleration: 0,
+  longitudinalAcceleration: 0,
+  crossWaveLoad: 0,
+  crossWaveSide: 1,
+  noseSurfaceOffset: 0,
+  tailSurfaceOffset: 0,
+  turbulenceTorque: 0,
+  speed: 3,
+  planing: .42,
+  waveContact: .32,
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardStability: .9,
+  whitewater: 0,
+  surfaceHeight: 0,
+  flotationOffset: .3,
+};
+function proneForFrames(frameCount, sample = proneSample) {
+  let state = {
+    roll: { rollAngle: 0, rollRate: 0 },
+    pitch: { pitchAngle: 0, pitchRate: 0 },
+    heave: {
+      elevation: staticHeave.elevation,
+      verticalVelocity: staticHeave.verticalVelocity,
+      previousSurfaceHeight: 0,
+      waterContact: 1,
+    },
+  };
+  let reading = null;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    reading = advanceProneBoardAttitude(state, sample);
+    state = {
+      roll: reading.roll,
+      pitch: reading.pitch,
+      heave: reading.heave,
+    };
+  }
+  return reading;
+}
+const neutralProne = proneForFrames(360);
+if (
+  Math.abs(neutralProne.roll.rollAngle) > .02
+  || Math.abs(neutralProne.pitch.pitchAngle) > .08
+  || neutralProne.heave.waterContact < .84
+) {
+  throw new Error("A neutral prone board did not settle into a stable contact state");
+}
+const broadsideProne = proneForFrames(90, {
+  ...proneSample,
+  crossSlope: .11,
+  crossWaveLoad: 1.18,
+  waveContact: .9,
+  whitewater: .42,
+});
+const counterweightedProne = proneForFrames(90, {
+  ...proneSample,
+  balance: 1,
+  crossSlope: .11,
+  crossWaveLoad: 1.18,
+  waveContact: .9,
+  whitewater: .42,
+});
+if (
+  Math.abs(broadsideProne.roll.rollAngle) < .28
+  || broadsideProne.roll.capsizeRisk < .2
+  || Math.abs(counterweightedProne.roll.rollAngle)
+    >= Math.abs(broadsideProne.roll.rollAngle) * .78
+) {
+  throw new Error("Prone roll no longer reacts physically to broadside load and body counterweight");
+}
+const noseLoadedProne = proneForFrames(75, {
+  ...proneSample,
+  trim: .3,
+  noseSurfaceOffset: .19,
+  speed: 5.4,
+  planing: .74,
+  waveContact: .92,
+});
+if (
+  noseLoadedProne.pitch.noseImmersion < .08
+  || noseLoadedProne.pitch.pearlingRisk < .2
+) {
+  throw new Error("Prone nose contact no longer produces a physical pearling risk");
+}
+const settledProneFailure = evaluateProneBoardFailure({
+  capsizeRisk: neutralProne.roll.capsizeRisk,
+  pitchOverRisk: neutralProne.pitch.pitchOverRisk,
+  crossWaveLoad: 0,
+  whitewater: 0,
+  waveEnergy: .4,
+});
+const broadsideProneFailure = evaluateProneBoardFailure({
+  capsizeRisk: broadsideProne.roll.capsizeRisk,
+  pitchOverRisk: broadsideProne.pitch.pitchOverRisk,
+  crossWaveLoad: 1.18,
+  whitewater: .42,
+  waveEnergy: .7,
+});
+const noseLoadedProneFailure = evaluateProneBoardFailure({
+  capsizeRisk: noseLoadedProne.roll.capsizeRisk,
+  pitchOverRisk: .94,
+  crossWaveLoad: .28,
+  whitewater: .08,
+  waveEnergy: .68,
+});
+if (
+  settledProneFailure.failed
+  || !broadsideProneFailure.failed
+  || !noseLoadedProneFailure.failed
+  || broadsideProneFailure.power <= settledProneFailure.power
+) {
+  throw new Error("Prone separation no longer distinguishes stable contact from rail and nose failure");
+}
 const flatReleaseImpulse = surfboardReleaseVerticalImpulse({
   compression: 1,
   tailPressure: .7,
@@ -1153,5 +1273,10 @@ console.log(JSON.stringify({
     performanceYawRelease,
     longboardYawRelease,
     accumulatedAirYaw,
+    proneBroadsideRoll: broadsideProne.roll.rollAngle,
+    proneBroadsideCapsize: broadsideProne.roll.capsizeRisk,
+    proneCounterweightedRoll: counterweightedProne.roll.rollAngle,
+    proneNoseImmersion: noseLoadedProne.pitch.noseImmersion,
+    proneBroadsideFailurePower: broadsideProneFailure.power,
   },
 }, null, 2));

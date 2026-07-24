@@ -806,6 +806,147 @@ export function advanceBoardHeaveDynamics(
   };
 }
 
+export type ProneBoardAttitudeState = {
+  roll: BoardRollState;
+  pitch: BoardPitchState;
+  heave: BoardHeaveState;
+};
+
+export type ProneBoardAttitudeSample = {
+  deltaSeconds: number;
+  balance: number;
+  trim: number;
+  crossSlope: number;
+  lateralAcceleration: number;
+  longitudinalAcceleration: number;
+  crossWaveLoad: number;
+  crossWaveSide: number;
+  noseSurfaceOffset: number;
+  tailSurfaceOffset: number;
+  turbulenceTorque: number;
+  speed: number;
+  planing: number;
+  waveContact: number;
+  boardLength: number;
+  boardWidth: number;
+  boardStability: number;
+  whitewater: number;
+  surfaceHeight: number;
+  flotationOffset: number;
+  verticalWaterAcceleration?: number;
+};
+
+export type ProneBoardAttitudeReading = {
+  roll: BoardRollReading;
+  pitch: BoardPitchReading;
+  heave: BoardHeaveReading;
+};
+
+export type ProneBoardFailureSample = {
+  capsizeRisk: number;
+  pitchOverRisk: number;
+  crossWaveLoad: number;
+  whitewater: number;
+  waveEnergy: number;
+};
+
+export type ProneBoardFailureReading = {
+  failed: boolean;
+  load: number;
+  power: number;
+};
+
+/**
+ * Advances the prone board as one coupled contact state. A surfer lying low
+ * adds roll stability and has reduced fore-aft leverage, but the hull still
+ * reacts to cross-wave torque, separate nose/tail polygons, and vertical
+ * contact loss. The resulting state can be carried directly through a pop-up.
+ */
+export function advanceProneBoardAttitude(
+  state: ProneBoardAttitudeState,
+  sample: ProneBoardAttitudeSample,
+): ProneBoardAttitudeReading {
+  const proneStability = Math.max(.55, sample.boardStability) * 1.28;
+  const contact = Math.max(0, Math.min(1, state.heave.waterContact));
+  const waveContact = Math.max(0, Math.min(1, sample.waveContact)) * contact;
+  const roll = advanceBoardRollDynamics(state.roll, {
+    deltaSeconds: sample.deltaSeconds,
+    railInput: 0,
+    counterweight: sample.balance * .46,
+    crossSlope: sample.crossSlope,
+    lateralAcceleration: sample.lateralAcceleration,
+    crossWaveLoad: sample.crossWaveLoad,
+    crossWaveSide: sample.crossWaveSide,
+    turbulenceTorque: sample.turbulenceTorque,
+    speed: sample.speed,
+    planing: sample.planing,
+    boardWidth: sample.boardWidth,
+    boardStability: proneStability,
+    whitewater: sample.whitewater,
+    waterContact: contact,
+  });
+  const pitch = advanceBoardPitchDynamics(state.pitch, {
+    deltaSeconds: sample.deltaSeconds,
+    stance: sample.trim * .68,
+    longitudinalAcceleration: sample.longitudinalAcceleration,
+    noseSurfaceOffset: sample.noseSurfaceOffset,
+    tailSurfaceOffset: sample.tailSurfaceOffset,
+    turbulenceTorque: sample.turbulenceTorque * .72,
+    speed: sample.speed,
+    planing: sample.planing,
+    boardLength: sample.boardLength,
+    boardStability: proneStability,
+    waveContact,
+    whitewater: sample.whitewater,
+  });
+  const heave = advanceBoardHeaveDynamics(state.heave, {
+    deltaSeconds: sample.deltaSeconds,
+    surfaceHeight: sample.surfaceHeight,
+    flotationOffset: sample.flotationOffset,
+    planing: sample.planing,
+    speed: sample.speed,
+    waveContact: sample.waveContact,
+    boardLength: sample.boardLength,
+    boardWidth: sample.boardWidth,
+    boardStability: sample.boardStability,
+    whitewater: sample.whitewater,
+    verticalWaterAcceleration: sample.verticalWaterAcceleration,
+  });
+  return { roll, pitch, heave };
+}
+
+/**
+ * Converts prone attitude and water load into a physical separation event.
+ * A rail beyond its righting limit or a buried nose fails immediately, while
+ * combined broadside wash can overwhelm the hull before either angle peaks.
+ */
+export function evaluateProneBoardFailure(
+  sample: ProneBoardFailureSample,
+): ProneBoardFailureReading {
+  const capsizeRisk = clampValue(sample.capsizeRisk, 0, 1);
+  const pitchOverRisk = clampValue(sample.pitchOverRisk, 0, 1);
+  const crossWaveLoad = clampValue(sample.crossWaveLoad, 0, 1.5);
+  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const waveEnergy = clampValue(sample.waveEnergy, 0, 1);
+  const load = Math.max(capsizeRisk, pitchOverRisk)
+    + Math.max(0, crossWaveLoad - .48) * .24
+    + whitewater * .16;
+  const failed = capsizeRisk > .9
+    || pitchOverRisk > .9
+    || load > .98;
+  const power = clampValue(
+    .12
+      + capsizeRisk * .34
+      + pitchOverRisk * .34
+      + Math.min(1, crossWaveLoad) * .16
+      + whitewater * .2
+      + waveEnergy * .12,
+    .18,
+    1,
+  );
+  return { failed, load, power };
+}
+
 function clampValue(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
