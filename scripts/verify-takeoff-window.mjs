@@ -1,4 +1,5 @@
 import {
+  advanceBoardPitchDynamics,
   advanceBoardRollDynamics,
   advancePaddleboardDynamics,
   advanceSurfboardDynamics,
@@ -554,6 +555,74 @@ if (
   throw new Error("Counterweight is not physically opposing cross-wave roll torque");
 }
 
+const pitchSample = {
+  deltaSeconds: 1 / 60,
+  stance: 0,
+  longitudinalAcceleration: 0,
+  noseSurfaceOffset: 0,
+  tailSurfaceOffset: 0,
+  speed: 5,
+  planing: .78,
+  boardLength: 2.5,
+  boardStability: .9,
+  waveContact: .9,
+  whitewater: 0,
+};
+function pitchForFrames(frameCount, sample = pitchSample, initial = {
+  pitchAngle: 0,
+  pitchRate: 0,
+}) {
+  let state = initial;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    state = advanceBoardPitchDynamics(state, sample);
+  }
+  return state;
+}
+const centeredPitch = pitchForFrames(180);
+if (Math.abs(centeredPitch.pitchAngle) > .001 || Math.abs(centeredPitch.pitchRate) > .001) {
+  throw new Error("A centered board developed pitch without fore-aft torque");
+}
+const noseWeightedPitch = pitchForFrames(75, {
+  ...pitchSample,
+  stance: .82,
+});
+const tailWeightedPitch = pitchForFrames(75, {
+  ...pitchSample,
+  stance: -.82,
+  speed: 1.1,
+  planing: .08,
+});
+if (noseWeightedPitch.pitchAngle <= .025 || tailWeightedPitch.pitchAngle >= -.025) {
+  throw new Error("Fore-aft stance is not rotating the board around its center of buoyancy");
+}
+const recoveredPitch = pitchForFrames(180, pitchSample, noseWeightedPitch);
+if (Math.abs(recoveredPitch.pitchAngle) >= Math.abs(noseWeightedPitch.pitchAngle) * .45) {
+  throw new Error("Nose and tail contact did not restore neutral trim after stance release");
+}
+const risingNoseContact = pitchForFrames(45, {
+  ...pitchSample,
+  stance: .76,
+  noseSurfaceOffset: .15,
+  longitudinalAcceleration: -2.4,
+});
+if (
+  risingNoseContact.noseImmersion < .04
+  || risingNoseContact.pearlingRisk < .35
+  || risingNoseContact.pitchOverRisk < .2
+) {
+  throw new Error("A loaded nose meeting a rising polygon did not produce a physical pearling risk");
+}
+const sunkTailContact = pitchForFrames(75, {
+  ...pitchSample,
+  stance: -.9,
+  speed: .8,
+  planing: .04,
+  tailSurfaceOffset: .08,
+});
+if (sunkTailContact.tailImmersion < .03 || sunkTailContact.tailStallRisk < .25) {
+  throw new Error("A low-speed, tail-heavy board did not sink and stall");
+}
+
 const paddlingSample = {
   deltaSeconds: 1 / 60,
   stroke: 1,
@@ -710,5 +779,13 @@ console.log(JSON.stringify({
     releasedRailAngle: recoveredRail.rollAngle,
     crossWaveEdgeRisk: unbalancedCrossWave.edgeRisk,
     counterweightedAngle: counterweightedCrossWave.rollAngle,
+  },
+  pitchDynamics: {
+    noseWeightedAngle: noseWeightedPitch.pitchAngle,
+    tailWeightedAngle: tailWeightedPitch.pitchAngle,
+    releasedAngle: recoveredPitch.pitchAngle,
+    pearlingRisk: risingNoseContact.pearlingRisk,
+    pitchOverRisk: risingNoseContact.pitchOverRisk,
+    tailStallRisk: sunkTailContact.tailStallRisk,
   },
 }, null, 2));

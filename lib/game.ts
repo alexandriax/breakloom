@@ -413,6 +413,178 @@ export function advanceBoardRollDynamics(
   };
 }
 
+export type BoardPitchState = {
+  pitchAngle: number;
+  pitchRate: number;
+};
+
+export type BoardPitchSample = {
+  deltaSeconds: number;
+  stance: number;
+  longitudinalAcceleration: number;
+  noseSurfaceOffset: number;
+  tailSurfaceOffset: number;
+  turbulenceTorque?: number;
+  speed: number;
+  planing: number;
+  boardLength: number;
+  boardStability: number;
+  waveContact: number;
+  whitewater: number;
+};
+
+export type BoardPitchReading = BoardPitchState & {
+  pitchAcceleration: number;
+  noseImmersion: number;
+  tailImmersion: number;
+  pearlingRisk: number;
+  tailStallRisk: number;
+  pitchOverRisk: number;
+  contactTorque: number;
+  rightingMoment: number;
+};
+
+/**
+ * Integrates board pitch relative to the local water tangent. Nose and tail
+ * contact are sampled separately, so rider trim, acceleration, surface
+ * curvature, and planing pressure rotate the board instead of toggling a
+ * canned pearl/stall state.
+ */
+export function advanceBoardPitchDynamics(
+  state: BoardPitchState,
+  sample: BoardPitchSample,
+): BoardPitchReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const stance = Math.max(-1, Math.min(1, sample.stance));
+  const stability = Math.max(.55, sample.boardStability);
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const lengthScale = safeLength / 2.5;
+  const halfContactLength = safeLength * .43;
+  const planing = Math.max(0, Math.min(1, sample.planing));
+  const contact = Math.max(0, Math.min(1, sample.waveContact));
+  const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const speed = Math.max(0, sample.speed);
+  const inertia = Math.pow(lengthScale, 1.42) * Math.sqrt(stability);
+
+  // Positive pitch lowers the nose. Offsets measure the polygon surface
+  // above its center tangent at each contact patch.
+  const noseBoardOffset = -Math.sin(state.pitchAngle) * halfContactLength;
+  const tailBoardOffset = Math.sin(state.pitchAngle) * halfContactLength;
+  const noseImmersion = Math.max(
+    0,
+    sample.noseSurfaceOffset - noseBoardOffset,
+  );
+  const tailImmersion = Math.max(
+    0,
+    sample.tailSurfaceOffset - tailBoardOffset,
+  );
+  const noseLoad = smoothstep(.012, .19, noseImmersion)
+    * contact
+    * (.44 + planing * .56);
+  const tailLoad = smoothstep(.012, .19, tailImmersion)
+    * contact
+    * (.44 + planing * .56);
+
+  const speedAuthority = smoothstep(.55, 5.8, speed);
+  const stanceTorque = stance
+    * (1.08 + planing * 1.18 + speedAuthority * .42)
+    / inertia;
+  const accelerationTorque = -sample.longitudinalAcceleration * .105;
+  const contactTorque = (tailLoad - noseLoad)
+    * (1.35 + planing * 2.7 + speedAuthority * .65);
+  const turbulenceTorque = (sample.turbulenceTorque ?? 0)
+    * (.42 + whitewater * .58)
+    / Math.sqrt(stability);
+  const rightingStiffness = (
+    1.08
+      + contact * .72
+      + planing * (2.35 + speedAuthority * 1.2)
+  ) * stability * Math.pow(lengthScale, .72);
+  const rightingMoment = -state.pitchAngle * rightingStiffness;
+  const angularDamping = (
+    1.18
+      + contact * .48
+      + planing * 1.92
+      + speedAuthority * .52
+  ) * Math.sqrt(stability * lengthScale);
+  const pitchAcceleration = clampValue(
+    (
+      stanceTorque
+        + accelerationTorque
+        + contactTorque
+        + turbulenceTorque
+        + rightingMoment
+        - state.pitchRate * angularDamping
+    ) / inertia,
+    -9.5,
+    9.5,
+  );
+  const pitchRate = clampValue(
+    state.pitchRate + pitchAcceleration * delta,
+    -3.8,
+    3.8,
+  );
+  const pitchAngle = clampValue(
+    state.pitchAngle + pitchRate * delta,
+    -.82,
+    .82,
+  );
+  const nosePressure = Math.max(0, stance);
+  const tailPressure = Math.max(0, -stance);
+  const pearlingRisk = Math.max(
+    0,
+    Math.min(
+      1,
+      smoothstep(.018, .17, noseImmersion)
+        * contact
+        * smoothstep(1.65, 6.4, speed)
+        * (
+          .52
+            + nosePressure * .32
+            + planing * .16
+            + whitewater * .16
+            + Math.max(0, state.pitchRate) * .07
+        ),
+    ),
+  );
+  const tailStallRisk = Math.max(
+    0,
+    Math.min(
+      1,
+      smoothstep(.016, .18, tailImmersion)
+        * contact
+        * (1 - planing * .72)
+        * (1 - smoothstep(1.6, 4.6, speed))
+        * (.48 + tailPressure * .52 + whitewater * .12),
+    ),
+  );
+  const pitchOverRisk = Math.max(
+    0,
+    Math.min(
+      1,
+      pearlingRisk * (
+        .54
+          + smoothstep(.12, .48, pitchAngle) * .28
+          + Math.max(0, -sample.longitudinalAcceleration) * .085
+          + Math.max(0, pitchRate) * .08
+      ),
+    ),
+  );
+
+  return {
+    pitchAngle,
+    pitchRate,
+    pitchAcceleration,
+    noseImmersion,
+    tailImmersion,
+    pearlingRisk,
+    tailStallRisk,
+    pitchOverRisk,
+    contactTorque,
+    rightingMoment,
+  };
+}
+
 function clampValue(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
