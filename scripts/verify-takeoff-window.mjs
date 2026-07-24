@@ -1,6 +1,7 @@
 import {
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
+  evaluateBoardWaterInteraction,
   evaluateWaveTakeoff,
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
@@ -250,6 +251,64 @@ if (flatWater.catchable) {
   throw new Error("Flat water must not produce a takeoff opportunity");
 }
 
+const sharedBoardWater = {
+  boardHeading: Math.atan2(0, 1),
+  velocityX: 0,
+  velocityZ: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  slopeX: 0,
+  slopeZ: -.18,
+  surfaceRise: .56,
+  surfaceLift: .82,
+  crestDistance: 3.2,
+  crestEnergy: .72,
+  crestSurfable: true,
+  boardStability: 1,
+  waveHeight: 2,
+};
+const alignedBoard = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  velocityZ: 3.4,
+});
+if (alignedBoard.outcome !== "capture" || alignedBoard.capture < .2) {
+  throw new Error(`An aligned, planing board failed to capture the face: ${JSON.stringify(alignedBoard)}`);
+}
+
+const broadsideBoard = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: Math.PI / 2,
+});
+if (
+  broadsideBoard.outcome !== "tumble"
+  || broadsideBoard.crossWaveLoad <= alignedBoard.crossWaveLoad
+) {
+  throw new Error(`A broadside board was not rolled by the face: ${JSON.stringify(broadsideBoard)}`);
+}
+
+const stillWaterStand = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  waveVelocityZ: 5,
+  slopeZ: 0,
+  surfaceRise: 0,
+  surfaceLift: 0,
+  crestDistance: 28,
+  crestEnergy: .1,
+  crestSurfable: false,
+});
+if (stillWaterStand.outcome !== "stand" || stillWaterStand.capture !== 0) {
+  throw new Error(`Standing in still water incorrectly created a ride: ${JSON.stringify(stillWaterStand)}`);
+}
+
+const backwardsBoard = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: Math.PI,
+  velocityZ: -1,
+});
+if (backwardsBoard.outcome === "capture" || backwardsBoard.capture > .02) {
+  throw new Error(`A board facing offshore captured the wave: ${JSON.stringify(backwardsBoard)}`);
+}
+
 let marginalCapture = .22 + marginalTraining.averageQuality * .22;
 let marginalCaptureElapsed = 0;
 const marginalCaptureStrength = Math.min(
@@ -302,5 +361,11 @@ console.log(JSON.stringify({
   captureLoss: {
     overtaken: overtakenCapture.overtaken,
     ahead: shoulderCapture.ahead,
+  },
+  boardWater: {
+    alignedCapture: alignedBoard.capture,
+    broadsideLoad: broadsideBoard.crossWaveLoad,
+    broadsideWipeoutRisk: broadsideBoard.wipeoutRisk,
+    stillWater: stillWaterStand.outcome,
   },
 }, null, 2));

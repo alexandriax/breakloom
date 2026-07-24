@@ -192,6 +192,194 @@ export type WaveTakeoffReading = {
   positionQuality: number;
 };
 
+export type BoardWaterSample = {
+  boardHeading: number;
+  velocityX: number;
+  velocityZ: number;
+  waveVelocityX: number;
+  waveVelocityZ: number;
+  slopeX: number;
+  slopeZ: number;
+  surfaceRise: number;
+  surfaceLift: number;
+  crestDistance: number;
+  crestEnergy: number;
+  crestSurfable: boolean;
+  boardStability: number;
+  waveHeight: number;
+};
+
+export type BoardWaterReading = {
+  outcome: "stand" | "glide" | "capture" | "tumble";
+  waveContact: number;
+  capture: number;
+  wipeoutRisk: number;
+  headingAlignment: number;
+  broadside: number;
+  crossWaveLoad: number;
+  crossWaveSide: number;
+  relativeWaveSpeed: number;
+  planing: number;
+  faceSlope: number;
+  balanceTarget: number;
+};
+
+/**
+ * Resolves what the water is physically doing to the board at its current
+ * position. This deliberately has no lineup, tutorial, or action-button input:
+ * standing is always legal, while capture and wipeout are consequences of the
+ * live surface, board heading, and relative velocity.
+ */
+export function evaluateBoardWaterInteraction(
+  sample: BoardWaterSample,
+): BoardWaterReading {
+  const waveSpeed = Math.max(.001, Math.hypot(
+    sample.waveVelocityX,
+    sample.waveVelocityZ,
+  ));
+  const waveNormalX = sample.waveVelocityX / waveSpeed;
+  const waveNormalZ = sample.waveVelocityZ / waveSpeed;
+  const boardForwardX = Math.sin(sample.boardHeading);
+  const boardForwardZ = Math.cos(sample.boardHeading);
+  const headingAlignment = Math.max(
+    -1,
+    Math.min(1, boardForwardX * waveNormalX + boardForwardZ * waveNormalZ),
+  );
+  const broadside = 1 - Math.abs(headingAlignment);
+  const crossWaveSide = Math.sign(
+    waveNormalX * boardForwardZ - waveNormalZ * boardForwardX,
+  ) || 1;
+  const normalSpeed = sample.velocityX * waveNormalX
+    + sample.velocityZ * waveNormalZ;
+  const relativeWaveSpeed = waveSpeed - normalSpeed;
+  const faceSlope = Math.max(
+    0,
+    -(sample.slopeX * waveNormalX + sample.slopeZ * waveNormalZ),
+  );
+  const faceStrength = smoothstep(
+    .008,
+    .105 + Math.max(.25, sample.waveHeight) * .032,
+    faceSlope,
+  );
+  const riseStrength = smoothstep(
+    .015,
+    .24 + Math.max(.25, sample.waveHeight) * .14,
+    sample.surfaceRise,
+  );
+  const liftStrength = smoothstep(
+    .025,
+    .24 + Math.max(.25, sample.waveHeight) * .19,
+    sample.surfaceLift,
+  );
+  const crestEnvelope = smoothstep(-3.4, .25, sample.crestDistance)
+    * (1 - smoothstep(
+      7.4,
+      13.8 + Math.max(.25, sample.waveHeight) * 1.5,
+      sample.crestDistance,
+    ));
+  const physicalFace = Math.max(
+    faceStrength * .76 + liftStrength * .24,
+    riseStrength * .58 + faceStrength * .42,
+    liftStrength * .54 + riseStrength * .46,
+  );
+  const surfaceCanCarry = sample.crestSurfable
+    || (sample.crestEnergy >= .14 && physicalFace >= .24);
+  const waveContact = Math.max(
+    0,
+    Math.min(
+      1,
+      crestEnvelope
+        * physicalFace
+        * (surfaceCanCarry ? 1 : .28)
+        * (.72 + Math.max(0, Math.min(1, sample.crestEnergy)) * .28),
+    ),
+  );
+  const planing = Math.max(
+    0,
+    Math.min(
+      1,
+      normalSpeed / Math.max(1.1, waveSpeed * .66),
+    ),
+  );
+  const directionalEntry = smoothstep(-.04, .86, headingAlignment);
+  const speedMatch = smoothstep(
+    .18,
+    Math.max(.19, waveSpeed * .48),
+    Math.max(0, normalSpeed),
+  );
+  const capture = Math.max(
+    0,
+    Math.min(
+      1,
+      waveContact
+        * directionalEntry
+        * (.34 + speedMatch * .42 + planing * .24),
+    ),
+  );
+  const stability = Math.max(.62, Math.sqrt(Math.max(.35, sample.boardStability)));
+  const crossWaveLoad = Math.max(
+    0,
+    Math.min(
+      1.5,
+      waveContact
+        * broadside
+        * Math.max(0, relativeWaveSpeed)
+        / Math.max(1.2, waveSpeed * .54)
+        * (.78 + sample.crestEnergy * .42)
+        / stability,
+    ),
+  );
+  const backwardLoad = Math.max(0, -headingAlignment)
+    * waveContact
+    * Math.max(0, relativeWaveSpeed)
+    / Math.max(1.2, waveSpeed);
+  const wipeoutRisk = Math.max(
+    0,
+    Math.min(
+      1,
+      (
+        crossWaveLoad * .82
+        + backwardLoad * .42
+        + waveContact * Math.max(0, broadside - .52) * .28
+      ) / stability,
+    ),
+  );
+  const crossSlope = sample.slopeX * Math.cos(sample.boardHeading)
+    - sample.slopeZ * Math.sin(sample.boardHeading);
+  const balanceTarget = Math.max(
+    -.92,
+    Math.min(
+      .92,
+      (
+        crossSlope * .48
+        + crossWaveSide * crossWaveLoad * .46
+      ) / stability,
+    ),
+  );
+  const totalSpeed = Math.hypot(sample.velocityX, sample.velocityZ);
+  const outcome = wipeoutRisk >= .62
+    ? "tumble"
+    : capture >= .2
+      ? "capture"
+      : totalSpeed >= .55 || waveContact >= .1
+        ? "glide"
+        : "stand";
+  return {
+    outcome,
+    waveContact,
+    capture,
+    wipeoutRisk,
+    headingAlignment,
+    broadside,
+    crossWaveLoad,
+    crossWaveSide,
+    relativeWaveSpeed,
+    planing,
+    faceSlope,
+    balanceTarget,
+  };
+}
+
 export type ThermalKitId = "hooded-5-4" | "full-4-3" | "full-3-2" | "spring-2-2" | "tropical";
 
 export type ThermalKit = {
