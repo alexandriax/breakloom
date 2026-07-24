@@ -8,6 +8,7 @@ import {
   advanceSurfboardDynamics,
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
+  boardRailContactFrame,
   evaluateBoardWaterInteraction,
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
@@ -798,6 +799,16 @@ const proneSample = {
   surfaceHeight: 0,
   flotationOffset: .3,
 };
+const tiltedRailContact = boardRailContactFrame(0, .1, -.1, .25);
+const crownedRailContact = boardRailContactFrame(0, .06, .06, .25);
+if (
+  Math.abs(tiltedRailContact.crossSlope - .4) > 1e-9
+  || Math.abs(tiltedRailContact.railWarp) > 1e-9
+  || Math.abs(crownedRailContact.crossSlope) > 1e-9
+  || Math.abs(crownedRailContact.railWarp - .06) > 1e-9
+) {
+  throw new Error("Explicit left/right rail samples no longer resolve slope and vertical polygon warp independently");
+}
 const popUpStart = evaluatePopUpTransition(0, 100);
 const popUpHandPlant = evaluatePopUpTransition(.25, 100);
 const popUpFootPlant = evaluatePopUpTransition(.48, 100);
@@ -1310,5 +1321,7 @@ console.log(JSON.stringify({
     proneBroadsideFailurePower: broadsideProneFailure.power,
     popUpDuration: popUpStanding.duration,
     popUpFootImpact: popUpFootPlant.footImpact,
+    tiltedRailSlope: tiltedRailContact.crossSlope,
+    crownedRailWarp: crownedRailContact.railWarp,
   },
 }, null, 2));

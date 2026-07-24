@@ -812,6 +812,33 @@ export type ProneBoardAttitudeState = {
   heave: BoardHeaveState;
 };
 
+export type BoardRailContactFrame = {
+  crossSlope: number;
+  railWarp: number;
+  rightOffset: number;
+  leftOffset: number;
+};
+
+/**
+ * Resolves the lateral contact plane from explicit rail samples. Rail warp is
+ * the shared rise or drop that a center tangent cannot represent, such as a
+ * short polygon ridge lifting both rails beneath the middle of the board.
+ */
+export function boardRailContactFrame(
+  centerHeight: number,
+  rightRailHeight: number,
+  leftRailHeight: number,
+  halfWidth: number,
+): BoardRailContactFrame {
+  const safeHalfWidth = Math.max(.08, Math.abs(halfWidth));
+  return {
+    crossSlope: (rightRailHeight - leftRailHeight) / (safeHalfWidth * 2),
+    railWarp: (rightRailHeight + leftRailHeight) * .5 - centerHeight,
+    rightOffset: rightRailHeight - centerHeight,
+    leftOffset: leftRailHeight - centerHeight,
+  };
+}
+
 export type ProneBoardAttitudeSample = {
   deltaSeconds: number;
   balance: number;

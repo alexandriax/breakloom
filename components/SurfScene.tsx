@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11279,6 +11279,7 @@ function Simulation({
     let boardWaveAngle = 0;
     let crossWaveLoad = 0;
     let boardPlaning = 0;
+    let railVerticalLoad = 0;
     let pearlingRisk = 0;
     let tailStall = 0;
     let physicalRollAngle = boardRollAngle.current;
@@ -11786,12 +11787,15 @@ function Simulation({
           settings,
           character,
         );
-        const proneCrossSlope = (
-          proneRightRailHeight - proneLeftRailHeight
-        ) / (proneHalfRail * 2);
-        const proneRailWarp = (
-          (proneRightRailHeight + proneLeftRailHeight) * .5
-        ) - takeoffSurface.height;
+        const proneRailContact = boardRailContactFrame(
+          takeoffSurface.height,
+          proneRightRailHeight,
+          proneLeftRailHeight,
+          proneHalfRail,
+        );
+        railVerticalLoad = proneRailContact.railWarp * (
+          12 + Math.min(12, speed) * .8
+        );
         const proneSlopeAlong = takeoffSurface.slopeX * paddleForwardX
           + takeoffSurface.slopeZ * paddleForwardZ;
         const proneDiveProgress = THREE.MathUtils.clamp(
@@ -11838,7 +11842,7 @@ function Simulation({
             trim: popUpTransition.trim,
             stabilityScale: popUpTransition.stabilityScale,
             counterweightScale: popUpTransition.counterweightScale,
-            crossSlope: proneCrossSlope,
+            crossSlope: proneRailContact.crossSlope,
             lateralAcceleration: proneLateralAcceleration,
             longitudinalAcceleration: proneLongitudinalAcceleration,
             crossWaveLoad: proneInteraction.crossWaveLoad,
@@ -11851,7 +11855,6 @@ function Simulation({
               + proneSlopeAlong * proneHalfContact,
             turbulenceTorque: (
               paddleStroke.strokeSide * paddleStroke.drive * .16
-                + proneRailWarp * 2.1
                 + Math.sign(boardRollAngle.current || 1)
                   * Math.abs(boardRollAngle.current)
                   * popUpTransition.footImpact
@@ -11878,6 +11881,7 @@ function Simulation({
             flotationOffset: .3 - proneDiveEnvelope * .42,
             verticalWaterAcceleration: -proneDiveEnvelope * 7.8
               + popUpTransition.verticalLoadAcceleration
+              + railVerticalLoad
               + shorebreakIntensity
                 * Math.sin(t * 9.1 - position.current.z * .07)
                 * 2.6,
@@ -12470,8 +12474,30 @@ function Simulation({
           const standingCurrentZ = -Math.cos(standingCurrentAngle) * standingCurrentSpeed;
           const standingRollRightX = Math.cos(rideHeading.current);
           const standingRollRightZ = -Math.sin(rideHeading.current);
-          const standingCrossSlope = standingSurface.slopeX * standingRollRightX
-            + standingSurface.slopeZ * standingRollRightZ;
+          const standingHalfRail = Math.max(.12, boardSpec.width * .46);
+          const standingRightRailHeight = waveHeightAt(
+            position.current.x + standingRollRightX * standingHalfRail,
+            position.current.z + standingRollRightZ * standingHalfRail,
+            t,
+            settings,
+            character,
+          );
+          const standingLeftRailHeight = waveHeightAt(
+            position.current.x - standingRollRightX * standingHalfRail,
+            position.current.z - standingRollRightZ * standingHalfRail,
+            t,
+            settings,
+            character,
+          );
+          const standingRailContact = boardRailContactFrame(
+            standingSurface.height,
+            standingRightRailHeight,
+            standingLeftRailHeight,
+            standingHalfRail,
+          );
+          railVerticalLoad = standingRailContact.railWarp * (
+            12 + Math.min(12, rideVelocity.current.length()) * .8
+          ) * boardWaterContact;
           const standingLateralAcceleration = rideAcceleration.current.x * standingRollRightX
             + rideAcceleration.current.y * standingRollRightZ;
           const standingTurbulenceTorque = (
@@ -12489,7 +12515,7 @@ function Simulation({
               deltaSeconds: delta,
               railInput: standingSteer,
               counterweight: balanceInput,
-              crossSlope: standingCrossSlope,
+              crossSlope: standingRailContact.crossSlope,
               lateralAcceleration: standingLateralAcceleration,
               crossWaveLoad: standingReading.crossWaveLoad * boardWaterContact,
               crossWaveSide: standingReading.crossWaveSide,
@@ -13030,8 +13056,30 @@ function Simulation({
         });
         const rollRightX = Math.cos(rideHeading.current);
         const rollRightZ = -Math.sin(rideHeading.current);
-        const rollCrossSlope = rideSurface.slopeX * rollRightX
-          + rideSurface.slopeZ * rollRightZ;
+        const rideHalfRail = Math.max(.12, boardSpec.width * .46);
+        const rideRightRailHeight = waveHeightAt(
+          position.current.x + rollRightX * rideHalfRail,
+          position.current.z + rollRightZ * rideHalfRail,
+          t,
+          settings,
+          character,
+        );
+        const rideLeftRailHeight = waveHeightAt(
+          position.current.x - rollRightX * rideHalfRail,
+          position.current.z - rollRightZ * rideHalfRail,
+          t,
+          settings,
+          character,
+        );
+        const rideRailContact = boardRailContactFrame(
+          rideSurface.height,
+          rideRightRailHeight,
+          rideLeftRailHeight,
+          rideHalfRail,
+        );
+        railVerticalLoad = rideRailContact.railWarp * (
+          12 + Math.min(12, speed) * .8
+        ) * boardWaterContact;
         const priorLateralAcceleration = rideAcceleration.current.x * rollRightX
           + rideAcceleration.current.y * rollRightZ;
         const rollPlaningEstimate = Math.max(
@@ -13051,7 +13099,7 @@ function Simulation({
             deltaSeconds: delta,
             railInput: rideSteer,
             counterweight: balanceInput,
-            crossSlope: rollCrossSlope,
+            crossSlope: rideRailContact.crossSlope,
             lateralAcceleration: priorLateralAcceleration,
             crossWaveLoad: rideInteraction.crossWaveLoad * boardWaterContact,
             crossWaveSide: rideInteraction.crossWaveSide,
@@ -14102,7 +14150,8 @@ function Simulation({
             boardWidth: boardSpec.width,
             boardStability: boardSpec.stability,
             whitewater: whitewaterPressure,
-            verticalWaterAcceleration: rebound * 4.2
+            verticalWaterAcceleration: railVerticalLoad
+              + rebound * 4.2
               + Math.sin(t * 7.3 + position.current.x * .1) * whitewaterPressure * 2.1,
           },
         );
