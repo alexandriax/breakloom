@@ -10695,6 +10695,7 @@ function Simulation({
   const breath = useRef(100);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
+  const diveLatch = useRef(false);
   const takeoffCommitAt = useRef(-1);
   const takeoffCommitQuality = useRef(.5);
   const takeoffCapture = useRef(0);
@@ -11214,6 +11215,9 @@ function Simulation({
     const actionPressed = actionDown && !actionLatch.current;
     const actionReleased = !actionDown && actionLatch.current;
     actionLatch.current = actionDown;
+    const diveDown = state.sprint || state.gamepadSprint;
+    const divePressed = diveDown && !diveLatch.current;
+    diveLatch.current = diveDown;
 
     if (!active) {
       landVelocity.current.x = THREE.MathUtils.damp(landVelocity.current.x, 0, 12, delta);
@@ -11476,7 +11480,7 @@ function Simulation({
           duckDiveWindowOpen.current = true;
         }
         duckDiveReady = duckDiveWindowOpen.current && !duckDiveActive;
-        if (actionPressed && duckDiveReady) {
+        if (divePressed && duckDiveReady) {
           const diveTimingWindow = settings.mode === "training" ? 1 : settings.mode === "advanced" ? .64 : mobileRenderer ? .88 : .78;
           duckDiveQuality.current = THREE.MathUtils.clamp(1 - Math.abs(shorebreakSeconds - .3) / diveTimingWindow, 0, 1);
           duckDiveUntil.current = t + 1.12;
@@ -11884,7 +11888,7 @@ function Simulation({
           }
         } else {
           prompt = duckDiveReady
-            ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
+            ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SHIFT now`
             : takeoffReading.headingQuality < .16 && takeoffReading.physicalLift > .1
               ? "Wave approaching across the rail — point the nose with A/D"
               : catchReady

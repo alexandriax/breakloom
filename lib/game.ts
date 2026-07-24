@@ -306,7 +306,11 @@ export function evaluateBoardWaterInteraction(
       normalSpeed / Math.max(1.1, waveSpeed * .66),
     ),
   );
-  const directionalEntry = smoothstep(-.04, .86, headingAlignment);
+  // A surfboard can angle into a shoulder, but it cannot acquire planing trim
+  // while presenting most of its rail to the wave. Preserve useful diagonal
+  // entries while making the final quarter-turn toward broadside lose capture
+  // sharply rather than behaving like an arcade pickup radius.
+  const directionalEntry = smoothstep(.25, .94, headingAlignment);
   const speedMatch = smoothstep(
     .18,
     Math.max(.19, waveSpeed * .48),

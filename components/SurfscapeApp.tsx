@@ -2550,25 +2550,31 @@ export default function SurfscapeApp() {
     }
   };
 
-  const setControl = (name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">, value: boolean) => {
+  const setControl = (name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action" | "sprint">, value: boolean) => {
     controls.current[name] = value;
   };
 
   const beginControl = (
     event: ReactPointerEvent<HTMLButtonElement>,
-    name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action">,
+    name: keyof Pick<ControlState, "forward" | "back" | "left" | "right" | "action" | "sprint">,
   ) => {
     event.preventDefault();
     controls.current.gamepadActive = false;
     event.currentTarget.setPointerCapture(event.pointerId);
     setControl(name, true);
-    if (name === "action") haptic(9);
+    if (name === "action" || name === "sprint") haptic(9);
   };
 
   const endMobileAction = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setControl("forward", false);
     setControl("action", false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const endMobileDive = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    setControl("sprint", false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -3039,7 +3045,7 @@ export default function SurfscapeApp() {
         ? stats.duckDiveReady
           ? {
               cue: "DIVE UNDER THE LIP",
-              detail: `SPACE now · impact in ${stats.shorebreakSeconds.toFixed(1)}s`,
+              detail: `${gamepadConnected ? "LB" : "SHIFT"} now · impact in ${stats.shorebreakSeconds.toFixed(1)}s`,
               rotation: 90,
               tone: "danger",
             }
@@ -3135,9 +3141,7 @@ export default function SurfscapeApp() {
           : stats.maneuverActive
           ? stats.maneuverPhase === "air" ? "SPOT IT" : "LAND"
           : stats.trickCharge > .04 ? `RELEASE ${Math.round(stats.trickCharge * 100)}` : "HOLD TRICK"
-        : stats.duckDiveReady
-          ? "DIVE"
-          : stats.phase === "paddling"
+        : stats.phase === "paddling"
             ? "POP"
             : "MOVE";
   const mobileContext = stats.vehicleMode
@@ -3169,7 +3173,7 @@ export default function SurfscapeApp() {
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
             : stats.duckDiveReady
-              ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · tap DIVE and punch through` }
+              ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · use the separate DIVE control and punch through` }
             : stats.catchReady
             ? { title: "FACE SUPPORT", detail: `${Math.round(stats.takeoffQuality * 100)}% capture potential · keep paddling or tap POP` }
             : stats.inLineup && stats.takeoffAlignment < .3
@@ -4210,7 +4214,8 @@ export default function SurfscapeApp() {
                     <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D turns the floating board · W/S shifts stance" : stats.phase === "riding" ? "A/D carve · W/S move trough to lip" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
-                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Hold to load, release to trick" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime · dive when the lip cue appears" : "Context action"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Hold to load, release to trick" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
+                    {stats.phase === "paddling" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive when the lip cue appears</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
                   </div>
@@ -4446,7 +4451,8 @@ export default function SurfscapeApp() {
                     <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard ? "shift nose / tail" : stats.phase === "riding" ? "climb / drop wave face" : "paddle / brake"}</span>
                   </>
                 )}
-                <span><kbd>SPACE</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime · dive on cue" : "context action"}</span>
+                <span><kbd>SPACE</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                {stats.phase === "paddling" && <span><kbd>SHIFT</kbd> duck dive on lip cue</span>}
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{stats.phase === "riding" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
               </>
@@ -4523,6 +4529,21 @@ export default function SurfscapeApp() {
                 </div>
               )}
             </div>
+            {stats.phase === "paddling" && stats.duckDiveReady && (
+              <button
+                type="button"
+                className="dive-button"
+                aria-label={`Duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds.`}
+                onPointerDown={(event) => beginControl(event, "sprint")}
+                onPointerUp={endMobileDive}
+                onPointerCancel={endMobileDive}
+                onLostPointerCapture={() => setControl("sprint", false)}
+              >
+                <Waves />
+                <span>DIVE</span>
+                <small>{stats.shorebreakSeconds.toFixed(1)}s</small>
+              </button>
+            )}
             <button
               type="button"
               className={`action-button ${mobileActionIsContextual ? "is-contextual" : "is-propulsion"} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}

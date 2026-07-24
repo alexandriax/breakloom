@@ -286,6 +286,31 @@ if (
   throw new Error(`A broadside board was not rolled by the face: ${JSON.stringify(broadsideBoard)}`);
 }
 
+const angleSweep = [0, 30, 45, 60, 75, 90].map((degrees) => ({
+  degrees,
+  reading: evaluateBoardWaterInteraction({
+    ...sharedBoardWater,
+    boardHeading: degrees * Math.PI / 180,
+    velocityZ: 3.4,
+  }),
+}));
+for (let index = 1; index < angleSweep.length; index += 1) {
+  const previous = angleSweep[index - 1];
+  const current = angleSweep[index];
+  if (current.reading.capture > previous.reading.capture + .001) {
+    throw new Error(`Capture improved while rotating broadside: ${previous.degrees}° to ${current.degrees}°`);
+  }
+  if (current.reading.crossWaveLoad + .001 < previous.reading.crossWaveLoad) {
+    throw new Error(`Cross-wave load fell while rotating broadside: ${previous.degrees}° to ${current.degrees}°`);
+  }
+}
+if (angleSweep.find(({ degrees }) => degrees === 75).reading.capture >= .2) {
+  throw new Error("A board 75 degrees across the wave still acquired capture");
+}
+if (angleSweep.find(({ degrees }) => degrees === 45).reading.capture <= .3) {
+  throw new Error("A diagonal 45-degree takeoff cannot engage the open shoulder");
+}
+
 const stillWaterStand = evaluateBoardWaterInteraction({
   ...sharedBoardWater,
   waveVelocityZ: 5,
@@ -367,5 +392,10 @@ console.log(JSON.stringify({
     broadsideLoad: broadsideBoard.crossWaveLoad,
     broadsideWipeoutRisk: broadsideBoard.wipeoutRisk,
     stillWater: stillWaterStand.outcome,
+    angleSweep: angleSweep.map(({ degrees, reading }) => ({
+      degrees,
+      capture: reading.capture,
+      crossWaveLoad: reading.crossWaveLoad,
+    })),
   },
 }, null, 2));
