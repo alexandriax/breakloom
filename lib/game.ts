@@ -587,6 +587,132 @@ export function advanceBoardPitchDynamics(
   };
 }
 
+export type BoardHeaveState = {
+  elevation: number;
+  verticalVelocity: number;
+  previousSurfaceHeight: number;
+  waterContact: number;
+};
+
+export type BoardHeaveSample = {
+  deltaSeconds: number;
+  surfaceHeight: number;
+  flotationOffset: number;
+  planing: number;
+  speed: number;
+  waveContact: number;
+  boardLength: number;
+  boardWidth: number;
+  boardStability: number;
+  whitewater: number;
+  verticalWaterAcceleration?: number;
+};
+
+export type BoardHeaveReading = BoardHeaveState & {
+  verticalAcceleration: number;
+  surfaceVelocity: number;
+  immersion: number;
+  airborneHeight: number;
+  landingImpact: number;
+  buoyancyAcceleration: number;
+};
+
+/**
+ * Integrates vertical board motion against a moving polygon surface. Buoyancy
+ * and hydrodynamic damping exist only while the hull is immersed; otherwise
+ * gravity carries the board until it reconnects with the water.
+ */
+export function advanceBoardHeaveDynamics(
+  state: BoardHeaveState,
+  sample: BoardHeaveSample,
+): BoardHeaveReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const stability = Math.max(.55, sample.boardStability);
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const safeWidth = Math.max(.24, sample.boardWidth);
+  const planing = Math.max(0, Math.min(1, sample.planing));
+  const waveContact = Math.max(0, Math.min(1, sample.waveContact));
+  const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const waterline = sample.surfaceHeight + sample.flotationOffset;
+  const surfaceVelocity = delta > 0
+    ? clampValue(
+        (sample.surfaceHeight - state.previousSurfaceHeight) / delta,
+        -5.5,
+        5.5,
+      )
+    : 0;
+  const immersionBefore = waterline - state.elevation;
+  const contactBefore = smoothstep(-.045, .105, immersionBefore);
+  const relativeVerticalVelocity = state.verticalVelocity - surfaceVelocity;
+  const volumeScale = Math.pow(
+    safeLength * safeWidth / (2.5 * .34),
+    .72,
+  );
+  const buoyancyStiffness = 68
+    * volumeScale
+    * (.82 + stability * .18);
+  const buoyancyAcceleration = Math.max(0, immersionBefore)
+    * buoyancyStiffness
+    * contactBefore;
+  const hydrodynamicDamping = -relativeVerticalVelocity
+    * (
+      4.7
+        + planing * 2.6
+        + whitewater * 1.4
+    )
+    * contactBefore
+    / Math.sqrt(stability);
+  const speedAuthority = smoothstep(1.2, 7.4, Math.max(0, sample.speed));
+  const planingLift = planing
+    * speedAuthority
+    * (1.15 + waveContact * 1.65)
+    * contactBefore;
+  const verticalWaterAcceleration = (sample.verticalWaterAcceleration ?? 0)
+    * contactBefore
+    * (.35 + waveContact * .65);
+  const verticalAcceleration = clampValue(
+    -9.81
+      + buoyancyAcceleration
+      + hydrodynamicDamping
+      + planingLift
+      + verticalWaterAcceleration,
+    -19,
+    29,
+  );
+  const verticalVelocity = clampValue(
+    state.verticalVelocity + verticalAcceleration * delta,
+    -8.5,
+    8.5,
+  );
+  const elevation = state.elevation + verticalVelocity * delta;
+  const immersion = waterline - elevation;
+  const waterContact = smoothstep(-.045, .105, immersion);
+  const airborneHeight = Math.max(0, elevation - waterline);
+  const landingImpact = (
+    state.waterContact < .5
+    && waterContact > state.waterContact + .18
+  )
+    ? smoothstep(
+        1.15,
+        5.8,
+        Math.max(0, surfaceVelocity - state.verticalVelocity),
+      )
+    : 0;
+
+  return {
+    elevation,
+    verticalVelocity,
+    previousSurfaceHeight: sample.surfaceHeight,
+    waterContact,
+    verticalAcceleration,
+    surfaceVelocity,
+    immersion,
+    airborneHeight,
+    landingImpact,
+    buoyancyAcceleration,
+  };
+}
+
 function clampValue(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }

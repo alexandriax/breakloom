@@ -1,4 +1,5 @@
 import {
+  advanceBoardHeaveDynamics,
   advanceBoardPitchDynamics,
   advanceBoardRollDynamics,
   advancePaddleboardDynamics,
@@ -659,6 +660,76 @@ if (sunkTailContact.tailImmersion < .03 || sunkTailContact.tailStallRisk < .25) 
   throw new Error("A low-speed, tail-heavy board did not sink and stall");
 }
 
+const heaveSample = {
+  deltaSeconds: 1 / 60,
+  surfaceHeight: 0,
+  flotationOffset: .3,
+  planing: 0,
+  speed: 0,
+  waveContact: 0,
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardStability: .9,
+  whitewater: 0,
+};
+function heaveForFrames(frameCount, sample = heaveSample, initial = {
+  elevation: .15,
+  verticalVelocity: 0,
+  previousSurfaceHeight: 0,
+  waterContact: 1,
+}) {
+  let state = initial;
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    state = advanceBoardHeaveDynamics(state, sample);
+  }
+  return state;
+}
+const staticHeave = heaveForFrames(600);
+if (
+  staticHeave.elevation < .1
+  || staticHeave.elevation > .21
+  || Math.abs(staticHeave.verticalVelocity) > .02
+  || staticHeave.waterContact < .9
+) {
+  throw new Error("A floating board did not settle into a stable buoyant waterline");
+}
+const planingHeave = heaveForFrames(360, {
+  ...heaveSample,
+  planing: .86,
+  speed: 6.2,
+  waveContact: .82,
+});
+if (planingHeave.elevation <= staticHeave.elevation + .018) {
+  throw new Error("Planing pressure is not lifting the hull relative to static flotation");
+}
+const droppedSurface = advanceBoardHeaveDynamics(staticHeave, {
+  ...heaveSample,
+  surfaceHeight: -.55,
+});
+if (droppedSurface.waterContact > .2 || droppedSurface.airborneHeight < .22) {
+  throw new Error("A falling polygon surface did not release the board into ballistic heave");
+}
+let fallingBoard = droppedSurface;
+let peakLandingImpact = 0;
+for (let frame = 0; frame < 120; frame += 1) {
+  fallingBoard = advanceBoardHeaveDynamics(fallingBoard, {
+    ...heaveSample,
+    surfaceHeight: -.55,
+  });
+  peakLandingImpact = Math.max(peakLandingImpact, fallingBoard.landingImpact);
+}
+if (peakLandingImpact < .08 || fallingBoard.waterContact < .85) {
+  throw new Error("An airborne board did not reconnect with a measurable landing impact");
+}
+const risingSurface = advanceBoardHeaveDynamics(staticHeave, {
+  ...heaveSample,
+  surfaceHeight: .2,
+  waveContact: .8,
+});
+if (risingSurface.verticalAcceleration < 3) {
+  throw new Error("A rising polygon did not transfer upward pressure into the hull");
+}
+
 const paddlingSample = {
   deltaSeconds: 1 / 60,
   stroke: 1,
@@ -826,5 +897,12 @@ console.log(JSON.stringify({
     pearlingRisk: risingNoseContact.pearlingRisk,
     pitchOverRisk: risingNoseContact.pitchOverRisk,
     tailStallRisk: sunkTailContact.tailStallRisk,
+  },
+  heaveDynamics: {
+    staticElevation: staticHeave.elevation,
+    planingElevation: planingHeave.elevation,
+    droppedAirborneHeight: droppedSurface.airborneHeight,
+    landingImpact: peakLandingImpact,
+    risingAcceleration: risingSurface.verticalAcceleration,
   },
 }, null, 2));
