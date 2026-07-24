@@ -816,6 +816,8 @@ export type ProneBoardAttitudeSample = {
   deltaSeconds: number;
   balance: number;
   trim: number;
+  stabilityScale?: number;
+  counterweightScale?: number;
   crossSlope: number;
   lateralAcceleration: number;
   longitudinalAcceleration: number;
@@ -856,6 +858,76 @@ export type ProneBoardFailureReading = {
   power: number;
 };
 
+export type PopUpTransitionReading = {
+  progress: number;
+  duration: number;
+  handLoad: number;
+  rearFootLoad: number;
+  frontFootLoad: number;
+  footImpact: number;
+  centerOfMassHeight: number;
+  trim: number;
+  stabilityScale: number;
+  counterweightScale: number;
+  verticalLoadAcceleration: number;
+};
+
+/**
+ * Advances the surfer's body transition independently from wave capture.
+ * Hands load the forward half, the rear foot arrives first, then the front
+ * foot raises the center of mass into a standing balance state.
+ */
+export function evaluatePopUpTransition(
+  elapsedSeconds: number,
+  stamina: number,
+): PopUpTransitionReading {
+  const staminaRatio = clampValue(stamina / 100, 0, 1);
+  const duration = .9 - staminaRatio * .24;
+  const linearProgress = clampValue(
+    Math.max(0, elapsedSeconds) / duration,
+    0,
+    1,
+  );
+  const progress = linearProgress * linearProgress * (3 - 2 * linearProgress);
+  const handEntry = smoothstep(.16, .34, progress);
+  const handRelease = smoothstep(.56, .76, progress);
+  const handLoad = handEntry * (1 - handRelease);
+  const rearFootLoad = smoothstep(.48, .7, progress);
+  const frontFootLoad = smoothstep(.68, .9, progress);
+  const rearFootImpact = Math.sin(
+    Math.PI * clampValue((progress - .45) / .34, 0, 1),
+  );
+  const frontFootImpact = Math.sin(
+    Math.PI * clampValue((progress - .65) / .3, 0, 1),
+  );
+  const footImpact = Math.max(0, rearFootImpact) * .46
+    + Math.max(0, frontFootImpact) * .54;
+  const centerOfMassHeight = smoothstep(.28, .9, progress);
+  const trim = -.06
+    + handLoad * .17
+    - rearFootImpact * .11
+    + frontFootLoad * .08;
+  const stabilityScale = 1.28 - centerOfMassHeight * .28;
+  const counterweightScale = .46 + centerOfMassHeight * .46;
+  const verticalLoadAcceleration = -(
+    handLoad * 2.5
+      + footImpact * 3.8
+  );
+  return {
+    progress,
+    duration,
+    handLoad,
+    rearFootLoad,
+    frontFootLoad,
+    footImpact,
+    centerOfMassHeight,
+    trim,
+    stabilityScale,
+    counterweightScale,
+    verticalLoadAcceleration,
+  };
+}
+
 /**
  * Advances the prone board as one coupled contact state. A surfer lying low
  * adds roll stability and has reduced fore-aft leverage, but the hull still
@@ -866,13 +938,15 @@ export function advanceProneBoardAttitude(
   state: ProneBoardAttitudeState,
   sample: ProneBoardAttitudeSample,
 ): ProneBoardAttitudeReading {
-  const proneStability = Math.max(.55, sample.boardStability) * 1.28;
+  const proneStability = Math.max(.55, sample.boardStability)
+    * clampValue(sample.stabilityScale ?? 1.28, .82, 1.5);
   const contact = Math.max(0, Math.min(1, state.heave.waterContact));
   const waveContact = Math.max(0, Math.min(1, sample.waveContact)) * contact;
   const roll = advanceBoardRollDynamics(state.roll, {
     deltaSeconds: sample.deltaSeconds,
     railInput: 0,
-    counterweight: sample.balance * .46,
+    counterweight: sample.balance
+      * clampValue(sample.counterweightScale ?? .46, .25, 1),
     crossSlope: sample.crossSlope,
     lateralAcceleration: sample.lateralAcceleration,
     crossWaveLoad: sample.crossWaveLoad,
@@ -1926,6 +2000,7 @@ export type GameStats = {
   takeoffAlignment: number;
   takeoffQuality: number;
   takeoffCommitProgress: number;
+  waveCapture: number;
   prompt: string;
 };
 
@@ -2043,6 +2118,7 @@ export const INITIAL_STATS: GameStats = {
   takeoffAlignment: 0,
   takeoffQuality: 0,
   takeoffCommitProgress: 0,
+  waveCapture: 0,
   prompt: "Walk toward the water · or find the van",
 };
 
@@ -2423,21 +2499,6 @@ export function initialWavePopUpCapture(
       Math.max(0, Math.min(1, boardCapture)) * .44
         + Math.max(0, Math.min(1, planing)) * .18,
     ),
-  );
-}
-
-export function waveTakeoffCanStand(
-  elapsed: number,
-  capture: number,
-  physicalLift: number,
-) {
-  return elapsed >= .28 && (
-    capture >= .72
-    || (
-      elapsed >= .92
-      && capture >= .36
-      && physicalLift > .08
-    )
   );
 }
 

@@ -3124,6 +3124,36 @@ export default function SurfscapeApp() {
                 rotation: rollSide === "RIGHT" ? 180 : 0,
                 tone: "danger",
               }
+          : takeoffCommitted
+            ? stats.takeoffCommitProgress < .2
+              ? {
+                  cue: "LAST STROKE · HANDS IN",
+                  detail: "The body transition now finishes independently of wave capture.",
+                  rotation: -90,
+                  tone: "ready",
+                }
+              : stats.takeoffCommitProgress < .5
+                ? {
+                    cue: "HANDS UNDER RIBS",
+                    detail: "Keep the shoulders square; hand pressure is loading the nose and sinking the hull.",
+                    rotation: 90,
+                    tone: "balance",
+                  }
+                : stats.takeoffCommitProgress < .74
+                  ? {
+                      cue: "REAR FOOT UNDER HIPS",
+                      detail: "Counterweight toward the marker as the raised center of mass reduces roll stability.",
+                      rotation: rollSide === "RIGHT" ? 180 : 0,
+                      tone: "balance",
+                    }
+                  : {
+                      cue: "FRONT FOOT LANDING",
+                      detail: stats.waveCapture > .1
+                        ? `${Math.round(stats.waveCapture * 100)}% wave capture · look down the open face; both feet inherit the live attitude.`
+                        : "No wave capture: finish centered and expect to balance without forward drive.",
+                      rotation: -90,
+                      tone: "ready",
+                    }
           : !stats.inLineup
             ? {
                 cue: "PADDLE OUT",
@@ -3369,8 +3399,14 @@ export default function SurfscapeApp() {
             ? { title: `COUNTER ${rollSide}`, detail: `${rollDegrees}° prone roll · move the balance control toward the target` }
           : takeoffCommitted
             ? {
-                title: stats.takeoffCommitProgress < .42 ? "DRIVE WITH THE RISE" : stats.takeoffCommitProgress < .68 ? "HANDS PLANTED" : "POP UP",
-                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% · stay with the lifting face`,
+                title: stats.takeoffCommitProgress < .2
+                  ? "LAST STROKE"
+                  : stats.takeoffCommitProgress < .5
+                    ? "HANDS UNDER RIBS"
+                    : stats.takeoffCommitProgress < .74
+                      ? "REAR FOOT IN"
+                      : "FRONT FOOT DOWN",
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body transition · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% wave capture` : "no wave capture"}`,
               }
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }

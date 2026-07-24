@@ -9,6 +9,7 @@ import {
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
   evaluateBoardWaterInteraction,
+  evaluatePopUpTransition,
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
   initialWavePopUpCapture,
@@ -20,7 +21,6 @@ import {
   waveHeightAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
-  waveTakeoffCanStand,
 } from "../lib/game.ts";
 
 const settings = {
@@ -351,9 +351,8 @@ const alignedPopUpStart = initialWavePopUpCapture(
 if (
   alignedPopUpStart < .2
   || alignedPopUpStart >= .72
-  || waveTakeoffCanStand(0, alignedPopUpStart, 1)
 ) {
-  throw new Error("An engaged pop-up skipped its physical hand-plant transition");
+  throw new Error("Initial wave capture no longer starts below full engagement");
 }
 
 const dynamicsSample = {
@@ -799,6 +798,22 @@ const proneSample = {
   surfaceHeight: 0,
   flotationOffset: .3,
 };
+const popUpStart = evaluatePopUpTransition(0, 100);
+const popUpHandPlant = evaluatePopUpTransition(.25, 100);
+const popUpFootPlant = evaluatePopUpTransition(.48, 100);
+const popUpStanding = evaluatePopUpTransition(.7, 100);
+const tiredPopUp = evaluatePopUpTransition(.7, 0);
+if (
+  popUpStart.progress !== 0
+  || popUpHandPlant.handLoad < .45
+  || popUpFootPlant.footImpact < .35
+  || popUpStanding.progress < .99
+  || popUpStanding.frontFootLoad < .95
+  || popUpStanding.stabilityScale >= popUpStart.stabilityScale
+  || tiredPopUp.progress >= popUpStanding.progress
+) {
+  throw new Error("Pop-up body loads no longer move from hands through both feet on an independent timeline");
+}
 function proneForFrames(frameCount, sample = proneSample) {
   let state = {
     roll: { rollAngle: 0, rollRate: 0 },
@@ -828,6 +843,21 @@ if (
   || neutralProne.heave.waterContact < .84
 ) {
   throw new Error("A neutral prone board did not settle into a stable contact state");
+}
+const handLoadedProne = proneForFrames(24, {
+  ...proneSample,
+  trim: popUpHandPlant.trim,
+  stabilityScale: popUpHandPlant.stabilityScale,
+  counterweightScale: popUpHandPlant.counterweightScale,
+  verticalWaterAcceleration: popUpHandPlant.verticalLoadAcceleration,
+});
+if (
+  handLoadedProne.heave.elevation
+    >= neutralProne.heave.elevation - .01
+  || handLoadedProne.pitch.pitchAngle
+    <= neutralProne.pitch.pitchAngle + .015
+) {
+  throw new Error("Pop-up hand pressure no longer sinks and nose-loads the prone hull");
 }
 const broadsideProne = proneForFrames(90, {
   ...proneSample,
@@ -1158,37 +1188,36 @@ if (leftHandPull.yawRate <= 0 || rightHandPull.yawRate >= 0) {
   throw new Error("Paddle-side torque is rotating the board toward the pulling hand");
 }
 
-let marginalCapture = .22 + marginalTraining.averageQuality * .22;
-let marginalCaptureElapsed = 0;
+const marginalCaptureStart = .22 + marginalTraining.averageQuality * .22;
+let marginalCapture = marginalCaptureStart;
 const marginalCaptureStrength = Math.min(
   1,
   earlyFace.opportunity * .68 + earlyFace.slopeStrength * .12 + .2 * .2,
 );
-while (
-  marginalCaptureElapsed < 1.2
-  && !waveTakeoffCanStand(
-    marginalCaptureElapsed,
-    marginalCapture,
-    earlyFace.physicalLift,
-  )
-) {
+for (let frame = 0; frame < 42; frame += 1) {
   marginalCapture = advanceWaveTakeoffCapture(
     marginalCapture,
     1 / 60,
     true,
     marginalCaptureStrength,
   );
-  marginalCaptureElapsed += 1 / 60;
 }
-if (!waveTakeoffCanStand(
-  marginalCaptureElapsed,
-  marginalCapture,
-  earlyFace.physicalLift,
-)) {
-  throw new Error("A marginal but engaged takeoff cannot complete its pop-up");
+let lostWaveCapture = marginalCapture;
+for (let frame = 0; frame < 42; frame += 1) {
+  lostWaveCapture = advanceWaveTakeoffCapture(
+    lostWaveCapture,
+    1 / 60,
+    false,
+    0,
+  );
 }
-if (marginalCaptureElapsed > .92) {
-  throw new Error(`Marginal pop-up took too long: ${marginalCaptureElapsed.toFixed(2)}s`);
+const independentPopUp = evaluatePopUpTransition(.7, 100);
+if (
+  marginalCapture <= marginalCaptureStart
+  || lostWaveCapture >= marginalCapture
+  || independentPopUp.progress < .99
+) {
+  throw new Error("Wave capture no longer evolves independently from the completed body transition");
 }
 
 console.log(JSON.stringify({
@@ -1203,7 +1232,7 @@ console.log(JSON.stringify({
     late: lateFace.quality,
   },
   alignedPopUpStart,
-  marginalPopUpSeconds: marginalCaptureElapsed,
+  independentPopUpSeconds: independentPopUp.duration,
   endurance: {
     trainingPaddleReserve,
     advancedPaddleReserve,
@@ -1276,7 +1305,10 @@ console.log(JSON.stringify({
     proneBroadsideRoll: broadsideProne.roll.rollAngle,
     proneBroadsideCapsize: broadsideProne.roll.capsizeRisk,
     proneCounterweightedRoll: counterweightedProne.roll.rollAngle,
+    popUpHandLoadedElevation: handLoadedProne.heave.elevation,
     proneNoseImmersion: noseLoadedProne.pitch.noseImmersion,
     proneBroadsideFailurePower: broadsideProneFailure.power,
+    popUpDuration: popUpStanding.duration,
+    popUpFootImpact: popUpFootPlant.footImpact,
   },
 }, null, 2));

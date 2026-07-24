@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -439,9 +439,9 @@ type ReplayRestoreState = {
   wipeoutAt: number;
   nextShorebreakAt: number;
   duckDiveUntil: number;
-  missedWaveUntil: number;
   finishAt: number;
   takeoffCommitAt: number;
+  popUpStartStamina: number;
   motion: MotionState;
   waterElevation: number;
   waterVelocity: number;
@@ -10731,7 +10731,6 @@ function Simulation({
   const catchQuality = useRef(0.5);
   const unstableFor = useRef(0);
   const railSlip = useRef(0);
-  const missedWaveUntil = useRef(0);
   const nextShorebreakAt = useRef(0);
   const duckDiveUntil = useRef(0);
   const duckDiveWindowOpen = useRef(false);
@@ -10752,6 +10751,7 @@ function Simulation({
   const takeoffCommitAt = useRef(-1);
   const takeoffCommitQuality = useRef(.5);
   const takeoffCapture = useRef(0);
+  const popUpStartStamina = useRef(100);
   const lastStatsAt = useRef(0);
   const cleanFinish = useRef(false);
   const motion = useRef<MotionState>({
@@ -10956,9 +10956,9 @@ function Simulation({
         wipeoutAt.current = restore.phase === "wipeout" ? restore.wipeoutAt + frozenDuration : restore.wipeoutAt;
         nextShorebreakAt.current = restore.nextShorebreakAt > 0 ? restore.nextShorebreakAt + frozenDuration : restore.nextShorebreakAt;
         duckDiveUntil.current = restore.duckDiveUntil > restore.frozenAt ? restore.duckDiveUntil + frozenDuration : restore.duckDiveUntil;
-        missedWaveUntil.current = restore.missedWaveUntil > restore.frozenAt ? restore.missedWaveUntil + frozenDuration : restore.missedWaveUntil;
         finishAt.current = restore.finishAt >= 0 ? restore.finishAt + frozenDuration : restore.finishAt;
         takeoffCommitAt.current = restore.takeoffCommitAt >= 0 ? restore.takeoffCommitAt + frozenDuration : restore.takeoffCommitAt;
+        popUpStartStamina.current = restore.popUpStartStamina;
         motion.current = { ...restore.motion };
         waterRide.current.elevation = restore.waterElevation;
         waterRide.current.velocity = restore.waterVelocity;
@@ -11040,9 +11040,9 @@ function Simulation({
           wipeoutAt: wipeoutAt.current,
           nextShorebreakAt: nextShorebreakAt.current,
           duckDiveUntil: duckDiveUntil.current,
-          missedWaveUntil: missedWaveUntil.current,
           finishAt: finishAt.current,
           takeoffCommitAt: takeoffCommitAt.current,
+          popUpStartStamina: popUpStartStamina.current,
           motion: { ...motion.current },
           waterElevation: waterRide.current.elevation,
           waterVelocity: waterRide.current.velocity,
@@ -11100,6 +11100,7 @@ function Simulation({
         takeoffCommitAt.current = t;
         takeoffCapture.current = .42;
         takeoffCommitQuality.current = .92;
+        popUpStartStamina.current = stamina.current;
         const qaTakeoffPhase = primaryWavePhaseAt(
           position.current.x,
           position.current.z,
@@ -11529,18 +11530,37 @@ function Simulation({
         }
       } else if (currentPhase === "paddling") {
         landVelocity.current.set(0, 0);
+        const takeoffCommitting = takeoffCommitAt.current >= 0;
+        const popUpTransition = evaluatePopUpTransition(
+          takeoffCommitting
+            ? Math.max(0, t - takeoffCommitAt.current)
+            : 0,
+          popUpStartStamina.current,
+        );
+        takeoffCommitProgress = takeoffCommitting
+          ? popUpTransition.progress
+          : 0;
+        const popUpPaddleAvailability = 1 - THREE.MathUtils.smoothstep(
+          takeoffCommitProgress,
+          .08,
+          .34,
+        );
+        paddleEffort = Math.max(0, move) * popUpPaddleAvailability;
         stamina.current = THREE.MathUtils.clamp(
-          stamina.current + paddlingStaminaDelta(settings.mode, move, delta),
+          stamina.current + paddlingStaminaDelta(
+            settings.mode,
+            paddleEffort,
+            delta,
+          ),
           0,
           100,
         );
-        paddleEffort = Math.max(0, move);
         const paddleStroke = advancePaddleStrokeCycle(
           paddleStrokeCycle.current,
           {
             deltaSeconds: delta,
             effort: paddleEffort,
-            steer,
+            steer: steer * popUpPaddleAvailability,
             stamina: stamina.current,
           },
         );
@@ -11571,9 +11591,11 @@ function Simulation({
           },
           {
             deltaSeconds: delta,
-            stroke: move >= 0 ? paddleStroke.drive : move,
+            stroke: move >= 0
+              ? paddleStroke.drive
+              : move * popUpPaddleAvailability,
             strokeSide: paddleStroke.strokeSide,
-            steer,
+            steer: steer * popUpPaddleAvailability,
             surfaceSlopeX: paddleSurface.slopeX,
             surfaceSlopeZ: paddleSurface.slopeZ,
             waveVelocityX: localWaveTransport.x,
@@ -11676,7 +11698,6 @@ function Simulation({
           takeoffWaveNormalX * paddleForwardZ - takeoffWaveNormalZ * paddleForwardX,
           boardWaveAlignment,
         );
-        const takeoffCommitting = takeoffCommitAt.current >= 0;
         const takeoffSurface = waveSurfaceFrameAt(
           position.current.x,
           position.current.z,
@@ -11773,10 +11794,6 @@ function Simulation({
         ) - takeoffSurface.height;
         const proneSlopeAlong = takeoffSurface.slopeX * paddleForwardX
           + takeoffSurface.slopeZ * paddleForwardZ;
-        const proneCommitPlant = takeoffCommitting
-          ? THREE.MathUtils.smootherstep(takeoffCapture.current, .26, .88)
-          : 0;
-        const proneTrim = THREE.MathUtils.lerp(-.06, .12, proneCommitPlant);
         const proneDiveProgress = THREE.MathUtils.clamp(
           1 - (duckDiveUntil.current - t) / 1.12,
           0,
@@ -11818,7 +11835,9 @@ function Simulation({
           {
             deltaSeconds: delta,
             balance: balanceInput,
-            trim: proneTrim,
+            trim: popUpTransition.trim,
+            stabilityScale: popUpTransition.stabilityScale,
+            counterweightScale: popUpTransition.counterweightScale,
             crossSlope: proneCrossSlope,
             lateralAcceleration: proneLateralAcceleration,
             longitudinalAcceleration: proneLongitudinalAcceleration,
@@ -11833,6 +11852,10 @@ function Simulation({
             turbulenceTorque: (
               paddleStroke.strokeSide * paddleStroke.drive * .16
                 + proneRailWarp * 2.1
+                + Math.sign(boardRollAngle.current || 1)
+                  * Math.abs(boardRollAngle.current)
+                  * popUpTransition.footImpact
+                  * .9
                 + Math.sin(t * 6.7 + position.current.x * .08)
                   * shorebreakIntensity
                   * .34
@@ -11854,6 +11877,7 @@ function Simulation({
             surfaceHeight: takeoffSurface.height,
             flotationOffset: .3 - proneDiveEnvelope * .42,
             verticalWaterAcceleration: -proneDiveEnvelope * 7.8
+              + popUpTransition.verticalLoadAcceleration
               + shorebreakIntensity
                 * Math.sin(t * 9.1 - position.current.z * .07)
                 * 2.6,
@@ -12148,7 +12172,7 @@ function Simulation({
             waterRide.current.velocity * .72,
           );
           const caughtPaddleDrive = THREE.MathUtils.clamp(
-            speedMatch * .62 + Math.max(0, move) * .38,
+            speedMatch * .62 + paddleEffort * .38,
             0,
             1,
           );
@@ -12187,7 +12211,6 @@ function Simulation({
             boardStillEngaged,
             captureStrength,
           );
-          takeoffCommitProgress = takeoffCapture.current;
           const wavePushAcceleration = Math.min(
             9.5,
             Math.max(0, catchTransport.speed - currentNormalSpeed)
@@ -12204,12 +12227,14 @@ function Simulation({
             catchNormalX * capturedNormalSpeed + catchTangentX * capturedTangentSpeed,
             catchNormalZ * capturedNormalSpeed + catchTangentZ * capturedTangentSpeed,
           );
-          paddleEffort = Math.max(
-            paddleEffort,
-            (1 - THREE.MathUtils.smoothstep(takeoffCommitProgress, .5, .9))
-              * (.78 + takeoffCommitQuality.current * .22),
+          stamina.current = Math.max(
+            0,
+            stamina.current - delta * (
+              .62
+                + (1 - takeoffCommitProgress)
+                  * (.72 + setState.crestEnergy * .46)
+            ),
           );
-          stamina.current = Math.max(0, stamina.current - delta * (1.35 + setState.crestEnergy * .65));
           takeoffQuality = THREE.MathUtils.clamp(
             takeoffCommitQuality.current * .5
               + caughtReading.quality * .27
@@ -12219,43 +12244,49 @@ function Simulation({
             1,
           );
           catchReady = false;
-          prompt = captureStrength < .12
-            ? "The face is lifting — add two strong strokes"
-            : takeoffCommitProgress < .42
-              ? "Wave engaged — keep driving with the rise"
-              : takeoffCommitProgress < .68
-                ? "Rail is planing — hands planted"
-                : "Pop up — stand into the open face";
           const lostCrest = caughtCrestDistance < -3.6
             || caughtCrestDistance > 15.5 + settings.waveHeight * 1.6
             || (commitElapsed > 1.5 && takeoffCapture.current <= .04);
-          if (lostCrest) {
-            takeoffCommitAt.current = -1;
-            takeoffCapture.current = 0;
-            takeoffCommitProgress = 0;
-            missedWaveUntil.current = t + .2;
-            catchWindowOpen.current = false;
-            prompt = "Wave rolled under — turn, reset, and read the next face";
-          } else if (waveTakeoffCanStand(
-            commitElapsed,
-            takeoffCommitProgress,
-            caughtReading.physicalLift,
-          )) {
+          prompt = takeoffCommitProgress < .2
+            ? captureStrength < .12
+              ? "Last stroke — the body transition has started"
+              : "Last stroke — match the face before the hands plant"
+            : takeoffCommitProgress < .5
+              ? "Hands under the ribs — keep the shoulders level"
+              : takeoffCommitProgress < .74
+                ? "Rear foot under the hips — counter the board roll"
+                : lostCrest
+                  ? "Wave passed underneath — finish the front foot and balance"
+                  : "Front foot landing — look into the open face";
+          if (takeoffCommitProgress >= .995) {
+            const standingEngaged = !lostCrest
+              && boardStillEngaged
+              && proneInteraction.outcome === "capture"
+              && takeoffCapture.current > .1
+              && boardWaterContact > .24
+              && rollCapsizeRisk < .84
+              && pitchOverRisk < .86;
             const planingMatch = THREE.MathUtils.clamp(
               currentNormalSpeed / Math.max(.1, catchTransport.speed * .72),
               0,
               1,
             );
-            const committedQuality = THREE.MathUtils.clamp(
-              takeoffCommitQuality.current * .44
-                + caughtReading.quality * .25
-                + captureStrength * .1
-                + planingMatch * .12
-                + proneAttitudeQuality * .09,
-              .14,
-              1,
+            const committedQuality = standingEngaged
+              ? THREE.MathUtils.clamp(
+                  takeoffCommitQuality.current * .44
+                    + caughtReading.quality * .25
+                    + captureStrength * .1
+                    + planingMatch * .12
+                    + proneAttitudeQuality * .09,
+                  .14,
+                  1,
+                )
+              : .12;
+            enterRide(
+              committedQuality,
+              catchTransport,
+              standingEngaged,
             );
-            enterRide(committedQuality, catchTransport);
           }
         } else {
           prompt = duckDiveReady
@@ -12294,35 +12325,34 @@ function Simulation({
             ) * 1.25;
             balanceTarget = popReading.balanceTarget;
             stamina.current = Math.max(0, stamina.current - (engaged ? 2.4 : .6));
-            if (engaged) {
-              takeoffCommitAt.current = t;
-              takeoffCapture.current = initialWavePopUpCapture(
+            takeoffCommitAt.current = t;
+            popUpStartStamina.current = stamina.current;
+            takeoffCapture.current = engaged
+              ? initialWavePopUpCapture(
                 popReading.capture,
                 popReading.planing,
-              );
-              takeoffCommitProgress = takeoffCapture.current;
-              takeoffCommitQuality.current = committedQuality;
-              const popPhase = primaryWavePhaseAt(
-                position.current.x,
-                position.current.z,
-                t,
-                settings,
-                character,
-              );
-              rideWavePhase.current = Math.PI * .5
-                + Math.round((popPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-              motion.current.impact = Math.max(
-                motion.current.impact,
-                .18 + committedQuality * .2,
-              );
-              prompt = "Hands planted — keep the board driving while your feet come through";
-            } else {
-              enterRide(committedQuality, localWaveTransport, false);
-              motion.current.impact = Math.max(
-                motion.current.impact,
-                .12 + popReading.crossWaveLoad * .32,
-              );
-            }
+              )
+              : 0;
+            takeoffCommitProgress = 0;
+            takeoffCommitQuality.current = committedQuality;
+            const popPhase = primaryWavePhaseAt(
+              position.current.x,
+              position.current.z,
+              t,
+              settings,
+              character,
+            );
+            rideWavePhase.current = Math.PI * .5
+              + Math.round((popPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
+            motion.current.impact = Math.max(
+              motion.current.impact,
+              .12
+                + committedQuality * .2
+                + popReading.crossWaveLoad * .18,
+            );
+            prompt = engaged
+              ? "Last stroke — plant the hands as the face lifts"
+              : "Hands moving under the ribs — the board keeps its own momentum";
             catchWindowOpen.current = false;
             catchReady = false;
           }
@@ -15279,6 +15309,9 @@ function Simulation({
         takeoffAlignment,
         takeoffQuality,
         takeoffCommitProgress,
+        waveCapture: phase.current === "paddling"
+          ? takeoffCapture.current
+          : 0,
         prompt,
       });
     }
