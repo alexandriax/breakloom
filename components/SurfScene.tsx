@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advancePaddleboardDynamics, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -401,6 +401,7 @@ type ReplayRestoreState = {
   position: THREE.Vector3;
   landVelocity: THREE.Vector2;
   paddleVelocity: THREE.Vector2;
+  paddleYawRate: number;
   rideVelocity: THREE.Vector2;
   rideAcceleration: THREE.Vector2;
   rideYawRate: number;
@@ -10633,6 +10634,7 @@ function Simulation({
   const playerHeading = useRef(0);
   const paddleHeading = useRef(0);
   const paddleVelocity = useRef(new THREE.Vector2());
+  const paddleYawRate = useRef(0);
   const rideVelocity = useRef(new THREE.Vector2());
   const rideAcceleration = useRef(new THREE.Vector2());
   const rideYawRate = useRef(0);
@@ -10871,6 +10873,7 @@ function Simulation({
         position.current.copy(restore.position);
         landVelocity.current.copy(restore.landVelocity);
         paddleVelocity.current.copy(restore.paddleVelocity);
+        paddleYawRate.current = restore.paddleYawRate;
         rideVelocity.current.copy(restore.rideVelocity);
         rideAcceleration.current.copy(restore.rideAcceleration);
         rideYawRate.current = restore.rideYawRate;
@@ -10948,6 +10951,7 @@ function Simulation({
           position: position.current.clone(),
           landVelocity: landVelocity.current.clone(),
           paddleVelocity: paddleVelocity.current.clone(),
+          paddleYawRate: paddleYawRate.current,
           rideVelocity: rideVelocity.current.clone(),
           rideAcceleration: rideAcceleration.current.clone(),
           rideYawRate: rideYawRate.current,
@@ -11004,6 +11008,7 @@ function Simulation({
         position.current.set(0, 0, -7);
         playerHeading.current = Math.PI;
         paddleHeading.current = Math.PI;
+        paddleYawRate.current = 0;
         paddleVelocity.current.set(0, -2.1);
         nextShorebreakAt.current = t + 1.42;
         shorebreakResult.current = "";
@@ -11020,6 +11025,7 @@ function Simulation({
         phase.current = "paddling";
         position.current.set(-7, 0, -34);
         paddleHeading.current = 0;
+        paddleYawRate.current = 0;
         playerHeading.current = 0;
         paddleVelocity.current.set(0, 1.8);
         nextShorebreakAt.current = t + 20;
@@ -11414,6 +11420,7 @@ function Simulation({
         if (position.current.z < 1 + tideShift) {
           phase.current = "paddling";
           paddleHeading.current = playerHeading.current;
+          paddleYawRate.current = 0;
           paddleVelocity.current.copy(landVelocity.current).multiplyScalar(.55);
           nextShorebreakAt.current = t + (settings.mode === "training" ? 3.2 : 2.55);
           shorebreakResult.current = "";
@@ -11428,12 +11435,6 @@ function Simulation({
         );
         paddleEffort = Math.max(0, move);
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
-        const paddleThrust = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + Math.min(0, move) * 1.2;
-        const turnAuthority = (.82 + Math.min(4.6, paddleVelocity.current.length()) * .09) * (.82 + Math.abs(move) * .38) * boardSpec.turn;
-        const nextPaddleHeading = paddleHeading.current - steer * turnAuthority * delta;
-        paddleHeading.current = Math.atan2(Math.sin(nextPaddleHeading), Math.cos(nextPaddleHeading));
-        const paddleForwardX = Math.sin(paddleHeading.current);
-        const paddleForwardZ = Math.cos(paddleHeading.current);
         const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
         const currentSpeed = settings.currentStrength / 3.6;
         const currentX = Math.sin(relativeCurrentAngle) * currentSpeed;
@@ -11441,11 +11442,44 @@ function Simulation({
         const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
         const waveTravelX = Math.sin(relativeWaveAngle);
         const waveTravelZ = Math.max(.35, Math.cos(relativeWaveAngle));
-        const targetPaddleX = paddleForwardX * paddleThrust + currentX;
-        const targetPaddleZ = paddleForwardZ * paddleThrust + currentZ;
-        const paddleResponse = Math.abs(move) > .04 ? 3.7 : 1.7;
-        paddleVelocity.current.x = THREE.MathUtils.damp(paddleVelocity.current.x, targetPaddleX, paddleResponse, delta);
-        paddleVelocity.current.y = THREE.MathUtils.damp(paddleVelocity.current.y, targetPaddleZ, paddleResponse, delta);
+        const paddleSurface = waveSurfaceFrameAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const paddlingDynamics = advancePaddleboardDynamics(
+          {
+            velocityX: paddleVelocity.current.x,
+            velocityZ: paddleVelocity.current.y,
+            heading: paddleHeading.current,
+            yawRate: paddleYawRate.current,
+          },
+          {
+            deltaSeconds: delta,
+            stroke: move,
+            steer,
+            surfaceSlopeX: paddleSurface.slopeX,
+            surfaceSlopeZ: paddleSurface.slopeZ,
+            waveVelocityX: localWaveTransport.x,
+            waveVelocityZ: localWaveTransport.z,
+            currentVelocityX: currentX,
+            currentVelocityZ: currentZ,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+            boardTurn: boardSpec.turn,
+            paddleEfficiency: paddleEfficiency * boardSpec.paddle,
+          },
+        );
+        paddleVelocity.current.set(
+          paddlingDynamics.velocityX,
+          paddlingDynamics.velocityZ,
+        );
+        paddleHeading.current = paddlingDynamics.heading;
+        paddleYawRate.current = paddlingDynamics.yawRate;
+        const paddleForwardX = Math.sin(paddleHeading.current);
+        const paddleForwardZ = Math.cos(paddleHeading.current);
         position.current.x += paddleVelocity.current.x * delta;
         position.current.z += paddleVelocity.current.y * delta;
         position.current.z = Math.max(OUTER_PADDLE_LIMIT_Z + tideShift, position.current.z);
@@ -11809,26 +11843,21 @@ function Simulation({
             captureStrength,
           );
           takeoffCommitProgress = takeoffCapture.current;
-          const wavePush = Math.max(0, catchTransport.speed - currentNormalSpeed)
+          const wavePushAcceleration = Math.min(
+            9.5,
+            Math.max(0, catchTransport.speed - currentNormalSpeed)
             * captureStrength
-            * (1.25 + setState.crestEnergy * .75);
-          const targetNormalSpeed = Math.min(
-            catchTransport.speed * (.9 + takeoffCommitQuality.current * .08),
-            currentNormalSpeed + wavePush,
+            * (1.25 + setState.crestEnergy * .75),
           );
-          const targetTangentSpeed = currentTangentSpeed * (1 - captureStrength * .62);
-          const captureResponse = 2.2 + captureStrength * 5.6;
-          paddleVelocity.current.x = THREE.MathUtils.damp(
-            paddleVelocity.current.x,
-            catchNormalX * targetNormalSpeed + catchTangentX * targetTangentSpeed,
-            captureResponse,
-            delta,
+          const capturedNormalSpeed = currentNormalSpeed
+            + wavePushAcceleration * Math.min(delta, .05);
+          const tangentRetention = Math.exp(
+            -Math.min(delta, .05) * captureStrength * .82,
           );
-          paddleVelocity.current.y = THREE.MathUtils.damp(
-            paddleVelocity.current.y,
-            catchNormalZ * targetNormalSpeed + catchTangentZ * targetTangentSpeed,
-            captureResponse,
-            delta,
+          const capturedTangentSpeed = currentTangentSpeed * tangentRetention;
+          paddleVelocity.current.set(
+            catchNormalX * capturedNormalSpeed + catchTangentX * capturedTangentSpeed,
+            catchNormalZ * capturedNormalSpeed + catchTangentZ * capturedTangentSpeed,
           );
           paddleEffort = Math.max(
             paddleEffort,
@@ -12207,9 +12236,16 @@ function Simulation({
               );
               wipeoutPower.current = tumblePower;
               wipeoutDuration.current = THREE.MathUtils.lerp(1.35, 3.45, tumblePower);
+              const standingRailThrow = standingReading.crossWaveSide
+                * standingReading.crossWaveLoad
+                * (1.1 + tumblePower * 1.7);
               wipeoutVelocity.current.set(
-                rideVelocity.current.x * .3 + standingWaveNormalX * (1.1 + tumblePower * 3),
-                rideVelocity.current.y * .3 + standingWaveNormalZ * (1.1 + tumblePower * 3),
+                rideVelocity.current.x * .62
+                  + standingWaveNormalX * (1.1 + tumblePower * 3)
+                  + standingRightX * standingRailThrow,
+                rideVelocity.current.y * .62
+                  + standingWaveNormalZ * (1.1 + tumblePower * 3)
+                  + standingRightZ * standingRailThrow,
               );
               breath.current = 100;
               rideScore.current = 0;
@@ -12222,6 +12258,7 @@ function Simulation({
               phase.current = "paddling";
               rideEngaged.current = false;
               paddleHeading.current = rideHeading.current;
+              paddleYawRate.current = 0;
               paddleVelocity.current.copy(rideVelocity.current).multiplyScalar(.72);
               rideVelocity.current.set(0, 0);
               stance.current = 0;
@@ -12698,6 +12735,12 @@ function Simulation({
         unstableFor.current += tubePressure * Math.max(0, balanceError - failThreshold * .58) * delta * (
           settings.mode === "training" ? .045 : settings.mode === "advanced" ? .18 : .11
         );
+        const broadsideFailure = Math.max(0, crossWaveLoad - .24)
+          * (1 + dynamics.sideslip * .72)
+          * rideInteraction.waveContact;
+        unstableFor.current += broadsideFailure * delta * (
+          settings.mode === "training" ? .42 : settings.mode === "advanced" ? 1.35 : .86
+        );
         const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
         const lineMatch = THREE.MathUtils.clamp(
           .64 + lineControl * .36 - whitewaterPressure * .12,
@@ -12882,6 +12925,8 @@ function Simulation({
             ? `Board loaded ${Math.round(trickCharge.current * 100)}% · release to throw the move`
           : actionReleased && railSlip.current >= .78
           ? "Fins released — reconnect the rail before the next move"
+          : crossWaveLoad > .72
+            ? `The wall is loading the board broadside — point the nose ${boardWaveAngle > 0 ? "right" : "left"} or expect a tumble`
           : whitewaterPressure > .58
             ? `Whitewater on the rail · drive ${rideLineSide.current > 0 ? "right" : "left"} toward the open face`
           : balanceError > failThreshold * 0.76
@@ -12924,7 +12969,9 @@ function Simulation({
               + barrelIntensity * .08
               + whitewaterPressure * .18
               + shoulderStall * .035
-              + railSlip.current * .08,
+              + railSlip.current * .08
+              + Math.min(1, crossWaveLoad) * .13
+              + dynamics.sideslip * .08,
             0,
             1,
           );
@@ -12938,12 +12985,18 @@ function Simulation({
           const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
           const currentSpeed = settings.currentStrength / 3.6;
           const washSpeed = 1.25 + waveEnergy * 4.1 + setState.energy * .72;
+          const wipeoutMomentum = .62 + waveEnergy * .14;
+          const railThrow = (Math.sign(boardWaveAngle) || 1)
+            * Math.min(1.5, crossWaveLoad)
+            * (1.2 + waveEnergy * 2.1);
           wipeoutVelocity.current.set(
-            rideVelocity.current.x * (.34 + waveEnergy * .12)
+            rideVelocity.current.x * wipeoutMomentum
               + waveNormalX * washSpeed
+              + boardRightX * railThrow
               + Math.sin(currentAngle) * currentSpeed * .72,
-            rideVelocity.current.y * (.34 + waveEnergy * .12)
+            rideVelocity.current.y * wipeoutMomentum
               + waveNormalZ * washSpeed
+              + boardRightZ * railThrow
               - Math.cos(currentAngle) * currentSpeed * .72,
           );
           breath.current = 100;
@@ -13001,6 +13054,7 @@ function Simulation({
             } else {
               phase.current = "paddling";
               paddleHeading.current = Math.atan2(waveNormalX, waveNormalZ);
+              paddleYawRate.current = 0;
               paddleVelocity.current.set(lateralVelocity, shorewardVelocity).multiplyScalar(.14);
               landVelocity.current.set(0, 0);
             }
@@ -13071,6 +13125,7 @@ function Simulation({
           } else {
             phase.current = "paddling";
             paddleHeading.current = Math.atan2(waveNormalX, waveNormalZ);
+            paddleYawRate.current = 0;
             paddleVelocity.current.copy(wipeoutVelocity.current).multiplyScalar(.18);
           }
           rideEngaged.current = false;

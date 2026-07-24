@@ -3065,14 +3065,21 @@ export default function SurfscapeApp() {
                 }
               : stats.catchReady
                 ? {
-                    cue: "MATCH SPEED · THEN STAND",
-                    detail: "Keep paddling as the tail lifts. SPACE stands whenever you choose.",
+                    cue: "TAIL LIFT · KEEP STROKING",
+                    detail: "Wave pressure is building. SPACE stands now or at any other time.",
                     rotation: -90,
                     tone: "ready",
                   }
+                : stats.crestDistance > -.8 && stats.crestDistance < 11 && stats.speed < 1.6
+                  ? {
+                      cue: "BUILD BOARD SPEED",
+                      detail: "Each W stroke adds force; keep the nose aligned and carry momentum into the pop-up.",
+                      rotation: -90,
+                      tone: "paddle",
+                    }
                 : {
                     cue: "READ THE SURFACE",
-                    detail: "Stay prone, watch the crest distance, and keep the board shoreward.",
+                    detail: "Watch crest distance and board speed. SPACE can stand even without a wave.",
                     rotation: -90,
                     tone: "align",
                   }
@@ -3086,17 +3093,31 @@ export default function SurfscapeApp() {
               }
             : {
                 cue: stats.speed > .6 ? "BOARD GLIDING" : "STANDING · NO WAVE POWER",
-                detail: "Match the balance marker with Q/E · SPACE drops prone to reposition.",
+                detail: "Q/E balances · A/D needs speed to turn · SPACE drops prone to reposition.",
                 rotation: 90,
                 tone: "balance",
               }
           : stats.phase === "riding" && stats.waveEngaged
-            ? {
-                cue: `${stats.lineSide > 0 ? "RIGHT" : "LEFT"} SHOULDER OPEN`,
-                detail: "A/D loads the rail · W/S shifts nose-to-tail pressure · Q/E counterweights.",
-                rotation: stats.lineSide > 0 ? 0 : 180,
-                tone: "ready",
-              }
+            ? stats.crossWaveLoad > .48
+              ? {
+                  cue: `BOARD BROADSIDE · TURN ${headingTurn}`,
+                  detail: `${Math.round(stats.crossWaveLoad * 100)}% wall load · point the nose before the rail trips.`,
+                  rotation: headingTurn === "RIGHT" ? 0 : 180,
+                  tone: "danger",
+                }
+              : stats.planing < .3
+                ? {
+                    cue: "POINT DOWN THE SLOPE",
+                    detail: "The board is losing plane. Reduce rail angle and let gravity rebuild speed.",
+                    rotation: -90,
+                    tone: "align",
+                  }
+                : {
+                    cue: `${stats.lineSide > 0 ? "RIGHT" : "LEFT"} SHOULDER OPEN`,
+                    detail: "A/D loads the rail · W/S shifts pressure · face position follows your actual path.",
+                    rotation: stats.lineSide > 0 ? 0 : 180,
+                    tone: "ready",
+                  }
             : null;
   const currentCrestInRange = stats.waveSurfable
     && stats.crestDistance > -.8
@@ -4371,7 +4392,7 @@ export default function SurfscapeApp() {
               <b style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
             <div className="stance-track">
-              <span>TAIL / CONTROL</span><i><b style={{ left: `${(stats.stance + 1) * 50}%` }} /></i><span>NOSE / SPEED</span>
+              <span>TAIL / TURN</span><i><b style={{ left: `${(stats.stance + 1) * 50}%` }} /></i><span>NOSE / TRIM</span>
             </div>
             <div className={`face-track ${Math.abs(stats.facePosition) > .56 ? "is-committed" : ""}`}>
               <span>TROUGH</span><i><em /><b style={{ left: `${faceIndicator}%` }} /></i><span>LIP</span><strong>{faceLabel}</strong>
@@ -4424,7 +4445,7 @@ export default function SurfscapeApp() {
           <div className="desktop-controls">
             {gamepadConnected ? (
               <>
-                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : standingOnBoard ? "turn board / shift stance" : stats.phase === "riding" ? "rail / wave face" : "paddle / steer"}</span>
+                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : standingOnBoard ? "load rail / shift stance" : stats.phase === "riding" ? "rail / stance pressure" : "paddle / steer"}</span>
                 <span><kbd>LT</kbd><kbd>RT</kbd> counterweight / recover</span>
                 <span><kbd>A</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "hold / release trick" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime / dive on cue" : "context action"}</span>
                 <span><kbd>RS</kbd> freelook</span>

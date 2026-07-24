@@ -1,4 +1,5 @@
 import {
+  advancePaddleboardDynamics,
   advanceSurfboardDynamics,
   advanceRideCaptureState,
   advanceWaveTakeoffCapture,
@@ -433,6 +434,76 @@ if (currentDrift.velocityX <= 0) {
   throw new Error("A resting board did not begin drifting with the current");
 }
 
+const paddlingSample = {
+  deltaSeconds: 1 / 60,
+  stroke: 1,
+  steer: 0,
+  surfaceSlopeX: 0,
+  surfaceSlopeZ: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 0,
+  currentVelocityX: 0,
+  currentVelocityZ: 0,
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  paddleEfficiency: 1,
+};
+function paddleForFrames(frameCount, sample = paddlingSample) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 0,
+    heading: 0,
+    yawRate: 0,
+  };
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    state = advancePaddleboardDynamics(state, sample);
+  }
+  return state;
+}
+const steadyPaddle = paddleForFrames(600);
+if (steadyPaddle.velocityZ < 2.6 || steadyPaddle.velocityZ > 4.2) {
+  throw new Error(`Human paddle force produced an implausible terminal speed: ${steadyPaddle.velocityZ.toFixed(2)}m/s`);
+}
+let paddleCoast = steadyPaddle;
+for (let frame = 0; frame < 120; frame += 1) {
+  paddleCoast = advancePaddleboardDynamics(paddleCoast, {
+    ...paddlingSample,
+    stroke: 0,
+  });
+}
+if (paddleCoast.velocityZ >= steadyPaddle.velocityZ || paddleCoast.velocityZ <= .3) {
+  throw new Error("Paddling momentum did not decay continuously after the stroke stopped");
+}
+const paddleCurrent = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: 0,
+    currentVelocityX: .8,
+  },
+);
+if (paddleCurrent.velocityX <= 0) {
+  throw new Error("A prone board did not begin drifting with the current");
+}
+const performancePaddleTurn = paddleForFrames(120, {
+  ...paddlingSample,
+  steer: 1,
+});
+const longboardPaddleTurn = paddleForFrames(120, {
+  ...paddlingSample,
+  steer: 1,
+  boardLength: 3.45,
+  boardWidth: .43,
+  boardTurn: .82,
+});
+if (
+  Math.abs(performancePaddleTurn.heading) < .5
+  || Math.abs(longboardPaddleTurn.heading) >= Math.abs(performancePaddleTurn.heading) * .78
+) {
+  throw new Error("Prone board yaw inertia no longer distinguishes a longboard from a shortboard");
+}
+
 let marginalCapture = .22 + marginalTraining.averageQuality * .22;
 let marginalCaptureElapsed = 0;
 const marginalCaptureStrength = Math.min(
@@ -503,5 +574,12 @@ console.log(JSON.stringify({
     performanceTurnRadians: performanceTurn.heading,
     longboardTurnRadians: longboardTurn.heading,
     currentDrift: currentDrift.velocityX,
+  },
+  paddlingDynamics: {
+    terminalSpeed: steadyPaddle.velocityZ,
+    twoSecondCoastSpeed: paddleCoast.velocityZ,
+    currentDrift: paddleCurrent.velocityX,
+    performanceTurnRadians: performancePaddleTurn.heading,
+    longboardTurnRadians: longboardPaddleTurn.heading,
   },
 }, null, 2));

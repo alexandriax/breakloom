@@ -266,6 +266,125 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   wavePressure: number;
 };
 
+export type PaddleboardDynamicsState = {
+  velocityX: number;
+  velocityZ: number;
+  heading: number;
+  yawRate: number;
+};
+
+export type PaddleboardDynamicsSample = {
+  deltaSeconds: number;
+  stroke: number;
+  steer: number;
+  surfaceSlopeX: number;
+  surfaceSlopeZ: number;
+  waveVelocityX: number;
+  waveVelocityZ: number;
+  currentVelocityX: number;
+  currentVelocityZ: number;
+  boardLength: number;
+  boardWidth: number;
+  boardTurn: number;
+  paddleEfficiency: number;
+};
+
+export type PaddleboardDynamicsReading = PaddleboardDynamicsState & {
+  accelerationX: number;
+  accelerationZ: number;
+  forwardSpeed: number;
+  lateralSpeed: number;
+  strokeForce: number;
+};
+
+/**
+ * Integrates prone paddling as repeated human thrust against quadratic hull
+ * drag. Input applies force rather than selecting a target speed, so momentum
+ * survives between strokes and current acts through the water-relative flow.
+ */
+export function advancePaddleboardDynamics(
+  state: PaddleboardDynamicsState,
+  sample: PaddleboardDynamicsSample,
+): PaddleboardDynamicsReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const stroke = Math.max(-1, Math.min(1, sample.stroke));
+  const steer = Math.max(-1, Math.min(1, sample.steer));
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const safeWidth = Math.max(.24, sample.boardWidth);
+  const turn = Math.max(.45, sample.boardTurn);
+  const paddleEfficiency = Math.max(.4, Math.min(1.3, sample.paddleEfficiency));
+  const speed = Math.hypot(state.velocityX, state.velocityZ);
+  const yawInertia = Math.pow(safeLength / 2.5, 1.32);
+  const yawAuthority = (
+    .34
+      + Math.min(1.2, speed * .16)
+      + Math.abs(stroke) * .3
+  ) * turn / yawInertia;
+  const targetYawRate = -steer * yawAuthority;
+  const yawResponse = (2.2 + Math.abs(stroke) * 1.4) / Math.sqrt(yawInertia);
+  let yawRate = state.yawRate + (
+    targetYawRate - state.yawRate
+  ) * (1 - Math.exp(-yawResponse * delta));
+  yawRate *= Math.exp(-delta * (.72 + (Math.abs(steer) < .04 ? 1.2 : 0)));
+  const heading = state.heading + yawRate * delta;
+  const forwardX = Math.sin(heading);
+  const forwardZ = Math.cos(heading);
+  const rightX = Math.cos(heading);
+  const rightZ = -Math.sin(heading);
+
+  const orbitalCoupling = .026;
+  const waterVelocityX = sample.currentVelocityX
+    + sample.waveVelocityX * orbitalCoupling;
+  const waterVelocityZ = sample.currentVelocityZ
+    + sample.waveVelocityZ * orbitalCoupling;
+  const relativeX = state.velocityX - waterVelocityX;
+  const relativeZ = state.velocityZ - waterVelocityZ;
+  const forwardSpeed = relativeX * forwardX + relativeZ * forwardZ;
+  const lateralSpeed = relativeX * rightX + relativeZ * rightZ;
+  const strokeForce = stroke >= 0
+    ? stroke * (2.55 + paddleEfficiency * 1.05)
+    : stroke * 1.45;
+  const lengthDragScale = Math.pow(2.5 / safeLength, .62);
+  const widthDragScale = Math.pow(safeWidth / .34, .42);
+  const forwardDrag = -forwardSpeed
+    * Math.abs(forwardSpeed)
+    * .31
+    * lengthDragScale
+    * widthDragScale;
+  const lateralDrag = -lateralSpeed
+    * Math.abs(lateralSpeed)
+    * .82
+    * widthDragScale;
+  const slopeMagnitudeSquared = sample.surfaceSlopeX * sample.surfaceSlopeX
+    + sample.surfaceSlopeZ * sample.surfaceSlopeZ;
+  const slopeGravity = 9.81 * .2 / Math.max(1, 1 + slopeMagnitudeSquared);
+  let accelerationX = forwardX * (strokeForce + forwardDrag)
+    + rightX * lateralDrag
+    - sample.surfaceSlopeX * slopeGravity;
+  let accelerationZ = forwardZ * (strokeForce + forwardDrag)
+    + rightZ * lateralDrag
+    - sample.surfaceSlopeZ * slopeGravity;
+  const accelerationMagnitude = Math.hypot(accelerationX, accelerationZ);
+  if (accelerationMagnitude > 7.2) {
+    const scale = 7.2 / accelerationMagnitude;
+    accelerationX *= scale;
+    accelerationZ *= scale;
+  }
+  const velocityX = state.velocityX + accelerationX * delta;
+  const velocityZ = state.velocityZ + accelerationZ * delta;
+  return {
+    velocityX,
+    velocityZ,
+    heading: Math.atan2(Math.sin(heading), Math.cos(heading)),
+    yawRate,
+    accelerationX,
+    accelerationZ,
+    forwardSpeed,
+    lateralSpeed,
+    strokeForce,
+  };
+}
+
 /**
  * Integrates one horizontal surfboard step from forces at the sampled water
  * polygon. Phase velocity is never assigned to the board. The board can only
