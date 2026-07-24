@@ -3093,7 +3093,7 @@ export default function SurfscapeApp() {
           : stats.phase === "riding" && stats.waveEngaged
             ? {
                 cue: `${stats.lineSide > 0 ? "RIGHT" : "LEFT"} SHOULDER OPEN`,
-                detail: "A/D sets the rail · W/S moves from trough to lip · Q/E counterweights.",
+                detail: "A/D loads the rail · W/S shifts nose-to-tail pressure · Q/E counterweights.",
                 rotation: stats.lineSide > 0 ? 0 : 180,
                 tone: "ready",
               }
@@ -4211,7 +4211,7 @@ export default function SurfscapeApp() {
                 <div className="hud-controls-panel">
                   <span>{gamepadConnected ? "GAMEPAD" : "KEYBOARD + MOUSE"} · {stats.phase.toUpperCase()}</span>
                   <div>
-                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D turns the floating board · W/S shifts stance" : stats.phase === "riding" ? "A/D carve · W/S move trough to lip" : "W paddles · A/D sets board heading"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D loads the rail · W/S shifts stance" : stats.phase === "riding" ? "A/D loads the rail · W/S shifts board pressure" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
                     <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Hold to load, release to trick" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
@@ -4382,7 +4382,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{standingOnBoard ? "Q/E counterweights the surface · A/D turns the board · SPACE returns prone" : ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D sets the rail · W/S moves trough to lip · Q/E counterweights impacts"}</small>
+            <small>{standingOnBoard ? "Q/E counterweights the surface · A/D loads the rail · SPACE returns prone" : ridingOut ? "Controls are released · the live swell carries the board into a natural dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D loads the rail · W/S shifts nose-to-tail pressure · Q/E counterweights impacts"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -4671,7 +4671,7 @@ export default function SurfscapeApp() {
             <div className="howto-steps">
               <article><span>01</span><Waves /><strong>Enter</strong><p>Choose a board and walk through the shallows. Click the scene to lock a 360° mouse view, or swipe on touch; use C or the camera button to frame your line.</p></article>
               <article><span>02</span><AudioLines /><strong>Read</strong><p>Paddle toward the lineup and read the surf radar in metres. Any strong crest can be caught: turn shoreward, match its speed, drive through the lift, then commit as the face takes the board.</p></article>
-              <article><span>03</span><Sparkles /><strong>Flow</strong><p>A/D sets the rail and W/S moves from trough to lip. Hold Trick or Space to compress, release into a move, and use Q/E or the mobile recovery rail only when turbulence knocks you off center.</p></article>
+              <article><span>03</span><Sparkles /><strong>Flow</strong><p>A/D loads the rail and W/S shifts pressure between nose and tail. Your momentum and the polygon face decide where the board travels. Hold Trick or Space to compress, release into a move, and use Q/E or the mobile recovery rail when turbulence knocks you off center.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
             <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>

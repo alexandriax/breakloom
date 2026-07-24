@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceRideCaptureState, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -403,6 +403,7 @@ type ReplayRestoreState = {
   paddleVelocity: THREE.Vector2;
   rideVelocity: THREE.Vector2;
   rideAcceleration: THREE.Vector2;
+  rideYawRate: number;
   wipeoutVelocity: THREE.Vector2;
   phase: GamePhase;
   playerHeading: number;
@@ -10634,6 +10635,7 @@ function Simulation({
   const paddleVelocity = useRef(new THREE.Vector2());
   const rideVelocity = useRef(new THREE.Vector2());
   const rideAcceleration = useRef(new THREE.Vector2());
+  const rideYawRate = useRef(0);
   const rideEngaged = useRef(false);
   const cameraForward = useRef(new THREE.Vector3(0, 0, -1));
   const cameraRight = useRef(new THREE.Vector3(1, 0, 0));
@@ -10871,6 +10873,7 @@ function Simulation({
         paddleVelocity.current.copy(restore.paddleVelocity);
         rideVelocity.current.copy(restore.rideVelocity);
         rideAcceleration.current.copy(restore.rideAcceleration);
+        rideYawRate.current = restore.rideYawRate;
         wipeoutVelocity.current.copy(restore.wipeoutVelocity);
         phase.current = restore.phase;
         playerHeading.current = restore.playerHeading;
@@ -10947,6 +10950,7 @@ function Simulation({
           paddleVelocity: paddleVelocity.current.clone(),
           rideVelocity: rideVelocity.current.clone(),
           rideAcceleration: rideAcceleration.current.clone(),
+          rideYawRate: rideYawRate.current,
           wipeoutVelocity: wipeoutVelocity.current.clone(),
           phase: phase.current,
           playerHeading: playerHeading.current,
@@ -11071,6 +11075,7 @@ function Simulation({
           normalZ * normalSpeed + tangentZ * trimSpeed,
         );
         rideAcceleration.current.set(0, 0);
+        rideYawRate.current = 0;
         rideHeading.current = Math.atan2(rideVelocity.current.x, rideVelocity.current.y);
         catchQuality.current = .92;
         rideTakeoffQuality.current = .92;
@@ -11668,23 +11673,13 @@ function Simulation({
             : Math.abs(steer) > .16
               ? Math.sign(steer)
               : position.current.x < 0 ? -1 : 1;
-          if (engaged) {
-            const catchTrim = rideLineSide.current
-              * catchTransport.speed
-              * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
-            const catchNormalSpeed = catchTransport.speed * (.84 + committedQuality * .16);
-            const catchTangentSpeed = catchTrim * (.42 + committedQuality * .58);
-            rideVelocity.current.set(
-              catchNormalX * catchNormalSpeed + catchTangentX * catchTangentSpeed,
-              catchNormalZ * catchNormalSpeed + catchTangentZ * catchTangentSpeed,
-            );
-          } else {
-            rideVelocity.current.copy(paddleVelocity.current);
-          }
+          // Standing does not grant crest velocity or down-the-line trim. The
+          // board retains the exact paddling momentum it had at hand release;
+          // the live face must supply every subsequent increment of speed.
+          rideVelocity.current.copy(paddleVelocity.current);
           rideAcceleration.current.set(0, 0);
-          rideHeading.current = engaged
-            ? Math.atan2(rideVelocity.current.x, rideVelocity.current.y)
-            : paddleHeading.current;
+          rideYawRate.current = 0;
+          rideHeading.current = paddleHeading.current;
           barrelTime.current = 0;
           stance.current = 0;
           unstableFor.current = engaged ? (1 - committedQuality) * .2 : 0;
@@ -11697,7 +11692,7 @@ function Simulation({
           rideLineIntegral.current = 0;
           rideControlIntegral.current = 0;
           ridePowerIntegral.current = 0;
-          rideMaxSpeed.current = catchTransport.speed;
+          rideMaxSpeed.current = rideVelocity.current.length();
           rideMaxCombo.current = combo.current;
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
@@ -11998,14 +11993,6 @@ function Simulation({
           takeoffQuality = standingReading.capture;
 
           const standingSteer = rideRailInputFromPaddleSteer(steer);
-          const standingSpeed = rideVelocity.current.length();
-          rideHeading.current += standingSteer
-            * (.24 + Math.min(1.2, standingSpeed * .1))
-            * delta;
-          rideHeading.current = Math.atan2(
-            Math.sin(rideHeading.current),
-            Math.cos(rideHeading.current),
-          );
           if (move > .08) stance.current = Math.min(1, stance.current + delta * .58 * move);
           else if (move < -.08) stance.current = Math.max(-1, stance.current + delta * .58 * move);
           else stance.current = THREE.MathUtils.damp(stance.current, 0, .82, delta);
@@ -12018,47 +12005,58 @@ function Simulation({
           const standingCurrentSpeed = settings.currentStrength / 3.6;
           const standingCurrentX = Math.sin(standingCurrentAngle) * standingCurrentSpeed;
           const standingCurrentZ = -Math.cos(standingCurrentAngle) * standingCurrentSpeed;
-          const waveImpulse = standingReading.waveContact
-            * Math.max(0, standingReading.relativeWaveSpeed)
-            * (
-              .08
-                + Math.max(0, standingReading.headingAlignment) * .16
-                + standingReading.broadside * .18
-            );
-          const targetStandingX = standingCurrentX
-            + standingWaveNormalX * waveImpulse;
-          const targetStandingZ = standingCurrentZ
-            + standingWaveNormalZ * waveImpulse;
-          const standingDrag = .72
-            + standingReading.waveContact * 1.35
-            + standingReading.crossWaveLoad * .7;
           const previousStandingVelocityX = rideVelocity.current.x;
           const previousStandingVelocityZ = rideVelocity.current.y;
-          rideVelocity.current.x = THREE.MathUtils.damp(
-            rideVelocity.current.x,
-            targetStandingX,
-            standingDrag,
-            delta,
+          const standingDynamics = advanceSurfboardDynamics(
+            {
+              velocityX: previousStandingVelocityX,
+              velocityZ: previousStandingVelocityZ,
+              heading: rideHeading.current,
+              yawRate: rideYawRate.current,
+            },
+            {
+              deltaSeconds: delta,
+              surfaceSlopeX: standingSurface.slopeX,
+              surfaceSlopeZ: standingSurface.slopeZ,
+              waveVelocityX: standingTransport.x,
+              waveVelocityZ: standingTransport.z,
+              currentVelocityX: standingCurrentX,
+              currentVelocityZ: standingCurrentZ,
+              waveContact: standingReading.waveContact,
+              railInput: standingSteer,
+              stance: stance.current,
+              railGrip: THREE.MathUtils.clamp(
+                1 - railSlip.current * .72 - standingReading.crossWaveLoad * .16,
+                .12,
+                1,
+              ),
+              whitewater: standingReading.wipeoutRisk,
+              boardLength: boardSpec.length,
+              boardWidth: boardSpec.width,
+              boardTurn: boardSpec.turn,
+              boardStability: boardSpec.stability,
+              waveHeight: settings.waveHeight * tideResponse.faceScale,
+            },
           );
-          rideVelocity.current.y = THREE.MathUtils.damp(
-            rideVelocity.current.y,
-            targetStandingZ,
-            standingDrag,
-            delta,
+          rideVelocity.current.set(
+            standingDynamics.velocityX,
+            standingDynamics.velocityZ,
           );
+          rideHeading.current = standingDynamics.heading;
+          rideYawRate.current = standingDynamics.yawRate;
           position.current.x += rideVelocity.current.x * delta;
           position.current.z += rideVelocity.current.y * delta;
           speed = rideVelocity.current.length();
           const standingStep = Math.max(.001, Math.min(delta, .05));
           rideAcceleration.current.x = THREE.MathUtils.damp(
             rideAcceleration.current.x,
-            (rideVelocity.current.x - previousStandingVelocityX) / standingStep,
+            standingDynamics.accelerationX,
             6,
             standingStep,
           );
           rideAcceleration.current.y = THREE.MathUtils.damp(
             rideAcceleration.current.y,
-            (rideVelocity.current.y - previousStandingVelocityZ) / standingStep,
+            standingDynamics.accelerationZ,
             6,
             standingStep,
           );
@@ -12119,14 +12117,16 @@ function Simulation({
           railSlip.current = THREE.MathUtils.damp(
             railSlip.current,
             THREE.MathUtils.clamp(
-              standingReading.crossWaveLoad * .54 + standingBalanceError * .24,
+              standingReading.crossWaveLoad * .54
+                + standingBalanceError * .24
+                + standingDynamics.sideslip * .32,
               0,
               1,
             ),
             6.5,
             delta,
           );
-          railLoad = standingSteer * (1 - railSlip.current * .45);
+          railLoad = standingDynamics.railLoad;
           compression = THREE.MathUtils.clamp(
             standingBalanceError * .35
               + standingReading.crossWaveLoad * .42
@@ -12260,50 +12260,33 @@ function Simulation({
           settings,
           character,
         );
-        const faceTarget = finishing
-          ? 0
-          : THREE.MathUtils.clamp(
-              Math.abs(move) > .06 ? move : rideFacePosition.current * .72,
-              -1,
-              1,
-            );
-        rideFacePosition.current = THREE.MathUtils.damp(
-          rideFacePosition.current,
-          faceTarget,
-          finishing ? 4.6 : 2.55,
-          delta,
-        );
         const facePhaseSpan = THREE.MathUtils.clamp(
           .76 + settings.waveHeight * tideResponse.faceScale * .07,
           .78,
           1.18,
         );
-        const faceBlend = (rideFacePosition.current + 1) * .5;
-        // The surfable face is always shoreward of the crest. The trough/lip
-        // control selects a positive phase offset within that open face; it can
-        // never place the board on the offshore/back side of the wave.
-        const desiredFaceOffset = THREE.MathUtils.lerp(
-          facePhaseSpan,
-          .14,
-          faceBlend,
-        );
-        const desiredWavePhase = rideWavePhase.current + desiredFaceOffset;
         const crestPhaseError = Math.atan2(
           Math.sin(currentWavePhase - rideWavePhase.current),
           Math.cos(currentWavePhase - rideWavePhase.current),
         );
-        const phaseError = Math.atan2(
-          Math.sin(currentWavePhase - desiredWavePhase),
-          Math.cos(currentWavePhase - desiredWavePhase),
+        // Face position is measured from the board's actual phase on the
+        // polygon wave. W/S changes stance pressure below; it cannot move the
+        // surfer through an invisible trough-to-lip lane.
+        const measuredFacePosition = THREE.MathUtils.clamp(
+          (
+            (facePhaseSpan - crestPhaseError)
+              / Math.max(.1, facePhaseSpan - .14)
+          ) * 2 - 1,
+          -1,
+          1,
+        );
+        rideFacePosition.current = THREE.MathUtils.damp(
+          rideFacePosition.current,
+          finishing ? 0 : measuredFacePosition,
+          finishing ? 4.6 : 7.2,
+          delta,
         );
         const waveNumber = Math.PI * 2 / waveTransport.wavelength;
-        const phaseCorrection = THREE.MathUtils.clamp(
-          -phaseError
-            * (crestPhaseError < 0 ? .72 : .48)
-            / Math.max(.08, waveNumber),
-          -.72,
-          .92,
-        );
         const crestTravelLimit = THREE.MathUtils.clamp(waveTransport.wavelength * .075, 5.4, 15);
         waveCrestOffset.current = THREE.MathUtils.damp(
           waveCrestOffset.current,
@@ -12337,12 +12320,11 @@ function Simulation({
           0,
           -(rideSurface.slopeX * waveNormalX + rideSurface.slopeZ * waveNormalZ),
         );
-        const gravityPlaning = THREE.MathUtils.smootherstep(
+        let gravityPlaning = THREE.MathUtils.smootherstep(
           faceDownhillSlope,
           .012,
           .12 + settings.waveHeight * .025,
         );
-        const pumping = !finishing && move > 0.08 && stamina.current > 1;
         if (finishing) stance.current = THREE.MathUtils.damp(stance.current, 0, 4.8, delta);
         else if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
         else if (move < -0.08) stance.current = Math.max(-1, stance.current + delta * 0.86 * move);
@@ -12351,7 +12333,7 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         const highFace = Math.max(0, rideFacePosition.current);
         const lowFace = Math.max(0, -rideFacePosition.current);
-        stamina.current = THREE.MathUtils.clamp(stamina.current + delta * (pumping ? -14 : 6.5), 0, 100);
+        stamina.current = THREE.MathUtils.clamp(stamina.current + delta * 6.5, 0, 100);
         const breakTravel = rideDistance.current;
         const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * tideVariability * 1.1;
         const pocketAlong = rideOriginAlong.current + ridePocketOffset.current + pocketPulse;
@@ -12403,40 +12385,7 @@ function Simulation({
             0,
             1,
           );
-        const pumpBoost = pumping ? 1.4 + stamina.current * 0.017 : 0;
-        const takeoffRecovery = THREE.MathUtils.smoothstep(
-          rideDistance.current,
-          7,
-          28,
-        );
-        const entryPlaningEfficiency = THREE.MathUtils.lerp(
-          .86 + catchQuality.current * .14,
-          1,
-          takeoffRecovery,
-        );
-        speed = (
-          waveSpeed
-            * boardSpec.speed
-            * (
-              .67
-              + gravityPlaning * .2
-              + catchQuality.current * .08
-              + setState.energy * .07
-            )
-            + pumpBoost
-            + nosePressure * 0.85
-            - tailPressure * 0.48
-        ) * entryPlaningEfficiency;
-        speed *= (
-          .82
-          + lineControl * .24
-          - shoulderStall * .1
-          - whitewaterPressure * .13
-          + Math.max(0, -linePosition) * .025
-          + highFace * .07
-          + lowFace * .035
-          + tubePressure * .032
-        );
+        speed = rideVelocity.current.length();
         stamina.current = Math.max(
           0,
           stamina.current - delta * tubePressure * (
@@ -12475,11 +12424,96 @@ function Simulation({
         const rawSlip = THREE.MathUtils.smoothstep(railDemand, railGrip, railGrip + .3);
         const assistedSlip = settings.mode === "training" ? rawSlip * .34 : rawSlip;
         railSlip.current = THREE.MathUtils.damp(railSlip.current, assistedSlip, assistedSlip > railSlip.current ? 7.5 : 3.4, delta);
-        railLoad = rideSteer * (1 - railSlip.current * .38) * (1 + tailPressure * .16);
+        const foamCrossChop = Math.sin(
+          t * (8.8 + setState.energy * 1.6)
+            + position.current.x * .19
+            - position.current.z * .07,
+        ) * (.28 + setState.energy * .42 + onshoreChop * .18);
+        const brokenWaterTangent = foamCrossChop
+          + rideLineSide.current * (.22 + waveSpeed * .035 + setState.energy * .24);
+        const rideCurrentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
+        const rideCurrentSpeed = settings.currentStrength / 3.6;
+        const rideCurrentX = Math.sin(rideCurrentAngle) * rideCurrentSpeed;
+        const rideCurrentZ = -Math.cos(rideCurrentAngle) * rideCurrentSpeed;
+        const rideLookback = .14;
+        const rideSurfaceRise = (
+          rideSurface.height
+            - waveHeightAt(
+              position.current.x,
+              position.current.z,
+              t - rideLookback,
+              settings,
+              character,
+            )
+        ) / rideLookback;
+        const rideInteraction = evaluateBoardWaterInteraction({
+          boardHeading: rideHeading.current,
+          velocityX: rideVelocity.current.x,
+          velocityZ: rideVelocity.current.y,
+          waveVelocityX: waveTransport.x,
+          waveVelocityZ: waveTransport.z,
+          slopeX: rideSurface.slopeX,
+          slopeZ: rideSurface.slopeZ,
+          surfaceRise: rideSurfaceRise,
+          surfaceLift: rideSurface.height - settings.tide * .3,
+          crestDistance: -crestPhaseError / Math.max(.08, waveNumber),
+          crestEnergy: setState.crestEnergy,
+          crestSurfable: setState.crestSurfable,
+          boardStability: boardSpec.stability,
+          waveHeight: settings.waveHeight * tideResponse.faceScale,
+        });
+        const previousRideVelocityX = rideVelocity.current.x;
+        const previousRideVelocityZ = rideVelocity.current.y;
+        const dynamics = advanceSurfboardDynamics(
+          {
+            velocityX: previousRideVelocityX,
+            velocityZ: previousRideVelocityZ,
+            heading: rideHeading.current,
+            yawRate: rideYawRate.current,
+          },
+          {
+            deltaSeconds: delta,
+            surfaceSlopeX: rideSurface.slopeX,
+            surfaceSlopeZ: rideSurface.slopeZ,
+            waveVelocityX: waveTransport.x,
+            waveVelocityZ: waveTransport.z,
+            currentVelocityX: rideCurrentX,
+            currentVelocityZ: rideCurrentZ,
+            waveContact: rideInteraction.waveContact * (1 - rideOutProgress * .72),
+            railInput: rideSteer,
+            stance: stance.current,
+            railGrip: THREE.MathUtils.clamp(1 - railSlip.current * .78, .08, 1),
+            whitewater: whitewaterPressure,
+            turbulenceX: waveTangentX * brokenWaterTangent,
+            turbulenceZ: waveTangentZ * brokenWaterTangent,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+            boardTurn: boardSpec.turn,
+            boardStability: boardSpec.stability,
+            waveHeight: settings.waveHeight * tideResponse.faceScale,
+          },
+        );
+        rideVelocity.current.set(
+          dynamics.velocityX,
+          dynamics.velocityZ,
+        );
+        rideHeading.current = dynamics.heading;
+        rideYawRate.current = dynamics.yawRate;
+        gravityPlaning = Math.max(gravityPlaning, dynamics.planing);
+        const dynamicSlip = dynamics.sideslip * (
+          settings.mode === "training" ? .46 : settings.mode === "advanced" ? .95 : .74
+        );
+        const slipTarget = Math.max(assistedSlip, dynamicSlip);
+        railSlip.current = THREE.MathUtils.damp(
+          railSlip.current,
+          slipTarget,
+          slipTarget > railSlip.current ? 8.2 : 3.2,
+          delta,
+        );
+        railLoad = dynamics.railLoad;
         compression = THREE.MathUtils.clamp(
           Math.abs(railLoad) * .52
             + tailPressure * .3
-            + (pumping ? .16 : 0)
             + motion.current.maneuver * .32
             + Math.abs(motion.current.lateralForce) * .12
             + Math.max(0, -motion.current.acceleration) * .08
@@ -12488,158 +12522,41 @@ function Simulation({
           0,
           1,
         );
-        speed *= 1 - railSlip.current * .075;
-        const turnGrip = 1 - railSlip.current * .46;
-        const drift = Math.sign(rideSteer) * railSlip.current * (1.15 + speed * .045);
-        const railTurn = railLoad
-          * boardSpec.turn
-          * (5.8 + speed * .28)
-          * (1 + tailPressure * .55 - nosePressure * .14)
-          * turnGrip
-          + drift;
-        const foamShoulderShove = rideLineSide.current
-          * whitewaterPressure
-          * (.38 + waveSpeed * .065 + setState.energy * .42);
-        const foamCrossChop = Math.sin(
-          t * (8.8 + setState.energy * 1.6)
-            + position.current.x * .19
-            - position.current.z * .07,
-        ) * whitewaterPressure * (.28 + setState.energy * .42 + onshoreChop * .18);
-        const trimDrive = rideLineSide.current
-          * speed
-          * (.43 + character.length * .022 + Math.abs(character.peel) * .065)
-          * (1 - whitewaterPressure * .2)
-          + rideLineSide.current * tubePressure * (.32 + waveSpeed * .03)
-          + foamShoulderShove;
-        const tangentialVelocity = trimDrive + railTurn + foamCrossChop;
-        const normalVelocity = Math.max(
-          .9,
-          waveTransport.speed
-            * (
-              .66
-              + gravityPlaning * .2
-              + catchQuality.current * .07
-              + lineControl * .045
-              + setState.energy * .035
-            )
-            + pumpBoost * .28
-            + nosePressure * .32
-            + phaseCorrection,
-        ) * (
-          1
-          + nosePressure * .025
-          - tailPressure * .018
-          + Math.abs(railLoad) * .012
-          + tubePressure * .018
-          + whitewaterPressure * .065
-        );
-        const rideCurrentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
-        const rideCurrentSpeed = settings.currentStrength / 3.6;
-        const currentInfluence = .12 + railSlip.current * .08 + lowFace * .035;
-        const targetLateralVelocity = waveNormalX * normalVelocity
-          + waveTangentX * tangentialVelocity
-          + Math.sin(rideCurrentAngle) * rideCurrentSpeed * currentInfluence;
-        const targetShorewardVelocity = waveNormalZ * normalVelocity
-          + waveTangentZ * tangentialVelocity
-          - Math.cos(rideCurrentAngle) * rideCurrentSpeed * currentInfluence;
-
-        // A surfboard carries momentum across the wave instead of snapping to
-        // a newly calculated path. The crest-normal component stays responsive
-        // enough to remain captured by the physical swell, while down-the-line
-        // velocity changes through rail force, board outline, and fin grip.
-        if (rideVelocity.current.lengthSq() < .04) {
-          rideVelocity.current.set(targetLateralVelocity, targetShorewardVelocity);
-        }
-        const previousRideVelocityX = rideVelocity.current.x;
-        const previousRideVelocityZ = rideVelocity.current.y;
-        let inertialNormalVelocity = rideVelocity.current.x * waveNormalX
-          + rideVelocity.current.y * waveNormalZ;
-        let inertialTangentialVelocity = rideVelocity.current.x * waveTangentX
-          + rideVelocity.current.y * waveTangentZ;
-        const normalResponse = finishing
-          ? 6.8
-          : 2.35
-            + gravityPlaning * 1.25
-            + highFace * .45
-            + tubePressure * 1.05
-            + whitewaterPressure * 1.4;
-        const outlineResponse = settings.board === "performance"
-          ? 1.12
-          : settings.board === "fish"
-            ? .96
-            : .78;
-        const tangentialResponse = finishing
-          ? 4.8
-          : (
-            2.25
-            + Math.abs(railLoad) * 2.65
-            + tailPressure * .52
-            + lineControl * .34
-            + tubePressure * .58
-            + whitewaterPressure * 1.25
-          ) * outlineResponse * (1 - railSlip.current * .34);
-        inertialNormalVelocity = THREE.MathUtils.damp(
-          inertialNormalVelocity,
-          targetLateralVelocity * waveNormalX + targetShorewardVelocity * waveNormalZ,
-          normalResponse,
-          delta,
-        );
-        inertialTangentialVelocity = THREE.MathUtils.damp(
-          inertialTangentialVelocity,
-          targetLateralVelocity * waveTangentX + targetShorewardVelocity * waveTangentZ,
-          tangentialResponse,
-          delta,
-        );
-        rideVelocity.current.set(
-          waveNormalX * inertialNormalVelocity + waveTangentX * inertialTangentialVelocity,
-          waveNormalZ * inertialNormalVelocity + waveTangentZ * inertialTangentialVelocity,
-        );
-        const hydrodynamicSpeedLimit = Math.max(
-          waveTransport.speed * 1.08,
-          Math.hypot(targetLateralVelocity, targetShorewardVelocity) * (1.08 + railSlip.current * .035),
-        );
-        if (rideVelocity.current.length() > hydrodynamicSpeedLimit) {
-          rideVelocity.current.setLength(hydrodynamicSpeedLimit);
-        }
         const accelerationStep = Math.max(.001, Math.min(delta, .05));
-        const rawAccelerationX = (rideVelocity.current.x - previousRideVelocityX) / accelerationStep;
-        const rawAccelerationZ = (rideVelocity.current.y - previousRideVelocityZ) / accelerationStep;
         rideAcceleration.current.x = THREE.MathUtils.damp(
           rideAcceleration.current.x,
-          rawAccelerationX,
+          dynamics.accelerationX,
           7.2,
           accelerationStep,
         );
         rideAcceleration.current.y = THREE.MathUtils.damp(
           rideAcceleration.current.y,
-          rawAccelerationZ,
+          dynamics.accelerationZ,
           7.2,
           accelerationStep,
         );
-        const velocityHeading = Math.atan2(rideVelocity.current.x, rideVelocity.current.y);
-        const velocityForwardX = Math.sin(velocityHeading);
-        const velocityForwardZ = Math.cos(velocityHeading);
-        const velocityRightX = Math.cos(velocityHeading);
-        const velocityRightZ = -Math.sin(velocityHeading);
+        const boardForwardX = Math.sin(rideHeading.current);
+        const boardForwardZ = Math.cos(rideHeading.current);
+        const boardRightForceX = Math.cos(rideHeading.current);
+        const boardRightForceZ = -Math.sin(rideHeading.current);
         rideDrive = THREE.MathUtils.clamp(
           (
-            rideAcceleration.current.x * velocityForwardX
-            + rideAcceleration.current.y * velocityForwardZ
+            rideAcceleration.current.x * boardForwardX
+            + rideAcceleration.current.y * boardForwardZ
           ) / 8.5,
           -1,
           1,
         );
         rideLateralForce = THREE.MathUtils.clamp(
           (
-            rideAcceleration.current.x * velocityRightX
-            + rideAcceleration.current.y * velocityRightZ
+            rideAcceleration.current.x * boardRightForceX
+            + rideAcceleration.current.y * boardRightForceZ
           ) / 9.5,
           -1,
           1,
         );
         const lateralVelocity = rideVelocity.current.x;
         const shorewardVelocity = rideVelocity.current.y;
-        rideHeading.current = dampAngle(rideHeading.current, Math.atan2(lateralVelocity, shorewardVelocity), 4.8, delta);
         position.current.x += lateralVelocity * delta;
         position.current.z += shorewardVelocity * delta;
         // Capture is earned through planing speed and the physical face. We do
@@ -12670,18 +12587,17 @@ function Simulation({
             - waveNormalZ * Math.sin(rideHeading.current),
           boardAlignment,
         );
-        boardPlaning = THREE.MathUtils.clamp(
-          integratedNormalSpeed / Math.max(1.1, waveTransport.speed * .66),
-          0,
-          1,
-        );
-        crossWaveLoad = THREE.MathUtils.clamp(
-          (1 - Math.abs(boardAlignment))
-            * Math.max(0, waveTransport.speed - integratedNormalSpeed)
-            / Math.max(1.2, waveTransport.speed * .54)
-            * (.38 + setState.energy * .28),
-          0,
-          1.5,
+        boardPlaning = dynamics.planing;
+        crossWaveLoad = Math.max(
+          rideInteraction.crossWaveLoad,
+          THREE.MathUtils.clamp(
+            (1 - Math.abs(boardAlignment))
+              * Math.max(0, waveTransport.speed - integratedNormalSpeed)
+              / Math.max(1.2, waveTransport.speed * .54)
+              * (.38 + setState.energy * .28),
+            0,
+            1.5,
+          ),
         );
         let lipOvertake = 0;
         if (!finishing) {
@@ -12845,7 +12761,7 @@ function Simulation({
           12 + compression * 5 + Math.abs(rideFacePosition.current) * 3.5
         ) * (1 - railSlip.current * .42);
         if (!finishing) {
-          combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15 + (pumping && lineControl > .48 ? delta * 0.04 : 0));
+          combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15);
           maxCombo.current = Math.max(maxCombo.current, combo.current);
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
         }
@@ -12927,9 +12843,6 @@ function Simulation({
             base = charge > .72 ? 330 : 230;
             lift = .06;
             rotation = .5 + charge * .34;
-          } else if (pumping) {
-            name = "Power Pump";
-            base = 175;
           }
           stamina.current = Math.max(0, stamina.current - (5 + charge * 8 + (family === "air" ? 5 : 0)));
           maneuver.current = name;
@@ -12989,13 +12902,13 @@ function Simulation({
             ? "Bottom turn — set the rail and drive back toward the lip"
           : steer
             ? "Hold the rail · hold TRICK / SPACE to load, then release"
-            : pumping
-              ? "Move toward the nose · pumping for speed"
+            : move > .08
+              ? "Nose pressure · trim and carry the board's existing momentum"
               : move < -0.08
                 ? "Tail pressure · tighter turning response"
                 : Math.abs(character.peel) > .18
                   ? `${character.peel > 0 ? "Right" : "Left"} shoulder opening · set the rail toward the caustic seam`
-                  : "W nose / pump · S tail / control · hold SPACE, then release";
+                  : "W nose pressure · S tail pressure · A/D load the rail";
         if (!qaScenario && !finishing && unstableFor.current > (
           settings.mode === "training" ? 2.35 : settings.mode === "advanced" ? .86 : 1.42
         )) {
