@@ -401,6 +401,19 @@ if (
 if (downhillDynamics.velocityZ > dynamicsState.velocityZ + .2) {
   throw new Error("One dynamics step snapped the board toward crest phase speed");
 }
+const airborneDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  surfaceSlopeZ: -.2,
+  railInput: 1,
+  waterContact: 0,
+});
+if (
+  Math.abs(airborneDynamics.gravityDrive) > .001
+  || Math.abs(airborneDynamics.railLoad) > .001
+  || Math.abs(airborneDynamics.wavePressure) > .001
+) {
+  throw new Error("An airborne board is still receiving rail, slope, or wave pressure");
+}
 
 function dynamicsAfterOneSecond(board) {
   let state = {
@@ -591,6 +604,19 @@ if (
 ) {
   throw new Error("Counterweight is not physically opposing cross-wave roll torque");
 }
+const airborneRoll = rollForFrames(45, {
+  ...rollSample,
+  planing: 0,
+  crossSlope: .2,
+  crossWaveLoad: .8,
+  waterContact: 0,
+}, {
+  rollAngle: .2,
+  rollRate: .55,
+});
+if (airborneRoll.edgeRisk > .001 || airborneRoll.rollAngle <= .24) {
+  throw new Error("Airborne roll is still being righted or edge-checked by absent water");
+}
 
 const pitchSample = {
   deltaSeconds: 1 / 60,
@@ -658,6 +684,23 @@ const sunkTailContact = pitchForFrames(75, {
 });
 if (sunkTailContact.tailImmersion < .03 || sunkTailContact.tailStallRisk < .25) {
   throw new Error("A low-speed, tail-heavy board did not sink and stall");
+}
+const airbornePitch = pitchForFrames(45, {
+  ...pitchSample,
+  waveContact: 0,
+  planing: 0,
+  noseSurfaceOffset: .2,
+  turbulenceTorque: .4,
+}, {
+  pitchAngle: .12,
+  pitchRate: .42,
+});
+if (
+  airbornePitch.pearlingRisk > .001
+  || airbornePitch.tailStallRisk > .001
+  || airbornePitch.pitchAngle <= .16
+) {
+  throw new Error("Airborne pitch is still reacting to absent nose or tail water contact");
 }
 
 const heaveSample = {
@@ -889,6 +932,7 @@ console.log(JSON.stringify({
     releasedRailAngle: recoveredRail.rollAngle,
     crossWaveEdgeRisk: unbalancedCrossWave.edgeRisk,
     counterweightedAngle: counterweightedCrossWave.rollAngle,
+    airborneAngle: airborneRoll.rollAngle,
   },
   pitchDynamics: {
     noseWeightedAngle: noseWeightedPitch.pitchAngle,
@@ -897,6 +941,7 @@ console.log(JSON.stringify({
     pearlingRisk: risingNoseContact.pearlingRisk,
     pitchOverRisk: risingNoseContact.pitchOverRisk,
     tailStallRisk: sunkTailContact.tailStallRisk,
+    airborneAngle: airbornePitch.pitchAngle,
   },
   heaveDynamics: {
     staticElevation: staticHeave.elevation,

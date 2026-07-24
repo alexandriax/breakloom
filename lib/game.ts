@@ -245,6 +245,7 @@ export type SurfboardDynamicsSample = {
   stance: number;
   railGrip: number;
   whitewater: number;
+  waterContact?: number;
   noseImmersion?: number;
   tailImmersion?: number;
   turbulenceX?: number;
@@ -289,6 +290,7 @@ export type BoardRollSample = {
   boardWidth: number;
   boardStability: number;
   whitewater: number;
+  waterContact?: number;
 };
 
 export type BoardRollReading = BoardRollState & {
@@ -317,17 +319,23 @@ export function advanceBoardRollDynamics(
   const widthScale = Math.max(.7, sample.boardWidth / .34);
   const planing = Math.max(0, Math.min(1, sample.planing));
   const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const waterContact = Math.max(
+    0,
+    Math.min(1, sample.waterContact ?? 1),
+  );
   const crossWaveLoad = Math.max(0, Math.min(1.5, sample.crossWaveLoad));
   const crossWaveSide = Math.sign(sample.crossWaveSide) || 1;
   const speedAuthority = smoothstep(.45, 5.2, Math.max(0, sample.speed));
   const inertia = Math.pow(widthScale, .86) * Math.sqrt(stability);
 
-  const surfaceTorque = sample.crossSlope * 4.4;
+  const surfaceTorque = sample.crossSlope * 4.4 * waterContact;
   const accelerationTorque = -sample.lateralAcceleration * .21;
   const waveTorque = crossWaveSide
     * crossWaveLoad
-    * (1.75 + whitewater * .85);
+    * (1.75 + whitewater * .85)
+    * waterContact;
   const turbulenceTorque = (sample.turbulenceTorque ?? 0)
+    * waterContact
     / Math.sqrt(stability);
   const externalTorque = surfaceTorque
     + accelerationTorque
@@ -343,15 +351,15 @@ export function advanceBoardRollDynamics(
     * (1.12 + speedAuthority * 2.35)
     / inertia;
   const rightingStiffness = (
-    .92
+    .92 * waterContact
       + planing * (3.1 + speedAuthority * 2.15)
   ) * stability * Math.pow(widthScale, 1.18);
   const rightingMoment = -state.rollAngle * rightingStiffness;
   const angularDamping = (
-    1.05
+    .14 + waterContact * .91
       + planing * 2.2
-      + speedAuthority * .72
-      + whitewater * .32
+      + speedAuthority * .72 * waterContact
+      + whitewater * .32 * waterContact
   ) * Math.sqrt(stability * widthScale);
   const counterweightTorque = -counterweight * counterweightAuthority;
   const rollAcceleration = clampValue(
@@ -389,7 +397,7 @@ export function advanceBoardRollDynamics(
     tipAngle * .62,
     tipAngle * 1.18,
     Math.abs(rollAngle),
-  ) * (
+  ) * waterContact * (
     .72
       + crossWaveLoad * .24
       + whitewater * .16
@@ -399,6 +407,7 @@ export function advanceBoardRollDynamics(
     Math.min(
       1,
       smoothstep(tipAngle * .92, tipAngle * 1.65, Math.abs(rollAngle))
+        * waterContact
         * (.72 + Math.abs(rollRate) * .16 + crossWaveLoad * .18),
     ),
   );
@@ -496,18 +505,19 @@ export function advanceBoardPitchDynamics(
     * (1.35 + planing * 2.7 + speedAuthority * .65);
   const turbulenceTorque = (sample.turbulenceTorque ?? 0)
     * (.42 + whitewater * .58)
+    * contact
     / Math.sqrt(stability);
   const rightingStiffness = (
-    1.08
-      + contact * .72
+    .08
+      + contact * 1.72
       + planing * (2.35 + speedAuthority * 1.2)
   ) * stability * Math.pow(lengthScale, .72);
   const rightingMoment = -state.pitchAngle * rightingStiffness;
   const angularDamping = (
-    1.18
-      + contact * .48
+    .16
+      + contact * 1.5
       + planing * 1.92
-      + speedAuthority * .52
+      + speedAuthority * .52 * contact
   ) * Math.sqrt(stability * lengthScale);
   const pitchAcceleration = clampValue(
     (
@@ -854,6 +864,10 @@ export function advanceSurfboardDynamics(
   const contact = Math.max(0, Math.min(1, sample.waveContact));
   const grip = Math.max(0, Math.min(1, sample.railGrip));
   const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const hullContact = Math.max(
+    0,
+    Math.min(1, sample.waterContact ?? 1),
+  );
   const stance = Math.max(-1, Math.min(1, sample.stance));
   const railInput = Math.max(-1, Math.min(1, sample.railInput));
   const waveSpeed = Math.max(
@@ -880,7 +894,7 @@ export function advanceSurfboardDynamics(
     .48,
     Math.max(.5, planingThreshold * 1.55),
     Math.abs(initialForwardSpeed),
-  ) * (.36 + contact * .64);
+  ) * (.36 + contact * .64) * hullContact;
 
   const speedAuthority = smoothstep(
     .42,
@@ -894,16 +908,22 @@ export function advanceSurfboardDynamics(
     * (.32 + Math.abs(initialForwardSpeed) * .055)
     * (.34 + grip * .66)
     * (1 + tailPressure * .34 - nosePressure * .12)
+    * hullContact
     / lengthYawInertia;
   const yawResponse = (
-    2.15
-      + Math.abs(initialForwardSpeed) * .23
-      + grip * 1.15
+    .32
+      + hullContact * (
+        1.83
+          + Math.abs(initialForwardSpeed) * .23
+          + grip * 1.15
+      )
   ) / Math.sqrt(lengthYawInertia);
   let yawRate = state.yawRate + (
     targetYawRate - state.yawRate
   ) * (1 - Math.exp(-yawResponse * delta));
-  yawRate *= Math.exp(-delta * (.42 + (1 - speedAuthority) * 1.8));
+  yawRate *= Math.exp(
+    -delta * (.08 + hullContact * (.34 + (1 - speedAuthority) * 1.8)),
+  );
   const heading = state.heading + yawRate * delta;
   const forwardX = Math.sin(heading);
   const forwardZ = Math.cos(heading);
@@ -913,9 +933,9 @@ export function advanceSurfboardDynamics(
   // Surface particles move far slower than the crest itself. A small orbital
   // component gives the board moving water to react against without making the
   // phase speed a conveyor belt.
-  const orbitalCoupling = .035 + contact * (
+  const orbitalCoupling = hullContact * (.035 + contact * (
     .09 + Math.max(0, sample.waveHeight) * .018
-  );
+  ));
   const waterVelocityX = sample.currentVelocityX
     + sample.waveVelocityX * orbitalCoupling;
   const waterVelocityZ = sample.currentVelocityZ
@@ -930,20 +950,24 @@ export function advanceSurfboardDynamics(
   const gravityScale = 9.81 / Math.max(1, 1 + slopeMagnitudeSquared);
   const gravityAccelerationX = -sample.surfaceSlopeX
     * gravityScale
-    * (.74 + planing * .26);
+    * (.74 + planing * .26)
+    * hullContact;
   const gravityAccelerationZ = -sample.surfaceSlopeZ
     * gravityScale
-    * (.74 + planing * .26);
+    * (.74 + planing * .26)
+    * hullContact;
   const gravityDrive = gravityAccelerationX * forwardX
     + gravityAccelerationZ * forwardZ;
   const slopeAlongBoard = sample.surfaceSlopeX * forwardX
     + sample.surfaceSlopeZ * forwardZ;
   const slopePearlingRisk = contact
+    * hullContact
     * smoothstep(.44, .92, nosePressure)
     * smoothstep(.075, .3, -slopeAlongBoard)
     * smoothstep(2.35, 6.8, Math.abs(forwardSpeed))
     * (.72 + whitewater * .28);
   const immersionPearlingRisk = contact
+    * hullContact
     * smoothstep(.018, .17, Math.max(0, sample.noseImmersion ?? 0))
     * smoothstep(1.65, 6.4, Math.abs(forwardSpeed))
     * (.55 + nosePressure * .28 + whitewater * .17);
@@ -952,10 +976,12 @@ export function advanceSurfboardDynamics(
     Math.max(slopePearlingRisk, immersionPearlingRisk),
   );
   const pressureTailStall = contact
+    * hullContact
     * smoothstep(.42, .94, tailPressure)
     * (1 - planing)
     * (1 - smoothstep(1.5, 4.2, Math.abs(forwardSpeed)));
   const immersionTailStall = contact
+    * hullContact
     * smoothstep(.016, .18, Math.max(0, sample.tailImmersion ?? 0))
     * (1 - planing * .72)
     * (1 - smoothstep(1.6, 4.6, Math.abs(forwardSpeed)))
@@ -970,6 +996,7 @@ export function advanceSurfboardDynamics(
   const waveDeficit = Math.max(0, waveSpeed - normalSpeed);
   const headingAlignment = forwardX * waveNormalX + forwardZ * waveNormalZ;
   const wavePressure = contact
+    * hullContact
     * waveDeficit
     * (.48 + Math.max(0, headingAlignment) * .72)
     * (.72 + Math.max(.25, sample.waveHeight) * .11)
@@ -982,6 +1009,7 @@ export function advanceSurfboardDynamics(
   const longitudinalDrag = (.033 + whitewater * .035)
     * lengthDragScale
     * widthDragScale
+    * (.05 + hullContact * .95)
     * (1 - planing * .52)
     * (
       1
@@ -994,7 +1022,9 @@ export function advanceSurfboardDynamics(
     .2
       + grip * (.29 + planing * .24)
       + Math.abs(railInput) * grip * .12
-  ) * widthDragScale / Math.sqrt(stability);
+  ) * widthDragScale
+    * (.04 + hullContact * .96)
+    / Math.sqrt(stability);
   const dragForward = -forwardSpeed
     * Math.abs(forwardSpeed)
     * longitudinalDrag;
@@ -1003,9 +1033,11 @@ export function advanceSurfboardDynamics(
     * lateralDrag;
   const turbulenceX = (sample.turbulenceX ?? 0)
     * whitewater
+    * hullContact
     / Math.sqrt(stability);
   const turbulenceZ = (sample.turbulenceZ ?? 0)
     * whitewater
+    * hullContact
     / Math.sqrt(stability);
   let accelerationX = gravityAccelerationX
     + wavePressureX
@@ -1044,6 +1076,7 @@ export function advanceSurfboardDynamics(
   const railLoad = railInput
     * speedAuthority
     * grip
+    * hullContact
     * (1 + tailPressure * .18)
     * (1 - sideslip * .28);
   return {
@@ -1509,6 +1542,10 @@ export type GameStats = {
   noseImmersion: number;
   tailImmersion: number;
   pitchOverRisk: number;
+  verticalVelocity: number;
+  boardWaterContact: number;
+  airborneHeight: number;
+  landingImpact: number;
   pearlingRisk: number;
   tailStall: number;
   waveQuality: number;
@@ -1617,6 +1654,10 @@ export const INITIAL_STATS: GameStats = {
   noseImmersion: 0,
   tailImmersion: 0,
   pitchOverRisk: 0,
+  verticalVelocity: 0,
+  boardWaterContact: 1,
+  airborneHeight: 0,
+  landingImpact: 0,
   pearlingRisk: 0,
   tailStall: 0,
   waveQuality: 0,

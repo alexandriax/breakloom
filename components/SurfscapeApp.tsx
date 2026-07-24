@@ -119,6 +119,8 @@ const EMPTY_REPLAY_TELEMETRY: ReplayTelemetry = {
   railLoad: 0,
   rollAngle: 0,
   pitchAngle: 0,
+  airborneHeight: 0,
+  verticalVelocity: 0,
   whitewater: 0,
   stance: 0,
   power: 0,
@@ -2994,11 +2996,17 @@ export default function SurfscapeApp() {
   const pitchDirection = stats.pitchAngle >= 0 ? "NOSE DOWN" : "NOSE UP";
   const noseImmersionCentimeters = Math.round(stats.noseImmersion * 100);
   const tailImmersionCentimeters = Math.round(stats.tailImmersion * 100);
+  const airborneCentimeters = Math.round(stats.airborneHeight * 100);
+  const hullContactPercent = Math.round(stats.boardWaterContact * 100);
   const pitchHazardActive = stats.pitchOverRisk > .28 || stats.tailStall > .38;
   const attitudeDegrees = pitchHazardActive ? pitchDegrees : rollDegrees;
   const stanceLabel = stats.stance > 0.42 ? "NOSE PRESSURE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
-  const hydrodynamicLoadLabel = stats.pitchOverRisk > .42
-    ? `NOSE IMMERSED ${noseImmersionCentimeters} CM`
+  const hydrodynamicLoadLabel = stats.airborneHeight > .055
+    ? `AIRBORNE ${airborneCentimeters} CM`
+    : stats.landingImpact > .18
+      ? `RECONNECT LOAD ${Math.round(stats.landingImpact * 100)}%`
+    : stats.pitchOverRisk > .42
+      ? `NOSE IMMERSED ${noseImmersionCentimeters} CM`
     : stats.capsizeRisk > .48
       ? `CAPSIZE RISK ${Math.round(stats.capsizeRisk * 100)}%`
     : stats.rollEdgeRisk > .34
@@ -3016,15 +3024,23 @@ export default function SurfscapeApp() {
       : Math.max(0, stats.acceleration) > .48
         ? "BOARD DRIVING"
         : stanceLabel;
-  const rollInstrumentTitle = stats.pitchOverRisk > .42
-    ? "PITCH OVER"
+  const rollInstrumentTitle = stats.airborneHeight > .055
+    ? "HULL AIRBORNE"
+    : stats.landingImpact > .18
+      ? "WATER RECONNECT"
+    : stats.pitchOverRisk > .42
+      ? "PITCH OVER"
     : stats.capsizeRisk > .48
       ? "EDGE CATCH"
     : stats.rollEdgeRisk > .28
       ? "RAIL LIMIT"
       : "ROLL CONTROL";
-  const standingLoadLabel = stats.pitchOverRisk > .42
-    ? `NOSE IMMERSED ${noseImmersionCentimeters} CM`
+  const standingLoadLabel = stats.airborneHeight > .055
+    ? `AIRBORNE ${airborneCentimeters} CM · NO RAIL`
+    : stats.landingImpact > .18
+      ? `RECONNECT LOAD ${Math.round(stats.landingImpact * 100)}%`
+    : stats.pitchOverRisk > .42
+      ? `NOSE IMMERSED ${noseImmersionCentimeters} CM`
     : stats.capsizeRisk > .48
       ? `CAPSIZE RISK ${Math.round(stats.capsizeRisk * 100)}%`
     : stats.rollEdgeRisk > .28
@@ -3122,7 +3138,14 @@ export default function SurfscapeApp() {
                     tone: "align",
                   }
         : standingOnBoard
-          ? stats.pitchOverRisk > .42
+          ? stats.airborneHeight > .055
+            ? {
+                cue: `HULL AIRBORNE ${airborneCentimeters} CM · LEVEL`,
+                detail: "The rail has no water authority. Release A/D, center W/S, and prepare to reconnect.",
+                rotation: 90,
+                tone: "danger",
+              }
+            : stats.pitchOverRisk > .42
             ? {
                 cue: `NOSE ${noseImmersionCentimeters} CM UNDER · SHIFT BACK`,
                 detail: `${pitchDirection} ${pitchDegrees}° · release W and move pressure toward the tail.`,
@@ -3171,7 +3194,21 @@ export default function SurfscapeApp() {
                 tone: "balance",
               }
           : stats.phase === "riding" && stats.waveEngaged
-            ? stats.pitchOverRisk > .42
+            ? stats.airborneHeight > .055
+              ? {
+                  cue: `HULL AIRBORNE ${airborneCentimeters} CM · LEVEL`,
+                  detail: `${hullContactPercent}% water contact · neutralize roll and pitch before the polygon catches up.`,
+                  rotation: 90,
+                  tone: "danger",
+                }
+              : stats.landingImpact > .2
+                ? {
+                    cue: `RECONNECT LOAD ${Math.round(stats.landingImpact * 100)}%`,
+                    detail: "Absorb with centered trim; rail authority returns only as the hull settles.",
+                    rotation: -90,
+                    tone: "align",
+                  }
+              : stats.pitchOverRisk > .42
               ? {
                   cue: `NOSE ${noseImmersionCentimeters} CM UNDER · SHIFT BACK`,
                   detail: `${pitchDirection} ${pitchDegrees}° · the front contact patch is decelerating into the polygon face.`,
@@ -4016,7 +4053,7 @@ export default function SurfscapeApp() {
                     />
                   </label>
                   <small>{replayActiveMoment ? `${replayActiveMoment.label} · ${Math.round(replayActiveMoment.quality * 100)}% PHYSICS SIGNAL` : `${replayMoments.length} PHYSICS-DETECTED MOMENTS · ${replayLineLabel}`}</small>
-                  <div className="replay-mobile-telemetry" aria-label={`Replay speed ${replayTelemetry.speed.toFixed(1)} metres per second. Board roll ${Math.round(Math.abs(replayTelemetry.rollAngle) * 180 / Math.PI)} degrees. Board pitch ${Math.round(Math.abs(replayTelemetry.pitchAngle) * 180 / Math.PI)} degrees. Face position ${replayFaceLabel}. Line control ${Math.round(replayTelemetry.lineControl * 100)} percent. Whitewater pressure ${Math.round(replayTelemetry.whitewater * 100)} percent.`}>
+                  <div className="replay-mobile-telemetry" aria-label={`Replay speed ${replayTelemetry.speed.toFixed(1)} metres per second. Board roll ${Math.round(Math.abs(replayTelemetry.rollAngle) * 180 / Math.PI)} degrees. Board pitch ${Math.round(Math.abs(replayTelemetry.pitchAngle) * 180 / Math.PI)} degrees. Airborne height ${Math.round(replayTelemetry.airborneHeight * 100)} centimetres. Vertical velocity ${replayTelemetry.verticalVelocity.toFixed(1)} metres per second. Face position ${replayFaceLabel}. Line control ${Math.round(replayTelemetry.lineControl * 100)} percent. Whitewater pressure ${Math.round(replayTelemetry.whitewater * 100)} percent.`}>
                     <span><small>SPEED</small><strong>{replayTelemetry.speed.toFixed(1)}<i>M/S</i></strong></span>
                     <span><small>FACE</small><strong>{replayFaceLabel}</strong></span>
                     <span><small>LINE</small><strong>{replayTelemetry.whitewater > .48 ? "FOAM" : Math.round(replayTelemetry.lineControl * 100)}{replayTelemetry.whitewater <= .48 && <i>%</i>}</strong></span>
@@ -4029,6 +4066,8 @@ export default function SurfscapeApp() {
                   <span><small>RAIL GRIP</small><strong>{Math.round(replayTelemetry.railGrip * 100)}<i>%</i></strong></span>
                   <span><small>BOARD ROLL</small><strong>{Math.round(Math.abs(replayTelemetry.rollAngle) * 180 / Math.PI)}<i>°</i></strong></span>
                   <span><small>BOARD PITCH</small><strong>{Math.round(Math.abs(replayTelemetry.pitchAngle) * 180 / Math.PI)}<i>°</i></strong></span>
+                  <span><small>AIRBORNE</small><strong>{Math.round(replayTelemetry.airborneHeight * 100)}<i>CM</i></strong></span>
+                  <span><small>VERTICAL</small><strong>{replayTelemetry.verticalVelocity.toFixed(1)}<i>M/S</i></strong></span>
                   <span><small>STANCE</small><strong className="is-text">{replayStanceLabel}</strong></span>
                   <span><small>POWER</small><strong>{Math.round(replayTelemetry.power * 100)}<i>%</i></strong></span>
                   <span><small>{replayTelemetry.whitewater > .2 ? "WHITEWATER" : replayTelemetry.barrel > .2 ? "BARREL" : replayTelemetry.maneuver > .18 ? "MANEUVER" : "FACE POSITION"}</small><strong className="is-text">{replayTelemetry.whitewater > .2 ? `${Math.round(replayTelemetry.whitewater * 100)}%` : replayTelemetry.barrel > .2 ? `${Math.round(replayTelemetry.barrel * 100)}%` : replayTelemetry.maneuver > .18 ? `${Math.round(replayTelemetry.maneuver * 100)}%` : replayFaceLabel}</strong></span>
@@ -4267,8 +4306,8 @@ export default function SurfscapeApp() {
             <div><Gauge /><span>Speed</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div>
               {stats.phase === "riding" ? <Target /> : <BatteryMedium />}
-              <span>{standingOnBoard ? pitchHazardActive ? "Pitch" : "Roll" : stats.phase === "riding" ? "Rail" : "Stamina"}</span>
-              <strong>{standingOnBoard ? `${attitudeDegrees}°` : stats.phase === "riding" ? `${Math.round(stats.railGrip * 100)}%` : `${stats.stamina}%`}</strong>
+              <span>{standingOnBoard ? stats.airborneHeight > .055 ? "Air" : pitchHazardActive ? "Pitch" : "Roll" : stats.phase === "riding" ? "Rail" : "Stamina"}</span>
+              <strong>{standingOnBoard ? stats.airborneHeight > .055 ? `${airborneCentimeters} cm` : `${attitudeDegrees}°` : stats.phase === "riding" ? `${Math.round(stats.railGrip * 100)}%` : `${stats.stamina}%`}</strong>
             </div>
             <div><Waves /><span>Crest</span><strong>{surfRadarValue}</strong></div>
           </div>
@@ -4591,7 +4630,7 @@ export default function SurfscapeApp() {
           </div>
 
           <div
-            className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""} ${stats.waveEngaged && stats.railGrip < .48 ? "is-grip-warning" : ""} ${stats.phase === "riding" && (stats.maneuverActive ? balanceAccuracy < 58 : stats.rollEdgeRisk > .34 || stats.pitchOverRisk > .38) ? "is-balance-warning" : ""} ${stats.waveEngaged && stats.lineControl > .82 && stats.sectionPressure < .38 ? "is-pocket-locked" : ""}`}
+            className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""} ${stats.waveEngaged && stats.railGrip < .48 ? "is-grip-warning" : ""} ${stats.phase === "riding" && (stats.maneuverActive ? balanceAccuracy < 58 : stats.rollEdgeRisk > .34 || stats.pitchOverRisk > .38 || stats.airborneHeight > .055) ? "is-balance-warning" : ""} ${stats.waveEngaged && stats.lineControl > .82 && stats.sectionPressure < .38 ? "is-pocket-locked" : ""}`}
             style={mobileControlStyle}
           >
             <div
