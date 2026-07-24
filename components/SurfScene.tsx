@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceRideCaptureState, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceRideCaptureState, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -416,6 +416,7 @@ type ReplayRestoreState = {
   breath: number;
   wipeoutPower: number;
   wipeoutDuration: number;
+  rideEngaged: boolean;
   railSlip: number;
   unstableFor: number;
   wipeoutAt: number;
@@ -10633,6 +10634,7 @@ function Simulation({
   const paddleVelocity = useRef(new THREE.Vector2());
   const rideVelocity = useRef(new THREE.Vector2());
   const rideAcceleration = useRef(new THREE.Vector2());
+  const rideEngaged = useRef(false);
   const cameraForward = useRef(new THREE.Vector3(0, 0, -1));
   const cameraRight = useRef(new THREE.Vector3(1, 0, 0));
   const phase = useRef<GamePhase>("shore");
@@ -10881,6 +10883,7 @@ function Simulation({
         breath.current = restore.breath;
         wipeoutPower.current = restore.wipeoutPower;
         wipeoutDuration.current = restore.wipeoutDuration;
+        rideEngaged.current = restore.rideEngaged;
         railSlip.current = restore.railSlip;
         unstableFor.current = restore.unstableFor;
         wipeoutAt.current = restore.phase === "wipeout" ? restore.wipeoutAt + frozenDuration : restore.wipeoutAt;
@@ -10956,6 +10959,7 @@ function Simulation({
           breath: breath.current,
           wipeoutPower: wipeoutPower.current,
           wipeoutDuration: wipeoutDuration.current,
+          rideEngaged: rideEngaged.current,
           railSlip: railSlip.current,
           unstableFor: unstableFor.current,
           wipeoutAt: wipeoutAt.current,
@@ -11082,6 +11086,7 @@ function Simulation({
         takeoffCommitAt.current = -1;
         finishAt.current = -1;
         phase.current = "riding";
+        rideEngaged.current = true;
         motion.current.takeoff = 1;
         motion.current.impact = .86;
         paddleVelocity.current.set(0, 0);
@@ -11184,6 +11189,10 @@ function Simulation({
     let paddleEffort = 0;
     let rideOutProgress = 0;
     let takeoffCommitProgress = 0;
+    let boardAlignment = 1;
+    let boardWaveAngle = 0;
+    let crossWaveLoad = 0;
+    let boardPlaning = 0;
     if (currentPhase !== "wipeout") {
       breath.current = Math.min(100, breath.current + delta * 28);
       wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
@@ -11505,6 +11514,11 @@ function Simulation({
         const takeoffWaveNormalX = localWaveTransport.x / Math.max(.001, localWaveTransport.speed);
         const takeoffWaveNormalZ = localWaveTransport.z / Math.max(.001, localWaveTransport.speed);
         const boardWaveAlignment = paddleForwardX * takeoffWaveNormalX + paddleForwardZ * takeoffWaveNormalZ;
+        boardAlignment = boardWaveAlignment;
+        boardWaveAngle = Math.atan2(
+          takeoffWaveNormalX * paddleForwardZ - takeoffWaveNormalZ * paddleForwardX,
+          boardWaveAlignment,
+        );
         const takeoffCommitting = takeoffCommitAt.current >= 0;
         const takeoffSurface = waveSurfaceFrameAt(
           position.current.x,
@@ -11533,6 +11547,11 @@ function Simulation({
         const surfaceLift = takeoffSurface.height - settings.tide * .3;
         const paddleNormalSpeed = paddleVelocity.current.x * takeoffWaveNormalX
           + paddleVelocity.current.y * takeoffWaveNormalZ;
+        boardPlaning = THREE.MathUtils.clamp(
+          paddleNormalSpeed / Math.max(1.1, localWaveTransport.speed * .66),
+          0,
+          1,
+        );
         const paddleMatchTarget = THREE.MathUtils.clamp(
           localWaveTransport.speed * .31,
           1.45,
@@ -11568,7 +11587,7 @@ function Simulation({
           settings.mode === "training" ? .025 : settings.mode === "advanced" ? .09 : .055
         );
         const touchQuality = mobileRenderer ? .025 : 0;
-        takeoffQuality = inLineup && takeoffReading.surfable
+        takeoffQuality = takeoffReading.surfable
           ? THREE.MathUtils.clamp(
               takeoffReading.quality * staminaQuality * windQuality + touchQuality,
               .12,
@@ -11576,7 +11595,6 @@ function Simulation({
             )
           : 0;
         const catchWindowCandidate = !takeoffCommitting
-          && inLineup
           && takeoffReading.catchable;
         if (catchWindowCandidate) {
           catchWindowOpen.current = true;
@@ -11586,7 +11604,6 @@ function Simulation({
           );
         } else if (
           takeoffCommitting
-          || !inLineup
           || t >= catchGraceUntil.current
           || crestDistance < -3.6
           || crestDistance > 15.5 + settings.waveHeight
@@ -11608,8 +11625,10 @@ function Simulation({
         const enterRide = (
           committedQuality: number,
           catchTransport: ReturnType<typeof primaryWaveVelocityAt>,
+          engaged = true,
         ) => {
           phase.current = "riding";
+          rideEngaged.current = engaged;
           rideDistance.current = 0;
           pocketDistance.current = 0;
           const capturedPhase = primaryWavePhaseAt(
@@ -11637,7 +11656,7 @@ function Simulation({
             -12,
             12,
           );
-          rideFacePosition.current = .06 + committedQuality * .18;
+          rideFacePosition.current = engaged ? .06 + committedQuality * .18 : 0;
           rideCapture.current.overtaken = 0;
           rideCapture.current.ahead = 0;
           rideLineSide.current = Math.abs(character.peel) >= .18
@@ -11645,24 +11664,27 @@ function Simulation({
             : Math.abs(steer) > .16
               ? Math.sign(steer)
               : position.current.x < 0 ? -1 : 1;
-          const catchTrim = rideLineSide.current
-            * catchTransport.speed
-            * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
-          const catchNormalSpeed = catchTransport.speed * (.84 + committedQuality * .16);
-          const catchTangentSpeed = catchTrim * (.42 + committedQuality * .58);
-          rideVelocity.current.set(
-            catchNormalX * catchNormalSpeed + catchTangentX * catchTangentSpeed,
-            catchNormalZ * catchNormalSpeed + catchTangentZ * catchTangentSpeed,
-          );
+          if (engaged) {
+            const catchTrim = rideLineSide.current
+              * catchTransport.speed
+              * (.56 + character.length * .026 + Math.abs(character.peel) * .08);
+            const catchNormalSpeed = catchTransport.speed * (.84 + committedQuality * .16);
+            const catchTangentSpeed = catchTrim * (.42 + committedQuality * .58);
+            rideVelocity.current.set(
+              catchNormalX * catchNormalSpeed + catchTangentX * catchTangentSpeed,
+              catchNormalZ * catchNormalSpeed + catchTangentZ * catchTangentSpeed,
+            );
+          } else {
+            rideVelocity.current.copy(paddleVelocity.current);
+          }
           rideAcceleration.current.set(0, 0);
-          rideHeading.current = Math.atan2(
-            rideVelocity.current.x,
-            rideVelocity.current.y,
-          );
+          rideHeading.current = engaged
+            ? Math.atan2(rideVelocity.current.x, rideVelocity.current.y)
+            : paddleHeading.current;
           barrelTime.current = 0;
           stance.current = 0;
-          unstableFor.current = (1 - committedQuality) * .2;
-          railSlip.current = (1 - committedQuality) * .28;
+          unstableFor.current = engaged ? (1 - committedQuality) * .2 : 0;
+          railSlip.current = engaged ? (1 - committedQuality) * .28 : 0;
           catchQuality.current = committedQuality;
           combo.current = .85 + committedQuality * .95;
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -11675,7 +11697,9 @@ function Simulation({
           rideMaxCombo.current = combo.current;
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
-          score.current += Math.round(70 + committedQuality * 420 + setState.energy * 80);
+          if (engaged) {
+            score.current += Math.round(70 + committedQuality * 420 + setState.energy * 80);
+          }
           rideResult.current = "";
           cleanFinish.current = false;
           finishAt.current = -1;
@@ -11859,38 +11883,52 @@ function Simulation({
             enterRide(committedQuality, catchTransport);
           }
         } else {
-          prompt = !inLineup
-            ? duckDiveReady
-              ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
-              : "Paddle beyond the break · the dive cue appears when the lip commits"
-            : takeoffReading.headingQuality < .16
-              ? "Turn the board toward shore · use A/D or the stick"
+          prompt = duckDiveReady
+            ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SPACE now`
+            : takeoffReading.headingQuality < .16 && takeoffReading.physicalLift > .1
+              ? "Wave approaching across the rail — point the nose with A/D"
               : catchReady
-                ? `${takeoffQuality > .72 ? "Clean open face" : "The swell has the board"} · POP / SPACE`
+                ? `${takeoffQuality > .72 ? "Clean open face" : "The swell has the board"} · stand when you choose`
                 : takeoffReading.surfable && takeoffReading.faceEnvelope > .08
-                  ? `Face rising ${Math.round(takeoffReading.physicalLift * 100)}% · paddle toward shore`
-                  : `Read the surface · ${waveReadCopy}`;
-          if (actionPressed && inLineup) {
-            if (catchReady) {
-              takeoffCommitAt.current = t;
-              takeoffCommitQuality.current = takeoffQuality;
-              takeoffCapture.current = THREE.MathUtils.clamp(
-                .22 + takeoffQuality * (
-                  settings.mode === "training" ? .22 : .18
-                ),
-                .24,
-                .44,
-              );
-              rideWavePhase.current = setState.crestPhase;
-              stamina.current = Math.max(0, stamina.current - 2.5);
-              motion.current.impact = Math.max(motion.current.impact, .22 + takeoffQuality * .18);
-              catchWindowOpen.current = false;
-              catchReady = false;
-            } else {
-              stamina.current = Math.max(0, stamina.current - 1.2);
-              catchWindowOpen.current = false;
-              catchReady = false;
-            }
+                  ? `Face rising ${Math.round(takeoffReading.physicalLift * 100)}% · paddle to match its speed`
+                  : `POP is always available · ${waveReadCopy}`;
+          if (actionPressed && !duckDiveActive) {
+            const popReading = evaluateBoardWaterInteraction({
+              boardHeading: paddleHeading.current,
+              velocityX: paddleVelocity.current.x,
+              velocityZ: paddleVelocity.current.y,
+              waveVelocityX: localWaveTransport.x,
+              waveVelocityZ: localWaveTransport.z,
+              slopeX: takeoffSurface.slopeX,
+              slopeZ: takeoffSurface.slopeZ,
+              surfaceRise,
+              surfaceLift,
+              crestDistance,
+              crestEnergy: setState.crestEnergy,
+              crestSurfable: setState.crestSurfable,
+              boardStability: boardSpec.stability,
+              waveHeight: settings.waveHeight * tideResponse.faceScale,
+            });
+            const engaged = popReading.outcome === "capture";
+            const committedQuality = engaged
+              ? THREE.MathUtils.clamp(
+                  takeoffQuality * .58
+                    + popReading.capture * .28
+                    + popReading.planing * .14,
+                  .14,
+                  1,
+                )
+              : .12;
+            enterRide(committedQuality, localWaveTransport, engaged);
+            unstableFor.current = popReading.wipeoutRisk * 1.25;
+            balanceTarget = popReading.balanceTarget;
+            stamina.current = Math.max(0, stamina.current - (engaged ? 2.4 : .6));
+            motion.current.impact = Math.max(
+              motion.current.impact,
+              engaged ? .34 + committedQuality * .34 : .12 + popReading.crossWaveLoad * .32,
+            );
+            catchWindowOpen.current = false;
+            catchReady = false;
           }
         }
         if (position.current.z > 1 + tideShift) {
@@ -11901,9 +11939,303 @@ function Simulation({
           playerHeading.current = paddleHeading.current;
           landVelocity.current.copy(paddleVelocity.current).multiplyScalar(.45);
           paddleVelocity.current.set(0, 0);
+          rideEngaged.current = false;
         }
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
+        if (!rideEngaged.current) {
+          const standingTransport = primaryWaveVelocityAt(
+            position.current.x,
+            position.current.z,
+            t,
+            settings,
+            character,
+          );
+          const standingSurface = waveSurfaceFrameAt(
+            position.current.x,
+            position.current.z,
+            t,
+            settings,
+            character,
+          );
+          const standingLookback = .16;
+          const standingRise = (
+            standingSurface.height
+              - waveHeightAt(
+                position.current.x,
+                position.current.z,
+                t - standingLookback,
+                settings,
+                character,
+              )
+          ) / standingLookback;
+          const standingReading = evaluateBoardWaterInteraction({
+            boardHeading: rideHeading.current,
+            velocityX: rideVelocity.current.x,
+            velocityZ: rideVelocity.current.y,
+            waveVelocityX: standingTransport.x,
+            waveVelocityZ: standingTransport.z,
+            slopeX: standingSurface.slopeX,
+            slopeZ: standingSurface.slopeZ,
+            surfaceRise: standingRise,
+            surfaceLift: standingSurface.height - settings.tide * .3,
+            crestDistance,
+            crestEnergy: setState.crestEnergy,
+            crestSurfable: setState.crestSurfable,
+            boardStability: boardSpec.stability,
+            waveHeight: settings.waveHeight * tideResponse.faceScale,
+          });
+          boardAlignment = standingReading.headingAlignment;
+          boardWaveAngle = standingReading.headingError;
+          crossWaveLoad = standingReading.crossWaveLoad;
+          boardPlaning = standingReading.planing;
+          waveSurfable = standingReading.waveContact > .08;
+          takeoffAlignment = (standingReading.headingAlignment + 1) * .5;
+          takeoffQuality = standingReading.capture;
+
+          const standingSteer = rideRailInputFromPaddleSteer(steer);
+          const standingSpeed = rideVelocity.current.length();
+          rideHeading.current += standingSteer
+            * (.24 + Math.min(1.2, standingSpeed * .1))
+            * delta;
+          rideHeading.current = Math.atan2(
+            Math.sin(rideHeading.current),
+            Math.cos(rideHeading.current),
+          );
+          if (move > .08) stance.current = Math.min(1, stance.current + delta * .58 * move);
+          else if (move < -.08) stance.current = Math.max(-1, stance.current + delta * .58 * move);
+          else stance.current = THREE.MathUtils.damp(stance.current, 0, .82, delta);
+
+          const standingWaveNormalX = standingTransport.x / Math.max(.001, standingTransport.speed);
+          const standingWaveNormalZ = standingTransport.z / Math.max(.001, standingTransport.speed);
+          const standingCurrentAngle = THREE.MathUtils.degToRad(
+            settings.currentDirection - settings.coastHeading,
+          );
+          const standingCurrentSpeed = settings.currentStrength / 3.6;
+          const standingCurrentX = Math.sin(standingCurrentAngle) * standingCurrentSpeed;
+          const standingCurrentZ = -Math.cos(standingCurrentAngle) * standingCurrentSpeed;
+          const waveImpulse = standingReading.waveContact
+            * Math.max(0, standingReading.relativeWaveSpeed)
+            * (
+              .08
+                + Math.max(0, standingReading.headingAlignment) * .16
+                + standingReading.broadside * .18
+            );
+          const targetStandingX = standingCurrentX
+            + standingWaveNormalX * waveImpulse;
+          const targetStandingZ = standingCurrentZ
+            + standingWaveNormalZ * waveImpulse;
+          const standingDrag = .72
+            + standingReading.waveContact * 1.35
+            + standingReading.crossWaveLoad * .7;
+          const previousStandingVelocityX = rideVelocity.current.x;
+          const previousStandingVelocityZ = rideVelocity.current.y;
+          rideVelocity.current.x = THREE.MathUtils.damp(
+            rideVelocity.current.x,
+            targetStandingX,
+            standingDrag,
+            delta,
+          );
+          rideVelocity.current.y = THREE.MathUtils.damp(
+            rideVelocity.current.y,
+            targetStandingZ,
+            standingDrag,
+            delta,
+          );
+          position.current.x += rideVelocity.current.x * delta;
+          position.current.z += rideVelocity.current.y * delta;
+          speed = rideVelocity.current.length();
+          const standingStep = Math.max(.001, Math.min(delta, .05));
+          rideAcceleration.current.x = THREE.MathUtils.damp(
+            rideAcceleration.current.x,
+            (rideVelocity.current.x - previousStandingVelocityX) / standingStep,
+            6,
+            standingStep,
+          );
+          rideAcceleration.current.y = THREE.MathUtils.damp(
+            rideAcceleration.current.y,
+            (rideVelocity.current.y - previousStandingVelocityZ) / standingStep,
+            6,
+            standingStep,
+          );
+          const standingForwardX = Math.sin(rideHeading.current);
+          const standingForwardZ = Math.cos(rideHeading.current);
+          const standingRightX = Math.cos(rideHeading.current);
+          const standingRightZ = -Math.sin(rideHeading.current);
+          rideDrive = THREE.MathUtils.clamp(
+            (
+              rideAcceleration.current.x * standingForwardX
+                + rideAcceleration.current.y * standingForwardZ
+            ) / 6,
+            -1,
+            1,
+          );
+          rideLateralForce = THREE.MathUtils.clamp(
+            (
+              rideAcceleration.current.x * standingRightX
+                + rideAcceleration.current.y * standingRightZ
+            ) / 6,
+            -1,
+            1,
+          );
+
+          const chopBalance = (
+            Math.sin(t * 1.73 + position.current.x * .08) * .12
+              + Math.sin(t * 2.41 - position.current.z * .06) * .07
+          ) * (
+            .42 + Math.min(1, settings.windSpeed / 18) * .58
+          );
+          balanceTarget = THREE.MathUtils.clamp(
+            standingReading.balanceTarget + chopBalance,
+            -.92,
+            .92,
+          );
+          const standingBalanceError = Math.abs(balanceInput - balanceTarget);
+          const standingFailThreshold = (
+            settings.mode === "training"
+              ? .58
+              : settings.mode === "advanced"
+                ? .4
+                : .48
+          ) * Math.sqrt(boardSpec.stability);
+          const balanceFailure = Math.max(
+            0,
+            standingBalanceError - standingFailThreshold,
+          );
+          unstableFor.current = Math.max(
+            0,
+            unstableFor.current
+              + delta * (
+                balanceFailure * 2.2
+                  + standingReading.wipeoutRisk * 1.65
+                  + Math.max(0, standingReading.crossWaveLoad - .36) * .72
+                  - (balanceFailure <= .001 ? .48 : 0)
+              ),
+          );
+          railSlip.current = THREE.MathUtils.damp(
+            railSlip.current,
+            THREE.MathUtils.clamp(
+              standingReading.crossWaveLoad * .54 + standingBalanceError * .24,
+              0,
+              1,
+            ),
+            6.5,
+            delta,
+          );
+          railLoad = standingSteer * (1 - railSlip.current * .45);
+          compression = THREE.MathUtils.clamp(
+            standingBalanceError * .35
+              + standingReading.crossWaveLoad * .42
+              + Math.abs(stance.current) * .12,
+            0,
+            1,
+          );
+          waveQuality = standingReading.waveContact * .36;
+          lineControl = 0;
+          sectionPressure = standingReading.crossWaveLoad;
+          whitewaterPressure = standingReading.wipeoutRisk;
+
+          const captureNow = standingReading.capture >= .2
+            && standingReading.headingAlignment > .08;
+          if (captureNow) {
+            rideEngaged.current = true;
+            const capturedPhase = primaryWavePhaseAt(
+              position.current.x,
+              position.current.z,
+              t,
+              settings,
+              character,
+            );
+            rideWavePhase.current = Math.PI * .5
+              + Math.round((capturedPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
+            const standingTangentX = standingWaveNormalZ;
+            const standingTangentZ = -standingWaveNormalX;
+            rideOriginAlong.current = position.current.x * standingTangentX
+              + position.current.z * standingTangentZ;
+            ridePocketOffset.current = 0;
+            waveCrestOffset.current = 0;
+            rideFacePosition.current = .04 + standingReading.capture * .2;
+            rideCapture.current.overtaken = 0;
+            rideCapture.current.ahead = 0;
+            rideLineSide.current = Math.abs(character.peel) >= .18
+              ? Math.sign(character.peel)
+              : Math.abs(steer) > .16
+                ? Math.sign(steer)
+                : position.current.x < 0 ? -1 : 1;
+            catchQuality.current = THREE.MathUtils.clamp(
+              .18
+                + standingReading.capture * .5
+                + standingReading.planing * .2
+                + Math.max(0, standingReading.headingAlignment) * .12,
+              .14,
+              1,
+            );
+            rideTakeoffQuality.current = catchQuality.current;
+            rideStartScore.current = score.current;
+            rideManeuverStart.current = maneuverCount.current;
+            score.current += Math.round(45 + catchQuality.current * 310);
+            unstableFor.current *= .28;
+            motion.current.takeoff = Math.max(motion.current.takeoff, .72);
+            motion.current.impact = Math.max(
+              motion.current.impact,
+              .34 + standingReading.capture * .34,
+            );
+            prompt = "The face has the board — set a rail into the open shoulder";
+          } else {
+            const standingTumble = standingReading.outcome === "tumble"
+              && (
+                standingReading.wipeoutRisk > .78
+                || unstableFor.current > .22
+              );
+            if (standingTumble || unstableFor.current > (
+              settings.mode === "training" ? .82 : settings.mode === "advanced" ? .38 : .56
+            )) {
+              phase.current = "wipeout";
+              rideEngaged.current = false;
+              wipeoutAt.current = t;
+              const tumblePower = THREE.MathUtils.clamp(
+                .18
+                  + standingReading.wipeoutRisk * .58
+                  + standingReading.crossWaveLoad * .2
+                  + setState.energy * .08,
+                .18,
+                1,
+              );
+              wipeoutPower.current = tumblePower;
+              wipeoutDuration.current = THREE.MathUtils.lerp(1.35, 3.45, tumblePower);
+              wipeoutVelocity.current.set(
+                rideVelocity.current.x * .3 + standingWaveNormalX * (1.1 + tumblePower * 3),
+                rideVelocity.current.y * .3 + standingWaveNormalZ * (1.1 + tumblePower * 3),
+              );
+              breath.current = 100;
+              rideScore.current = 0;
+              rideResult.current = "wipeout";
+              rideResultId.current += 1;
+              combo.current = 1;
+              motion.current.impact = .72 + tumblePower * .28;
+              prompt = "The wave hit the rail broadside — protect your head";
+            } else if (actionPressed) {
+              phase.current = "paddling";
+              rideEngaged.current = false;
+              paddleHeading.current = rideHeading.current;
+              paddleVelocity.current.copy(rideVelocity.current).multiplyScalar(.72);
+              rideVelocity.current.set(0, 0);
+              stance.current = 0;
+              unstableFor.current = 0;
+              prompt = "Back prone — paddle to reposition";
+            } else if (standingReading.waveContact > .18) {
+              prompt = standingReading.broadside > .58
+                ? `Wave loading the ${standingReading.crossWaveSide > 0 ? "right" : "left"} rail — turn the nose or counterweight`
+                : standingReading.headingAlignment < .18
+                  ? "Point the nose with the wave before the wall reaches you"
+                  : "The board is gliding — stay centered and let the face engage";
+            } else if (speed > .65) {
+              prompt = "Coasting on the surface — momentum is bleeding away";
+            } else {
+              prompt = "Standing in still water — counterweight the chop · SPACE returns prone";
+            }
+          }
+        } else {
         const finishing = finishAt.current >= 0;
         const finishElapsed = finishing ? Math.max(0, t - finishAt.current) : 0;
         rideOutProgress = finishing
@@ -12323,6 +12655,30 @@ function Simulation({
         );
         const integratedNormalSpeed = rideVelocity.current.x * waveNormalX
           + rideVelocity.current.y * waveNormalZ;
+        boardAlignment = THREE.MathUtils.clamp(
+          Math.sin(rideHeading.current) * waveNormalX
+            + Math.cos(rideHeading.current) * waveNormalZ,
+          -1,
+          1,
+        );
+        boardWaveAngle = Math.atan2(
+          waveNormalX * Math.cos(rideHeading.current)
+            - waveNormalZ * Math.sin(rideHeading.current),
+          boardAlignment,
+        );
+        boardPlaning = THREE.MathUtils.clamp(
+          integratedNormalSpeed / Math.max(1.1, waveTransport.speed * .66),
+          0,
+          1,
+        );
+        crossWaveLoad = THREE.MathUtils.clamp(
+          (1 - Math.abs(boardAlignment))
+            * Math.max(0, waveTransport.speed - integratedNormalSpeed)
+            / Math.max(1.2, waveTransport.speed * .54)
+            * (.38 + setState.energy * .28),
+          0,
+          1.5,
+        );
         let lipOvertake = 0;
         if (!finishing) {
           const captureReading = advanceRideCaptureState(rideCapture.current, {
@@ -12640,6 +12996,7 @@ function Simulation({
           settings.mode === "training" ? 2.35 : settings.mode === "advanced" ? .86 : 1.42
         )) {
           phase.current = "wipeout";
+          rideEngaged.current = false;
           wipeoutAt.current = t;
           const waveEnergy = THREE.MathUtils.clamp(
             settings.waveHeight / 4.2 * .24
@@ -12730,12 +13087,14 @@ function Simulation({
               paddleVelocity.current.set(lateralVelocity, shorewardVelocity).multiplyScalar(.14);
               landVelocity.current.set(0, 0);
             }
+            rideEngaged.current = false;
             stance.current = 0;
             activeManeuver.current = null;
             trickCharge.current = 0;
             finishAt.current = -1;
             rideOutProgress = 0;
           }
+        }
         }
       } else if (currentPhase === "wipeout") {
         const elapsed = Math.max(0, t - wipeoutAt.current);
@@ -12797,6 +13156,7 @@ function Simulation({
             paddleHeading.current = Math.atan2(waveNormalX, waveNormalZ);
             paddleVelocity.current.copy(wipeoutVelocity.current).multiplyScalar(.18);
           }
+          rideEngaged.current = false;
           unstableFor.current = 0;
           motion.current.wipeout = 0;
           motion.current.wipeoutProgress = 0;
@@ -12844,6 +13204,7 @@ function Simulation({
           baseZ + transport.z * phaseDelta,
         );
         phase.current = "riding";
+        rideEngaged.current = true;
         rideHeading.current = lerpAngle(from.heading, to.heading, alpha);
         rideLineSide.current = alpha < .5 ? from.lineSide : to.lineSide;
         waveCrestOffset.current = THREE.MathUtils.lerp(from.crestOffset, to.crestOffset, alpha);
@@ -13161,7 +13522,7 @@ function Simulation({
     );
     motion.current.paddleHeading = paddleHeading.current;
     motion.current.breath = breath.current;
-    if (!playback.active && currentPhase === "riding") {
+    if (!playback.active && currentPhase === "riding" && rideEngaged.current) {
       if (!replayRecording.current) {
         replayRecording.current = true;
         replayFrames.current = [];
@@ -13909,6 +14270,11 @@ function Simulation({
         paddleEffort: motion.current.paddleEffort,
         balance: balanceInput,
         balanceTarget,
+        waveEngaged: phase.current === "riding" && rideEngaged.current,
+        boardAlignment,
+        boardWaveAngle,
+        crossWaveLoad,
+        planing: boardPlaning,
         waveQuality,
         facePosition: motion.current.facePosition,
         linePosition: motion.current.linePosition,

@@ -3661,6 +3661,48 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .hud-vitals span { color: rgba(218, 243, 238, .4); font-size: 5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .hud-vitals strong { overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 
+.mechanics-guide {
+  --guide-color: #8de9dc;
+  position: absolute;
+  z-index: 4;
+  top: 132px;
+  left: 18px;
+  width: min(390px, calc(100vw - 36px));
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px 9px 9px;
+  border: 1px solid color-mix(in srgb, var(--guide-color) 34%, transparent);
+  border-left: 3px solid var(--guide-color);
+  border-radius: 14px;
+  background: linear-gradient(108deg, rgba(3, 16, 21, .92), rgba(5, 25, 30, .76));
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .24), inset 0 1px rgba(255, 255, 255, .04);
+  pointer-events: none;
+}
+.mechanics-guide > i {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--guide-color) 42%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--guide-color) 10%, rgba(2, 13, 18, .88));
+  color: var(--guide-color);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--guide-color) 22%, transparent);
+  font-style: normal;
+  transition: transform .18s ease;
+}
+.mechanics-guide > i svg { width: 24px; filter: drop-shadow(0 0 6px currentColor); }
+.mechanics-guide > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mechanics-guide span { color: color-mix(in srgb, var(--guide-color) 72%, white); font-size: 5px; font-weight: 900; letter-spacing: .16em; }
+.mechanics-guide strong { overflow: hidden; color: #f2fffc; font-size: 11px; letter-spacing: .05em; text-overflow: ellipsis; white-space: nowrap; }
+.mechanics-guide small { color: rgba(221, 244, 240, .62); font-size: 7px; line-height: 1.35; }
+.mechanics-guide.is-danger { --guide-color: #ff9b76; }
+.mechanics-guide.is-ready { --guide-color: #9effda; }
+.mechanics-guide.is-balance { --guide-color: #f4cf8d; }
+
 .score-panel,
 .set-panel,
 .game-conditions,
@@ -3846,6 +3888,16 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .balance-instrument > small { display: none; }
 .balance-instrument .face-track,
 .balance-instrument .line-track { margin-top: 7px; }
+.balance-instrument.is-standing {
+  width: min(430px, calc(100vw - 48px));
+  border-color: rgba(244, 207, 141, .28);
+  box-shadow: 0 15px 42px rgba(0, 0, 0, .2), inset 0 -2px rgba(244, 207, 141, .36);
+}
+.balance-instrument.is-standing .face-track,
+.balance-instrument.is-standing .line-track,
+.balance-instrument.is-standing .grip-track,
+.balance-instrument.is-standing .stance-track { display: none; }
+.balance-instrument.is-standing .balance-label em { border-color: rgba(244, 207, 141, .34); color: #ffe4ad; }
 .game-ui.phase-riding .hud-vitals { border-color: rgba(126, 240, 221, .23); }
 
 @media (max-width: 1100px) {
@@ -4043,6 +4095,21 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .hud-vitals svg { width: 10px; }
   .hud-vitals span { font-size: 4px; }
   .hud-vitals strong { font-size: 6px; }
+  .mechanics-guide {
+    top: calc(max(7px, env(safe-area-inset-top)) + 128px);
+    left: 50%;
+    width: min(calc(100vw - 16px), 470px);
+    min-height: 52px;
+    grid-template-columns: 35px minmax(0, 1fr);
+    gap: 8px;
+    padding: 7px 10px 7px 7px;
+    border-radius: 12px;
+    transform: translateX(-50%);
+  }
+  .mechanics-guide > i { width: 34px; height: 34px; }
+  .mechanics-guide > i svg { width: 19px; }
+  .mechanics-guide strong { font-size: 9px; }
+  .mechanics-guide small { font-size: 6px; }
   .hud-drawer {
     top: calc(max(7px, env(safe-area-inset-top)) + 55px);
     right: 7px;
@@ -4082,6 +4149,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .game-topbar { top: 5px; height: 44px; }
   .game-objective { top: 48px; }
   .hud-vitals { top: 78px; }
+  .mechanics-guide { top: 108px; }
   .hud-vitals > div:nth-child(4) { display: none; }
   .hud-drawer { top: 54px; }
   .mobile-controls { bottom: max(5px, env(safe-area-inset-bottom)); }

@@ -215,6 +215,7 @@ export type BoardWaterReading = {
   capture: number;
   wipeoutRisk: number;
   headingAlignment: number;
+  headingError: number;
   broadside: number;
   crossWaveLoad: number;
   crossWaveSide: number;
@@ -244,6 +245,10 @@ export function evaluateBoardWaterInteraction(
   const headingAlignment = Math.max(
     -1,
     Math.min(1, boardForwardX * waveNormalX + boardForwardZ * waveNormalZ),
+  );
+  const headingError = Math.atan2(
+    waveNormalX * boardForwardZ - waveNormalZ * boardForwardX,
+    headingAlignment,
   );
   const broadside = 1 - Math.abs(headingAlignment);
   const crossWaveSide = Math.sign(
@@ -370,6 +375,7 @@ export function evaluateBoardWaterInteraction(
     capture,
     wipeoutRisk,
     headingAlignment,
+    headingError,
     broadside,
     crossWaveLoad,
     crossWaveSide,
@@ -645,6 +651,11 @@ export type GameStats = {
   paddleEffort: number;
   balance: number;
   balanceTarget: number;
+  waveEngaged: boolean;
+  boardAlignment: number;
+  boardWaveAngle: number;
+  crossWaveLoad: number;
+  planing: number;
   waveQuality: number;
   facePosition: number;
   linePosition: number;
@@ -737,6 +748,11 @@ export const INITIAL_STATS: GameStats = {
   paddleEffort: 0,
   balance: 0,
   balanceTarget: 0,
+  waveEngaged: false,
+  boardAlignment: 1,
+  boardWaveAngle: 0,
+  crossWaveLoad: 0,
+  planing: 0,
   waveQuality: 0,
   facePosition: 0,
   linePosition: 0,
