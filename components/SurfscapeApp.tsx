@@ -3197,7 +3197,9 @@ export default function SurfscapeApp() {
             ? stats.airborneHeight > .055
               ? {
                   cue: `HULL AIRBORNE ${airborneCentimeters} CM · LEVEL`,
-                  detail: `${hullContactPercent}% water contact · neutralize roll and pitch before the polygon catches up.`,
+                  detail: stats.maneuverActive && stats.maneuverRotationTarget > .1
+                    ? `${Math.round(Math.abs(stats.maneuverRotation) * 180 / Math.PI)}° / ${Math.round(Math.abs(stats.maneuverRotationTarget) * 180 / Math.PI)}° rotation · neutralize roll and pitch before contact.`
+                    : `${hullContactPercent}% water contact · neutralize roll and pitch before the polygon catches up.`,
                   rotation: 90,
                   tone: "danger",
                 }
@@ -3211,7 +3213,7 @@ export default function SurfscapeApp() {
               : stats.maneuverActive && stats.maneuverPhase === "release"
                 ? {
                     cue: `TAIL RELEASE ${stats.maneuverLaunchVelocity.toFixed(1)} M/S`,
-                    detail: "The upper face is redirecting board speed upward; hold a level roll as water contact falls away.",
+                    detail: `${stats.maneuverLaunchYawRate.toFixed(1)} rad/s yaw impulse · the board now keeps that angular momentum in flight.`,
                     rotation: -90,
                     tone: "ready",
                   }

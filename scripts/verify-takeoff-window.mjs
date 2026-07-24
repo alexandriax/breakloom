@@ -14,6 +14,7 @@ import {
   primaryWaveVelocityAt,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
+  surfboardReleaseYawImpulse,
   waveHeightAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
@@ -827,6 +828,60 @@ if (
 ) {
   throw new Error("A lip release did not produce ballistic flight and a physical reconnection");
 }
+const performanceYawRelease = surfboardReleaseYawImpulse({
+  desiredRotation: Math.PI,
+  verticalImpulse: lipReleaseImpulse,
+  charge: .92,
+  waterContact: .94,
+  boardLength: 2.1,
+});
+const longboardYawRelease = surfboardReleaseYawImpulse({
+  desiredRotation: Math.PI,
+  verticalImpulse: lipReleaseImpulse,
+  charge: .92,
+  waterContact: .94,
+  boardLength: 3,
+});
+const disconnectedYawRelease = surfboardReleaseYawImpulse({
+  desiredRotation: Math.PI,
+  verticalImpulse: lipReleaseImpulse,
+  charge: .92,
+  waterContact: 0,
+  boardLength: 2.1,
+});
+if (
+  performanceYawRelease < 3.5
+  || longboardYawRelease >= performanceYawRelease * .72
+  || disconnectedYawRelease !== 0
+) {
+  throw new Error("Tail-release yaw impulse no longer respects contact and board inertia");
+}
+let airborneSpin = {
+  velocityX: 0,
+  velocityZ: 11.8,
+  heading: 0,
+  yawRate: performanceYawRelease,
+};
+let accumulatedAirYaw = 0;
+for (let frame = 0; frame < 52; frame += 1) {
+  const priorHeading = airborneSpin.heading;
+  airborneSpin = advanceSurfboardDynamics(airborneSpin, {
+    ...dynamicsSample,
+    waveContact: 0,
+    waterContact: 0,
+    railInput: 0,
+  });
+  accumulatedAirYaw += Math.atan2(
+    Math.sin(airborneSpin.heading - priorHeading),
+    Math.cos(airborneSpin.heading - priorHeading),
+  );
+}
+if (
+  accumulatedAirYaw < Math.PI * .72
+  || airborneSpin.yawRate < performanceYawRelease * .45
+) {
+  throw new Error("Airborne board yaw no longer conserves release angular momentum");
+}
 
 const paddlingSample = {
   deltaSeconds: 1 / 60,
@@ -1095,5 +1150,8 @@ console.log(JSON.stringify({
     lipReleaseImpulse,
     releaseAirborneHeight: peakReleaseHeight,
     releaseLandingImpact,
+    performanceYawRelease,
+    longboardYawRelease,
+    accumulatedAirYaw,
   },
 }, null, 2));

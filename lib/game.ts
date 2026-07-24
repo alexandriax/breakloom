@@ -672,6 +672,44 @@ export function surfboardReleaseVerticalImpulse(
   );
 }
 
+export type SurfboardYawReleaseSample = {
+  desiredRotation: number;
+  verticalImpulse: number;
+  charge: number;
+  waterContact: number;
+  boardLength: number;
+};
+
+/**
+ * Converts a tail-release rotation request into angular velocity. The expected
+ * ballistic flight time sets the required rate, while board length supplies
+ * yaw inertia and real hull contact determines how much torque can be applied.
+ */
+export function surfboardReleaseYawImpulse(
+  sample: SurfboardYawReleaseSample,
+) {
+  const desiredRotation = Math.abs(sample.desiredRotation);
+  const verticalImpulse = Math.max(0, sample.verticalImpulse);
+  const charge = clampValue(sample.charge, 0, 1);
+  const waterContact = clampValue(sample.waterContact, 0, 1);
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const estimatedFlightSeconds = clampValue(
+    verticalImpulse * 2 / 9.81,
+    .28,
+    1.18,
+  );
+  const yawInertia = Math.pow(safeLength / 2.1, 1.38);
+  return clampValue(
+    desiredRotation
+      / estimatedFlightSeconds
+      * (1.04 + charge * .18)
+      * waterContact
+      / yawInertia,
+    0,
+    9,
+  );
+}
+
 /**
  * Integrates vertical board motion against a moving polygon surface. Buoyancy
  * and hydrodynamic damping exist only while the hull is immersed; otherwise
@@ -1701,6 +1739,9 @@ export type GameStats = {
   maneuverProgress: number;
   maneuverPhase: "line" | "load" | "release" | "air" | "land";
   maneuverLaunchVelocity: number;
+  maneuverLaunchYawRate: number;
+  maneuverRotation: number;
+  maneuverRotationTarget: number;
   maneuverPeakAirborne: number;
   trickCharge: number;
   maneuverAirborne: boolean;
@@ -1815,6 +1856,9 @@ export const INITIAL_STATS: GameStats = {
   maneuverProgress: 0,
   maneuverPhase: "line",
   maneuverLaunchVelocity: 0,
+  maneuverLaunchYawRate: 0,
+  maneuverRotation: 0,
+  maneuverRotationTarget: 0,
   maneuverPeakAirborne: 0,
   trickCharge: 0,
   maneuverAirborne: false,
