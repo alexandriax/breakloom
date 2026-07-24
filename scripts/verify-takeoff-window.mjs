@@ -7,6 +7,7 @@ import {
   advanceWaveTakeoffCapture,
   evaluateBoardWaterInteraction,
   evaluateWaveTakeoff,
+  initialWavePopUpCapture,
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
   rideRailInputFromPaddleSteer,
@@ -336,6 +337,17 @@ const backwardsBoard = evaluateBoardWaterInteraction({
 });
 if (backwardsBoard.outcome === "capture" || backwardsBoard.capture > .02) {
   throw new Error(`A board facing offshore captured the wave: ${JSON.stringify(backwardsBoard)}`);
+}
+const alignedPopUpStart = initialWavePopUpCapture(
+  alignedBoard.capture,
+  alignedBoard.planing,
+);
+if (
+  alignedPopUpStart < .2
+  || alignedPopUpStart >= .72
+  || waveTakeoffCanStand(0, alignedPopUpStart, 1)
+) {
+  throw new Error("An engaged pop-up skipped its physical hand-plant transition");
 }
 
 const dynamicsSample = {
@@ -761,6 +773,7 @@ console.log(JSON.stringify({
     pocket: pocketFace.quality,
     late: lateFace.quality,
   },
+  alignedPopUpStart,
   marginalPopUpSeconds: marginalCaptureElapsed,
   endurance: {
     trainingPaddleReserve,

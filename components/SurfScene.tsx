@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11990,14 +11990,38 @@ function Simulation({
                   1,
                 )
               : .12;
-            enterRide(committedQuality, localWaveTransport, engaged);
             unstableFor.current = popReading.wipeoutRisk * 1.25;
             balanceTarget = popReading.balanceTarget;
             stamina.current = Math.max(0, stamina.current - (engaged ? 2.4 : .6));
-            motion.current.impact = Math.max(
-              motion.current.impact,
-              engaged ? .34 + committedQuality * .34 : .12 + popReading.crossWaveLoad * .32,
-            );
+            if (engaged) {
+              takeoffCommitAt.current = t;
+              takeoffCapture.current = initialWavePopUpCapture(
+                popReading.capture,
+                popReading.planing,
+              );
+              takeoffCommitProgress = takeoffCapture.current;
+              takeoffCommitQuality.current = committedQuality;
+              const popPhase = primaryWavePhaseAt(
+                position.current.x,
+                position.current.z,
+                t,
+                settings,
+                character,
+              );
+              rideWavePhase.current = Math.PI * .5
+                + Math.round((popPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
+              motion.current.impact = Math.max(
+                motion.current.impact,
+                .18 + committedQuality * .2,
+              );
+              prompt = "Hands planted — keep the board driving while your feet come through";
+            } else {
+              enterRide(committedQuality, localWaveTransport, false);
+              motion.current.impact = Math.max(
+                motion.current.impact,
+                .12 + popReading.crossWaveLoad * .32,
+              );
+            }
             catchWindowOpen.current = false;
             catchReady = false;
           }

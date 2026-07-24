@@ -1935,6 +1935,20 @@ export function advanceWaveTakeoffCapture(
   );
 }
 
+export function initialWavePopUpCapture(
+  boardCapture: number,
+  planing: number,
+) {
+  return Math.max(
+    .08,
+    Math.min(
+      .58,
+      Math.max(0, Math.min(1, boardCapture)) * .44
+        + Math.max(0, Math.min(1, planing)) * .18,
+    ),
+  );
+}
+
 export function waveTakeoffCanStand(
   elapsed: number,
   capture: number,

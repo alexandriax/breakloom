@@ -3104,7 +3104,7 @@ export default function SurfscapeApp() {
               : stats.catchReady
                 ? {
                     cue: "TAIL LIFT · KEEP STROKING",
-                    detail: "Wave pressure is building. SPACE stands now or at any other time.",
+                    detail: "Wave pressure is building. SPACE plants your hands; the live face keeps acting through the pop-up.",
                     rotation: -90,
                     tone: "ready",
                   }
