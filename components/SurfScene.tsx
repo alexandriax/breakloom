@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateBoardWaterInteraction, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -683,10 +683,12 @@ type ManeuverAttempt = {
   base: number;
   side: number;
   charge: number;
-  lift: number;
+  launchVelocity: number;
   rotation: number;
   startedAt: number;
   duration: number;
+  becameAirborne: boolean;
+  peakAirborne: number;
 };
 
 type VehicleMotionState = {
@@ -13045,22 +13047,30 @@ function Simulation({
           trickCharge.current = THREE.MathUtils.damp(trickCharge.current, 0, 8, delta);
         }
         if (attempt) {
-          maneuverProgress = THREE.MathUtils.clamp((t - attempt.startedAt) / attempt.duration, 0, 1);
+          const attemptElapsed = t - attempt.startedAt;
+          maneuverProgress = THREE.MathUtils.clamp(attemptElapsed / attempt.duration, 0, 1);
           const modeWindow = settings.mode === "training" ? .68 : settings.mode === "advanced" ? .38 : .52;
           const familyWindow = attempt.family === "air" ? .82 : attempt.family === "lip" ? .92 : 1;
           landingWindow = THREE.MathUtils.clamp((modeWindow * Math.sqrt(boardSpec.stability) + (mobileRenderer ? .08 : 0)) * familyWindow, .27, .82);
           const arc = Math.pow(Math.sin(maneuverProgress * Math.PI), .82);
-          const lift = attempt.lift * arc;
           const spin = attempt.side * attempt.rotation * Math.sin(maneuverProgress * Math.PI);
           const landingDrift = attempt.side * (arc * (.14 + attempt.rotation * .035) + maneuverProgress * (.08 + attempt.charge * .05));
           landingTarget = THREE.MathUtils.clamp(balanceTarget + landingDrift, -1, 1);
           balanceTarget = landingTarget;
           motion.current.maneuver = Math.max(motion.current.maneuver, .12 + arc * .88);
           motion.current.maneuverSide = attempt.side;
-          motion.current.maneuverLift = lift;
           motion.current.maneuverSpin = spin;
-          maneuverAirborne = attempt.family === "air" && lift > .18;
-          maneuverPhase = maneuverProgress < .2 ? "release" : maneuverAirborne && maneuverProgress < .72 ? "air" : "land";
+          const hullFree = airborneHeight > .055 || boardWaterContact < .42;
+          if (hullFree) attempt.becameAirborne = true;
+          attempt.peakAirborne = Math.max(attempt.peakAirborne, airborneHeight);
+          maneuverAirborne = hullFree;
+          maneuverPhase = maneuverProgress < .18
+            ? "release"
+            : hullFree
+              ? "air"
+              : attempt.becameAirborne || maneuverProgress > .7
+                ? "land"
+                : "release";
         }
         const balanceError = Math.abs(balanceInput - balanceTarget);
         const failThreshold = (settings.mode === "training" ? 1.42 : settings.mode === "advanced" ? .76 : 1) * Math.sqrt(boardSpec.stability);
@@ -13166,14 +13176,69 @@ function Simulation({
           maxCombo.current = Math.max(maxCombo.current, combo.current);
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
         }
-        if (attempt && maneuverProgress >= 1) {
+        const physicalAirLanding = Boolean(
+          attempt
+            && attempt.family === "air"
+            && attempt.becameAirborne
+            && airborneHeight < .045
+            && boardWaterContact > .62
+            && t - attempt.startedAt > .26,
+        );
+        const maneuverTimedOut = Boolean(
+          attempt
+            && attempt.family === "air"
+            && t - attempt.startedAt > attempt.duration + .78,
+        );
+        const maneuverResolved = Boolean(
+          attempt
+            && (
+              attempt.family === "air"
+                ? physicalAirLanding || maneuverTimedOut
+                : maneuverProgress >= 1
+            ),
+        );
+        if (attempt && maneuverResolved) {
           const landingError = Math.abs(balanceInput - landingTarget);
           const recoveryAssist = settings.mode === "training" ? 1.35 : mobileRenderer ? 1.12 : 1;
-          const landed = landingError <= landingWindow * recoveryAssist && railSlip.current < .88;
+          const reconnectLoad = attempt.family === "air"
+            ? motion.current.landingImpact
+            : 0;
+          const landingAttitudeError = attempt.family === "air"
+            ? THREE.MathUtils.clamp(
+                Math.abs(physicalRollAngle) / .5
+                  + Math.abs(physicalPitchAngle) / .42
+                  + reconnectLoad * .32,
+                0,
+                2,
+              )
+            : 0;
+          const physicalLandingControl = THREE.MathUtils.clamp(
+            1 - landingAttitudeError * .58,
+            0,
+            1,
+          );
+          const landed = landingError <= landingWindow * recoveryAssist
+            && railSlip.current < .88
+            && (
+              attempt.family !== "air"
+              || (
+                physicalAirLanding
+                && attempt.peakAirborne > .08
+                && physicalLandingControl > .12
+              )
+            );
           if (landed) {
             const landingControl = THREE.MathUtils.clamp(1 - landingError / landingWindow, 0, 1);
             const setupQuality = .52 + attempt.charge * .48;
-            const quality = THREE.MathUtils.clamp(.14 + landingControl * .66 + controlQuality * .1 + setupQuality * .1, 0, 1);
+            const quality = THREE.MathUtils.clamp(
+              .12
+                + landingControl * .54
+                + controlQuality * .1
+                + setupQuality * .1
+                + physicalLandingControl * .14,
+              0,
+              1,
+            );
             const points = Math.round(attempt.base * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
@@ -13203,7 +13268,6 @@ function Simulation({
           let name = rideFacePosition.current < -.42 ? "Bottom Turn" : "High Line";
           let family: ManeuverAttempt["family"] = rideFacePosition.current < -.42 ? "carve" : "trim";
           let base = rideFacePosition.current < -.42 ? 185 : 150;
-          let lift = .04;
           let rotation = rideFacePosition.current < -.42 ? .34 : .08;
           if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55 && rideFacePosition.current > .08) {
             name = "Nose Ride";
@@ -13212,39 +13276,45 @@ function Simulation({
             family = "air";
             name = charge > .95 && rail > .62 ? "Alley-Oop" : "Air Reverse";
             base = name === "Alley-Oop" ? 780 : 690;
-            lift = .82 + charge * .62 + settings.waveHeight * .08;
             rotation = name === "Alley-Oop" ? 2.35 : 1.72;
           } else if (tailPressure > .56 && rail > .42 && waveQuality > .54 && rideFacePosition.current > .2) {
             family = "lip";
             name = charge > .68 ? "Layback Release" : "Tail Release";
             base = charge > .68 ? 470 : 390;
-            lift = .22 + charge * .28;
             rotation = .64 + charge * .34;
           } else if (waveQuality > .72 && rail > .42 && rideFacePosition.current > .3) {
             family = "lip";
             name = "Lip Snap";
             base = 360;
-            lift = .18 + charge * .3;
             rotation = .58 + charge * .42;
           } else if (waveQuality > 0.68 && rideFacePosition.current > .46) {
             family = "lip";
             name = "Foam Floater";
             base = 305;
-            lift = .22 + charge * .24;
             rotation = .26;
           } else if (linePosition > .5 && rail > .38) {
             family = "carve";
             name = charge > .7 ? "Roundhouse Cutback" : "Pocket Cutback";
             base = charge > .7 ? 410 : 285;
-            lift = .08;
             rotation = .72 + charge * .36;
           } else if (rail > 0.52) {
             family = "carve";
             name = charge > .72 ? "Power Carve" : "Rail Carve";
             base = charge > .72 ? 330 : 230;
-            lift = .06;
             rotation = .5 + charge * .34;
           }
+          const releaseVelocity = family === "air" || family === "lip"
+            ? surfboardReleaseVerticalImpulse({
+                compression: charge,
+                tailPressure,
+                facePosition: rideFacePosition.current,
+                waveQuality,
+                speed,
+                planing: boardPlaning,
+                waterContact: boardWaterContact,
+                boardLength: boardSpec.length,
+              }) * (family === "air" ? 1 : .48)
+            : 0;
           stamina.current = Math.max(0, stamina.current - (5 + charge * 8 + (family === "air" ? 5 : 0)));
           maneuver.current = name;
           maneuverScore.current = 0;
@@ -13259,11 +13329,23 @@ function Simulation({
             base,
             side,
             charge,
-            lift,
+            launchVelocity: releaseVelocity,
             rotation,
             startedAt: t,
             duration: (baseDuration + charge * .12) * timingScale + (mobileRenderer ? .08 : 0),
+            becameAirborne: false,
+            peakAirborne: 0,
           };
+          if (releaseVelocity > .05) {
+            waterRide.current.velocity = THREE.MathUtils.clamp(
+              waterRide.current.velocity + releaseVelocity,
+              -8.5,
+              8.5,
+            );
+            boardPitchRate.current -= releaseVelocity
+              * (family === "air" ? .12 : .045)
+              * (.65 + tailPressure * .35);
+          }
           trickCharge.current = 0;
           motion.current.maneuver = .16;
           motion.current.maneuverSide = side;
@@ -13925,8 +14007,13 @@ function Simulation({
     motion.current.landingCue = THREE.MathUtils.damp(motion.current.landingCue, activeManeuver.current ? 1 : 0, activeManeuver.current ? 13 : 8, delta);
     motion.current.landingTarget = THREE.MathUtils.damp(motion.current.landingTarget, landingTarget, 10, delta);
     motion.current.landingWindow = THREE.MathUtils.damp(motion.current.landingWindow, landingWindow, 9, delta);
+    motion.current.maneuverLift = THREE.MathUtils.damp(
+      motion.current.maneuverLift,
+      activeManeuver.current ? airborneHeight : 0,
+      activeManeuver.current && airborneHeight > motion.current.maneuverLift ? 18 : 11,
+      delta,
+    );
     if (!activeManeuver.current) {
-      motion.current.maneuverLift = THREE.MathUtils.damp(motion.current.maneuverLift, 0, 11, delta);
       motion.current.maneuverSpin = THREE.MathUtils.damp(motion.current.maneuverSpin, 0, 12, delta);
     }
     motion.current.stance = stance.current;
@@ -14810,6 +14897,8 @@ function Simulation({
         maneuverActive: activeManeuver.current !== null,
         maneuverProgress,
         maneuverPhase,
+        maneuverLaunchVelocity: activeManeuver.current?.launchVelocity ?? 0,
+        maneuverPeakAirborne: activeManeuver.current?.peakAirborne ?? 0,
         trickCharge: motion.current.trickCharge,
         maneuverAirborne,
         landingTarget,

@@ -3208,6 +3208,13 @@ export default function SurfscapeApp() {
                     rotation: -90,
                     tone: "align",
                   }
+              : stats.maneuverActive && stats.maneuverPhase === "release"
+                ? {
+                    cue: `TAIL RELEASE ${stats.maneuverLaunchVelocity.toFixed(1)} M/S`,
+                    detail: "The upper face is redirecting board speed upward; hold a level roll as water contact falls away.",
+                    rotation: -90,
+                    tone: "ready",
+                  }
               : stats.pitchOverRisk > .42
               ? {
                   cue: `NOSE ${noseImmersionCentimeters} CM UNDER · SHIFT BACK`,

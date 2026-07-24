@@ -13,6 +13,7 @@ import {
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
   rideRailInputFromPaddleSteer,
+  surfboardReleaseVerticalImpulse,
   waveHeightAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
@@ -773,6 +774,59 @@ const risingSurface = advanceBoardHeaveDynamics(staticHeave, {
 if (risingSurface.verticalAcceleration < 3) {
   throw new Error("A rising polygon did not transfer upward pressure into the hull");
 }
+const flatReleaseImpulse = surfboardReleaseVerticalImpulse({
+  compression: 1,
+  tailPressure: .7,
+  facePosition: -.1,
+  waveQuality: .8,
+  speed: 12,
+  planing: .9,
+  waterContact: 1,
+  boardLength: 2.1,
+});
+const lipReleaseImpulse = surfboardReleaseVerticalImpulse({
+  compression: .92,
+  tailPressure: .62,
+  facePosition: .54,
+  waveQuality: .86,
+  speed: 12.4,
+  planing: .88,
+  waterContact: .94,
+  boardLength: 2.1,
+});
+if (
+  flatReleaseImpulse > 1.15
+  || lipReleaseImpulse < 3
+  || lipReleaseImpulse <= flatReleaseImpulse * 3
+) {
+  throw new Error("Tail release no longer distinguishes a live upper-face ramp from flat water");
+}
+let launchedBoard = {
+  ...staticHeave,
+  verticalVelocity: staticHeave.verticalVelocity + lipReleaseImpulse,
+};
+let peakReleaseHeight = 0;
+let releaseLandingImpact = 0;
+let releaseLostContact = false;
+for (let frame = 0; frame < 180; frame += 1) {
+  launchedBoard = advanceBoardHeaveDynamics(launchedBoard, {
+    ...heaveSample,
+    planing: .84,
+    speed: 11.8,
+    waveContact: .82,
+  });
+  peakReleaseHeight = Math.max(peakReleaseHeight, launchedBoard.airborneHeight);
+  releaseLandingImpact = Math.max(releaseLandingImpact, launchedBoard.landingImpact);
+  if (launchedBoard.waterContact < .2) releaseLostContact = true;
+}
+if (
+  !releaseLostContact
+  || peakReleaseHeight < .32
+  || releaseLandingImpact < .06
+  || launchedBoard.waterContact < .82
+) {
+  throw new Error("A lip release did not produce ballistic flight and a physical reconnection");
+}
 
 const paddlingSample = {
   deltaSeconds: 1 / 60,
@@ -1037,5 +1091,9 @@ console.log(JSON.stringify({
     droppedAirborneHeight: droppedSurface.airborneHeight,
     landingImpact: peakLandingImpact,
     risingAcceleration: risingSurface.verticalAcceleration,
+    flatReleaseImpulse,
+    lipReleaseImpulse,
+    releaseAirborneHeight: peakReleaseHeight,
+    releaseLandingImpact,
   },
 }, null, 2));

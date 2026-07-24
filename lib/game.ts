@@ -627,6 +627,51 @@ export type BoardHeaveReading = BoardHeaveState & {
   buoyancyAcceleration: number;
 };
 
+export type SurfboardReleaseSample = {
+  compression: number;
+  tailPressure: number;
+  facePosition: number;
+  waveQuality: number;
+  speed: number;
+  planing: number;
+  waterContact: number;
+  boardLength: number;
+};
+
+/**
+ * Converts a compressed tail release against the upper wave face into an
+ * instantaneous vertical velocity change. A flat or disconnected board has
+ * little ramp authority; a fast, planing hull released from a live lip can
+ * redirect substantially more of its momentum upward.
+ */
+export function surfboardReleaseVerticalImpulse(
+  sample: SurfboardReleaseSample,
+) {
+  const compression = clampValue(sample.compression, 0, 1);
+  const tailPressure = clampValue(sample.tailPressure, 0, 1);
+  const facePosition = clampValue(sample.facePosition, -1, 1);
+  const waveQuality = clampValue(sample.waveQuality, 0, 1);
+  const speedAuthority = smoothstep(6.2, 14.5, Math.max(0, sample.speed));
+  const planing = clampValue(sample.planing, 0, 1);
+  const waterContact = clampValue(sample.waterContact, 0, 1);
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const upperFaceRamp = smoothstep(.05, .58, facePosition);
+  const athleteRelease = .2 + compression * .62;
+  const lipRedirect = upperFaceRamp
+    * (1.1 + waveQuality * .9)
+    * (1 + speedAuthority * .8 + planing * .45);
+  const tailCoupling = .72 + tailPressure * .38;
+  const lengthResponse = Math.pow(2.5 / safeLength, .16);
+  return clampValue(
+    (athleteRelease + lipRedirect)
+      * tailCoupling
+      * waterContact
+      * lengthResponse,
+    0,
+    4.8,
+  );
+}
+
 /**
  * Integrates vertical board motion against a moving polygon surface. Buoyancy
  * and hydrodynamic damping exist only while the hull is immersed; otherwise
@@ -1655,6 +1700,8 @@ export type GameStats = {
   maneuverActive: boolean;
   maneuverProgress: number;
   maneuverPhase: "line" | "load" | "release" | "air" | "land";
+  maneuverLaunchVelocity: number;
+  maneuverPeakAirborne: number;
   trickCharge: number;
   maneuverAirborne: boolean;
   landingTarget: number;
@@ -1767,6 +1814,8 @@ export const INITIAL_STATS: GameStats = {
   maneuverActive: false,
   maneuverProgress: 0,
   maneuverPhase: "line",
+  maneuverLaunchVelocity: 0,
+  maneuverPeakAirborne: 0,
   trickCharge: 0,
   maneuverAirborne: false,
   landingTarget: 0,
