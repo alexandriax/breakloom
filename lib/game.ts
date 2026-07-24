@@ -14,6 +14,77 @@ const WAVE_ENERGY_SEQUENCE = [
 ] as const;
 const SURFABLE_CREST_ENERGY = .28;
 
+export function paddlingStaminaDelta(
+  mode: GameMode,
+  effort: number,
+  deltaSeconds: number,
+) {
+  const safeDelta = Math.max(0, Math.min(.25, deltaSeconds));
+  const normalizedEffort = Math.max(0, Math.min(1, Math.abs(effort)));
+  if (normalizedEffort <= .08) {
+    return safeDelta * (mode === "training" ? 1.8 : mode === "advanced" ? 1.35 : 1.55);
+  }
+  // A surfer can sustain a long, steady paddle for several minutes. Stamina is
+  // reserved for explosive takeoff strokes, duck dives, and maneuvers instead
+  // of functioning like a short sprint meter.
+  const fullStrokeDrain = mode === "training" ? .16 : mode === "advanced" ? .23 : .19;
+  return -safeDelta * fullStrokeDrain * (.38 + normalizedEffort * .62);
+}
+
+export function rideRailInputFromPaddleSteer(paddleSteer: number) {
+  // The paddle heading frame and wave-tangent frame have opposite handedness.
+  // Converting once here keeps left/right screen intent consistent in both.
+  return -Math.max(-1, Math.min(1, paddleSteer));
+}
+
+export type RideCaptureState = {
+  overtaken: number;
+  ahead: number;
+};
+
+export function advanceRideCaptureState(
+  current: RideCaptureState,
+  sample: {
+    deltaSeconds: number;
+    crestPhaseError: number;
+    normalSpeed: number;
+    waveSpeed: number;
+    facePhaseSpan: number;
+    gravityPlaning: number;
+  },
+) {
+  const delta = Math.max(0, Math.min(.25, sample.deltaSeconds));
+  const speedDeficit = Math.max(0, sample.waveSpeed - sample.normalSpeed);
+  const lipOvertake = smoothstep(-.02, .72, -sample.crestPhaseError)
+    * smoothstep(.05, Math.max(.051, sample.waveSpeed * .3), speedDeficit);
+  const flatShoulder = smoothstep(
+    sample.facePhaseSpan * 1.35,
+    sample.facePhaseSpan * 2.25,
+    sample.crestPhaseError,
+  ) * (1 - Math.max(0, Math.min(1, sample.gravityPlaning)));
+  return {
+    overtaken: Math.max(
+      0,
+      Math.min(
+        1.4,
+        current.overtaken
+          + delta * (lipOvertake * (1.05 + speedDeficit * .16) - (1 - lipOvertake) * .9),
+      ),
+    ),
+    ahead: Math.max(
+      0,
+      Math.min(
+        1.25,
+        current.ahead
+          + delta * (flatShoulder * .82 - (1 - flatShoulder) * .74),
+      ),
+    ),
+    lipOvertake,
+    flatShoulder,
+    speedDeficit,
+  };
+}
+
 export const BOARD_SPECS: Record<BoardType, {
   name: string;
   profile: string;

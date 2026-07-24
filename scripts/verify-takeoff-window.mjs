@@ -1,7 +1,10 @@
 import {
+  advanceRideCaptureState,
   advanceWaveTakeoffCapture,
   evaluateWaveTakeoff,
+  paddlingStaminaDelta,
   primaryWaveVelocityAt,
+  rideRailInputFromPaddleSteer,
   waveHeightAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
@@ -43,6 +46,59 @@ const character = {
 const x = 0;
 const z = -34;
 const lookback = .16;
+
+function staminaAfter(mode, seconds, effort) {
+  let stamina = 100;
+  const step = 1 / 60;
+  for (let elapsed = 0; elapsed < seconds; elapsed += step) {
+    stamina = Math.max(
+      0,
+      Math.min(100, stamina + paddlingStaminaDelta(mode, effort, step)),
+    );
+  }
+  return stamina;
+}
+
+const trainingPaddleReserve = staminaAfter("training", 300, 1);
+const advancedPaddleReserve = staminaAfter("advanced", 300, 1);
+if (trainingPaddleReserve < 48 || advancedPaddleReserve < 28) {
+  throw new Error(
+    `Five-minute paddle-out leaves too little reserve: training ${trainingPaddleReserve.toFixed(1)}, advanced ${advancedPaddleReserve.toFixed(1)}`,
+  );
+}
+if (rideRailInputFromPaddleSteer(1) !== -1 || rideRailInputFromPaddleSteer(-1) !== 1) {
+  throw new Error("Ride rail conversion no longer preserves paddle steering intent");
+}
+
+let overtakenCapture = { overtaken: 0, ahead: 0 };
+for (let frame = 0; frame < 180; frame += 1) {
+  overtakenCapture = advanceRideCaptureState(overtakenCapture, {
+    deltaSeconds: 1 / 60,
+    crestPhaseError: -.38,
+    normalSpeed: 4.2,
+    waveSpeed: 6,
+    facePhaseSpan: .9,
+    gravityPlaning: .18,
+  });
+}
+if (overtakenCapture.overtaken < .9) {
+  throw new Error(`An overtaking lip failed to end magnetic capture: ${overtakenCapture.overtaken.toFixed(2)}`);
+}
+
+let shoulderCapture = { overtaken: 0, ahead: 0 };
+for (let frame = 0; frame < 100; frame += 1) {
+  shoulderCapture = advanceRideCaptureState(shoulderCapture, {
+    deltaSeconds: 1 / 60,
+    crestPhaseError: 1.85,
+    normalSpeed: 6.5,
+    waveSpeed: 6,
+    facePhaseSpan: .9,
+    gravityPlaning: 0,
+  });
+}
+if (shoulderCapture.ahead < .86) {
+  throw new Error(`A board beyond the power failed to lose the wave: ${shoulderCapture.ahead.toFixed(2)}`);
+}
 
 function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
   const session = { ...settings, mode };
@@ -239,4 +295,12 @@ console.log(JSON.stringify({
     late: lateFace.quality,
   },
   marginalPopUpSeconds: marginalCaptureElapsed,
+  endurance: {
+    trainingPaddleReserve,
+    advancedPaddleReserve,
+  },
+  captureLoss: {
+    overtaken: overtakenCapture.overtaken,
+    ahead: shoulderCapture.ahead,
+  },
 }, null, 2));

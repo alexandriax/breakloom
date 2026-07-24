@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceWaveTakeoffCapture, BOARD_SPECS, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, primaryWavePhaseAt, primaryWaveVelocityAt, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
+import { advanceRideCaptureState, advanceWaveTakeoffCapture, BOARD_SPECS, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt, waveTakeoffCanStand } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -756,6 +756,7 @@ const OCEAN_VERTEX = /* glsl */ `
   varying float vCrest;
   varying float vBreaker;
   varying float vChop;
+  varying float vSwellRead;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
 
@@ -849,7 +850,9 @@ const OCEAN_VERTEX = /* glsl */ `
     // is the displacement amplitude; do not clamp it to the independently
     // adjustable breaking-face setting.
     float swellAmplitude = max(0.0, uSwellHeight * .5);
-    float swellShoaling = .84 + smoothstep(-85.0, 8.0, breakCoord) * .24;
+    // The API reports crest-to-trough swell height. Preserve that height in
+    // deep water, then add only the expected shoaling gain near the bank.
+    float swellShoaling = 1.0 + smoothstep(-85.0, 8.0, breakCoord) * .18;
     float windChop = clamp(uWind / 24.0, .12, 1.45);
     float currentBend = clamp(uCurrent / 4.0, 0.0, 1.0);
 
@@ -928,6 +931,11 @@ const OCEAN_VERTEX = /* glsl */ `
       * smoothstep(mix(.9, .74, uHollow), 1.5, shapedPrimary)
       * setLift
       * (.72 + uHollow * .34);
+    // Long, unbroken swell lines need to remain readable well before they
+    // reach the sandbar. This is an optical ridge only; foam still comes
+    // exclusively from vBreaker in shallow water.
+    float deepWaterRead = 1.0 - smoothstep(-92.0, -20.0, breakCoord);
+    vSwellRead = pow(max(0.0, liveSwell), 3.2) * deepWaterRead;
     vChop = abs(liveSwell) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
     vSurface = surfaceOrigin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
@@ -954,6 +962,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
   varying float vCrest;
   varying float vBreaker;
   varying float vChop;
+  varying float vSwellRead;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
 
@@ -1023,6 +1032,12 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 horizonReflection = mix(vec3(.11, .31, .39), vec3(.42, .67, .69), uLight);
     horizonReflection = mix(horizonReflection, vec3(.09, .13, .17), uCloud * .55);
     color = mix(color, horizonReflection, fresnel * (.38 + uLight * .28));
+    vec3 swellRidgeColor = mix(vec3(.055, .26, .29), vec3(.42, .76, .71), uLight);
+    color = mix(
+      color,
+      swellRidgeColor,
+      vSwellRead * (1.0 - vBreaker) * (.055 + fresnel * .16)
+    );
 
     vec3 reflectedSun = reflect(-normalize(uSunDirection), surfaceNormal);
     float sunGlint = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(62.0, 150.0, 1.0 - wind * .45));
@@ -7778,7 +7793,6 @@ function CoastBackdrop({
   observerPosition: MutableRefObject<THREE.Vector3>;
   worldOffsetX: number;
 }) {
-  const quality = useRenderQuality();
   const nearUrbanDetails = useRef<Array<THREE.Group | null>>([]);
   const facadeTextures = useMemo(
     () => biome === "urban"
@@ -7794,7 +7808,10 @@ function CoastBackdrop({
   useFrame(() => {
     const closeAlongshore = Math.abs(observerPosition.current.x - worldOffsetX) < COAST_CHUNK_SPAN * .78;
     const onLand = observerPosition.current.z > 18;
-    const visible = quality !== "reduced" && closeAlongshore && onLand;
+    // Facade LOD follows where the player is, not a global quality downgrade.
+    // Even the reduced tier keeps the nearby street readable while the
+    // offshore scene still sheds these groups completely.
+    const visible = closeAlongshore && onLand;
     nearUrbanDetails.current.forEach((group) => {
       if (group) group.visible = visible;
     });
@@ -7831,7 +7848,10 @@ function CoastBackdrop({
               }}
               visible={false}
             >
-              <mesh position={[0, building.height * .5, -building.depth * .5 - .012]}>
+              <mesh
+                position={[0, building.height * .5, -building.depth * .5 - .012]}
+                rotation={[0, Math.PI, 0]}
+              >
                 <planeGeometry args={[building.width * .91, building.height * .9]} />
                 <meshStandardMaterial
                   map={facadeTextures[index % facadeTextures.length]}
@@ -7872,6 +7892,52 @@ function CoastBackdrop({
                 <boxGeometry args={[building.width * .88, .18, .55]} />
                 <meshStandardMaterial color={index % 3 === 0 ? "#b95c49" : "#507e7d"} roughness={.58} />
               </mesh>
+              <group position={[0, 0, -building.depth * .5 - .19]}>
+                {[-.27, 0, .27].map((fraction, entranceIndex) => (
+                  <group key={fraction} position={[building.width * fraction, 1.28, 0]}>
+                    <mesh castShadow>
+                      <boxGeometry args={[Math.min(2.1, building.width * .19), 2.42, .12]} />
+                      <meshPhysicalMaterial
+                        color={entranceIndex === 1 ? "#284b50" : "#42676a"}
+                        emissive="#183638"
+                        emissiveIntensity={(1 - light) * .18}
+                        metalness={.18}
+                        roughness={.3}
+                        clearcoat={.22}
+                      />
+                    </mesh>
+                    <mesh position={[0, .05, -.07]}>
+                      <boxGeometry args={[.055, 1.92, .035]} />
+                      <meshStandardMaterial color="#9aa6a2" metalness={.72} roughness={.28} />
+                    </mesh>
+                  </group>
+                ))}
+              </group>
+              {[.29, .54, .79].map((fraction, balconyIndex) => (
+                <group
+                  key={`balcony-${fraction}`}
+                  position={[
+                    (balconyIndex % 2 ? -.17 : .15) * building.width,
+                    building.height * fraction,
+                    -building.depth * .5 - .34,
+                  ]}
+                >
+                  <mesh castShadow>
+                    <boxGeometry args={[building.width * .42, .1, .72]} />
+                    <meshStandardMaterial color="#aaa79b" roughness={.72} />
+                  </mesh>
+                  {!mobile && [-.46, -.23, 0, .23, .46].map((rail) => (
+                    <mesh key={rail} position={[rail * building.width * .4, .34, -.33]}>
+                      <boxGeometry args={[.035, .68, .035]} />
+                      <meshStandardMaterial color="#4b5b5d" metalness={.64} roughness={.38} />
+                    </mesh>
+                  ))}
+                  <mesh position={[0, .68, -.33]}>
+                    <boxGeometry args={[building.width * .42, .04, .04]} />
+                    <meshStandardMaterial color="#4b5b5d" metalness={.64} roughness={.38} />
+                  </mesh>
+                </group>
+              ))}
               {!mobile && (
                 <>
                   <group position={[building.width * .19, building.height + .72, 0]}>
@@ -8198,7 +8264,7 @@ const WET_SAND_FRAGMENT = /* glsl */ `
     vec3 saturatedSand = drySand * vec3(.42, .49, .47);
     saturatedSand = mix(saturatedSand, vec3(.055, .09, .087), puddles * .22 + drainage * .08);
 
-    float rippleStrength = (.008 + uWind * .014) * film;
+    float rippleStrength = (.003 + uWind * .006) * film;
     float rippleA = sin(windSpace.x * 2.2 + windSpace.y * .47 - uTime * (1.2 + uWind * .72));
     float rippleB = sin(windSpace.x * 4.7 - windSpace.y * .82 - uTime * (1.8 + uWind));
     // Use a world-space height gradient rather than screen-space derivatives
@@ -8217,7 +8283,7 @@ const WET_SAND_FRAGMENT = /* glsl */ `
 
     vec3 skyReflection = mix(vec3(.085, .19, .205), vec3(.37, .59, .58), uLight);
     skyReflection = mix(skyReflection, vec3(.16, .2, .22), uCloud * .58);
-    float reflectionBreakup = .72 + noise(windSpace * vec2(.72, 1.64) + vec2(-uTime * .08, uTime * .025)) * .28;
+    float reflectionBreakup = .84 + noise(windSpace * vec2(.28, .56) + vec2(-uTime * .025, uTime * .009)) * .16;
     vec3 color = mix(drySand, saturatedSand, film);
     color = mix(
       color,
@@ -8227,7 +8293,7 @@ const WET_SAND_FRAGMENT = /* glsl */ `
 
     vec3 reflectedSun = reflect(-normalize(uSunDirection), surfaceNormal);
     float sunPath = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(58.0, 112.0, 1.0 - uWind * .34));
-    float sunBreakup = smoothstep(.38, .83, noise(vec2(world.x * .34 - uTime * .05, world.y * .58)));
+    float sunBreakup = smoothstep(.34, .88, noise(vec2(world.x * .12 - uTime * .015, world.y * .18)));
     sunPath *= sunBreakup * film * (1.0 - uCloud * .82);
     color += uSunColor * sunPath * (.24 + uLight * 1.22);
 
@@ -8241,8 +8307,8 @@ const WET_SAND_FRAGMENT = /* glsl */ `
       color += vec3(.24, .43, .44) * rainRing * (.08 + uLight * .16);
     }
 
-    float mica = smoothstep(.965, .994, hash(floor(world * 6.7))) * (1.0 - film * .76);
-    color += uSunColor * mica * (.025 + uLight * .075);
+    float mica = smoothstep(.982, .997, hash(floor(world * 2.4))) * (1.0 - film * .9);
+    color += uSunColor * mica * (.012 + uLight * .028);
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -8317,7 +8383,7 @@ function WetSandSurface({
   });
 
   return (
-    <mesh ref={surface} position={[0, -.43, 34 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+    <mesh ref={surface} position={[0, -.34, 34 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[COAST_GEOMETRY_WIDTH, 64]} />
       {reduced ? (
         <meshStandardMaterial color={color} map={texture} bumpMap={texture} bumpScale={.025} roughness={.76} metalness={.04} />
@@ -8327,9 +8393,6 @@ function WetSandSurface({
           uniforms={uniforms}
           vertexShader={WET_SAND_VERTEX}
           fragmentShader={WET_SAND_FRAGMENT}
-          polygonOffset
-          polygonOffsetFactor={-1}
-          polygonOffsetUnits={-1}
         />
       )}
     </mesh>
@@ -8484,7 +8547,7 @@ function BeachVisitor({
   const joints = useRef<Partial<Record<SurferJointName, THREE.Object3D>>>({});
   const restPose = useRef<Partial<Record<SurferJointName, THREE.Euler>>>({});
   const baseX = position[0];
-  const baseY = position[1];
+  const baseY = position[1] + .58;
 
   useEffect(() => {
     const next: Partial<Record<SurferJointName, THREE.Object3D>> = {};
@@ -8513,7 +8576,7 @@ function BeachVisitor({
     const breathing = Math.sin(t * .86) * .012;
     if (root.current) {
       root.current.position.x = walking ? baseX + Math.sin(t * .24) * 5.8 : baseX;
-      root.current.position.y = baseY + (relaxed ? -.24 : Math.abs(stride) * .018);
+      root.current.position.y = baseY + (relaxed ? -.12 : Math.abs(stride) * .018);
       root.current.rotation.y = THREE.MathUtils.damp(root.current.rotation.y, rotation + (walking && Math.cos(t * .24) < 0 ? Math.PI : 0), 5, delta);
     }
     const pose = (name: SurferJointName, x: number, y: number, z: number, responsiveness = 7) => {
@@ -8937,8 +9000,19 @@ function CoastZoneMarker({
     value.anisotropy = 4;
     return value;
   }, [current, label, note]);
+  const reverseTexture = useMemo(() => {
+    const value = texture.clone();
+    value.wrapS = THREE.RepeatWrapping;
+    value.repeat.x = -1;
+    value.offset.x = 1;
+    value.needsUpdate = true;
+    return value;
+  }, [texture]);
 
-  useEffect(() => () => texture.dispose(), [texture]);
+  useEffect(() => () => {
+    texture.dispose();
+    reverseTexture.dispose();
+  }, [reverseTexture, texture]);
 
   return (
     <group position={[offset, 0, 68.8]}>
@@ -8951,7 +9025,7 @@ function CoastZoneMarker({
       <mesh position={[0, 2.15, -.025]} rotation={[0, Math.PI, 0]} castShadow>
         <planeGeometry args={[5.25, 1.64]} />
         <meshStandardMaterial
-          map={texture}
+          map={reverseTexture}
           emissive={current ? "#195b55" : "#5f4b18"}
           emissiveIntensity={(1 - light) * .46 + .08}
           metalness={.08}
@@ -10571,6 +10645,7 @@ function Simulation({
   const rideOriginAlong = useRef(0);
   const rideWavePhase = useRef(0);
   const rideFacePosition = useRef(0);
+  const rideCapture = useRef({ overtaken: 0, ahead: 0 });
   const ridePocketOffset = useRef(0);
   const waveCrestOffset = useRef(0);
   const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
@@ -10982,6 +11057,8 @@ function Simulation({
         ridePocketOffset.current = 0;
         waveCrestOffset.current = 0;
         rideFacePosition.current = .24;
+        rideCapture.current.overtaken = 0;
+        rideCapture.current.ahead = 0;
         rideDistance.current = 0;
         pocketDistance.current = 0;
         rideVelocity.current.set(
@@ -11326,8 +11403,11 @@ function Simulation({
         }
       } else if (currentPhase === "paddling") {
         landVelocity.current.set(0, 0);
-        if (move > 0.08) stamina.current = Math.max(0, stamina.current - delta * 7.5 * move);
-        else stamina.current = Math.min(100, stamina.current + delta * 10);
+        stamina.current = THREE.MathUtils.clamp(
+          stamina.current + paddlingStaminaDelta(settings.mode, move, delta),
+          0,
+          100,
+        );
         paddleEffort = Math.max(0, move);
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
         const paddleThrust = Math.max(0, move) * 4.2 * paddleEfficiency * boardSpec.paddle + Math.min(0, move) * 1.2;
@@ -11393,7 +11473,7 @@ function Simulation({
           duckDiveUntil.current = t + 1.12;
           duckDiveActive = true;
           duckDiveWindowOpen.current = false;
-          stamina.current = Math.max(0, stamina.current - (2.4 + shorebreakPower * 1.8));
+          stamina.current = Math.max(0, stamina.current - (.8 + shorebreakPower * .7));
         }
         if (!inLineup && t >= nextShorebreakAt.current) {
           if (!duckDiveActive) duckDiveQuality.current = 0;
@@ -11406,7 +11486,7 @@ function Simulation({
             paddleVelocity.current.multiplyScalar(.86 + duckDiveQuality.current * .08);
             position.current.x += waveTravelX * (.08 + shorebreakPower * .14);
             position.current.z += waveTravelZ * (.08 + shorebreakPower * .14);
-            stamina.current = Math.max(0, stamina.current - (1.2 + shorebreakPower * 1.6));
+            stamina.current = Math.max(0, stamina.current - (.45 + shorebreakPower * .55));
             motion.current.impact = .22 + shorebreakPower * .24;
           } else {
             const wash = .72 + shorebreakPower * 1.38;
@@ -11415,7 +11495,7 @@ function Simulation({
             paddleVelocity.current.y += waveTravelZ * (.82 + shorebreakPower * 1.32);
             paddleVelocity.current.x += waveTravelX * (.82 + shorebreakPower * 1.32) + currentX * (.55 + shorebreakPower * .9);
             paddleVelocity.current.multiplyScalar(.54);
-            stamina.current = Math.max(0, stamina.current - (5.5 + shorebreakPower * 9.5));
+            stamina.current = Math.max(0, stamina.current - (2.1 + shorebreakPower * 3.7));
             motion.current.impact = .66 + shorebreakPower * .34;
           }
           const breakInterval = Math.max(4.4, settings.wavePeriod * .58);
@@ -11558,6 +11638,8 @@ function Simulation({
             12,
           );
           rideFacePosition.current = .06 + committedQuality * .18;
+          rideCapture.current.overtaken = 0;
+          rideCapture.current.ahead = 0;
           rideLineSide.current = Math.abs(character.peel) >= .18
             ? Math.sign(character.peel)
             : Math.abs(steer) > .16
@@ -11730,7 +11812,7 @@ function Simulation({
             (1 - THREE.MathUtils.smoothstep(takeoffCommitProgress, .5, .9))
               * (.78 + takeoffCommitQuality.current * .22),
           );
-          stamina.current = Math.max(0, stamina.current - delta * (7.2 + setState.crestEnergy * 2.4));
+          stamina.current = Math.max(0, stamina.current - delta * (1.35 + setState.crestEnergy * .65));
           takeoffQuality = THREE.MathUtils.clamp(
             takeoffCommitQuality.current * .56
               + caughtReading.quality * .3
@@ -11827,7 +11909,7 @@ function Simulation({
         rideOutProgress = finishing
           ? THREE.MathUtils.smootherstep(finishElapsed, .04, .92)
           : 0;
-        const rideSteer = steer * (1 - rideOutProgress);
+        const rideSteer = rideRailInputFromPaddleSteer(steer) * (1 - rideOutProgress);
         const waveTransport = primaryWaveVelocityAt(
           position.current.x,
           position.current.z,
@@ -11881,10 +11963,10 @@ function Simulation({
         const waveNumber = Math.PI * 2 / waveTransport.wavelength;
         const phaseCorrection = THREE.MathUtils.clamp(
           -phaseError
-            * (crestPhaseError < 0 ? 2.8 : 1.82)
+            * (crestPhaseError < 0 ? .72 : .48)
             / Math.max(.08, waveNumber),
-          -4.2,
-          5.8,
+          -.72,
+          .92,
         );
         const crestTravelLimit = THREE.MathUtils.clamp(waveTransport.wavelength * .075, 5.4, 15);
         waveCrestOffset.current = THREE.MathUtils.damp(
@@ -11908,6 +11990,22 @@ function Simulation({
           * (.38 + Math.abs(character.peel) * .22 + character.length * .018);
         ridePocketOffset.current += peelVelocity * delta;
         const waveSpeed = waveTransport.speed * (.88 + tidePower * .12);
+        const rideSurface = waveSurfaceFrameAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const faceDownhillSlope = Math.max(
+          0,
+          -(rideSurface.slopeX * waveNormalX + rideSurface.slopeZ * waveNormalZ),
+        );
+        const gravityPlaning = THREE.MathUtils.smootherstep(
+          faceDownhillSlope,
+          .012,
+          .12 + settings.waveHeight * .025,
+        );
         const pumping = !finishing && move > 0.08 && stamina.current > 1;
         if (finishing) stance.current = THREE.MathUtils.damp(stance.current, 0, 4.8, delta);
         else if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
@@ -11981,7 +12079,14 @@ function Simulation({
           takeoffRecovery,
         );
         speed = (
-          waveSpeed * boardSpec.speed * (0.88 + setState.energy * 0.16)
+          waveSpeed
+            * boardSpec.speed
+            * (
+              .67
+              + gravityPlaning * .2
+              + catchQuality.current * .08
+              + setState.energy * .07
+            )
             + pumpBoost
             + nosePressure * 0.85
             - tailPressure * 0.48
@@ -12072,8 +12177,18 @@ function Simulation({
           + foamShoulderShove;
         const tangentialVelocity = trimDrive + railTurn + foamCrossChop;
         const normalVelocity = Math.max(
-          2.4 / Math.max(.45, waveNormalZ),
-          waveTransport.speed + phaseCorrection,
+          .9,
+          waveTransport.speed
+            * (
+              .66
+              + gravityPlaning * .2
+              + catchQuality.current * .07
+              + lineControl * .045
+              + setState.energy * .035
+            )
+            + pumpBoost * .28
+            + nosePressure * .32
+            + phaseCorrection,
         ) * (
           1
           + nosePressure * .025
@@ -12107,11 +12222,11 @@ function Simulation({
           + rideVelocity.current.y * waveTangentZ;
         const normalResponse = finishing
           ? 6.8
-          : 5.15
-            + highFace * .7
-            + Math.abs(phaseCorrection) * .22
+          : 2.35
+            + gravityPlaning * 1.25
+            + highFace * .45
             + tubePressure * 1.05
-            + whitewaterPressure * 2.8;
+            + whitewaterPressure * 1.4;
         const outlineResponse = settings.board === "performance"
           ? 1.12
           : settings.board === "fish"
@@ -12191,10 +12306,10 @@ function Simulation({
         rideHeading.current = dampAngle(rideHeading.current, Math.atan2(lateralVelocity, shorewardVelocity), 4.8, delta);
         position.current.x += lateralVelocity * delta;
         position.current.z += shorewardVelocity * delta;
-        // A captured board may climb or drop anywhere on the shoreward face, but
-        // it may not cross through the mathematical crest onto the offshore
-        // back. Project small integration errors back onto the open face and
-        // carry at least the crest's normal speed while the lip catches up.
+        // Capture is earned through planing speed and the physical face. We do
+        // not project the board back to a target phase or inject crest speed:
+        // a slow board is overtaken by the lip, while one that outruns the
+        // energy glides onto the shoulder and loses the wave.
         const integratedWavePhase = primaryWavePhaseAt(
           position.current.x,
           position.current.z,
@@ -12206,25 +12321,30 @@ function Simulation({
           Math.sin(integratedWavePhase - rideWavePhase.current),
           Math.cos(integratedWavePhase - rideWavePhase.current),
         );
-        if (!finishing && integratedCrestError < .055) {
-          const openFaceCorrection = THREE.MathUtils.clamp(
-            (.085 - integratedCrestError) / Math.max(.08, waveNumber),
-            0,
-            2.4,
-          ) * (1 - Math.exp(-delta * 12));
-          position.current.x += waveNormalX * openFaceCorrection;
-          position.current.z += waveNormalZ * openFaceCorrection;
-          const capturedNormalSpeed = rideVelocity.current.x * waveNormalX
-            + rideVelocity.current.y * waveNormalZ;
-          if (capturedNormalSpeed < waveTransport.speed) {
-            const normalRecovery = waveTransport.speed - capturedNormalSpeed;
-            rideVelocity.current.x += waveNormalX * normalRecovery;
-            rideVelocity.current.y += waveNormalZ * normalRecovery;
-          }
+        const integratedNormalSpeed = rideVelocity.current.x * waveNormalX
+          + rideVelocity.current.y * waveNormalZ;
+        let lipOvertake = 0;
+        if (!finishing) {
+          const captureReading = advanceRideCaptureState(rideCapture.current, {
+            deltaSeconds: delta,
+            crestPhaseError: integratedCrestError,
+            normalSpeed: integratedNormalSpeed,
+            waveSpeed: waveTransport.speed,
+            facePhaseSpan,
+            gravityPlaning,
+          });
+          rideCapture.current.overtaken = captureReading.overtaken;
+          rideCapture.current.ahead = captureReading.ahead;
+          lipOvertake = captureReading.lipOvertake;
           whitewaterPressure = Math.max(
             whitewaterPressure,
-            THREE.MathUtils.smoothstep(-integratedCrestError, .02, .62) * .46,
+            lipOvertake * .7 + rideCapture.current.overtaken * .32,
           );
+          if (rideCapture.current.overtaken > .42) {
+            unstableFor.current += delta * (
+              settings.mode === "training" ? .72 : settings.mode === "advanced" ? 1.42 : 1.08
+            ) * rideCapture.current.overtaken;
+          }
         }
         const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
         speed = rideStep / Math.max(.001, delta);
@@ -12479,6 +12599,10 @@ function Simulation({
         }
         prompt = finishing
           ? "Hold the exit — clean line"
+          : rideCapture.current.overtaken > .44
+            ? "The lip is overtaking you — point down the face and regain planing speed"
+          : rideCapture.current.ahead > .46
+            ? "You have outrun the power — cut back before the shoulder goes flat"
           : activeManeuver.current
             ? `${activeManeuver.current.name} · ${maneuverPhase === "air" ? "spot the landing" : "reconnect with the landing marker"}`
           : trickCharge.current > .05
@@ -12563,9 +12687,9 @@ function Simulation({
         } else if (
           !qaScenario
           && !finishing
-          && !activeManeuver.current
           && (
             position.current.z - tideShift > 11 + (character.length - 1) * 11
+            || rideCapture.current.ahead > .86
             || rideDistance.current > (
               62
                 + character.length * 18
