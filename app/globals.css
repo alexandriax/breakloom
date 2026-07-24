@@ -4625,3 +4625,315 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
     animation: none;
   }
 }
+
+/* Premium destination atlas and first-viewport session cockpit. */
+.header-beach-select,
+.config-beach-select {
+  color: #effffb;
+  font: inherit;
+}
+
+.header-beach-select {
+  border: 1px solid rgba(168, 242, 232, .2);
+}
+
+.destination-picker-backdrop {
+  position: fixed;
+  z-index: 180;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  background:
+    radial-gradient(circle at 50% 26%, rgba(55, 190, 178, .15), transparent 38%),
+    rgba(1, 9, 13, .78);
+  backdrop-filter: blur(22px) saturate(.72);
+}
+
+.destination-picker {
+  width: min(1120px, 100%);
+  max-height: min(820px, calc(100dvh - 36px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(178, 247, 236, .2);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 88% -12%, rgba(75, 224, 207, .14), transparent 34%),
+    linear-gradient(155deg, rgba(7, 29, 36, .99), rgba(2, 13, 19, .99));
+  box-shadow: 0 38px 120px rgba(0, 0, 0, .62), inset 0 1px rgba(255, 255, 255, .065);
+}
+
+.destination-picker > header {
+  min-height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 28px;
+  border-bottom: 1px solid rgba(190, 246, 238, .11);
+}
+
+.destination-picker > header span,
+.destination-picker > header p {
+  color: rgba(210, 239, 234, .48);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+
+.destination-picker > header h2 {
+  margin: 5px 0 4px;
+  color: #f0fffb;
+  font-size: clamp(25px, 3vw, 42px);
+  letter-spacing: -.045em;
+}
+
+.destination-picker > header p {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: none;
+}
+
+.destination-picker > header > button {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(187, 245, 236, .18);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .025);
+  color: #dffff9;
+  cursor: pointer;
+}
+
+.destination-picker > header > button svg { width: 17px; }
+
+.destination-picker-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.destination-picker-grid > button {
+  min-width: 0;
+  min-height: 102px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 11px;
+  padding: 14px;
+  border: 1px solid rgba(187, 244, 236, .11);
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(13, 40, 47, .62), rgba(5, 20, 27, .66));
+  color: #effffb;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.destination-picker-grid > button:hover {
+  transform: translateY(-2px);
+  border-color: rgba(126, 238, 222, .4);
+  background: linear-gradient(135deg, rgba(24, 66, 70, .7), rgba(6, 25, 32, .72));
+}
+
+.destination-picker-grid > button.is-current {
+  border-color: color-mix(in srgb, var(--spot-accent) 66%, rgba(255, 255, 255, .16));
+  background:
+    radial-gradient(circle at 12% 0, color-mix(in srgb, var(--spot-accent) 16%, transparent), transparent 52%),
+    rgba(9, 35, 41, .86);
+  box-shadow: inset 0 -2px var(--spot-accent);
+}
+
+.destination-picker-grid > button > i {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(170, 239, 229, .17);
+  border-radius: 50%;
+  color: var(--spot-accent);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.destination-picker-grid > button > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.destination-picker-grid > button small {
+  color: rgba(193, 231, 225, .42);
+  font-size: 6px;
+  font-weight: 850;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.destination-picker-grid > button > span strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.destination-picker-grid > button em {
+  overflow: hidden;
+  color: rgba(221, 242, 238, .58);
+  font-size: 7px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.destination-picker-grid > button > b {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-weight: 700;
+}
+
+.destination-picker-grid > button > svg {
+  width: 14px;
+  color: var(--spot-accent);
+}
+
+.destination-picker > footer {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 26px;
+  border-top: 1px solid rgba(190, 246, 238, .1);
+  color: rgba(210, 239, 234, .46);
+  font-size: 6px;
+  letter-spacing: .08em;
+}
+
+.destination-picker > footer span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a9eee3;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.destination-picker > footer span i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6fe0ad;
+  box-shadow: 0 0 0 4px rgba(111, 224, 173, .1);
+}
+
+@media (min-width: 1120px) {
+  .surfscape.is-launch .launch-content {
+    grid-template-columns: minmax(370px, .74fr) minmax(590px, 1.26fr);
+    min-height: calc(100dvh - 178px);
+    gap: clamp(20px, 2.4vw, 36px);
+  }
+
+  .surfscape.is-launch .launch-hero {
+    padding: clamp(20px, 3.2vh, 34px) 0 16px;
+  }
+
+  .surfscape.is-launch .launch-hero h1 {
+    margin: 12px 0 8px;
+    font-size: clamp(58px, 5.2vw, 84px);
+    line-height: .78;
+  }
+
+  .surfscape.is-launch .hero-copy {
+    margin: 12px 0 14px;
+    font-size: clamp(9px, .78vw, 12px);
+    line-height: 1.4;
+  }
+
+  .surfscape.is-launch .current-readout > div {
+    min-height: 61px;
+    padding: 8px 10px;
+  }
+
+  .surfscape.is-launch .readout-metric > strong { font-size: 18px; }
+
+  .surfscape.is-launch .launch-config {
+    margin: clamp(12px, 2.2vh, 22px) 0 16px;
+    padding: 15px;
+  }
+
+  .surfscape.is-launch .launch-config-head {
+    min-height: 47px;
+    padding-bottom: 11px;
+  }
+
+  .surfscape.is-launch .launch-config .mode-section { margin-top: 10px; }
+  .surfscape.is-launch .launch-config .mode-card {
+    min-height: 72px;
+    padding: 9px 10px 22px;
+  }
+  .surfscape.is-launch .launch-config .mode-card > p { display: none; }
+  .surfscape.is-launch .launch-config .quiver-picker { margin-top: 7px; }
+  .surfscape.is-launch .launch-config .quiver-head { min-height: 26px; }
+  .surfscape.is-launch .launch-config .quiver-grid button { min-height: 51px; }
+}
+
+@media (max-width: 900px) {
+  .destination-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .destination-picker-backdrop { padding: 8px; }
+  .destination-picker {
+    max-height: calc(100dvh - 16px);
+    border-radius: 18px;
+  }
+  .destination-picker > header {
+    min-height: 86px;
+    padding: 16px;
+  }
+  .destination-picker > header h2 { font-size: 24px; }
+  .destination-picker > header p { display: none; }
+  .destination-picker-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 10px;
+  }
+  .destination-picker-grid > button { min-height: 76px; padding: 10px; }
+  .destination-picker > footer { min-height: 42px; padding: 0 14px; }
+  .destination-picker > footer small { display: none; }
+
+  .surfscape.is-launch .launch-hero {
+    padding-top: 10px;
+  }
+  .surfscape.is-launch .launch-hero h1 {
+    font-size: clamp(36px, 11.8vw, 49px);
+  }
+  .surfscape.is-launch .hero-copy {
+    margin: 7px 0 8px;
+    font-size: 7px;
+  }
+  .surfscape.is-launch .launch-config {
+    margin-top: 5px;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 761px) {
+  .surfscape.is-launch .launch-hero h1 { font-size: clamp(48px, 5vw, 68px); }
+  .surfscape.is-launch .hero-copy { margin-block: 7px; }
+  .surfscape.is-launch .launch-config { margin-top: 7px; }
+}

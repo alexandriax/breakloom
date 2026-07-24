@@ -896,6 +896,7 @@ export default function SurfscapeApp() {
   const [pointerLocked, setPointerLocked] = useState(false);
   const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
   const [showPlanner, setShowPlanner] = useState(true);
+  const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanel>("break");
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
@@ -917,6 +918,19 @@ export default function SurfscapeApp() {
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
   const [wetLens, setWetLens] = useState<WetLensEvent | null>(null);
+  useEffect(() => {
+    if (!destinationPickerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDestinationPickerOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [destinationPickerOpen]);
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const rideCard = useRef<File | null>(null);
@@ -2291,6 +2305,7 @@ export default function SurfscapeApp() {
       ? { ...current, coastHeading: next.heading }
       : { ...settingsFromConditions(modeled, next.heading), mode: current.mode, board: current.board });
     setSelectedForecastTime(null);
+    setDestinationPickerOpen(false);
   };
 
   const chooseMode = (mode: GameMode) => {
@@ -3283,14 +3298,17 @@ export default function SurfscapeApp() {
               <span>SURFSCAPE</span>
               <small>01</small>
             </button>
-            <label className="header-beach-select">
+            <button
+              type="button"
+              className="header-beach-select"
+              onClick={() => setDestinationPickerOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={destinationPickerOpen}
+            >
               <MapPin />
               <span><small>SURF DESTINATION</small><strong>{beach.name}</strong></span>
-              <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)} aria-label="Choose surf destination">
-                {BEACHES.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.country}</option>)}
-              </select>
               <ChevronDown />
-            </label>
+            </button>
             <div className="launch-nav">
               <span className={`live-chip ${conditions.source === "live" ? "is-live" : ""}`}>
                 <i /> {conditionsLoading ? "Reading buoy models" : selectedForecast ? "Forecast session" : conditions.source === "live" ? "Live ocean model" : "Modeled offline"}
@@ -3350,14 +3368,17 @@ export default function SurfscapeApp() {
                   <strong>{beach.name}</strong>
                   <small>{zoneLabel} · {beach.country}</small>
                 </div>
-                <label className="config-beach-select">
+                <button
+                  type="button"
+                  className="config-beach-select"
+                  onClick={() => setDestinationPickerOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={destinationPickerOpen}
+                >
                   <MapPin />
                   <span><small>CHANGE COAST</small><strong>{beach.name}</strong></span>
-                  <select value={beach.id} onChange={(event) => chooseBeach(BEACHES.find((item) => item.id === event.target.value) ?? DEFAULT_BEACH)} aria-label="Choose beach">
-                    {BEACHES.map((item) => <option key={item.id} value={item.id}>{item.name} — {item.country}</option>)}
-                  </select>
                   <ChevronDown />
-                </label>
+                </button>
               </div>
               <div className="mode-section">
                 <div className="section-label"><span>MODE</span><p>Choose your relationship with the water</p></div>
@@ -3583,6 +3604,61 @@ export default function SurfscapeApp() {
               </div>
             </aside>
           </div>
+
+          {destinationPickerOpen && (
+            <div
+              className="destination-picker-backdrop"
+              role="presentation"
+              onMouseDown={(event) => {
+                if (event.currentTarget === event.target) setDestinationPickerOpen(false);
+              }}
+            >
+              <section
+                className="destination-picker"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="destination-picker-title"
+              >
+                <header>
+                  <div>
+                    <span>WORLD SURF ATLAS · 13 COASTLINES</span>
+                    <h2 id="destination-picker-title">Choose your ocean</h2>
+                    <p>Live marine conditions are loaded for the line you select.</p>
+                  </div>
+                  <button type="button" onClick={() => setDestinationPickerOpen(false)} aria-label="Close destination picker">
+                    <X />
+                  </button>
+                </header>
+                <div className="destination-picker-grid">
+                  {BEACHES.map((destination, index) => (
+                    <button
+                      type="button"
+                      key={destination.id}
+                      className={destination.id === beach.id ? "is-current" : ""}
+                      onClick={() => chooseBeach(destination)}
+                      aria-pressed={destination.id === beach.id}
+                    >
+                      <i>{String(index + 1).padStart(2, "0")}</i>
+                      <span>
+                        <small>{destination.country}</small>
+                        <strong>{destination.name}</strong>
+                        <em>{destination.region}</em>
+                      </span>
+                      <b>
+                        <small>{destination.breakType}</small>
+                        <em>{destination.difficulty}/5</em>
+                      </b>
+                      <ArrowRight />
+                    </button>
+                  ))}
+                </div>
+                <footer>
+                  <span><i /> {conditions.source === "live" ? "Live marine model connected" : "Modeled conditions available offline"}</span>
+                  <small>Wave, swell, wind, current and tide update after selection.</small>
+                </footer>
+              </section>
+            </div>
+          )}
 
           {settings.mode === "playground" && (
             <section className="wave-lab-panel">
