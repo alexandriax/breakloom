@@ -768,13 +768,56 @@ export type BoardHeaveReading = BoardHeaveState & {
 export type SurfboardReleaseSample = {
   compression: number;
   tailPressure: number;
-  facePosition: number;
-  waveQuality: number;
+  lipSupport: number;
   speed: number;
   planing: number;
   waterContact: number;
   boardLength: number;
 };
+
+export type SurfboardLipSupportSample = {
+  facePosition: number;
+  faceSlope: number;
+  surfaceRise: number;
+  waveContact: number;
+  planing: number;
+  waterContact: number;
+};
+
+/**
+ * Measures how much live upper-face geometry can redirect a loaded tail.
+ * This is deliberately independent of score, catch quality, combo, and mode.
+ */
+export function surfboardLipLaunchSupport(
+  sample: SurfboardLipSupportSample,
+) {
+  const upperFace = smoothstep(
+    .05,
+    .58,
+    clampValue(sample.facePosition, -1, 1),
+  );
+  const slopeSupport = smoothstep(
+    .025,
+    .2,
+    Math.max(0, sample.faceSlope),
+  );
+  const riseSupport = smoothstep(
+    .08,
+    1.6,
+    Math.max(0, sample.surfaceRise),
+  );
+  const contact = clampValue(sample.waveContact, 0, 1)
+    * clampValue(sample.waterContact, 0, 1);
+  const planing = clampValue(sample.planing, 0, 1);
+  return clampValue(
+    upperFace
+      * contact
+      * (.5 + slopeSupport * .32 + riseSupport * .18)
+      * (.62 + planing * .38),
+    0,
+    1,
+  );
+}
 
 /**
  * Converts a compressed tail release against the upper wave face into an
@@ -787,16 +830,14 @@ export function surfboardReleaseVerticalImpulse(
 ) {
   const compression = clampValue(sample.compression, 0, 1);
   const tailPressure = clampValue(sample.tailPressure, 0, 1);
-  const facePosition = clampValue(sample.facePosition, -1, 1);
-  const waveQuality = clampValue(sample.waveQuality, 0, 1);
+  const lipSupport = clampValue(sample.lipSupport, 0, 1);
   const speedAuthority = smoothstep(6.2, 14.5, Math.max(0, sample.speed));
   const planing = clampValue(sample.planing, 0, 1);
   const waterContact = clampValue(sample.waterContact, 0, 1);
   const safeLength = Math.max(1.6, sample.boardLength);
-  const upperFaceRamp = smoothstep(.05, .58, facePosition);
   const athleteRelease = .2 + compression * .62;
-  const lipRedirect = upperFaceRamp
-    * (1.1 + waveQuality * .9)
+  const lipRedirect = lipSupport
+    * (1.45 + lipSupport * 1.05)
     * (1 + speedAuthority * .8 + planing * .45);
   const tailCoupling = .72 + tailPressure * .38;
   const lengthResponse = Math.pow(2.5 / safeLength, .16);

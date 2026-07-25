@@ -23,6 +23,7 @@ import {
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
+  surfboardLipLaunchSupport,
   waveFacePositionAtPhase,
   waveHeightAt,
   waveSetStateAt,
@@ -1249,11 +1250,34 @@ if (
 ) {
   throw new Error("Prone separation no longer distinguishes stable contact from rail and nose failure");
 }
+const flatLipSupport = surfboardLipLaunchSupport({
+  facePosition: -.1,
+  faceSlope: .01,
+  surfaceRise: .04,
+  waveContact: .82,
+  planing: .9,
+  waterContact: 1,
+});
+const liveLipSupport = surfboardLipLaunchSupport({
+  facePosition: .54,
+  faceSlope: .18,
+  surfaceRise: 1.1,
+  waveContact: .9,
+  planing: .88,
+  waterContact: .94,
+});
+const disconnectedLipSupport = surfboardLipLaunchSupport({
+  facePosition: .7,
+  faceSlope: .24,
+  surfaceRise: 1.5,
+  waveContact: 1,
+  planing: 1,
+  waterContact: 0,
+});
 const flatReleaseImpulse = surfboardReleaseVerticalImpulse({
   compression: 1,
   tailPressure: .7,
-  facePosition: -.1,
-  waveQuality: .8,
+  lipSupport: flatLipSupport,
   speed: 12,
   planing: .9,
   waterContact: 1,
@@ -1262,17 +1286,29 @@ const flatReleaseImpulse = surfboardReleaseVerticalImpulse({
 const lipReleaseImpulse = surfboardReleaseVerticalImpulse({
   compression: .92,
   tailPressure: .62,
-  facePosition: .54,
-  waveQuality: .86,
+  lipSupport: liveLipSupport,
   speed: 12.4,
   planing: .88,
   waterContact: .94,
   boardLength: 2.1,
 });
+const longboardLipReleaseImpulse = surfboardReleaseVerticalImpulse({
+  compression: .92,
+  tailPressure: .62,
+  lipSupport: liveLipSupport,
+  speed: 12.4,
+  planing: .88,
+  waterContact: .94,
+  boardLength: 3.45,
+});
 if (
-  flatReleaseImpulse > 1.15
+  flatLipSupport !== 0
+  || liveLipSupport < .65
+  || disconnectedLipSupport !== 0
+  || flatReleaseImpulse > 1.15
   || lipReleaseImpulse < 3
   || lipReleaseImpulse <= flatReleaseImpulse * 3
+  || longboardLipReleaseImpulse >= lipReleaseImpulse
 ) {
   throw new Error("Tail release no longer distinguishes a live upper-face ramp from flat water");
 }
@@ -1760,8 +1796,12 @@ console.log(JSON.stringify({
     droppedAirborneHeight: droppedSurface.airborneHeight,
     landingImpact: peakLandingImpact,
     risingAcceleration: risingSurface.verticalAcceleration,
+    flatLipSupport,
+    liveLipSupport,
+    disconnectedLipSupport,
     flatReleaseImpulse,
     lipReleaseImpulse,
+    longboardLipReleaseImpulse,
     releaseAirborneHeight: peakReleaseHeight,
     releaseLandingImpact,
     performanceYawRelease,

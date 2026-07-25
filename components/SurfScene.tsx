@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardRailGrip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardRailGrip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -13712,6 +13712,14 @@ function Simulation({
           trickCharge.current = 0;
         }
         if (!finishing) rideMaxCombo.current = Math.max(rideMaxCombo.current, combo.current);
+        const lipLaunchSupport = surfboardLipLaunchSupport({
+          facePosition: physicalFacePosition,
+          faceSlope: faceDownhillSlope,
+          surfaceRise: rideSurfaceRise,
+          waveContact: rideInteraction.waveContact,
+          planing: boardPlaning,
+          waterContact: boardWaterContact,
+        });
         const wantsRelease = !attempt && actionReleased;
         if (!finishing && wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
           const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
@@ -13720,25 +13728,25 @@ function Simulation({
           let family: ManeuverAttempt["family"] = physicalFacePosition < -.42 ? "carve" : "trim";
           let base = physicalFacePosition < -.42 ? 185 : 150;
           let rotation = physicalFacePosition < -.42 ? .34 : .08;
-          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55 && physicalFacePosition > .08) {
+          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && rideInteraction.waveContact > .32 && boardPlaning > .35 && physicalFacePosition > .08) {
             name = "Nose Ride";
             base = settings.board === "longboard" ? 440 : 340;
-          } else if (charge > .82 && tailPressure > .34 && rail > .38 && waveQuality > .7 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
+          } else if (charge > .82 && tailPressure > .34 && rail > .38 && lipLaunchSupport > .64 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
             family = "air";
             name = charge > .95 && rail > .62 ? "Alley-Oop" : "Air Reverse";
             base = name === "Alley-Oop" ? 780 : 690;
             rotation = name === "Alley-Oop" ? Math.PI * 2 : Math.PI;
-          } else if (tailPressure > .56 && rail > .42 && waveQuality > .54 && physicalFacePosition > .2) {
+          } else if (tailPressure > .56 && rail > .42 && lipLaunchSupport > .42 && physicalFacePosition > .2) {
             family = "lip";
             name = charge > .68 ? "Layback Release" : "Tail Release";
             base = charge > .68 ? 470 : 390;
             rotation = .64 + charge * .34;
-          } else if (waveQuality > .72 && rail > .42 && physicalFacePosition > .3) {
+          } else if (lipLaunchSupport > .56 && rail > .42 && physicalFacePosition > .3) {
             family = "lip";
             name = "Lip Snap";
             base = 360;
             rotation = .58 + charge * .42;
-          } else if (waveQuality > 0.68 && physicalFacePosition > .46) {
+          } else if (lipLaunchSupport > .5 && physicalFacePosition > .46) {
             family = "lip";
             name = "Foam Floater";
             base = 305;
@@ -13758,8 +13766,7 @@ function Simulation({
             ? surfboardReleaseVerticalImpulse({
                 compression: charge,
                 tailPressure,
-                facePosition: physicalFacePosition,
-                waveQuality,
+                lipSupport: lipLaunchSupport,
                 speed,
                 planing: boardPlaning,
                 waterContact: boardWaterContact,
