@@ -12754,6 +12754,11 @@ function Simulation({
             && boardWaterContact > .34;
           if (captureNow) {
             rideEngaged.current = true;
+            rideDistance.current = 0;
+            pocketDistance.current = 0;
+            rideResult.current = "";
+            cleanFinish.current = false;
+            finishAt.current = -1;
             const capturedPhase = primaryWavePhaseAt(
               position.current.x,
               position.current.z,
@@ -13826,6 +13831,20 @@ function Simulation({
           rideEngaged.current = false;
           trickCharge.current = 0;
           barrelIntensity = 0;
+          if (rideDistance.current >= 8 && rideResult.current === "") {
+            rideScore.current = Math.max(
+              0,
+              Math.round(score.current - rideStartScore.current),
+            );
+            rideGrade.current = sessionGrade(
+              rideScore.current,
+              rideDistance.current,
+              maneuverCount.current - rideManeuverStart.current,
+            );
+            rideResult.current = "clean";
+            rideResultId.current += 1;
+            cleanFinish.current = true;
+          }
           prompt = speed > .65
             ? "Wave pressure released — the board is coasting on retained momentum"
             : "Wave pressure released — balance in place or return prone";
@@ -13902,21 +13921,15 @@ function Simulation({
         } else if (
           !qaScenario
           && !finishing
-          && (
-            position.current.z - tideShift > 11 + (character.length - 1) * 11
-            || rideCapture.current.ahead > .86
-            || rideDistance.current > (
-              62
-                + character.length * 18
-                + catchQuality.current * 55
-            )
-          )
+          && position.current.z - tideShift > SHORELINE_REFERENCE_Z - 1.2
         ) {
-          score.current += 750 + rideDistance.current * 11;
-          rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
-          rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
-          rideResult.current = "clean";
-          rideResultId.current += 1;
+          if (rideResult.current === "") {
+            score.current += 750 + rideDistance.current * 11;
+            rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
+            rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
+            rideResult.current = "clean";
+            rideResultId.current += 1;
+          }
           cleanFinish.current = true;
           finishAt.current = t;
         }
