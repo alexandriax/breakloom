@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11528,7 +11528,7 @@ function Simulation({
           paddleYawRate.current = 0;
           paddleStrokeCycle.current.phase = 0;
           paddleVelocity.current.copy(landVelocity.current).multiplyScalar(.55);
-          nextShorebreakAt.current = t + (settings.mode === "training" ? 3.2 : 2.55);
+          nextShorebreakAt.current = t + SURF_PHYSICS_TUNING.shorebreakLead;
           shorebreakResult.current = "";
           landVelocity.current.set(0, 0);
         }
@@ -11552,7 +11552,6 @@ function Simulation({
         paddleEffort = Math.max(0, move) * popUpPaddleAvailability;
         stamina.current = THREE.MathUtils.clamp(
           stamina.current + paddlingStaminaDelta(
-            settings.mode,
             paddleEffort,
             delta,
           ),
@@ -11661,7 +11660,9 @@ function Simulation({
         }
         duckDiveReady = duckDiveWindowOpen.current && !duckDiveActive;
         if (divePressed && duckDiveReady) {
-          const diveTimingWindow = settings.mode === "training" ? 1 : settings.mode === "advanced" ? .64 : mobileRenderer ? .88 : .78;
+          const diveTimingWindow = mobileRenderer
+            ? .88
+            : SURF_PHYSICS_TUNING.duckDiveTimingWindow;
           duckDiveQuality.current = THREE.MathUtils.clamp(1 - Math.abs(shorebreakSeconds - .3) / diveTimingWindow, 0, 1);
           duckDiveUntil.current = t + 1.12;
           duckDiveActive = true;
@@ -11670,7 +11671,7 @@ function Simulation({
         }
         if (!inLineup && t >= nextShorebreakAt.current) {
           if (!duckDiveActive) duckDiveQuality.current = 0;
-          const diveThreshold = settings.mode === "training" ? .24 : settings.mode === "advanced" ? .46 : .34;
+          const diveThreshold = SURF_PHYSICS_TUNING.duckDiveThreshold;
           const cleanDive = duckDiveActive && duckDiveQuality.current >= diveThreshold;
           shorebreakResult.current = cleanDive ? "clean" : "hit";
           duckDiveWindowOpen.current = false;
@@ -12000,7 +12001,6 @@ function Simulation({
           .38 + boardWaterContact * .62
         );
         const takeoffReading = evaluateWaveTakeoff({
-          mode: settings.mode,
           crestDistance,
           crestEnergy: setState.crestEnergy,
           crestSurfable: setState.crestSurfable,
@@ -12015,9 +12015,8 @@ function Simulation({
         waveSurfable = takeoffReading.surfable;
         takeoffAlignment = takeoffReading.headingQuality;
         const staminaQuality = .9 + stamina.current * .001;
-        const windQuality = 1 - onshoreChop * (
-          settings.mode === "training" ? .025 : settings.mode === "advanced" ? .09 : .055
-        );
+        const windQuality = 1
+          - onshoreChop * SURF_PHYSICS_TUNING.takeoffWindPenalty;
         const touchQuality = mobileRenderer ? .025 : 0;
         takeoffQuality = takeoffReading.surfable
           ? THREE.MathUtils.clamp(
@@ -12040,9 +12039,7 @@ function Simulation({
         if (catchWindowCandidate) {
           catchWindowOpen.current = true;
           catchWindowQuality.current = takeoffQuality;
-          catchGraceUntil.current = t + (
-            settings.mode === "training" ? .9 : settings.mode === "advanced" ? .5 : .7
-          );
+          catchGraceUntil.current = t + SURF_PHYSICS_TUNING.catchGrace;
         } else if (
           takeoffCommitting
           || t >= catchGraceUntil.current
@@ -12219,7 +12216,6 @@ function Simulation({
             1,
           );
           const caughtReading = evaluateWaveTakeoff({
-            mode: settings.mode,
             crestDistance: caughtCrestDistance,
             crestEnergy: setState.crestEnergy,
             crestSurfable: setState.crestSurfable,
@@ -12868,9 +12864,7 @@ function Simulation({
             0,
             unstableFor.current
               + delta * (
-                rollEdgeRisk * (
-                  settings.mode === "training" ? .52 : settings.mode === "advanced" ? 1.5 : .92
-                )
+                rollEdgeRisk * SURF_PHYSICS_TUNING.standingEdgeFailure
                   + rollCapsizeRisk * 2.4
                   + Math.max(0, Math.abs(physicalRollRate) - 1.15) * .16
                   + standingBrokenWater * .72
@@ -12944,9 +12938,13 @@ function Simulation({
                 standingBrokenWater > .78
                 || unstableFor.current > .22
               );
-            if (standingTumble || rollCapsizeRisk > .72 || pitchOverRisk > .84 || unstableFor.current > (
-              settings.mode === "training" ? .82 : settings.mode === "advanced" ? .38 : .56
-            )) {
+            if (
+              standingTumble
+              || rollCapsizeRisk > .72
+              || pitchOverRisk > .84
+              || unstableFor.current
+                > SURF_PHYSICS_TUNING.standingUnstableThreshold
+            ) {
               phase.current = "wipeout";
               rideEngaged.current = false;
               wipeoutAt.current = t;
@@ -13166,23 +13164,17 @@ function Simulation({
         speed = rideVelocity.current.length();
         stamina.current = Math.max(
           0,
-          stamina.current - delta * tubePressure * (
-            settings.mode === "training" ? .7 : settings.mode === "advanced" ? 1.7 : 1.2
-          ),
+          stamina.current
+            - delta * tubePressure * SURF_PHYSICS_TUNING.tubeFatigue,
         );
         if (whitewaterPressure > .12) {
-          const foamFatigueScale = settings.mode === "training"
-            ? .55
-            : settings.mode === "advanced"
-              ? 1.15
-              : 1;
           stamina.current = Math.max(
             0,
             stamina.current
               - delta
               * whitewaterPressure
               * (5.8 + setState.energy * 4.5)
-              * foamFatigueScale,
+              * SURF_PHYSICS_TUNING.foamFatigue,
           );
         }
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
@@ -13570,9 +13562,9 @@ function Simulation({
             lipOvertake * .7 + rideCapture.current.overtaken * .32,
           );
           if (rideCapture.current.overtaken > .42) {
-            unstableFor.current += delta * (
-              settings.mode === "training" ? .72 : settings.mode === "advanced" ? 1.42 : 1.08
-            ) * rideCapture.current.overtaken;
+            unstableFor.current += delta
+              * SURF_PHYSICS_TUNING.lipOvertakeFailure
+              * rideCapture.current.overtaken;
           }
         }
         const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
@@ -13585,7 +13577,7 @@ function Simulation({
         const loadAvailable = !finishing && !attempt && t - lastManeuverAt.current > .72 && stamina.current > 5 && railSlip.current < .8;
         if (loadAvailable && state.action) {
           if (actionPressed) trickCharge.current = Math.max(trickCharge.current, .08);
-          const loadRate = settings.mode === "training" ? 1.48 : settings.mode === "advanced" ? 1.08 : 1.24;
+          const loadRate = SURF_PHYSICS_TUNING.maneuverLoadRate;
           trickCharge.current = Math.min(1, trickCharge.current + delta * loadRate);
           stamina.current = Math.max(0, stamina.current - delta * (2.2 + trickCharge.current * 3.2));
           compression = Math.max(compression, .28 + trickCharge.current * .72);
@@ -13596,9 +13588,16 @@ function Simulation({
         if (attempt) {
           const attemptElapsed = t - attempt.startedAt;
           maneuverProgress = THREE.MathUtils.clamp(attemptElapsed / attempt.duration, 0, 1);
-          const modeWindow = settings.mode === "training" ? .68 : settings.mode === "advanced" ? .38 : .52;
           const familyWindow = attempt.family === "air" ? .82 : attempt.family === "lip" ? .92 : 1;
-          landingWindow = THREE.MathUtils.clamp((modeWindow * Math.sqrt(boardSpec.stability) + (mobileRenderer ? .08 : 0)) * familyWindow, .27, .82);
+          landingWindow = THREE.MathUtils.clamp(
+            (
+              SURF_PHYSICS_TUNING.maneuverBalanceWindow
+                * Math.sqrt(boardSpec.stability)
+                + (mobileRenderer ? .08 : 0)
+            ) * familyWindow,
+            .27,
+            .82,
+          );
           const arc = Math.pow(Math.sin(maneuverProgress * Math.PI), .82);
           const yawStep = Math.atan2(
             Math.sin(rideHeading.current - attempt.previousHeading),
@@ -13625,10 +13624,10 @@ function Simulation({
                 : "release";
         }
         const balanceError = Math.abs(balanceInput - balanceTarget);
-        const failThreshold = (settings.mode === "training" ? 1.42 : settings.mode === "advanced" ? .76 : 1) * Math.sqrt(boardSpec.stability);
-        const rollFailureLoad = rollEdgeRisk * (
-          settings.mode === "training" ? .46 : settings.mode === "advanced" ? 1.35 : .82
-        )
+        const failThreshold = SURF_PHYSICS_TUNING.balanceFailureThreshold
+          * Math.sqrt(boardSpec.stability);
+        const rollFailureLoad = rollEdgeRisk
+          * SURF_PHYSICS_TUNING.rollFailure
           + rollCapsizeRisk * 2.65
           + Math.max(0, Math.abs(physicalRollRate) - 1.35) * .14;
         unstableFor.current = Math.max(
@@ -13637,30 +13636,31 @@ function Simulation({
             rollFailureLoad - (rollEdgeRisk < .08 ? 1.8 : 0)
           ),
         );
-        unstableFor.current += whitewaterPressure * delta * (
-          settings.mode === "training" ? .16 : settings.mode === "advanced" ? .72 : .46
-        );
-        unstableFor.current += shoulderStall * delta * (
-          settings.mode === "training" ? .025 : settings.mode === "advanced" ? .12 : .075
-        );
-        unstableFor.current += tubePressure * Math.max(0, balanceError - failThreshold * .58) * delta * (
-          settings.mode === "training" ? .045 : settings.mode === "advanced" ? .18 : .11
-        );
+        unstableFor.current += whitewaterPressure
+          * delta
+          * SURF_PHYSICS_TUNING.whitewaterFailure;
+        unstableFor.current += shoulderStall
+          * delta
+          * SURF_PHYSICS_TUNING.shoulderFailure;
+        unstableFor.current += tubePressure
+          * Math.max(0, balanceError - failThreshold * .58)
+          * delta
+          * SURF_PHYSICS_TUNING.tubeFailure;
         const broadsideFailure = Math.max(0, crossWaveLoad - .24)
           * (1 + dynamics.sideslip * .72)
           * rideInteraction.waveContact;
-        unstableFor.current += broadsideFailure * delta * (
-          settings.mode === "training" ? .42 : settings.mode === "advanced" ? 1.35 : .86
-        );
-        unstableFor.current += pearlingRisk * delta * (
-          settings.mode === "training" ? 1.2 : settings.mode === "advanced" ? 3.5 : 2.3
-        );
-        unstableFor.current += pitchOverRisk * delta * (
-          settings.mode === "training" ? 1.35 : settings.mode === "advanced" ? 4.2 : 2.75
-        );
-        unstableFor.current += tailStall * delta * (
-          settings.mode === "training" ? .08 : settings.mode === "advanced" ? .34 : .2
-        );
+        unstableFor.current += broadsideFailure
+          * delta
+          * SURF_PHYSICS_TUNING.broadsideFailure;
+        unstableFor.current += pearlingRisk
+          * delta
+          * SURF_PHYSICS_TUNING.pearlingFailure;
+        unstableFor.current += pitchOverRisk
+          * delta
+          * SURF_PHYSICS_TUNING.pitchOverFailure;
+        unstableFor.current += tailStall
+          * delta
+          * SURF_PHYSICS_TUNING.tailStallFailure;
         const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
         const lineMatch = THREE.MathUtils.clamp(
           .64 + lineControl * .36 - whitewaterPressure * .12,
@@ -13751,7 +13751,7 @@ function Simulation({
         );
         if (attempt && maneuverResolved) {
           const landingError = Math.abs(balanceInput - landingTarget);
-          const recoveryAssist = settings.mode === "training" ? 1.35 : mobileRenderer ? 1.12 : 1;
+          const recoveryAssist = mobileRenderer ? 1.12 : 1;
           const reconnectLoad = attempt.family === "air"
             ? motion.current.landingImpact
             : 0;
@@ -13901,7 +13901,6 @@ function Simulation({
           const side = Math.sign(physicalRailInput)
             || (balanceInput >= 0 ? 1 : -1);
           const baseDuration = family === "air" ? 1.04 : name === "Nose Ride" ? .92 : name === "Foam Floater" ? .8 : family === "carve" ? .78 : .7;
-          const timingScale = settings.mode === "training" ? 1.12 : settings.mode === "advanced" ? .94 : 1;
           activeManeuver.current = {
             name,
             family,
@@ -13912,7 +13911,11 @@ function Simulation({
             launchYawRate: releaseYawRate,
             rotation,
             startedAt: t,
-            duration: (baseDuration + charge * .12) * timingScale + (mobileRenderer ? .08 : 0),
+            duration: (
+              baseDuration + charge * .12
+            ) * SURF_PHYSICS_TUNING.maneuverTiming + (
+              mobileRenderer ? .08 : 0
+            ),
             becameAirborne: false,
             peakAirborne: 0,
             previousHeading: rideHeading.current,
@@ -14017,9 +14020,8 @@ function Simulation({
           && (
             rollCapsizeRisk > .9
             || pitchOverRisk > .9
-            || unstableFor.current > (
-              settings.mode === "training" ? 2.35 : settings.mode === "advanced" ? .86 : 1.42
-            )
+              || unstableFor.current
+                > SURF_PHYSICS_TUNING.wipeoutInstability
           )
         ) {
           phase.current = "wipeout";
@@ -14044,10 +14046,13 @@ function Simulation({
             0,
             1,
           );
-          const modeHoldScale = settings.mode === "training" ? .72 : settings.mode === "advanced" ? 1.12 : .94;
           wipeoutPower.current = waveEnergy;
           wipeoutDuration.current = THREE.MathUtils.clamp(
-            THREE.MathUtils.lerp(1.55, 4.18, Math.pow(waveEnergy, .84)) * modeHoldScale,
+            THREE.MathUtils.lerp(
+              1.55,
+              4.18,
+              Math.pow(waveEnergy, .84),
+            ) * SURF_PHYSICS_TUNING.wipeoutHold,
             1.35,
             4.65,
           );
@@ -14416,7 +14421,7 @@ function Simulation({
           );
           unstableFor.current += landingImpact
             * landingAttitude
-            * (settings.mode === "training" ? .22 : settings.mode === "advanced" ? .72 : .44);
+            * SURF_PHYSICS_TUNING.landingImpactFailure;
         }
       } else {
         const targetWaterElevation = waterY + .04;

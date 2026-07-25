@@ -14,21 +14,57 @@ const WAVE_ENERGY_SEQUENCE = [
 ] as const;
 const SURFABLE_CREST_ENERGY = .28;
 
+/**
+ * One physical calibration shared by every mode. Training changes what the
+ * player can see and learn, not how the same board, body, and water respond.
+ */
+export const SURF_PHYSICS_TUNING = {
+  paddleRecovery: 1.55,
+  paddleStrokeDrain: .19,
+  takeoffOpportunityThreshold: .13,
+  takeoffHeadingMinimum: -.1,
+  shorebreakLead: 2.55,
+  duckDiveTimingWindow: .78,
+  duckDiveThreshold: .34,
+  takeoffWindPenalty: .055,
+  catchGrace: .7,
+  standingEdgeFailure: .92,
+  standingUnstableThreshold: .56,
+  tubeFatigue: 1.2,
+  foamFatigue: 1,
+  lipOvertakeFailure: 1.08,
+  maneuverLoadRate: 1.24,
+  maneuverBalanceWindow: .52,
+  balanceFailureThreshold: 1,
+  rollFailure: .82,
+  whitewaterFailure: .46,
+  shoulderFailure: .075,
+  tubeFailure: .11,
+  broadsideFailure: .86,
+  pearlingFailure: 2.3,
+  pitchOverFailure: 2.75,
+  tailStallFailure: .2,
+  maneuverTiming: 1,
+  wipeoutInstability: 1.42,
+  wipeoutHold: .94,
+  landingImpactFailure: .44,
+} as const;
+
 export function paddlingStaminaDelta(
-  mode: GameMode,
   effort: number,
   deltaSeconds: number,
 ) {
   const safeDelta = Math.max(0, Math.min(.25, deltaSeconds));
   const normalizedEffort = Math.max(0, Math.min(1, Math.abs(effort)));
   if (normalizedEffort <= .08) {
-    return safeDelta * (mode === "training" ? 1.8 : mode === "advanced" ? 1.35 : 1.55);
+    return safeDelta * SURF_PHYSICS_TUNING.paddleRecovery;
   }
   // A surfer can sustain a long, steady paddle for several minutes. Stamina is
   // reserved for explosive takeoff strokes, duck dives, and maneuvers instead
   // of functioning like a short sprint meter.
-  const fullStrokeDrain = mode === "training" ? .16 : mode === "advanced" ? .23 : .19;
-  return -safeDelta * fullStrokeDrain * (.38 + normalizedEffort * .62);
+  return -safeDelta
+    * SURF_PHYSICS_TUNING.paddleStrokeDrain
+    * (.38 + normalizedEffort * .62);
 }
 
 export function rideRailInputFromPaddleSteer(paddleSteer: number) {
@@ -402,7 +438,6 @@ export type SessionSettings = {
 };
 
 export type WaveTakeoffSample = {
-  mode: GameMode;
   crestDistance: number;
   crestEnergy: number;
   crestSurfable: boolean;
@@ -3122,16 +3157,8 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
           + physicalLift * .1,
       ))
     : 0;
-  const threshold = sample.mode === "training"
-    ? .1
-    : sample.mode === "advanced"
-      ? .17
-      : .13;
-  const headingMinimum = sample.mode === "training"
-    ? -.2
-    : sample.mode === "advanced"
-      ? 0
-      : -.1;
+  const threshold = SURF_PHYSICS_TUNING.takeoffOpportunityThreshold;
+  const headingMinimum = SURF_PHYSICS_TUNING.takeoffHeadingMinimum;
   return {
     catchable: surfable
       && faceEnvelope > .045

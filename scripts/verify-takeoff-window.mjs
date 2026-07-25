@@ -134,23 +134,22 @@ const x = 0;
 const z = -34;
 const lookback = .16;
 
-function staminaAfter(mode, seconds, effort) {
+function staminaAfter(seconds, effort) {
   let stamina = 100;
   const step = 1 / 60;
   for (let elapsed = 0; elapsed < seconds; elapsed += step) {
     stamina = Math.max(
       0,
-      Math.min(100, stamina + paddlingStaminaDelta(mode, effort, step)),
+      Math.min(100, stamina + paddlingStaminaDelta(effort, step)),
     );
   }
   return stamina;
 }
 
-const trainingPaddleReserve = staminaAfter("training", 300, 1);
-const advancedPaddleReserve = staminaAfter("advanced", 300, 1);
-if (trainingPaddleReserve < 48 || advancedPaddleReserve < 28) {
+const fiveMinutePaddleReserve = staminaAfter(300, 1);
+if (fiveMinutePaddleReserve < 40) {
   throw new Error(
-    `Five-minute paddle-out leaves too little reserve: training ${trainingPaddleReserve.toFixed(1)}, advanced ${advancedPaddleReserve.toFixed(1)}`,
+    `Five-minute paddle-out leaves too little reserve: ${fiveMinutePaddleReserve.toFixed(1)}`,
   );
 }
 if (rideRailInputFromPaddleSteer(1) !== -1 || rideRailInputFromPaddleSteer(-1) !== 1) {
@@ -204,7 +203,6 @@ function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
   ) / lookback;
   const waveNumber = Math.PI * 2 / transport.wavelength;
   return evaluateWaveTakeoff({
-    mode,
     crestDistance: state.crestPhaseError / waveNumber,
     crestEnergy: state.crestEnergy,
     crestSurfable: state.crestSurfable,
@@ -288,12 +286,25 @@ const insideReform = verifyWindows(
   1.6,
 );
 
+if (
+  idealTraining.count !== idealAdvanced.count
+  || marginalTraining.count !== marginalAdvanced.count
+  || Math.abs(
+    idealTraining.averageQuality - idealAdvanced.averageQuality
+  ) > .000001
+  || Math.abs(
+    marginalTraining.averageQuality
+      - marginalAdvanced.averageQuality
+  ) > .000001
+) {
+  throw new Error("Tutorial mode changed physical takeoff opportunities");
+}
+
 if (idealTraining.averageQuality - marginalTraining.averageQuality < .2) {
   throw new Error("Position and paddle quality no longer have a meaningful ride-quality cost");
 }
 
 const sharedSample = {
-  mode: "training",
   crestEnergy: .42,
   crestSurfable: true,
   faceSlope: .08,
@@ -1909,8 +1920,7 @@ console.log(JSON.stringify({
   alignedPopUpStart,
   independentPopUpSeconds: independentPopUp.duration,
   endurance: {
-    trainingPaddleReserve,
-    advancedPaddleReserve,
+    fiveMinutePaddleReserve,
   },
   captureLoss: {
     overtaken: overtakenCapture.overtaken,
