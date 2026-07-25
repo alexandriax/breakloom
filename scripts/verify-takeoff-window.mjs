@@ -74,6 +74,7 @@ import {
   waveCrestPropertiesAtPhase,
   waveFacePositionAtPhase,
   waveHeightAt,
+  waveBreakingGeometryAt,
   waveBreakingCoordinateAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
@@ -188,6 +189,55 @@ const peelingBreakCoordinate = waveBreakingCoordinateAt(
   settings,
   character,
 );
+const peelingBreakGeometry = waveBreakingGeometryAt(
+  80,
+  -18,
+  12,
+  settings,
+  character,
+);
+const outsideProbeDistance = 5;
+const outsideProbeCoordinate = waveBreakingCoordinateAt(
+  80
+    + peelingBreakGeometry.outsideDirectionX
+      * outsideProbeDistance,
+  -18
+    + peelingBreakGeometry.outsideDirectionZ
+      * outsideProbeDistance,
+  12,
+  settings,
+  character,
+);
+const breakNormalMagnitude = Math.hypot(
+  peelingBreakGeometry.outsideDirectionX,
+  peelingBreakGeometry.outsideDirectionZ,
+);
+const geometricCurrentTarget = resolvePaddleHeadingTarget({
+  boardHeading: Math.PI,
+  desiredDirectionX:
+    peelingBreakGeometry.outsideDirectionX,
+  desiredDirectionZ:
+    peelingBreakGeometry.outsideDirectionZ,
+  desiredGroundSpeed: 2.35,
+  currentVelocityX: .45,
+  currentVelocityZ: .08,
+});
+const geometricGroundVelocityX =
+  geometricCurrentTarget.targetDirectionX * 2.35
+    + .45;
+const geometricGroundVelocityZ =
+  geometricCurrentTarget.targetDirectionZ * 2.35
+    + .08;
+const geometricGroundMagnitude = Math.hypot(
+  geometricGroundVelocityX,
+  geometricGroundVelocityZ,
+);
+const geometricGroundAlignment = (
+  geometricGroundVelocityX
+    * peelingBreakGeometry.outsideDirectionX
+  + geometricGroundVelocityZ
+    * peelingBreakGeometry.outsideDirectionZ
+) / geometricGroundMagnitude;
 const enteredLineup = resolveLineupFromBreakingGeometry(
   -20.1,
   false,
@@ -206,6 +256,10 @@ const prematureLineup = resolveLineupFromBreakingGeometry(
 );
 if (
   Math.abs(peelingBreakCoordinate - centerBreakCoordinate) < 1.5
+  || Math.abs(breakNormalMagnitude - 1) > .000001
+  || outsideProbeCoordinate
+    >= peelingBreakGeometry.breakingCoordinate - 4.8
+  || geometricGroundAlignment < .995
   || !enteredLineup.outsideBreak
   || !heldLineup.outsideBreak
   || exitedLineup.outsideBreak
@@ -4464,6 +4518,9 @@ console.log(JSON.stringify({
   breakGeometry: {
     centerBreakCoordinate,
     peelingBreakCoordinate,
+    peelingBreakGeometry,
+    outsideProbeCoordinate,
+    geometricGroundAlignment,
     enteredLineup,
     heldLineup,
     exitedLineup,

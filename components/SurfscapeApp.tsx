@@ -3105,13 +3105,16 @@ export default function SurfscapeApp() {
       : "CENTERED";
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
-  const desiredPaddleHeading = stats.inLineup
-    ? stats.paddleHeading + stats.boardWaveAngle
-    : Math.PI;
-  const desiredPaddleDirectionX =
-    Math.sin(desiredPaddleHeading);
-  const desiredPaddleDirectionZ =
-    Math.cos(desiredPaddleHeading);
+  const desiredPaddleDirectionX = stats.inLineup
+    ? Math.sin(
+        stats.paddleHeading + stats.boardWaveAngle,
+      )
+    : stats.lineupDirectionX;
+  const desiredPaddleDirectionZ = stats.inLineup
+    ? Math.cos(
+        stats.paddleHeading + stats.boardWaveAngle,
+      )
+    : stats.lineupDirectionZ;
   const paddleCurrentAngle = (
     settings.currentDirection
       - settings.coastHeading
@@ -3137,7 +3140,7 @@ export default function SurfscapeApp() {
       paddleHeadingTarget.currentCompensationDegrees,
     ),
   );
-  const paddleTargetKind = stats.inLineup ? "WAVE" : "OFFSHORE";
+  const paddleTargetKind = stats.inLineup ? "WAVE" : "BREAK EXIT";
   const paddleTraining = readPaddleTrainingMechanics({
     boardWaveAngle: paddleHeadingTarget.headingError,
     paddleStroke: stats.paddleStroke,
@@ -3193,8 +3196,8 @@ export default function SurfscapeApp() {
       : "";
   const paddleAimCue = !stats.inLineup
     ? paddleTraining.turnDirection === "hold"
-      ? `NOSE AIMED OFFSHORE${currentCompensationCue}`
-      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° OFFSHORE${currentCompensationCue}`
+      ? `NOSE AIMED OUTSIDE BREAK${currentCompensationCue}`
+      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° TO EXIT BREAK${currentCompensationCue}`
     : paddleTraining.turnDirection === "hold"
       ? `NOSE ALIGNED${currentCompensationCue}`
       : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}°${currentCompensationCue}`;
@@ -3300,16 +3303,16 @@ export default function SurfscapeApp() {
           : !stats.inLineup
             ? paddleTraining.turnDirection === "hold"
               ? {
-                  cue: "NOSE OFFSHORE · PADDLE",
+                  cue: "NOSE TO BREAK EXIT · PADDLE",
                   detail: trainingStep === 1
-                    ? `Hold W for alternating pulls · left ${paddleLeftWorkPercent}% / right ${paddleRightWorkPercent}% real water work. The arrow already crabs against measured current.`
-                    : "Hold W for alternating pulls. The offshore arrow already crabs against measured current; release W to coast on retained momentum.",
+                    ? `Hold W for alternating pulls · left ${paddleLeftWorkPercent}% / right ${paddleRightWorkPercent}% real water work. The break-exit arrow follows the local polygon contour and crabs against current.`
+                    : "Hold W for alternating pulls. The break-exit arrow follows the local polygon contour and crabs against measured current; release W to coast.",
                   rotation: -90,
                   tone: "paddle",
                 }
               : {
                   cue: `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° TO PADDLE OUT`,
-                  detail: `A/D biases the ${paddleTraining.recommendedHand?.toUpperCase()} pull, whose off-center force rotates the nose toward the current-compensated offshore arrow.`,
+                  detail: `A/D biases the ${paddleTraining.recommendedHand?.toUpperCase()} pull, whose off-center force rotates the nose toward the current-compensated polygon break exit.`,
                   rotation: paddleTraining.turnDirection === "right" ? 0 : 180,
                   tone: "align",
                 }

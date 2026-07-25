@@ -5412,6 +5412,8 @@ export type GameStats = {
   vehicleOffRoad: number;
   nearVan: boolean;
   inLineup: boolean;
+  lineupDirectionX: number;
+  lineupDirectionZ: number;
   catchReady: boolean;
   shorebreakIntensity: number;
   shorebreakSeconds: number;
@@ -5542,6 +5544,8 @@ export const INITIAL_STATS: GameStats = {
   vehicleOffRoad: 0,
   nearVan: false,
   inLineup: false,
+  lineupDirectionX: 0,
+  lineupDirectionZ: -1,
   catchReady: false,
   shorebreakIntensity: 0,
   shorebreakSeconds: 0,
@@ -5704,7 +5708,7 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
   };
 }
 
-function breakingCoordinateWithTide(
+function breakingGeometryWithTide(
   x: number,
   z: number,
   elapsed: number,
@@ -5719,18 +5723,39 @@ function breakingCoordinateWithTide(
   const section = Math.sin(x * .07 + elapsed * .05)
     * variability
     * 2.3;
-  return coastalZ
+  const breakingCoordinate = coastalZ
     + x * peel * .16
     + section
     - tideResponse.breakShift;
+  const crossShoreGradientX = peel * .16
+    + Math.cos(x * .07 + elapsed * .05)
+      * .07
+      * variability
+      * 2.3;
+  const gradientMagnitude = Math.hypot(
+    crossShoreGradientX,
+    1,
+  );
+  return {
+    breakingCoordinate,
+    outsideDirectionX:
+      -crossShoreGradientX / gradientMagnitude,
+    outsideDirectionZ: -1 / gradientMagnitude,
+  };
 }
 
+export type WaveBreakingGeometryReading = {
+  breakingCoordinate: number;
+  outsideDirectionX: number;
+  outsideDirectionZ: number;
+};
+
 /**
- * Returns the same animated cross-shore coordinate used to shoal and bend the
- * rendered polygon waves. Gameplay can therefore locate the outside break
- * without relying on a fixed world-space z threshold.
+ * Returns the animated cross-shore coordinate used to shoal and bend the
+ * polygon waves plus its local outward normal. Gameplay can locate and point
+ * through the real break contour instead of relying on a fixed world-space z.
  */
-export function waveBreakingCoordinateAt(
+export function waveBreakingGeometryAt(
   x: number,
   z: number,
   elapsed: number,
@@ -5742,7 +5767,7 @@ export function waveBreakingCoordinateAt(
     settings.tide,
     safeCharacter,
   );
-  return breakingCoordinateWithTide(
+  return breakingGeometryWithTide(
     x,
     z,
     elapsed,
@@ -5750,6 +5775,22 @@ export function waveBreakingCoordinateAt(
     safeCharacter,
     tideResponse,
   );
+}
+
+export function waveBreakingCoordinateAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+) {
+  return waveBreakingGeometryAt(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  ).breakingCoordinate;
 }
 
 export type LineupGeometryReading = {
@@ -5793,14 +5834,14 @@ export function waveHeightAt(
   const period = Math.max(4, settings.wavePeriod);
   const speed = (Math.PI * 2) / period;
   const coastalZ = z - shorelineShiftForTide(settings.tide);
-  const breakZ = breakingCoordinateWithTide(
+  const breakZ = breakingGeometryWithTide(
     x,
     z,
     elapsed,
     settings,
     character ?? DEFAULT_TIDE_BREAK,
     tideResponse,
-  );
+  ).breakingCoordinate;
   const shoreBoost = .72 + smoothstep(-85, 8, breakZ) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const setEnergy = waveEnergyForPhase(p1);
@@ -6005,14 +6046,14 @@ export function primaryWavePhaseAt(
   const peel = character?.peel ?? 0;
   const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const breakZ = breakingCoordinateWithTide(
+  const breakZ = breakingGeometryWithTide(
     x,
     z,
     elapsed,
     settings,
     character ?? DEFAULT_TIDE_BREAK,
     tideResponse,
-  );
+  ).breakingCoordinate;
   const shoaling = smoothstep(-108, 9, breakZ);
   const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
@@ -6037,14 +6078,14 @@ export function primaryWaveVelocityAt(
   const peel = character?.peel ?? 0;
   const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const breakZ = breakingCoordinateWithTide(
+  const breakZ = breakingGeometryWithTide(
     x,
     z,
     elapsed,
     settings,
     character ?? DEFAULT_TIDE_BREAK,
     tideResponse,
-  );
+  ).breakingCoordinate;
   const shoaling = smoothstep(-108, 9, breakZ);
   const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
