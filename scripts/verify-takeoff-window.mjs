@@ -1931,31 +1931,62 @@ if (
 ) {
   throw new Error("Tail release no longer distinguishes a live upper-face ramp from flat water");
 }
-let launchedBoard = {
-  ...staticHeave,
-  verticalVelocity: staticHeave.verticalVelocity + lipReleaseImpulse,
-};
-let peakReleaseHeight = 0;
-let releaseLandingImpact = 0;
-let releaseLostContact = false;
-for (let frame = 0; frame < 180; frame += 1) {
-  launchedBoard = advanceBoardHeaveDynamics(launchedBoard, {
-    ...heaveSample,
-    planing: .84,
-    speed: 11.8,
-    waveContact: .82,
-  });
-  peakReleaseHeight = Math.max(peakReleaseHeight, launchedBoard.airborneHeight);
-  releaseLandingImpact = Math.max(releaseLandingImpact, launchedBoard.landingImpact);
-  if (launchedBoard.waterContact < .2) releaseLostContact = true;
+function simulateLipReleaseHeave(hz) {
+  let board = {
+    ...staticHeave,
+    verticalVelocity: staticHeave.verticalVelocity + lipReleaseImpulse,
+  };
+  let peakHeight = 0;
+  let landingImpact = 0;
+  let lostContact = false;
+  let reconnectionSeconds = null;
+  for (let frame = 0; frame < hz * 3; frame += 1) {
+    board = advanceBoardHeaveDynamics(board, {
+      ...heaveSample,
+      deltaSeconds: 1 / hz,
+      planing: .84,
+      speed: 11.8,
+      waveContact: .82,
+    });
+    peakHeight = Math.max(peakHeight, board.airborneHeight);
+    landingImpact = Math.max(landingImpact, board.landingImpact);
+    if (board.waterContact < .2) lostContact = true;
+    if (
+      lostContact
+      && reconnectionSeconds === null
+      && board.waterContact > .62
+    ) {
+      reconnectionSeconds = (frame + 1) / hz;
+    }
+  }
+  return {
+    board,
+    peakHeight,
+    landingImpact,
+    lostContact,
+    reconnectionSeconds,
+  };
 }
+const release60 = simulateLipReleaseHeave(60);
+const release120 = simulateLipReleaseHeave(120);
+const launchedBoard = release60.board;
+const peakReleaseHeight = release60.peakHeight;
+const releaseLandingImpact = release60.landingImpact;
+const releaseLostContact = release60.lostContact;
 if (
   !releaseLostContact
   || peakReleaseHeight < .32
   || releaseLandingImpact < .06
   || launchedBoard.waterContact < .82
+  || release60.reconnectionSeconds === null
+  || release120.reconnectionSeconds === null
+  || Math.abs(release60.peakHeight - release120.peakHeight) > .02
+  || Math.abs(
+    release60.reconnectionSeconds - release120.reconnectionSeconds,
+  ) > .02
+  || release120.board.waterContact < .82
 ) {
-  throw new Error("A lip release did not produce ballistic flight and a physical reconnection");
+  throw new Error("A lip release no longer produces frame-rate-stable ballistic flight and reconnection");
 }
 const performanceYawRelease = surfboardReleaseYawImpulse({
   railInput: .68,
@@ -2009,31 +2040,42 @@ if (
 ) {
   throw new Error("Tail-release yaw impulse no longer respects contact and board inertia");
 }
-let airborneSpin = {
-  velocityX: 0,
-  velocityZ: 11.8,
-  heading: 0,
-  yawRate: performanceYawRelease,
-};
-let accumulatedAirYaw = 0;
-for (let frame = 0; frame < 52; frame += 1) {
-  const priorHeading = airborneSpin.heading;
-  airborneSpin = advanceSurfboardDynamics(airborneSpin, {
-    ...dynamicsSample,
-    waveContact: 0,
-    waterContact: 0,
-    railInput: 0,
-  });
-  accumulatedAirYaw += Math.atan2(
-    Math.sin(airborneSpin.heading - priorHeading),
-    Math.cos(airborneSpin.heading - priorHeading),
-  );
+function simulateAirYaw(hz, seconds = 52 / 60) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 11.8,
+    heading: 0,
+    yawRate: performanceYawRelease,
+  };
+  let accumulatedYaw = 0;
+  const frames = Math.round(seconds * hz);
+  for (let frame = 0; frame < frames; frame += 1) {
+    const priorHeading = state.heading;
+    state = advanceSurfboardDynamics(state, {
+      ...dynamicsSample,
+      deltaSeconds: 1 / hz,
+      waveContact: 0,
+      waterContact: 0,
+      railInput: 0,
+    });
+    accumulatedYaw += Math.atan2(
+      Math.sin(state.heading - priorHeading),
+      Math.cos(state.heading - priorHeading),
+    );
+  }
+  return { state, accumulatedYaw };
 }
+const airYaw60 = simulateAirYaw(60);
+const airYaw120 = simulateAirYaw(120);
+const airborneSpin = airYaw60.state;
+const accumulatedAirYaw = airYaw60.accumulatedYaw;
 if (
   accumulatedAirYaw < Math.PI * .72
   || airborneSpin.yawRate < performanceYawRelease * .45
+  || Math.abs(airYaw60.accumulatedYaw - airYaw120.accumulatedYaw) > .012
+  || Math.abs(airYaw60.state.yawRate - airYaw120.state.yawRate) > .012
 ) {
-  throw new Error("Airborne board yaw no longer conserves release angular momentum");
+  throw new Error("Airborne board yaw no longer conserves frame-rate-stable release angular momentum");
 }
 
 const paddlingSample = {
@@ -2555,9 +2597,13 @@ console.log(JSON.stringify({
     longboardLipReleaseImpulse,
     releaseAirborneHeight: peakReleaseHeight,
     releaseLandingImpact,
+    releasePeakHeight120Hz: release120.peakHeight,
+    releaseReconnect60Hz: release60.reconnectionSeconds,
+    releaseReconnect120Hz: release120.reconnectionSeconds,
     performanceYawRelease,
     longboardYawRelease,
     accumulatedAirYaw,
+    accumulatedAirYaw120Hz: airYaw120.accumulatedYaw,
     proneBroadsideRoll: broadsideProne.roll.rollAngle,
     proneBroadsideCapsize: broadsideProne.roll.capsizeRisk,
     proneCounterweightedRoll: counterweightedProne.roll.rollAngle,

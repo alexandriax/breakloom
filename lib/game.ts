@@ -1395,7 +1395,8 @@ export function advanceBoardHeaveDynamics(
     -8.5,
     8.5,
   );
-  const elevation = state.elevation + verticalVelocity * delta;
+  const elevation = state.elevation
+    + (state.verticalVelocity + verticalVelocity) * .5 * delta;
   const immersion = waterline - elevation;
   const waterContact = smoothstep(-.045, .105, immersion);
   const airborneHeight = Math.max(0, elevation - waterline);
