@@ -172,6 +172,101 @@ export function advanceSurfboardStance(
   return current * Math.exp(-1.05 * delta);
 }
 
+export type SurferCounterweightState = {
+  counterweight: number;
+  velocity: number;
+};
+
+export type SurferCounterweightSample = {
+  deltaSeconds: number;
+  intent: number;
+  support: number;
+  stamina: number;
+  centerOfMassHeight: number;
+  bodyCompression: number;
+  boardRollAngle: number;
+  boardRollRate: number;
+};
+
+export type SurferCounterweightReading = SurferCounterweightState & {
+  trackingError: number;
+  swayAcceleration: number;
+};
+
+/**
+ * Integrates the surfer's lateral center of mass relative to the stringer.
+ * Controls request a weight shift, but the body takes time to move and lags a
+ * rolling board. Low support during prone transitions, fatigue, and a tall
+ * stance slow the correction; compression lowers the center of mass. This
+ * state is intentionally independent of ride classification and score.
+ */
+export function advanceSurferCounterweightDynamics(
+  state: SurferCounterweightState,
+  sample: SurferCounterweightSample,
+): SurferCounterweightReading {
+  const delta = clampValue(sample.deltaSeconds, 0, .05);
+  const intent = clampValue(sample.intent, -1, 1);
+  const support = clampValue(sample.support, .2, 1);
+  const stamina = clampValue(sample.stamina, 0, 100) / 100;
+  const centerOfMassHeight = clampValue(
+    sample.centerOfMassHeight,
+    0,
+    1,
+  );
+  const compression = clampValue(sample.bodyCompression, 0, 1);
+  const rollAngle = clampValue(sample.boardRollAngle, -1.3, 1.3);
+  const rollRate = clampValue(sample.boardRollRate, -4.8, 4.8);
+  const response = (
+    3.45
+      + support * 2.35
+      + compression * 1.05
+  ) * (.66 + stamina * .34);
+  const dampingRatio = .82 + compression * .12;
+  const heightCoupling = (
+    1.08 + centerOfMassHeight * 1.62
+  ) * (1 - compression * .42);
+  const swayAcceleration = -(
+    Math.sin(rollAngle) * heightCoupling
+      + rollRate * (.72 + centerOfMassHeight * .68)
+  );
+  let counterweight = clampValue(state.counterweight, -1, 1);
+  let velocity = clampValue(state.velocity, -5.2, 5.2);
+  let remaining = delta;
+
+  // Fixed internal steps keep the body response equivalent across browser
+  // frame rates while preserving momentum through phase transitions.
+  while (remaining > 1e-6) {
+    const step = Math.min(1 / 240, remaining);
+    const acceleration = clampValue(
+      (intent - counterweight) * response * response
+        - velocity * response * 2 * dampingRatio
+        + swayAcceleration,
+      -24,
+      24,
+    );
+    velocity = clampValue(velocity + acceleration * step, -5.2, 5.2);
+    counterweight = clampValue(
+      counterweight + velocity * step,
+      -1,
+      1,
+    );
+    if (
+      (counterweight <= -1 && velocity < 0)
+      || (counterweight >= 1 && velocity > 0)
+    ) {
+      velocity = 0;
+    }
+    remaining -= step;
+  }
+
+  return {
+    counterweight,
+    velocity,
+    trackingError: intent - counterweight,
+    swayAcceleration,
+  };
+}
+
 export type SurferCompressionState = {
   compression: number;
   velocity: number;
@@ -4097,6 +4192,7 @@ export type GameStats = {
   wavePressureDrive: number;
   wavePressureSideLoad: number;
   balance: number;
+  balanceIntent: number;
   balanceTarget: number;
   waveEngaged: boolean;
   waveEngagement: number;
@@ -4222,6 +4318,7 @@ export const INITIAL_STATS: GameStats = {
   wavePressureDrive: 0,
   wavePressureSideLoad: 0,
   balance: 0,
+  balanceIntent: 0,
   balanceTarget: 0,
   waveEngaged: false,
   waveEngagement: 0,

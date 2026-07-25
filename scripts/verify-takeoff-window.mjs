@@ -7,6 +7,7 @@ import {
   advanceProneBoardAttitude,
   advanceReturnProneTransition,
   advanceSurferCompression,
+  advanceSurferCounterweightDynamics,
   advanceSurfboardDynamics,
   advanceSurfboardInstability,
   advanceSurfboardRailSlip,
@@ -3061,6 +3062,146 @@ if (
 ) {
   throw new Error("Surfer compression no longer behaves consistently across frame rate, water load, and engagement classification");
 }
+function counterweightAfter({
+  hz,
+  seconds,
+  intent,
+  support = 1,
+  stamina = 100,
+  centerOfMassHeight = 1,
+  bodyCompression = 0,
+  boardRollAngle = 0,
+  boardRollRate = 0,
+}) {
+  let state = { counterweight: 0, velocity: 0 };
+  const frames = Math.round(seconds * hz);
+  for (let frame = 0; frame < frames; frame += 1) {
+    state = advanceSurferCounterweightDynamics(state, {
+      deltaSeconds: 1 / hz,
+      intent,
+      support,
+      stamina,
+      centerOfMassHeight,
+      bodyCompression,
+      boardRollAngle,
+      boardRollRate,
+    });
+  }
+  return state;
+}
+const standingCounterweight60 = counterweightAfter({
+  hz: 60,
+  seconds: 1,
+  intent: .8,
+});
+const standingCounterweight120 = counterweightAfter({
+  hz: 120,
+  seconds: 1,
+  intent: .8,
+});
+const fatiguedCounterweight = counterweightAfter({
+  hz: 60,
+  seconds: .35,
+  intent: .8,
+  stamina: 5,
+});
+const freshCounterweight = counterweightAfter({
+  hz: 60,
+  seconds: .35,
+  intent: .8,
+});
+const rolledCounterweight = counterweightAfter({
+  hz: 60,
+  seconds: .6,
+  intent: 0,
+  boardRollAngle: .3,
+  boardRollRate: .5,
+});
+const mirroredRolledCounterweight = counterweightAfter({
+  hz: 60,
+  seconds: .6,
+  intent: 0,
+  boardRollAngle: -.3,
+  boardRollRate: -.5,
+});
+const compressedRolledCounterweight = counterweightAfter({
+  hz: 60,
+  seconds: .6,
+  intent: 0,
+  bodyCompression: .8,
+  boardRollAngle: .3,
+  boardRollRate: .5,
+});
+if (
+  standingCounterweight60.counterweight < .76
+  || standingCounterweight60.counterweight > .84
+  || Math.abs(
+    standingCounterweight60.counterweight
+      - standingCounterweight120.counterweight
+  ) > .001
+  || fatiguedCounterweight.counterweight
+    >= freshCounterweight.counterweight - .12
+  || rolledCounterweight.counterweight >= -.03
+  || Math.abs(
+    rolledCounterweight.counterweight
+      + mirroredRolledCounterweight.counterweight
+  ) > .001
+  || Math.abs(compressedRolledCounterweight.counterweight)
+    >= Math.abs(rolledCounterweight.counterweight) * .8
+) {
+  throw new Error("Surfer counterweight no longer has frame-stable body lag, fatigue, mirrored sway, and compression response");
+}
+function coupledStillWaterBalance(hz, followsTarget) {
+  let roll = { rollAngle: .12, rollRate: 0 };
+  let body = { counterweight: 0, velocity: 0 };
+  let balanceTarget = 0;
+  let maximumRoll = Math.abs(roll.rollAngle);
+  for (let frame = 0; frame < hz * 3; frame += 1) {
+    body = advanceSurferCounterweightDynamics(body, {
+      deltaSeconds: 1 / hz,
+      intent: followsTarget ? balanceTarget : 0,
+      support: 1,
+      stamina: 100,
+      centerOfMassHeight: 1,
+      bodyCompression: 0,
+      boardRollAngle: roll.rollAngle,
+      boardRollRate: roll.rollRate,
+    });
+    roll = advanceBoardRollDynamics(roll, {
+      deltaSeconds: 1 / hz,
+      railInput: 0,
+      counterweight: body.counterweight,
+      crossSlope: .08,
+      lateralAcceleration: 0,
+      crossWaveLoad: 0,
+      crossWaveSide: 1,
+      turbulenceTorque: 0,
+      speed: 0,
+      planing: 0,
+      boardWidth: .34,
+      boardStability: 1,
+      whitewater: 0,
+      waterContact: 1,
+    });
+    balanceTarget = roll.balanceTarget;
+    maximumRoll = Math.max(maximumRoll, Math.abs(roll.rollAngle));
+  }
+  return { roll, body, balanceTarget, maximumRoll };
+}
+const unattendedStillWaterBalance = coupledStillWaterBalance(60, false);
+const correctedStillWaterBalance60 = coupledStillWaterBalance(60, true);
+const correctedStillWaterBalance120 = coupledStillWaterBalance(120, true);
+if (
+  unattendedStillWaterBalance.maximumRoll < .45
+  || correctedStillWaterBalance60.maximumRoll > .16
+  || Math.abs(correctedStillWaterBalance60.roll.rollAngle) > .05
+  || Math.abs(
+    correctedStillWaterBalance60.roll.rollAngle
+      - correctedStillWaterBalance120.roll.rollAngle
+  ) > .002
+) {
+  throw new Error("Still-water body inertia no longer requires and rewards frame-stable counterweight correction");
+}
 function simulateReturnProne(hz) {
   let progress = 0;
   let reading = null;
@@ -3309,6 +3450,18 @@ console.log(JSON.stringify({
     standingPassiveCompression,
     engagedPassiveCompression,
     quietPassiveCompression,
+    standingCounterweight60Hz: standingCounterweight60.counterweight,
+    standingCounterweight120Hz: standingCounterweight120.counterweight,
+    freshCounterweightResponse: freshCounterweight.counterweight,
+    fatiguedCounterweightResponse: fatiguedCounterweight.counterweight,
+    rolledBodyLag: rolledCounterweight.counterweight,
+    compressedBodyLag: compressedRolledCounterweight.counterweight,
+    unattendedStillWaterRoll:
+      unattendedStillWaterBalance.maximumRoll,
+    correctedStillWaterRoll60Hz:
+      correctedStillWaterBalance60.maximumRoll,
+    correctedStillWaterRoll120Hz:
+      correctedStillWaterBalance120.maximumRoll,
     quietPopUpEffort60,
     quietPopUpEffort120,
     loadedPopUpEffort,

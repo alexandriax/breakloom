@@ -3031,7 +3031,7 @@ export default function SurfscapeApp() {
       ? "EDGE CATCH"
     : stats.rollEdgeRisk > .28
       ? "RAIL LIMIT"
-      : "ROLL CONTROL";
+      : "BODY COM / ROLL";
   const standingLoadLabel = stats.airborneHeight > .055
     ? `AIRBORNE ${airborneCentimeters} CM · NO RAIL`
     : stats.landingImpact > .18
@@ -3366,7 +3366,7 @@ export default function SurfscapeApp() {
               }
             : {
                 cue: stats.speed > .6 ? "BOARD GLIDING" : "STANDING · NO WAVE POWER",
-                detail: "Q/E balances · SPACE compresses without adding speed · SHIFT returns prone.",
+                detail: "Q/E requests a weight shift; the white body-COM marker moves with inertia toward the torque target. SPACE compresses without adding speed · SHIFT returns prone.",
                 rotation: 90,
                 tone: "balance",
               }
@@ -3562,6 +3562,9 @@ export default function SurfscapeApp() {
   } as CSSProperties;
   const shorebreakTiming = Math.round((1 - THREEClamp(stats.shorebreakSeconds / 2.8, 0, 1)) * 100);
   const touchBalancePosition = (THREEClamp(stats.balance, -.94, .94) + 1) * 50;
+  const touchBalanceIntentPosition = (
+    THREEClamp(stats.balanceIntent, -.94, .94) + 1
+  ) * 50;
   const touchTargetPosition = (THREEClamp(stats.balanceTarget, -.94, .94) + 1) * 50;
   const lensIntensity = stats.phase === "wipeout" ? 0.82 : stats.barrelIntensity * 0.72;
   const submersionIntensity = paused
@@ -4784,9 +4787,17 @@ export default function SurfscapeApp() {
               <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard && stats.trickCharge <= .04 ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "BODY COMPRESSION" : rollInstrumentTitle} <em className={showPhysicalLandingGuide ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard && stats.trickCharge <= .04 ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuverPhase === "air" ? "AIRBORNE" : "HULL RELEASED"} · ${Math.round(stats.maneuverProgress * 100)}% OBSERVED` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% CROUCH · ${stats.lipLaunchSupport > .42 ? `LIP SUPPORT ${Math.round(stats.lipLaunchSupport * 100)}%` : "NO LIP SUPPORT"}` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
               <strong>{stats.maneuverActive ? `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%` : `${attitudeDegrees}°`}</strong>
             </div>
-            <div className="balance-track">
+            <div
+              className="balance-track"
+              role="meter"
+              aria-label={`Requested lean ${Math.round(stats.balanceIntent * 100)} percent; lateral body center of mass ${Math.round(stats.balance * 100)} percent; counter-torque target ${Math.round(stats.balanceTarget * 100)} percent`}
+              aria-valuemin={-100}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(stats.balance * 100)}
+            >
               {showPhysicalLandingGuide && <i className="landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
               <i className="balance-safe" style={{ left: `${(stats.balanceTarget + 1) * 50}%` }} />
+              <i className="balance-intent" style={{ left: `${(stats.balanceIntent + 1) * 50}%` }} />
               <b style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
             <div className="stance-track">
@@ -4916,10 +4927,11 @@ export default function SurfscapeApp() {
                 <div
                   className={`touch-balance ${motionBalanceActive ? "is-motion" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
                   role={motionBalanceActive ? "meter" : "slider"}
-                  aria-label={motionBalanceActive ? "Motion counterweight. Tilt against the measured board roll toward the glowing counter-torque target." : "Surf counterweight. Move the white thumb marker toward the glowing counter-torque target to arrest board roll."}
+                  aria-label={motionBalanceActive ? "Motion counterweight intent. Tilt toward the glowing counter-torque target; the white body center-of-mass marker follows with inertia." : "Surf counterweight intent. Request a lean toward the glowing counter-torque target; the white body center-of-mass marker follows with inertia."}
                   aria-valuemin={-100}
                   aria-valuemax={100}
                   aria-valuenow={Math.round(stats.balance * 100)}
+                  aria-valuetext={`Body center of mass ${Math.round(stats.balance * 100)} percent; target ${Math.round(stats.balanceTarget * 100)} percent`}
                   tabIndex={motionBalanceActive ? -1 : 0}
                   onPointerDown={updateTouchBalance}
                   onPointerMove={updateTouchBalance}
@@ -4942,6 +4954,7 @@ export default function SurfscapeApp() {
                     style={{ width: `${Math.min(48, Math.abs(stats.railLoad) * 48)}%` }}
                   />
                   <i className="touch-balance-target" style={{ left: `${touchTargetPosition}%` }} />
+                  <i className="touch-balance-intent" style={{ left: `${touchBalanceIntentPosition}%` }} />
                   <b className="touch-balance-thumb" style={{ left: `${touchBalancePosition}%` }} />
                   <small><em>{motionBalanceActive ? "TILT LEFT" : "LEAN LEFT"}</em><em>{motionBalanceActive ? "TILT RIGHT" : "LEAN RIGHT"}</em></small>
                 </div>
