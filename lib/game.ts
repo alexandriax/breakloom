@@ -2134,6 +2134,7 @@ export type PopUpTransitionReading = {
   frontFootLoad: number;
   footSupport: number;
   footImpact: number;
+  placementRisk: number;
   centerOfMassHeight: number;
   trim: number;
   stabilityScale: number;
@@ -2229,13 +2230,22 @@ export function evaluatePopUpTransitionAtProgress(
   const footImpact = Math.max(0, rearFootImpact) * .46
     + Math.max(0, frontFootImpact) * .54;
   const centerOfMassHeight = smoothstep(.28, .9, progress);
+  const placementRisk = smoothstep(
+    .38,
+    .9,
+    Math.abs(footPlacement),
+  ) * footSupport;
   const trim = -.06
     + handLoad * .17
     - rearFootImpact * .11
     + frontFootLoad * .08
     + footPlacement * footSupport * .72;
-  const stabilityScale = 1.28 - centerOfMassHeight * .28;
-  const counterweightScale = .46 + centerOfMassHeight * .46;
+  const stabilityScale = 1.28
+    - centerOfMassHeight * .28
+    - placementRisk * .16;
+  const counterweightScale = (
+    .46 + centerOfMassHeight * .46
+  ) * (1 - placementRisk * .18);
   const verticalLoadAcceleration = -(
     handLoad * 2.5
       + footImpact * 3.8
@@ -2248,6 +2258,7 @@ export function evaluatePopUpTransitionAtProgress(
     frontFootLoad,
     footSupport,
     footImpact,
+    placementRisk,
     centerOfMassHeight,
     trim,
     stabilityScale,
@@ -5487,6 +5498,7 @@ export type GameStats = {
   takeoffQuality: number;
   takeoffCommitProgress: number;
   popUpMovementAuthority: number;
+  popUpFootPlacementRisk: number;
   waveCapture: number;
   prompt: string;
 };
@@ -5626,6 +5638,7 @@ export const INITIAL_STATS: GameStats = {
   takeoffQuality: 0,
   takeoffCommitProgress: 0,
   popUpMovementAuthority: 0,
+  popUpFootPlacementRisk: 0,
   waveCapture: 0,
   prompt: "Walk toward the water · or find the van",
 };

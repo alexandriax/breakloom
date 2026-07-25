@@ -3101,6 +3101,9 @@ export default function SurfscapeApp() {
   const standingOnBoard = stats.phase === "riding" && !stats.waveEngaged;
   const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
   const popUpBodyRate = Math.round(stats.popUpMovementAuthority * 100);
+  const popUpPlacementRisk = Math.round(
+    stats.popUpFootPlacementRisk * 100,
+  );
   const popUpPressure = stats.stance > .14
     ? `NOSE ${Math.round(stats.stance * 100)}%`
     : stats.stance < -.14
@@ -3304,6 +3307,15 @@ export default function SurfscapeApp() {
                     rotation: 90,
                     tone: "danger",
                   }
+                : stats.popUpFootPlacementRisk > .42
+                  ? {
+                      cue: stats.stance > 0
+                        ? "FEET TOO FAR FORWARD"
+                        : "FEET TOO FAR BACK",
+                      detail: `${popUpPlacementRisk}% placement risk is reducing righting leverage · ${gamepadConnected ? "move the stick" : stats.stance > 0 ? "press S" : "press W"} to recenter before standing tall.`,
+                      rotation: stats.stance > 0 ? 90 : -90,
+                      tone: "danger",
+                    }
                 : stats.takeoffCommitProgress < .2
               ? {
                   cue: "LAST STROKE · HANDS IN",
@@ -3321,15 +3333,15 @@ export default function SurfscapeApp() {
                 : stats.takeoffCommitProgress < .74
                   ? {
                       cue: "REAR FOOT UNDER HIPS",
-                      detail: `${popUpBodyRate}% body drive · ${gamepadConnected ? "stick fore/aft" : "W/S"} sets ${popUpPressure} pressure · ${counterweightCue} toward the roll target.`,
+                      detail: `${popUpBodyRate}% body drive · ${gamepadConnected ? "stick fore/aft" : "W/S"} sets ${popUpPressure} pressure · ${popUpPlacementRisk}% placement risk · ${counterweightCue} toward the roll target.`,
                       rotation: rollSide === "RIGHT" ? 180 : 0,
                       tone: "balance",
                     }
                   : {
                       cue: "FRONT FOOT LANDING",
                       detail: hullPatchContact > 10
-                        ? `${popUpBodyRate}% body drive · ${hullPatchContact}% polygon support and ${popUpPressure} pressure carry into standing.`
-                        : `${popUpBodyRate}% body drive · no face-patch support; ${popUpPressure} pressure carries into still-water balance.`,
+                        ? `${popUpBodyRate}% body drive · ${hullPatchContact}% polygon support, ${popUpPressure} pressure, and ${popUpPlacementRisk}% placement risk carry into standing.`
+                        : `${popUpBodyRate}% body drive · no face-patch support; ${popUpPressure} pressure and ${popUpPlacementRisk}% placement risk carry into still-water balance.`,
                       rotation: -90,
                       tone: "ready",
                     }

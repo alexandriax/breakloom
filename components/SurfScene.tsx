@@ -11685,6 +11685,7 @@ function Simulation({
     let rideOutProgress = 0;
     let takeoffCommitProgress = 0;
     let popUpMovementAuthority = 0;
+    let popUpFootPlacementRisk = 0;
     let boardAlignment = 1;
     let boardWaveAngle = 0;
     let crossWaveLoad = 0;
@@ -12078,6 +12079,7 @@ function Simulation({
             delta,
           );
         }
+        popUpFootPlacementRisk = popUpTransition.placementRisk;
         const popUpPaddleAvailability = 1 - THREE.MathUtils.smoothstep(
           takeoffCommitProgress,
           .08,
@@ -17340,6 +17342,7 @@ function Simulation({
         takeoffQuality,
         takeoffCommitProgress,
         popUpMovementAuthority,
+        popUpFootPlacementRisk,
         waveCapture: phase.current === "paddling"
           ? waveEngagement.current
           : 0,

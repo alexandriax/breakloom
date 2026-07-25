@@ -3437,6 +3437,10 @@ if (
   || popUpStanding.footSupport < .95
   || noseHeavyPopUp.trim < .5
   || tailHeavyPopUp.trim > -.45
+  || popUpStanding.placementRisk !== 0
+  || noseHeavyPopUp.placementRisk < .5
+  || noseHeavyPopUp.stabilityScale
+    >= popUpStanding.stabilityScale - .08
   || forwardPopUpPlacement60 < .08
   || Math.abs(
     forwardPopUpPlacement60 - forwardPopUpPlacement120,
@@ -5187,6 +5191,9 @@ console.log(JSON.stringify({
     popUpFootImpact: popUpFootPlant.footImpact,
     popUpNoseTrim: noseHeavyPopUp.trim,
     popUpTailTrim: tailHeavyPopUp.trim,
+    popUpNosePlacementRisk: noseHeavyPopUp.placementRisk,
+    popUpNosePlacementStability:
+      noseHeavyPopUp.stabilityScale,
     popUpForwardPlacement60Hz: forwardPopUpPlacement60,
     popUpForwardPlacement120Hz: forwardPopUpPlacement120,
     tiltedRailSlope: tiltedRailContact.crossSlope,
