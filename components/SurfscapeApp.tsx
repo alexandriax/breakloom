@@ -3090,6 +3090,11 @@ export default function SurfscapeApp() {
   const ridingOut = stats.phase === "riding" && stats.rideOutProgress > .02;
   const standingOnBoard = stats.phase === "riding" && !stats.waveEngaged;
   const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
+  const popUpPressure = stats.stance > .14
+    ? `NOSE ${Math.round(stats.stance * 100)}%`
+    : stats.stance < -.14
+      ? `TAIL ${Math.round(Math.abs(stats.stance) * 100)}%`
+      : "CENTERED";
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
   const offshoreHeadingError = Math.atan2(
@@ -3231,15 +3236,15 @@ export default function SurfscapeApp() {
                 : stats.takeoffCommitProgress < .74
                   ? {
                       cue: "REAR FOOT UNDER HIPS",
-                      detail: `${counterweightCue} toward the torque target as the raised center of mass reduces roll stability.`,
+                      detail: `${gamepadConnected ? "Stick fore/aft" : "W/S"} places board pressure · currently ${popUpPressure} · ${counterweightCue} toward the roll target.`,
                       rotation: rollSide === "RIGHT" ? 180 : 0,
                       tone: "balance",
                     }
                   : {
                       cue: "FRONT FOOT LANDING",
                       detail: stats.waveCapture > .1
-                        ? `${Math.round(stats.waveCapture * 100)}% sustained hull engagement · look down the open face; both feet inherit the live attitude.`
-                        : "No hull engagement: finish centered and expect to balance without forward drive.",
+                        ? `${Math.round(stats.waveCapture * 100)}% sustained hull engagement · ${popUpPressure} pressure and the live board attitude carry into standing.`
+                        : `No hull engagement · ${popUpPressure} pressure still carries into still-water balance.`,
                       rotation: -90,
                       tone: "ready",
                     }
@@ -3476,7 +3481,7 @@ export default function SurfscapeApp() {
           ? stats.maneuverPhase === "air" ? "LEVEL" : "SETTLE"
           : stats.trickCharge > .04 ? `EXTEND ${Math.round(stats.trickCharge * 100)}` : "CROUCH"
         : stats.phase === "paddling"
-            ? "POP"
+            ? takeoffCommitted ? "FEET" : "POP"
             : "MOVE";
   const mobileContext = stats.vehicleMode
     ? {
@@ -3514,7 +3519,7 @@ export default function SurfscapeApp() {
                     : stats.takeoffCommitProgress < .74
                       ? "REAR FOOT IN"
                       : "FRONT FOOT DOWN",
-                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body transition · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% hull engagement` : "no hull engagement"}`,
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body transition · ${popUpPressure} foot pressure · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% hull engagement` : "no hull engagement"}`,
               }
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
@@ -4616,9 +4621,9 @@ export default function SurfscapeApp() {
                 <div className="hud-controls-panel">
                   <span>{gamepadConnected ? "GAMEPAD" : "KEYBOARD + MOUSE"} · {stats.phase.toUpperCase()}</span>
                   <div>
-                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : "W paddles · A/D sets board heading"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : takeoffCommitted ? "W/S places fore-aft foot pressure during the pop-up" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
-                    {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
+                    {(stats.phase === "riding" || takeoffCommitted) && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
                     <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Compress, then release against a live lip" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
                     {stats.phase === "paddling" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
@@ -4829,9 +4834,10 @@ export default function SurfscapeApp() {
           <div className="desktop-controls">
             {gamepadConnected ? (
               <>
-                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : standingOnBoard ? "roll / shift stance" : stats.phase === "riding" ? "roll / stance pressure" : "paddle / steer"}</span>
+                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : standingOnBoard ? "roll / shift stance" : stats.phase === "riding" ? "roll / stance pressure" : takeoffCommitted ? "fore-aft foot pressure" : "paddle / steer"}</span>
                 <span><kbd>LT</kbd><kbd>RT</kbd> counterweight / recover</span>
-                <span><kbd>A</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "hold / release trick" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime / dive on cue" : "context action"}</span>
+                <span><kbd>A</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "crouch / extend" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                {stats.phase === "paddling" && <span><kbd>LB</kbd> duck dive anytime · cue marks timing</span>}
                 <span><kbd>RS</kbd> freelook</span>
                 <span><kbd>RB</kbd> camera · <kbd>START</kbd> pause</span>
               </>
@@ -4852,8 +4858,8 @@ export default function SurfscapeApp() {
                   </>
                 ) : (
                   <>
-                    <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "apply roll torque" : stats.phase === "paddling" ? "bias paddle side / pivot" : "roll onto rail"}</span>
-                    <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : "paddle / brake"}</span>
+                    <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "apply roll torque" : stats.phase === "paddling" ? takeoffCommitted ? "steady the last stroke / heading" : "bias paddle side / pivot" : "roll onto rail"}</span>
+                    <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : takeoffCommitted ? "place pop-up foot pressure" : "paddle / brake"}</span>
                   </>
                 )}
                 <span><kbd>SPACE</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "compress · release at live lip" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>

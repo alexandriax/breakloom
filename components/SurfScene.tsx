@@ -11594,15 +11594,35 @@ function Simulation({
         const proneDiveEnvelope = duckDiveActive
           ? duckDiveSubmersionAt(proneDiveElapsed)
           : 0;
-        const popUpTransition = evaluatePopUpTransition(
-          takeoffCommitting
-            ? Math.max(0, t - takeoffCommitAt.current)
-            : 0,
+        const popUpElapsed = takeoffCommitting
+          ? Math.max(0, t - takeoffCommitAt.current)
+          : 0;
+        let popUpTransition = evaluatePopUpTransition(
+          popUpElapsed,
           popUpStartStamina.current,
         );
         takeoffCommitProgress = takeoffCommitting
           ? popUpTransition.progress
           : 0;
+        if (takeoffCommitting) {
+          stance.current = advanceSurfboardStance(
+            stance.current,
+            move * popUpTransition.footSupport,
+            delta,
+          );
+          popUpTransition = evaluatePopUpTransition(
+            popUpElapsed,
+            popUpStartStamina.current,
+            stance.current,
+          );
+        } else {
+          stance.current = THREE.MathUtils.damp(
+            stance.current,
+            0,
+            5.2,
+            delta,
+          );
+        }
         const popUpPaddleAvailability = 1 - THREE.MathUtils.smoothstep(
           takeoffCommitProgress,
           .08,
@@ -12206,10 +12226,11 @@ function Simulation({
           rideYawRate.current = paddleYawRate.current;
           rideHeading.current = paddleHeading.current;
           barrelTime.current = 0;
-          stance.current = 0;
           // Roll, pitch, heave, yaw, instability, and rail state remain exactly
-          // where the prone solver left them. A quality assessment may score
-          // the transition, but it cannot add grip or inject a wobble.
+          // where the prone solver left them. Fore-aft foot pressure also
+          // carries directly into the standing solver instead of snapping to
+          // center. A quality assessment may score the transition, but it
+          // cannot add grip or inject a wobble.
           catchQuality.current = committedQuality;
           combo.current = .85 + committedQuality * .95;
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -12395,10 +12416,10 @@ function Simulation({
             : takeoffCommitProgress < .5
               ? "Hands under the ribs — keep the shoulders level"
               : takeoffCommitProgress < .74
-                ? "Rear foot under the hips — counter the board roll"
+                ? "Rear foot under the hips — W/S places pressure as the board keeps moving"
                 : lostCrest
                   ? "Wave passed underneath — finish the front foot and balance"
-                  : "Front foot landing — look into the open face";
+                  : `Front foot landing — ${stance.current > .14 ? "nose pressure" : stance.current < -.14 ? "tail pressure" : "centered pressure"} carries into the ride`;
           if (takeoffCommitProgress >= .995) {
             const standingSupported = !lostCrest
               && boardStillEngaged
@@ -12469,6 +12490,7 @@ function Simulation({
             stamina.current = Math.max(0, stamina.current - (engaged ? 2.4 : .6));
             takeoffCommitAt.current = t;
             popUpStartStamina.current = stamina.current;
+            stance.current = 0;
             // POP changes only the body state. The single wave-engagement value
             // above keeps integrating the same hull contact through prone,
             // hands, feet, and standing without an action-triggered bonus.

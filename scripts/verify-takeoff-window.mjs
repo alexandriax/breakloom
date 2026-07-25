@@ -1853,17 +1853,43 @@ const popUpStart = evaluatePopUpTransition(0, 100);
 const popUpHandPlant = evaluatePopUpTransition(.25, 100);
 const popUpFootPlant = evaluatePopUpTransition(.48, 100);
 const popUpStanding = evaluatePopUpTransition(.7, 100);
+const noseHeavyPopUp = evaluatePopUpTransition(.7, 100, .7);
+const tailHeavyPopUp = evaluatePopUpTransition(.7, 100, -.7);
 const tiredPopUp = evaluatePopUpTransition(.7, 0);
+function controlledPopUpFootPlacement(hz, input) {
+  let placement = 0;
+  let elapsed = 0;
+  const duration = popUpStanding.duration;
+  for (let frame = 0; frame < Math.ceil(duration * hz); frame += 1) {
+    const transition = evaluatePopUpTransition(elapsed, 100, placement);
+    placement = advanceSurfboardStance(
+      placement,
+      input * transition.footSupport,
+      1 / hz,
+    );
+    elapsed += 1 / hz;
+  }
+  return placement;
+}
+const forwardPopUpPlacement60 = controlledPopUpFootPlacement(60, 1);
+const forwardPopUpPlacement120 = controlledPopUpFootPlacement(120, 1);
 if (
   popUpStart.progress !== 0
   || popUpHandPlant.handLoad < .45
   || popUpFootPlant.footImpact < .35
   || popUpStanding.progress < .99
   || popUpStanding.frontFootLoad < .95
+  || popUpStanding.footSupport < .95
+  || noseHeavyPopUp.trim < .5
+  || tailHeavyPopUp.trim > -.45
+  || forwardPopUpPlacement60 < .08
+  || Math.abs(
+    forwardPopUpPlacement60 - forwardPopUpPlacement120,
+  ) > .012
   || popUpStanding.stabilityScale >= popUpStart.stabilityScale
   || tiredPopUp.progress >= popUpStanding.progress
 ) {
-  throw new Error("Pop-up body loads no longer move from hands through both feet on an independent timeline");
+  throw new Error("Pop-up body loads no longer move from hands into physical fore-aft foot pressure");
 }
 function proneForFrames(frameCount, sample = proneSample) {
   let state = {
@@ -2859,6 +2885,10 @@ console.log(JSON.stringify({
     proneBroadsideFailurePower: broadsideProneFailure.power,
     popUpDuration: popUpStanding.duration,
     popUpFootImpact: popUpFootPlant.footImpact,
+    popUpNoseTrim: noseHeavyPopUp.trim,
+    popUpTailTrim: tailHeavyPopUp.trim,
+    popUpForwardPlacement60Hz: forwardPopUpPlacement60,
+    popUpForwardPlacement120Hz: forwardPopUpPlacement120,
     tiltedRailSlope: tiltedRailContact.crossSlope,
     crownedRailWarp: crownedRailContact.railWarp,
   },

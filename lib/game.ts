@@ -1653,6 +1653,7 @@ export type PopUpTransitionReading = {
   handLoad: number;
   rearFootLoad: number;
   frontFootLoad: number;
+  footSupport: number;
   footImpact: number;
   centerOfMassHeight: number;
   trim: number;
@@ -1669,8 +1670,10 @@ export type PopUpTransitionReading = {
 export function evaluatePopUpTransition(
   elapsedSeconds: number,
   stamina: number,
+  foreAftFootPlacement = 0,
 ): PopUpTransitionReading {
   const staminaRatio = clampValue(stamina / 100, 0, 1);
+  const footPlacement = clampValue(foreAftFootPlacement, -1, 1);
   const duration = .9 - staminaRatio * .24;
   const linearProgress = clampValue(
     Math.max(0, elapsedSeconds) / duration,
@@ -1683,6 +1686,11 @@ export function evaluatePopUpTransition(
   const handLoad = handEntry * (1 - handRelease);
   const rearFootLoad = smoothstep(.48, .7, progress);
   const frontFootLoad = smoothstep(.68, .9, progress);
+  const footSupport = clampValue(
+    rearFootLoad * .42 + frontFootLoad * .58,
+    0,
+    1,
+  );
   const rearFootImpact = Math.sin(
     Math.PI * clampValue((progress - .45) / .34, 0, 1),
   );
@@ -1695,7 +1703,8 @@ export function evaluatePopUpTransition(
   const trim = -.06
     + handLoad * .17
     - rearFootImpact * .11
-    + frontFootLoad * .08;
+    + frontFootLoad * .08
+    + footPlacement * footSupport * .72;
   const stabilityScale = 1.28 - centerOfMassHeight * .28;
   const counterweightScale = .46 + centerOfMassHeight * .46;
   const verticalLoadAcceleration = -(
@@ -1708,6 +1717,7 @@ export function evaluatePopUpTransition(
     handLoad,
     rearFootLoad,
     frontFootLoad,
+    footSupport,
     footImpact,
     centerOfMassHeight,
     trim,
