@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -13369,13 +13369,16 @@ function Simulation({
           );
           railSlip.current = standingSlip.railSlip;
           railLoad = standingDynamics.railLoad;
-          compression = THREE.MathUtils.clamp(
-            standingBalanceError * .35
-              + standingReading.crossWaveLoad * .42
-              + Math.abs(stance.current) * .12,
-            0,
-            1,
-          );
+          compression = resolveSurferPassiveCompression({
+            railLoad,
+            stance: stance.current,
+            longitudinalAcceleration: rideDrive,
+            lateralAcceleration: rideLateralForce,
+            tubePressure: standingTubePressure,
+            whitewaterPressure: standingBrokenWater,
+            balanceError: standingBalanceError,
+            crossWaveLoad: standingReading.crossWaveLoad,
+          });
           const standingCompressionBeforeStep = bodyCompression.current;
           const standingCompression = advanceSurferCompression(
             {
@@ -13950,6 +13953,9 @@ function Simulation({
         rollEdgeRisk = rideRoll.edgeRisk;
         rollCapsizeRisk = rideRoll.capsizeRisk;
         balanceTarget = rideRoll.balanceTarget;
+        const balanceError = Math.abs(
+          rideCounterweight - balanceTarget,
+        );
         const pitchForwardX = Math.sin(rideHeading.current);
         const pitchForwardZ = Math.cos(rideHeading.current);
         const pitchSlopeAlong = rideSurface.slopeX * pitchForwardX
@@ -14084,16 +14090,6 @@ function Simulation({
         );
         railSlip.current = slipReading.railSlip;
         railLoad = dynamics.railLoad;
-        compression = THREE.MathUtils.clamp(
-          Math.abs(railLoad) * .52
-            + tailPressure * .3
-            + Math.abs(motion.current.lateralForce) * .12
-            + Math.max(0, -motion.current.acceleration) * .08
-            + tubePressure * .16
-            + whitewaterPressure * .2,
-          0,
-          1,
-        );
         const accelerationStep = Math.max(.001, Math.min(delta, .05));
         rideAcceleration.current.x = THREE.MathUtils.damp(
           rideAcceleration.current.x,
@@ -14127,6 +14123,16 @@ function Simulation({
           -1,
           1,
         );
+        compression = resolveSurferPassiveCompression({
+          railLoad,
+          stance: stance.current,
+          longitudinalAcceleration: rideDrive,
+          lateralAcceleration: rideLateralForce,
+          tubePressure,
+          whitewaterPressure,
+          balanceError,
+          crossWaveLoad: rideInteraction.crossWaveLoad,
+        });
         const lateralVelocity = rideVelocity.current.x;
         const shorewardVelocity = rideVelocity.current.y;
         position.current.x += lateralVelocity * delta;
@@ -14358,7 +14364,6 @@ function Simulation({
                   ? "land"
                   : "release";
         }
-        const balanceError = Math.abs(rideCounterweight - balanceTarget);
         const failThreshold = SURF_PHYSICS_TUNING.balanceFailureThreshold
           * Math.sqrt(boardSpec.stability);
         const rideInstability = advanceSurfboardInstability(

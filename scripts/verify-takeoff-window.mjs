@@ -33,6 +33,7 @@ import {
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
   resolveSurfboardSeparationRelease,
+  resolveSurferPassiveCompression,
   resolveSurfboardTumbleRelease,
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
@@ -2761,6 +2762,32 @@ const shortCompression = compressionReleaseAfter(.12);
 const fullCompression60 = compressionReleaseAfter(.8);
 const fullCompression120 = compressionReleaseAfter(.8, 120);
 const fatiguedCompression = compressionReleaseAfter(.8, 60, 8);
+const passiveCompressionSample = {
+  railLoad: .62,
+  stance: -.4,
+  longitudinalAcceleration: -.35,
+  lateralAcceleration: .42,
+  tubePressure: .5,
+  whitewaterPressure: .3,
+  balanceError: .2,
+  crossWaveLoad: .55,
+};
+const standingPassiveCompression = resolveSurferPassiveCompression(
+  passiveCompressionSample,
+);
+const engagedPassiveCompression = resolveSurferPassiveCompression(
+  passiveCompressionSample,
+);
+const quietPassiveCompression = resolveSurferPassiveCompression({
+  railLoad: 0,
+  stance: 0,
+  longitudinalAcceleration: 0,
+  lateralAcceleration: 0,
+  tubePressure: 0,
+  whitewaterPressure: 0,
+  balanceError: 0,
+  crossWaveLoad: 0,
+});
 if (
   shortCompression.loadedCompression >= fullCompression60.loadedCompression * .45
   || fullCompression60.loadedCompression < .9
@@ -2775,8 +2802,11 @@ if (
   ) > .004
   || fatiguedCompression.release.extensionPotentialSpeed
     >= fullCompression60.release.extensionPotentialSpeed
+  || standingPassiveCompression !== engagedPassiveCompression
+  || standingPassiveCompression < .45
+  || quietPassiveCompression !== 0
 ) {
-  throw new Error("Surfer compression no longer behaves as a frame-rate-stable crouch and extension");
+  throw new Error("Surfer compression no longer behaves consistently across frame rate, water load, and engagement classification");
 }
 function simulateReturnProne(hz) {
   let progress = 0;
@@ -3018,6 +3048,9 @@ console.log(JSON.stringify({
       fullCompression120.release.extensionPotentialSpeed,
     fatiguedExtensionPotential:
       fatiguedCompression.release.extensionPotentialSpeed,
+    standingPassiveCompression,
+    engagedPassiveCompression,
+    quietPassiveCompression,
     returnProneSeconds60Hz: returnProne60.elapsed,
     returnProneSeconds120Hz: returnProne120.elapsed,
     returnPronePeakHandSupport: returnProne60.peakHandSupport,

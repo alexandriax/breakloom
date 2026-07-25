@@ -189,6 +189,40 @@ export type SurferCompressionReading = SurferCompressionState & {
   muscularEffort: number;
 };
 
+export type SurferPassiveCompressionSample = {
+  railLoad: number;
+  stance: number;
+  longitudinalAcceleration: number;
+  lateralAcceleration: number;
+  tubePressure: number;
+  whitewaterPressure: number;
+  balanceError: number;
+  crossWaveLoad: number;
+};
+
+/**
+ * Resolves the body compression forced by measured board and water loads.
+ * Ride classification is intentionally absent: the same rail, acceleration,
+ * stance, foam, and balance state must lower the same center of mass.
+ */
+export function resolveSurferPassiveCompression(
+  sample: SurferPassiveCompressionSample,
+) {
+  const tailPressure = Math.max(0, -clampValue(sample.stance, -1, 1));
+  return clampValue(
+    Math.abs(sample.railLoad) * .38
+      + tailPressure * .2
+      + Math.abs(sample.lateralAcceleration) * .16
+      + Math.max(0, -sample.longitudinalAcceleration) * .12
+      + clampValue(sample.tubePressure, 0, 1) * .12
+      + clampValue(sample.whitewaterPressure, 0, 1) * .18
+      + clampValue(sample.balanceError, 0, 2) * .12
+      + clampValue(sample.crossWaveLoad, 0, 1.5) * .12,
+    0,
+    1,
+  );
+}
+
 export type ReturnProneTransitionSample = {
   deltaSeconds: number;
   requested: boolean;
