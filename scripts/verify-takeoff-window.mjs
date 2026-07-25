@@ -25,6 +25,7 @@ import {
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
+  paddleStrokeWorkDelta,
   paddlingStaminaDelta,
   popUpStaminaDelta,
   primaryWaveVelocityAt,
@@ -3824,6 +3825,58 @@ if (
 ) {
   throw new Error("Alternating paddle cadence no longer produces balanced pulsed thrust");
 }
+function accumulatedPaddleWork(hz, seconds = 2.5) {
+  let workCycle = { phase: 0 };
+  let leftWork = 0;
+  let rightWork = 0;
+  const frames = Math.round(seconds * hz);
+  for (let frame = 0; frame < frames; frame += 1) {
+    const cycle = advancePaddleStrokeCycle(workCycle, {
+      deltaSeconds: 1 / hz,
+      effort: 1,
+      steer: 0,
+      stamina: 82,
+    });
+    workCycle = cycle;
+    const work = paddleStrokeWorkDelta({
+      paddleStroke: cycle.strokeSide * cycle.drive,
+      waterContact: 1,
+      submersion: 0,
+      deltaSeconds: 1 / hz,
+    });
+    leftWork += work.leftWork;
+    rightWork += work.rightWork;
+  }
+  return {
+    leftWork,
+    rightWork,
+    totalWork: leftWork + rightWork,
+  };
+}
+const paddleWork60 = accumulatedPaddleWork(60);
+const paddleWork120 = accumulatedPaddleWork(120);
+const airbornePaddleWork = paddleStrokeWorkDelta({
+  paddleStroke: -.8,
+  waterContact: 0,
+  submersion: 0,
+  deltaSeconds: 1 / 60,
+});
+const submergedPaddleWork = paddleStrokeWorkDelta({
+  paddleStroke: .8,
+  waterContact: 1,
+  submersion: 1,
+  deltaSeconds: 1 / 60,
+});
+if (
+  paddleWork60.leftWork < .28
+  || paddleWork60.rightWork < .28
+  || Math.abs(paddleWork60.leftWork - paddleWork120.leftWork) > .015
+  || Math.abs(paddleWork60.rightWork - paddleWork120.rightWork) > .015
+  || airbornePaddleWork.totalWork !== 0
+  || submergedPaddleWork.totalWork !== 0
+) {
+  throw new Error("Tutorial paddle work no longer requires balanced, frame-rate-stable in-water pulls");
+}
 let steeringCycle = { phase: 0 };
 let steeringLeftImpulse = 0;
 let steeringRightImpulse = 0;
@@ -4501,6 +4554,10 @@ console.log(JSON.stringify({
     performanceTurnRadians: performancePaddleTurn.heading,
     longboardTurnRadians: longboardPaddleTurn.heading,
     averageStrokeDrive,
+    paddleWork60,
+    paddleWork120,
+    airbornePaddleWork: airbornePaddleWork.totalWork,
+    submergedPaddleWork: submergedPaddleWork.totalWork,
     steeringImpulseDifference: steeringRightImpulse - steeringLeftImpulse,
     guideTurnDegrees: rightTurnLeftPullGuide.turnDegrees,
     guideActiveHand: rightTurnLeftPullGuide.activeHand,

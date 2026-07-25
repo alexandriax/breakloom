@@ -514,7 +514,7 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
 
 const TRAINING_STEPS = [
   { title: "Enter the shallows", detail: "Move from the sand into the water." },
-  { title: "Paddle with intent", detail: "Hold W for alternating pulls. A/D biases the outside hand to rotate the board; release W to coast." },
+  { title: "Paddle with intent", detail: "Hold W until both hands complete real in-water pulls. A/D biases the outside hand to rotate the board; release W to coast." },
   { title: "Reach the lineup", detail: "Keep the nose aimed offshore and paddle beyond the breaking water." },
   { title: "Turn for shore", detail: "Rotate until the live wave arrow overlaps the fixed board-nose reference." },
   { title: "Choose when to stand", detail: "Space always stands. Flat water stalls; a matched face captures; a broadside wall tumbles you." },
@@ -523,20 +523,32 @@ const TRAINING_STEPS = [
   { title: "Finish clean", detail: "Stay composed through the inside section." },
 ] as const;
 
+const PADDLE_WORK_LESSON_TARGET = .28;
+
 function reachedTrainingStep(stats: GameStats) {
   const waterPhase = stats.phase === "wading" || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout";
   const hasStood = stats.phase === "riding" || stats.rideDistance > 0 || stats.rideResult !== "";
   const hasRidden = stats.waveEngaged || stats.rideDistance > 0 || stats.rideResult === "clean";
+  const paddleLessonComplete =
+    stats.paddleLeftWork >= PADDLE_WORK_LESSON_TARGET
+    && stats.paddleRightWork >= PADDLE_WORK_LESSON_TARGET;
   let reached = 0;
   if (waterPhase) reached = 1;
-  if (stats.shorebreakId > 0 || stats.inLineup || hasRidden) reached = 2;
-  if (stats.inLineup || hasRidden) reached = 3;
-  if (stats.takeoffAlignment > .72 || stats.catchReady || hasRidden) reached = 4;
-  if (hasStood) reached = 5;
+  if (paddleLessonComplete) reached = 2;
+  if (paddleLessonComplete && (stats.inLineup || hasRidden)) reached = 3;
+  if (
+    reached >= 3
+    && (
+      stats.takeoffAlignment > .72
+      || stats.catchReady
+      || hasRidden
+    )
+  ) reached = 4;
+  if (reached >= 4 && hasStood) reached = 5;
   const hasTrackedPocket = stats.pocketDistance >= 15;
-  if (hasTrackedPocket) reached = 6;
-  if (hasTrackedPocket && stats.maneuverCount > 0) reached = 7;
-  if (hasTrackedPocket && stats.maneuverCount > 0 && stats.rideResult === "clean") reached = 8;
+  if (reached >= 5 && hasTrackedPocket) reached = 6;
+  if (reached >= 6 && stats.maneuverCount > 0) reached = 7;
+  if (reached >= 7 && stats.rideResult === "clean") reached = 8;
   return reached;
 }
 
@@ -3199,6 +3211,17 @@ export default function SurfscapeApp() {
           : paddleTraining.strokePhase === "recovery"
             ? "ARMS RECOVERING"
             : "HOLD W TO STROKE";
+  const paddleLeftWorkPercent = Math.round(
+    Math.min(1, stats.paddleLeftWork / PADDLE_WORK_LESSON_TARGET)
+      * 100,
+  );
+  const paddleRightWorkPercent = Math.round(
+    Math.min(1, stats.paddleRightWork / PADDLE_WORK_LESSON_TARGET)
+      * 100,
+  );
+  const paddleWorkCue = trainingStep === 1
+    ? ` · L ${paddleLeftWorkPercent}% / R ${paddleRightWorkPercent}% WATER WORK`
+    : "";
   const mechanicsGuide = settings.mode !== "training"
     ? null
     : stats.phase === "wading"
@@ -3278,7 +3301,9 @@ export default function SurfscapeApp() {
             ? paddleTraining.turnDirection === "hold"
               ? {
                   cue: "NOSE OFFSHORE · PADDLE",
-                  detail: "Hold W for alternating pulls. The offshore arrow already crabs against measured current; release W to coast on retained momentum.",
+                  detail: trainingStep === 1
+                    ? `Hold W for alternating pulls · left ${paddleLeftWorkPercent}% / right ${paddleRightWorkPercent}% real water work. The arrow already crabs against measured current.`
+                    : "Hold W for alternating pulls. The offshore arrow already crabs against measured current; release W to coast on retained momentum.",
                   rotation: -90,
                   tone: "paddle",
                 }
@@ -4575,7 +4600,7 @@ export default function SurfscapeApp() {
             <div
               className={`paddle-training-instrument is-${paddleTraining.pressureMode} has-direction-aim`}
               role="img"
-              aria-label={`${paddleTargetKind} target. ${paddleAimCue}. ${paddleForceCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
+              aria-label={`${paddleTargetKind} target. ${paddleAimCue}. ${paddleForceCue}${paddleWorkCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
             >
               <div className="paddle-heading-dial" aria-hidden="true">
                 <span className="paddle-board-nose"><ArrowRight /></span>
@@ -4590,7 +4615,7 @@ export default function SurfscapeApp() {
               <div className="paddle-training-readout">
                 <span>PHYSICAL TAKEOFF GUIDE</span>
                 <strong>{paddleAimCue}</strong>
-                <small>{paddleForceCue}</small>
+                <small>{paddleForceCue}{paddleWorkCue}</small>
                 <div className="paddle-hand-cycle" aria-hidden="true">
                   <i className={paddleTraining.activeHand === "left" ? "is-pulling" : ""}>
                     <b>L</b>

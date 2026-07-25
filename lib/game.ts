@@ -2623,6 +2623,46 @@ export function advancePaddleStrokeCycle(
   };
 }
 
+export type PaddleStrokeWorkSample = {
+  paddleStroke: number;
+  waterContact: number;
+  submersion: number;
+  deltaSeconds: number;
+};
+
+export type PaddleStrokeWorkReading = {
+  leftWork: number;
+  rightWork: number;
+  totalWork: number;
+};
+
+/**
+ * Accumulates only propulsive pull work that actually reaches the water.
+ * Arm recovery, airborne hands, and a submerged duck-dive stroke cannot
+ * satisfy a tutorial lesson by merely holding the input.
+ */
+export function paddleStrokeWorkDelta(
+  sample: PaddleStrokeWorkSample,
+): PaddleStrokeWorkReading {
+  const stroke = clampValue(sample.paddleStroke, -1, 1);
+  const surfaceAccess = 1 - clampValue(
+    sample.submersion,
+    0,
+    1,
+  );
+  const effectiveWork = Math.abs(stroke)
+    * clampValue(sample.waterContact, 0, 1)
+    * surfaceAccess
+    * clampValue(sample.deltaSeconds, 0, .05);
+  const leftWork = stroke < 0 ? effectiveWork : 0;
+  const rightWork = stroke > 0 ? effectiveWork : 0;
+  return {
+    leftWork,
+    rightWork,
+    totalWork: leftWork + rightWork,
+  };
+}
+
 /**
  * Translates live mechanics into an instructional reading without deciding
  * whether a wave is "ready." The target arrow comes from angular error, hand
@@ -5278,6 +5318,8 @@ export type GameStats = {
   lateralForce: number;
   paddleEffort: number;
   paddleStroke: number;
+  paddleLeftWork: number;
+  paddleRightWork: number;
   wavePressureDrive: number;
   wavePressureSideLoad: number;
   hullPatchContact: number;
@@ -5406,6 +5448,8 @@ export const INITIAL_STATS: GameStats = {
   lateralForce: 0,
   paddleEffort: 0,
   paddleStroke: 0,
+  paddleLeftWork: 0,
+  paddleRightWork: 0,
   wavePressureDrive: 0,
   wavePressureSideLoad: 0,
   hullPatchContact: 0,
