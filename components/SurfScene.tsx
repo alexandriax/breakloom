@@ -12141,8 +12141,9 @@ function Simulation({
           rideHeading.current = paddleHeading.current;
           barrelTime.current = 0;
           stance.current = 0;
-          unstableFor.current = engaged ? (1 - committedQuality) * .2 : 0;
-          railSlip.current = engaged ? (1 - committedQuality) * .28 : 0;
+          // Roll, pitch, heave, yaw, instability, and rail state remain exactly
+          // where the prone solver left them. A quality assessment may score
+          // the transition, but it cannot add grip or inject a wobble.
           catchQuality.current = committedQuality;
           combo.current = .85 + committedQuality * .95;
           maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -13082,11 +13083,10 @@ function Simulation({
               phase.current = "paddling";
               rideEngaged.current = false;
               paddleHeading.current = rideHeading.current;
-              paddleYawRate.current = 0;
-              paddleVelocity.current.copy(rideVelocity.current).multiplyScalar(.72);
+              paddleYawRate.current = rideYawRate.current;
+              paddleVelocity.current.copy(rideVelocity.current);
               rideVelocity.current.set(0, 0);
               stance.current = 0;
-              unstableFor.current = 0;
               prompt = "Back prone — paddle to reposition";
             } else if (waveEngagement.current > .08) {
               prompt = `Wave pressure ${Math.round(waveEngagement.current * 100)}% — stay aligned and let the hull accelerate`;
