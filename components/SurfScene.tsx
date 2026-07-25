@@ -17663,7 +17663,12 @@ export default function SurfScene(props: SurfSceneProps) {
       dpr={limits.initial}
       frameloop={props.renderActive ? "always" : "demand"}
       camera={{ position: [0, 4.8, 44], fov: 58, near: 0.08, far: 650 }}
-      gl={{ antialias: true, alpha: false, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping }}
+      gl={{
+        antialias: !mobileRenderer,
+        alpha: false,
+        powerPreference: "high-performance",
+        toneMapping: THREE.ACESFilmicToneMapping,
+      }}
       onCreated={({ gl }) => {
         gl.outputColorSpace = THREE.SRGBColorSpace;
         gl.toneMappingExposure = 1.08;
