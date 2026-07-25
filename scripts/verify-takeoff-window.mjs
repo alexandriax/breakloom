@@ -37,6 +37,7 @@ import {
   resolveSeparatedSurfboardWaterForces,
   resolveSeparatedSurferBreakingWash,
   resolveSeparatedSurferProjectedArea,
+  resolveShorebreakBandLoad,
   resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
@@ -254,6 +255,36 @@ const prematureLineup = resolveLineupFromBreakingGeometry(
   -19,
   false,
 );
+const shorebreakLoadSample = {
+  crestEnergy: .8,
+  waveHeight: 2,
+  tidePower: 1,
+  shorebreakScale: 1,
+};
+const outsideShorebreakLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  breakingCoordinate: -20,
+});
+const heldLineupShorebreakLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  breakingCoordinate: -16,
+});
+const outerBoundaryLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  breakingCoordinate: -18.01,
+});
+const innerBoundaryLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  breakingCoordinate: -17.99,
+});
+const peakShorebreakLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  breakingCoordinate: -8,
+});
+const shorewardShorebreakLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  breakingCoordinate: 2,
+});
 if (
   Math.abs(peelingBreakCoordinate - centerBreakCoordinate) < 1.5
   || Math.abs(breakNormalMagnitude - 1) > .000001
@@ -265,8 +296,15 @@ if (
   || exitedLineup.outsideBreak
   || prematureLineup.outsideBreak
   || enteredLineup.outsideMargin <= 2
+  || outsideShorebreakLoad.power !== 0
+  || heldLineupShorebreakLoad.power <= .04
+  || peakShorebreakLoad.power <= .65
+  || shorewardShorebreakLoad.power !== 0
+  || Math.abs(
+    outerBoundaryLoad.power - innerBoundaryLoad.power,
+  ) > .001
 ) {
-  throw new Error("Lineup state no longer follows the animated peeling-break geometry with hysteresis");
+  throw new Error("Animated breaking-band geometry no longer separates continuous wall load from lineup coaching state");
 }
 
 const x = 0;
@@ -4524,6 +4562,9 @@ console.log(JSON.stringify({
     enteredLineup,
     heldLineup,
     exitedLineup,
+    outsideShorebreakLoad,
+    heldLineupShorebreakLoad,
+    peakShorebreakLoad,
   },
   idealTraining,
   marginalTraining,

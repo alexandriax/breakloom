@@ -5820,6 +5820,56 @@ export function resolveLineupFromBreakingGeometry(
   };
 }
 
+export type ShorebreakBandSample = {
+  breakingCoordinate: number;
+  crestEnergy: number;
+  waveHeight: number;
+  tidePower: number;
+  shorebreakScale: number;
+};
+
+export type ShorebreakBandReading = {
+  bandOccupancy: number;
+  power: number;
+};
+
+/**
+ * Resolves breaking-water power continuously from the animated polygon band.
+ * The tutorial's lineup state is intentionally absent: crossing a coaching
+ * boundary cannot switch a physical wall on or off.
+ */
+export function resolveShorebreakBandLoad(
+  sample: ShorebreakBandSample,
+): ShorebreakBandReading {
+  const bandOccupancy = smoothstep(
+    -18,
+    -8,
+    sample.breakingCoordinate,
+  ) * (
+    1 - smoothstep(
+      -3,
+      1,
+      sample.breakingCoordinate,
+    )
+  );
+  const power = clampValue(
+    bandOccupancy
+      * (.34 + clampValue(sample.crestEnergy, 0, 1) * .66)
+      * (
+        .52
+          + Math.max(0, sample.waveHeight) * .22
+      )
+      * (
+        .86
+          + Math.max(0, sample.tidePower) * .14
+      )
+      * Math.max(0, sample.shorebreakScale),
+    0,
+    1,
+  );
+  return { bandOccupancy, power };
+}
+
 export function waveHeightAt(
   x: number,
   z: number,
