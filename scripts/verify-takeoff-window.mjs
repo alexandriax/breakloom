@@ -5,6 +5,7 @@ import {
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
   advanceProneBoardAttitude,
+  advanceReturnProneTransition,
   advanceSurferCompression,
   advanceSurfboardDynamics,
   advanceSurfboardInstability,
@@ -2777,6 +2778,55 @@ if (
 ) {
   throw new Error("Surfer compression no longer behaves as a frame-rate-stable crouch and extension");
 }
+function simulateReturnProne(hz) {
+  let progress = 0;
+  let reading = null;
+  let elapsed = 0;
+  let peakHandSupport = 0;
+  let minimumVerticalLoad = 0;
+  let halfwayFootSupport = 1;
+  for (let frame = 0; frame < hz * 2; frame += 1) {
+    reading = advanceReturnProneTransition(progress, {
+      deltaSeconds: 1 / hz,
+      requested: frame === 0,
+    });
+    progress = reading.progress;
+    elapsed += 1 / hz;
+    peakHandSupport = Math.max(peakHandSupport, reading.handSupport);
+    minimumVerticalLoad = Math.min(
+      minimumVerticalLoad,
+      reading.verticalLoadAcceleration,
+    );
+    if (progress >= .5 && halfwayFootSupport === 1) {
+      halfwayFootSupport = reading.footSupport;
+    }
+    if (reading.completed) break;
+  }
+  return {
+    reading,
+    elapsed,
+    peakHandSupport,
+    minimumVerticalLoad,
+    halfwayFootSupport,
+  };
+}
+const returnProne60 = simulateReturnProne(60);
+const returnProne120 = simulateReturnProne(120);
+if (
+  !returnProne60.reading?.completed
+  || !returnProne120.reading?.completed
+  || returnProne60.elapsed < .84
+  || returnProne60.elapsed > .89
+  || Math.abs(returnProne60.elapsed - returnProne120.elapsed) > .018
+  || returnProne60.peakHandSupport < .9
+  || returnProne60.halfwayFootSupport >= .8
+  || returnProne60.halfwayFootSupport <= .2
+  || returnProne60.minimumVerticalLoad > -1.7
+  || returnProne60.reading.footSupport !== 0
+  || returnProne60.reading.counterweightAuthority > .43
+) {
+  throw new Error("Return-prone body weight no longer transfers progressively and consistently across frame rates");
+}
 
 let marginalCapture = 0;
 for (let frame = 0; frame < 72; frame += 1) {
@@ -2968,6 +3018,11 @@ console.log(JSON.stringify({
       fullCompression120.release.extensionPotentialSpeed,
     fatiguedExtensionPotential:
       fatiguedCompression.release.extensionPotentialSpeed,
+    returnProneSeconds60Hz: returnProne60.elapsed,
+    returnProneSeconds120Hz: returnProne120.elapsed,
+    returnPronePeakHandSupport: returnProne60.peakHandSupport,
+    returnProneHalfwayFootSupport: returnProne60.halfwayFootSupport,
+    returnProneVerticalLoad: returnProne60.minimumVerticalLoad,
   },
   duckDiveDynamics: {
     optimalTiming: optimalDiveInitiation.timingQuality,

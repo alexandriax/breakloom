@@ -189,6 +189,56 @@ export type SurferCompressionReading = SurferCompressionState & {
   muscularEffort: number;
 };
 
+export type ReturnProneTransitionSample = {
+  deltaSeconds: number;
+  requested: boolean;
+};
+
+export type ReturnProneTransitionReading = {
+  progress: number;
+  active: boolean;
+  completed: boolean;
+  footSupport: number;
+  handSupport: number;
+  bodyLowering: number;
+  counterweightAuthority: number;
+  verticalLoadAcceleration: number;
+};
+
+/**
+ * Integrates the surfer's move from standing to prone as a body-weight
+ * transfer. Feet release progressively, the hands carry a transient load, and
+ * the center of mass lowers before the hull changes control posture.
+ */
+export function advanceReturnProneTransition(
+  currentProgress: number,
+  sample: ReturnProneTransitionSample,
+): ReturnProneTransitionReading {
+  const delta = clampValue(sample.deltaSeconds, 0, .05);
+  const duration = .86;
+  const current = clampValue(currentProgress, 0, 1);
+  const active = current > 0 || sample.requested;
+  const progress = active
+    ? clampValue(current + delta / duration, 0, 1)
+    : 0;
+  const bodyLowering = smoothstep(.06, .94, progress);
+  const footSupport = 1 - smoothstep(.24, .9, progress);
+  const handSupport = Math.sin(progress * Math.PI)
+    * smoothstep(.04, .28, progress);
+  return {
+    progress,
+    active,
+    completed: active && progress >= 1,
+    footSupport,
+    handSupport,
+    bodyLowering,
+    counterweightAuthority: 1 - bodyLowering * .58,
+    verticalLoadAcceleration: -2.35
+      * Math.sin(progress * Math.PI)
+      * (1 - footSupport * .24),
+  };
+}
+
 /**
  * Integrates the surfer's leg compression as a damped biomechanical degree of
  * freedom. The control asks the body to crouch or extend; it does not fill a
@@ -3872,6 +3922,7 @@ export type GameStats = {
   balanceTarget: number;
   waveEngaged: boolean;
   waveEngagement: number;
+  proneTransition: number;
   lipLaunchSupport: number;
   boardAlignment: number;
   boardWaveAngle: number;
@@ -3996,6 +4047,7 @@ export const INITIAL_STATS: GameStats = {
   balanceTarget: 0,
   waveEngaged: false,
   waveEngagement: 0,
+  proneTransition: 0,
   lipLaunchSupport: 0,
   boardAlignment: 1,
   boardWaveAngle: 0,

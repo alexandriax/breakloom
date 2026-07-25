@@ -3304,6 +3304,15 @@ export default function SurfscapeApp() {
                 rotation: 90,
                 tone: "danger",
               }
+            : stats.proneTransition > .01
+              ? {
+                  cue: `LOWERING TO PRONE ${Math.round(stats.proneTransition * 100)}%`,
+                  detail: stats.proneTransition < .48
+                    ? "Feet still carry the rail; keep the board level while the center of mass drops."
+                    : "Hands are taking load and foot steering is fading; the hull keeps every water force and unit of momentum.",
+                  rotation: 90,
+                  tone: "balance",
+                }
             : stats.pitchOverRisk > .42
             ? {
                 cue: `NOSE ${noseImmersionCentimeters} CM UNDER · SHIFT BACK`,
@@ -3378,6 +3387,15 @@ export default function SurfscapeApp() {
                   rotation: 90,
                   tone: "danger",
                 }
+              : stats.proneTransition > .01
+                ? {
+                    cue: `LOWERING TO PRONE ${Math.round(stats.proneTransition * 100)}%`,
+                    detail: stats.proneTransition < .48
+                      ? "Feet still carry the rail; counter the live face while your center of mass drops."
+                      : "Hands are taking load and foot steering is fading; prone control begins only after the hull is settled.",
+                    rotation: 90,
+                    tone: "balance",
+                  }
               : stats.landingImpact > .2
                 ? {
                     cue: `RECONNECT LOAD ${Math.round(stats.landingImpact * 100)}%`,
@@ -4957,9 +4975,11 @@ export default function SurfscapeApp() {
             ) && (
               <button
                 type="button"
-                className={`dive-button ${stats.phase === "riding" ? "is-prone" : ""} ${stats.duckDiveReady ? "is-ready" : ""} ${stats.duckDiveActive ? "is-active" : ""}`}
+                className={`dive-button ${stats.phase === "riding" ? "is-prone" : ""} ${stats.duckDiveReady ? "is-ready" : ""} ${stats.duckDiveActive || stats.proneTransition > .01 ? "is-active" : ""}`}
                 aria-label={stats.phase === "riding"
-                  ? "Return prone now while preserving the board's momentum and water state."
+                  ? stats.proneTransition > .01
+                    ? `Returning prone. ${Math.round(stats.proneTransition * 100)} percent complete.`
+                    : "Return prone now while preserving the board's momentum and water state."
                   : stats.duckDiveReady
                     ? `Duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds.`
                     : "Duck dive now. Timing and board depth determine whether an incoming wall passes overhead."}
@@ -4971,10 +4991,12 @@ export default function SurfscapeApp() {
               >
                 <Waves />
                 <span>{stats.phase === "riding"
-                  ? "PRONE"
+                  ? stats.proneTransition > .01 ? "LOWER" : "PRONE"
                   : stats.duckDiveActive ? "UNDER" : "DIVE"}</span>
                 <small>{stats.phase === "riding"
-                  ? "ANYTIME"
+                  ? stats.proneTransition > .01
+                    ? `${Math.round(stats.proneTransition * 100)}%`
+                    : "ANYTIME"
                   : stats.duckDiveActive
                     ? `${Math.round(stats.submersion * 100)}%`
                     : stats.duckDiveReady

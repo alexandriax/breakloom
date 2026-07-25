@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -393,6 +393,7 @@ type MotionState = {
   takeoffRead: number;
   catchReady: number;
   takeoffCommit: number;
+  proneTransition: number;
   shorebreak: number;
   shorebreakPower: number;
   shorebreakSeconds: number;
@@ -3255,8 +3256,12 @@ function PremiumSurferBody({
     const driveLateralG = driving ? vehicle?.lateralG ?? 0 : 0;
     const driveBrake = driving && Boolean(vehicle?.brake);
     const rideSettle = riding ? state.finish : 0;
+    const returnProne = riding
+      ? THREE.MathUtils.clamp(state.proneTransition, 0, 1)
+      : 0;
     const rideCompression = THREE.MathUtils.clamp(
       state.compression
+        + Math.sin(returnProne * Math.PI) * .72
         + Math.abs(state.lateralForce) * .09
         + Math.max(0, -state.acceleration) * .07,
       0,
@@ -3341,7 +3346,9 @@ function PremiumSurferBody({
       + state.maneuverSide * state.maneuver * 0.12
       + state.rail * (.08 + state.trickCharge * .06)
       + state.lateralForce * .075
-    ) * (1 - state.takeoff * .72) * (1 - rideSettle * .78);
+    ) * (1 - state.takeoff * .72)
+      * (1 - rideSettle * .78)
+      * (1 - returnProne * .82);
     pose("Pelvis", driving ? -.14 - driveLongitudinalG * .05 : riding ? -0.08 - rideCompression * .12 + state.stance * 0.045 : walking ? step * 0.025 + idleSway * .012 : wipeout ? wipeoutWave * .16 : 0, driving ? driveSteer * .045 : riding ? state.rail * -0.1 * (1 - rideSettle) : paddle ? -paddleRoll * .34 : walking ? idleScan * .008 : 0, driving ? -driveLateralG * .1 : riding ? rideLean * 0.35 : paddle ? paddleRoll * .26 : walking ? idleSway * .018 : 0, 7);
     pose("Torso", driving ? .1 - driveLongitudinalG * .08 - (driveBrake ? .035 : 0) : paddle ? THREE.MathUtils.lerp(-0.1 - state.duckDive * .24, .16, takeoffPlant) : riding ? 0.18 + rideCompression * .22 - state.barrel * 0.13 - state.maneuverLift * .08 - rideSettle * .08 - state.acceleration * .045 : walking ? runLean - step * 0.018 - boardGuide * .025 + breath : wipeout ? -.18 + wipeoutWave * .22 : 0, driving ? driveSteer * .055 : riding ? (state.maneuverSide * state.maneuver * 0.16 + state.slip * state.rail * .08 + Math.sin(state.maneuverSpin) * .12 - state.lineSide * .045 + state.lateralForce * .055) * (1 - rideSettle * .82) : paddle ? paddleRoll * (1 - takeoffPlant) : walking ? idleScan * .018 : 0, driving ? -driveLateralG * .14 : riding ? rideLean : paddle ? paddleRoll * .58 * (1 - takeoffPlant) : walking ? idleSway * .022 : wipeout ? -wipeoutWave * .24 : 0, 7);
     pose("Head", driving ? -.06 + driveLongitudinalG * .025 : paddle ? THREE.MathUtils.lerp(-0.24 + state.duckDive * .14, -.08, takeoffPlant) : riding ? -0.12 - rideCompression * .08 + state.barrel * 0.08 + rideSettle * .07 : walking ? (wading ? -.03 * boardGuide : 0) - breath * .42 : wipeout ? .1 - wipeoutWave * .12 : 0, driving ? driveSteer * .18 : riding ? (state.rail * 0.12 + state.lineSide * .11 + state.maneuverSide * state.maneuver * .08) * (1 - rideSettle * .7) : paddle ? -paddleRoll * .54 * (1 - takeoffPlant) : walking ? idleScan * .23 : 0, driving ? driveLateralG * .055 : riding ? -rideLean * 0.4 : paddle ? -paddleRoll * .42 * (1 - takeoffPlant) : walking ? -idleSway * .028 : wipeout ? wipeoutWave * .16 : 0, 8);
@@ -3356,7 +3363,12 @@ function PremiumSurferBody({
       .24,
       rideSettle,
     );
-    const popPlant = riding ? state.takeoff : 0;
+    const popPlant = riding
+      ? Math.max(
+          state.takeoff,
+          THREE.MathUtils.smoothstep(returnProne, .08, .74),
+        )
+      : 0;
     const leftCarryArmX = THREE.MathUtils.lerp(step * .42, -.18, boardGuide) + shoulderBreath * .24;
     const rightCarryArmX = THREE.MathUtils.lerp(.16 + step * -.08, -.34, boardGuide) - shoulderBreath * .24;
     const leftCarryArmZ = THREE.MathUtils.lerp(.08, .22, boardGuide);
@@ -4223,8 +4235,12 @@ function SurferModel({
     const wading = state.phase === "wading";
     const wipeout = state.phase === "wipeout";
     const rideSettle = riding ? state.finish : 0;
+    const returnProne = riding
+      ? THREE.MathUtils.clamp(state.proneTransition, 0, 1)
+      : 0;
     const rideCompression = THREE.MathUtils.clamp(
       state.compression
+        + Math.sin(returnProne * Math.PI) * .72
         + Math.abs(state.lateralForce) * .09
         + Math.max(0, -state.acceleration) * .07,
       0,
@@ -4265,26 +4281,42 @@ function SurferModel({
           ? -.18 - state.submersion * (.42 + state.wipeoutPower * .26)
           : 0;
 
+    const standingBodyRotationX =
+      -0.18
+        + state.takeoff * 1.32
+        + rideSettle * .08
+        + state.facePosition * .045
+        - state.acceleration * .035;
     const bodyRotationX = paddle
       ? Math.PI / 2 - 0.1 + state.duckDive * .08 - takeoffPlant * .055
       : riding
-        ? -0.18 + state.takeoff * 1.32 + rideSettle * .08 + state.facePosition * .045 - state.acceleration * .035
+        ? THREE.MathUtils.lerp(
+            standingBodyRotationX,
+            Math.PI / 2 - .1,
+            THREE.MathUtils.smootherstep(returnProne, .04, .96),
+          )
         : 0;
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
     body.current.rotation.z = THREE.MathUtils.damp(
       body.current.rotation.z,
-      riding ? (-state.balance * 0.3 + state.rail * .18 + state.maneuverSide * state.maneuver * 0.34) * (1 - rideSettle * .86) : 0,
+      riding ? (-state.balance * 0.3 + state.rail * .18 + state.maneuverSide * state.maneuver * 0.34) * (1 - rideSettle * .86) * (1 - returnProne * .84) : 0,
       7,
       delta,
     );
     body.current.rotation.y = THREE.MathUtils.damp(
       body.current.rotation.y,
-      riding ? state.maneuverSide * state.maneuver * 0.74 : 0,
+      riding ? state.maneuverSide * state.maneuver * 0.74 * (1 - returnProne * .86) : 0,
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? .84 - state.takeoff * .34 - rideCompression * .15 + rebound * .08 + state.maneuverLift * .05 + rideSettle * .08 : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
-    body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
+    const standingBodyY = .84
+      - state.takeoff * .34
+      - rideCompression * .15
+      + rebound * .08
+      + state.maneuverLift * .05
+      + rideSettle * .08;
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? THREE.MathUtils.lerp(standingBodyY, .44, returnProne) : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
+    body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 * (1 - returnProne) : 0, 7, delta);
     rig.current.rotation.x = dampAngle(rig.current.rotation.x, bodyRigPitch, wipeout ? 18 : 9, delta);
     rig.current.rotation.z = dampAngle(rig.current.rotation.z, bodyRigRoll, wipeout ? 18 : 9, delta);
     rig.current.rotation.y = dampAngle(rig.current.rotation.y, bodyRigYaw, wipeout ? 18 : state.maneuverLift > .12 ? 13 : 8, delta);
@@ -10842,6 +10874,7 @@ function Simulation({
     takeoffRead: 0,
     catchReady: 0,
     takeoffCommit: 0,
+    proneTransition: 0,
     shorebreak: 0,
     shorebreakPower: 0,
     shorebreakSeconds: 0,
@@ -11315,6 +11348,10 @@ function Simulation({
     let releaseCompression = bodyCompression.current;
     let bodyExtensionSpeed = 0;
     let releaseExtensionSpeed = 0;
+    let returnProneActive = false;
+    let returnProneFootSupport = 1;
+    let returnProneCounterweightAuthority = 1;
+    let returnProneVerticalLoad = 0;
     let catchReady = false;
     let inLineup = false;
     let shorebreakIntensity = 0;
@@ -12410,6 +12447,7 @@ function Simulation({
           rideResult.current = "";
           cleanFinish.current = false;
           finishAt.current = -1;
+          motion.current.proneTransition = 0;
           activeManeuver.current = null;
           maneuverQuality.current = 0;
           takeoffCommitAt.current = -1;
@@ -12763,7 +12801,24 @@ function Simulation({
         }
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
-        if (divePressed) {
+        const returnProne = advanceReturnProneTransition(
+          motion.current.proneTransition,
+          {
+            deltaSeconds: delta,
+            requested: divePressed,
+          },
+        );
+        motion.current.proneTransition = returnProne.progress;
+        returnProneActive = returnProne.active;
+        returnProneFootSupport = returnProne.footSupport;
+        returnProneCounterweightAuthority =
+          returnProne.counterweightAuthority;
+        returnProneVerticalLoad = returnProne.verticalLoadAcceleration;
+        if (
+          returnProne.completed
+          && boardWaterContact > .52
+          && airborneHeight < .08
+        ) {
           phase.current = "paddling";
           rideEngaged.current = false;
           paddleHeading.current = rideHeading.current;
@@ -12775,7 +12830,7 @@ function Simulation({
           stance.current = 0;
           bodyCompression.current = 0;
           bodyCompressionVelocity.current = 0;
-          prompt = "Back prone — the hull keeps its momentum and wave pressure";
+          prompt = "Weight settled prone — the hull kept its momentum and water state";
         } else if (!rideEngaged.current) {
           const standingTransport = primaryWaveVelocityAt(
             position.current.x,
@@ -12811,11 +12866,13 @@ function Simulation({
             rideWavePhase.current,
           );
           boardCrestEnergy = standingCrest.energy;
-          const standingSteer = rideRailInputFromPaddleSteer(steer);
+          const standingSteer = rideRailInputFromPaddleSteer(steer)
+            * returnProneFootSupport;
           stance.current = advanceSurfboardStance(
             stance.current,
-            move,
+            move * returnProneFootSupport,
             delta,
+            returnProneActive,
           );
           const standingLookback = .16;
           const standingRise = (
@@ -13069,6 +13126,8 @@ function Simulation({
             lineSide: rideLineSide.current,
             whitewater: standingBrokenWater,
           });
+          const standingCounterweight = balanceInput
+            * returnProneCounterweightAuthority;
           const standingRoll = advanceBoardRollDynamics(
             {
               rollAngle: boardRollAngle.current,
@@ -13077,7 +13136,7 @@ function Simulation({
             {
               deltaSeconds: delta,
               railInput: standingSteer,
-              counterweight: balanceInput,
+              counterweight: standingCounterweight,
               crossSlope: standingRailContact.crossSlope,
               lateralAcceleration: standingLateralAcceleration,
               crossWaveLoad: standingReading.crossWaveLoad * boardWaterContact,
@@ -13265,7 +13324,9 @@ function Simulation({
             1,
           );
 
-          const standingBalanceError = Math.abs(balanceInput - balanceTarget);
+          const standingBalanceError = Math.abs(
+            standingCounterweight - balanceTarget,
+          );
           const standingFailThreshold = SURF_PHYSICS_TUNING
             .balanceFailureThreshold
             * Math.sqrt(boardSpec.stability);
@@ -13325,7 +13386,9 @@ function Simulation({
             },
             {
               deltaSeconds: delta,
-              crouchIntent: state.action ? 1 : 0,
+              crouchIntent: returnProneActive
+                ? Math.sin(returnProne.progress * Math.PI)
+                : state.action ? 1 : 0,
               stamina: stamina.current,
             },
           );
@@ -13386,6 +13449,7 @@ function Simulation({
           );
           const standingReleased = Boolean(
             !standingWipeout
+              && !returnProneActive
               && !activeManeuver.current
               && actionReleased
               && t - lastManeuverAt.current > .72
@@ -13561,7 +13625,8 @@ function Simulation({
         rideOutProgress = shorelineRideOutProgress(
           position.current.z - tideShift,
         );
-        const rideSteer = rideRailInputFromPaddleSteer(steer);
+        const rideSteer = rideRailInputFromPaddleSteer(steer)
+          * returnProneFootSupport;
         const waveTransport = primaryWaveVelocityAt(
           position.current.x,
           position.current.z,
@@ -13634,8 +13699,9 @@ function Simulation({
         );
         stance.current = advanceSurfboardStance(
           stance.current,
-          move,
+          move * returnProneFootSupport,
           delta,
+          returnProneActive,
         );
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
@@ -13855,6 +13921,8 @@ function Simulation({
         ) * boardWaterContact;
         const priorLateralAcceleration = rideAcceleration.current.x * rollRightX
           + rideAcceleration.current.y * rollRightZ;
+        const rideCounterweight = balanceInput
+          * returnProneCounterweightAuthority;
         const rideRoll = advanceBoardRollDynamics(
           {
             rollAngle: boardRollAngle.current,
@@ -13863,7 +13931,7 @@ function Simulation({
           {
             deltaSeconds: delta,
             railInput: rideSteer,
-            counterweight: balanceInput,
+            counterweight: rideCounterweight,
             crossSlope: rideRailContact.crossSlope,
             lateralAcceleration: priorLateralAcceleration,
             crossWaveLoad: rideInteraction.crossWaveLoad * boardWaterContact,
@@ -14141,6 +14209,7 @@ function Simulation({
           && Math.abs(rideYawRate.current) > .16;
         if (
           !finishing
+          && !returnProneActive
           && !activeManeuver.current
           && !state.action
           && !actionReleased
@@ -14182,7 +14251,7 @@ function Simulation({
             && (attempt.family === "trim" || attempt.family === "carve"),
         );
         const surfaceObservationInterrupted = surfaceObservationActive
-          && (state.action || actionReleased);
+          && (state.action || actionReleased || returnProneActive);
         const compressionBeforeStep = bodyCompression.current;
         const compressionReading = advanceSurferCompression(
           {
@@ -14191,7 +14260,9 @@ function Simulation({
           },
           {
             deltaSeconds: delta,
-            crouchIntent: state.action ? 1 : 0,
+            crouchIntent: returnProneActive
+              ? Math.sin(returnProne.progress * Math.PI)
+              : state.action ? 1 : 0,
             stamina: stamina.current,
           },
         );
@@ -14289,7 +14360,7 @@ function Simulation({
                   ? "land"
                   : "release";
         }
-        const balanceError = Math.abs(balanceInput - balanceTarget);
+        const balanceError = Math.abs(rideCounterweight - balanceTarget);
         const failThreshold = SURF_PHYSICS_TUNING.balanceFailureThreshold
           * Math.sqrt(boardSpec.stability);
         const rideInstability = advanceSurfboardInstability(
@@ -14557,6 +14628,7 @@ function Simulation({
           waterContact: boardWaterContact,
         });
         const wantsRelease = (!attempt || surfaceObservationActive)
+          && !returnProneActive
           && actionReleased;
         if (
           wantsRelease
@@ -14765,6 +14837,16 @@ function Simulation({
           cleanFinish.current = true;
           finishAt.current = t;
         }
+        }
+        if (returnProneActive && phase.current === "riding") {
+          const transitionPercent = Math.round(
+            motion.current.proneTransition * 100,
+          );
+          prompt = motion.current.proneTransition < .48
+            ? `Lowering center of mass ${transitionPercent}% — feet still carry the rail`
+            : motion.current.proneTransition < 1
+              ? `Hands loaded, feet releasing ${transitionPercent}% — keep the board level`
+              : "Body is prone — waiting for the hull to reconnect with water";
         }
       } else if (currentPhase === "wipeout") {
         const elapsed = Math.max(0, t - wipeoutAt.current);
@@ -15092,6 +15174,7 @@ function Simulation({
             boardStability: boardSpec.stability,
             whitewater: whitewaterPressure,
             verticalWaterAcceleration: railVerticalLoad
+              + returnProneVerticalLoad
               + rebound * 4.2
               + Math.sin(t * 7.3 + position.current.x * .1) * whitewaterPressure * 2.1,
           },
@@ -15432,6 +15515,14 @@ function Simulation({
     motion.current.slip = THREE.MathUtils.damp(motion.current.slip, railSlip.current, 8, delta);
     motion.current.impact = Math.max(0, motion.current.impact - delta * 1.9);
     motion.current.takeoff = Math.max(0, motion.current.takeoff - delta * 1.55);
+    if (phase.current !== "riding") {
+      motion.current.proneTransition = THREE.MathUtils.damp(
+        motion.current.proneTransition,
+        0,
+        7.5,
+        delta,
+      );
+    }
     const finishTarget = phase.current === "riding" && finishAt.current >= 0 ? 1 : 0;
     motion.current.finish = THREE.MathUtils.damp(
       motion.current.finish,
@@ -16235,6 +16326,9 @@ function Simulation({
           || phase.current === "paddling"
         )
           ? waveEngagement.current
+          : 0,
+        proneTransition: phase.current === "riding"
+          ? motion.current.proneTransition
           : 0,
         lipLaunchSupport: phase.current === "riding"
           ? lipLaunchSupport
