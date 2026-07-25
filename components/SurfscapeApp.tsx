@@ -62,6 +62,7 @@ import {
   reachedSurfTrainingStep,
   resolvePaddleHeadingTarget,
   settingsFromConditions,
+  SURF_ASSIST_PROFILES,
   SURFSCAPE_RELEASE,
   thermalKitForConditions,
   tideResponseForBreak,
@@ -69,6 +70,7 @@ import {
   type GameMode,
   type GameStats,
   type SessionSettings,
+  type SurfAssistLevel,
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
 import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
@@ -189,10 +191,14 @@ type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
 };
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
+const ASSIST_OPTIONS = Object.keys(
+  SURF_ASSIST_PROFILES,
+) as SurfAssistLevel[];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
 const RECORD_KEY = "surfscape-personal-best-v1";
 const PASSPORT_KEY = "surfscape-world-tour-v1";
+const GUIDANCE_KEY = "surfscape-coaching-v1";
 const HEAT_DURATION_SECONDS = 5 * 60;
 const GRADE_ORDER: GameStats["grade"][] = ["C", "B", "A", "S"];
 const EMPTY_COAST_RECORD: CoastPassportRecord = {
@@ -890,6 +896,7 @@ export default function SurfscapeApp() {
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
+  const [guidanceEnabled, setGuidanceEnabled] = useState(true);
   const [trainingStep, setTrainingStep] = useState(0);
   const trainingStepValue = useRef(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
@@ -993,6 +1000,34 @@ export default function SurfscapeApp() {
     () => conditions.forecast.find((point) => point.time === selectedForecastTime) ?? null,
     [conditions.forecast, selectedForecastTime],
   );
+  const toggleGuidance = useCallback(() => {
+    setGuidanceEnabled((enabled) => {
+      const next = !enabled;
+      try {
+        window.localStorage.setItem(
+          GUIDANCE_KEY,
+          next ? "shown" : "hidden",
+        );
+      } catch {
+        // The preference remains active for this tab when storage is blocked.
+      }
+      return next;
+    });
+    haptic(4);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        setGuidanceEnabled(
+          window.localStorage.getItem(GUIDANCE_KEY) !== "hidden",
+        );
+      } catch {
+        // Coaching defaults to visible when storage is unavailable.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const enabled = new URLSearchParams(window.location.search).get("qa") === "surf";
@@ -1503,7 +1538,12 @@ export default function SurfscapeApp() {
           setConditions(live);
           setSettings((previous) => {
             if (previous.mode === "playground") return { ...previous, coastHeading: beach.heading };
-            return { ...settingsFromConditions(live, beach.heading), mode: previous.mode, board: previous.board };
+            return {
+              ...settingsFromConditions(live, beach.heading),
+              mode: previous.mode,
+              assist: previous.assist,
+              board: previous.board,
+            };
           });
         })
         .catch((error: unknown) => {
@@ -1512,7 +1552,12 @@ export default function SurfscapeApp() {
           setConditions(modeled);
           setSettings((previous) => previous.mode === "playground"
             ? { ...previous, coastHeading: beach.heading }
-            : { ...settingsFromConditions(modeled, beach.heading), mode: previous.mode, board: previous.board });
+            : {
+                ...settingsFromConditions(modeled, beach.heading),
+                mode: previous.mode,
+                assist: previous.assist,
+                board: previous.board,
+              });
         })
         .finally(() => setConditionsLoading(false));
     }, 260);
@@ -1542,7 +1587,7 @@ export default function SurfscapeApp() {
       if (screen !== "game") return;
       controls.current.gamepadActive = false;
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d", "q", "e", "g", "p", "r", "c", "[", "]", "-", "=", "+", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
+      if (["w", "a", "s", "d", "q", "e", "g", "h", "p", "r", "c", "[", "]", "-", "=", "+", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " "].includes(key)) {
         event.preventDefault();
       }
       if (replayActive) {
@@ -1557,6 +1602,10 @@ export default function SurfscapeApp() {
         if (key === "r" && !event.repeat) toggleReplayDirector();
         if (key === "[" && !event.repeat) cycleReplaySpeed(-1);
         if (key === "]" && !event.repeat) cycleReplaySpeed(1);
+        return;
+      }
+      if (key === "escape" && rideToast) {
+        setRideToast(null);
         return;
       }
       if (key === "p" && !event.repeat) {
@@ -1588,6 +1637,10 @@ export default function SurfscapeApp() {
         if (key === "-") selectPhotoExposure(photoExposure - .2);
         if (key === "=" || key === "+") selectPhotoExposure(photoExposure + .2);
         if (key === "g" && !event.repeat) cyclePhotoGuide();
+        return;
+      }
+      if (key === "h" && !event.repeat) {
+        toggleGuidance();
         return;
       }
       if (key === "w" || key === "arrowup") controls.current.forward = true;
@@ -1629,7 +1682,7 @@ export default function SurfscapeApp() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [cyclePhotoGuide, cycleReplayCamera, cycleReplaySpeed, nudgePhotoFocalLength, paused, photoExposure, photoMode, replayActive, screen, seekReplay, selectPhotoExposure, stopReplay, toggleReplayDirector, toggleReplayPaused]);
+  }, [cyclePhotoGuide, cycleReplayCamera, cycleReplaySpeed, nudgePhotoFocalLength, paused, photoExposure, photoMode, replayActive, rideToast, screen, seekReplay, selectPhotoExposure, stopReplay, toggleGuidance, toggleReplayDirector, toggleReplayPaused]);
 
   useEffect(() => {
     if (screen !== "game" || !navigator.getGamepads) {
@@ -2165,7 +2218,10 @@ export default function SurfscapeApp() {
           }, 0)
         : null;
       setShareStatus("idle");
-      const timer = window.setTimeout(() => setRideToast(null), 10800);
+      const timer = window.setTimeout(
+        () => setRideToast(null),
+        completedRide.result === "wipeout" ? 4200 : 10800,
+      );
       return () => {
         if (heatScoreTimer !== null) window.clearTimeout(heatScoreTimer);
         window.clearTimeout(timer);
@@ -2295,7 +2351,12 @@ export default function SurfscapeApp() {
     setConditions(modeled);
     setSettings((current) => current.mode === "playground"
       ? { ...current, coastHeading: next.heading }
-      : { ...settingsFromConditions(modeled, next.heading), mode: current.mode, board: current.board });
+      : {
+          ...settingsFromConditions(modeled, next.heading),
+          mode: current.mode,
+          assist: current.assist,
+          board: current.board,
+        });
     setSelectedForecastTime(null);
     setDestinationPickerOpen(false);
   };
@@ -2305,7 +2366,12 @@ export default function SurfscapeApp() {
     if (mode === "playground") {
       setSettings((current) => ({ ...current, mode }));
     } else {
-      setSettings((current) => ({ ...settingsFromConditions(sessionConditions, beach.heading), mode, board: current.board }));
+      setSettings((current) => ({
+        ...settingsFromConditions(sessionConditions, beach.heading),
+        mode,
+        assist: current.assist,
+        board: current.board,
+      }));
     }
   };
 
@@ -2315,7 +2381,12 @@ export default function SurfscapeApp() {
     setSelectedForecastTime(point?.time ?? null);
     setSettings((current) => current.mode === "playground"
       ? { ...current, timeOfDay: nextSettings.timeOfDay, weatherCode: nextConditions.weatherCode }
-      : { ...nextSettings, mode: current.mode, board: current.board });
+      : {
+          ...nextSettings,
+          mode: current.mode,
+          assist: current.assist,
+          board: current.board,
+        });
     haptic(7);
   };
 
@@ -3997,6 +4068,34 @@ export default function SurfscapeApp() {
                     </button>
                   </div>
                 )}
+                <div className="assist-picker">
+                  <div>
+                    <Target />
+                    <span>
+                      <small>CONTROL SUPPORT</small>
+                      <strong>Same ocean surface</strong>
+                    </span>
+                  </div>
+                  {ASSIST_OPTIONS.map((assist) => {
+                    const profile = SURF_ASSIST_PROFILES[assist];
+                    return (
+                      <button
+                        type="button"
+                        key={assist}
+                        className={settings.assist === assist ? "is-selected" : ""}
+                        onClick={() => setSettings((current) => ({
+                          ...current,
+                          assist,
+                        }))}
+                        aria-pressed={settings.assist === assist}
+                        title={profile.description}
+                      >
+                        <strong>{profile.label}</strong>
+                        <small>{profile.description}</small>
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="quiver-picker">
                   <div className="quiver-head"><span>QUIVER / 03</span><strong>Choose the board under your feet</strong></div>
                   <div className="quiver-grid">
@@ -4510,7 +4609,7 @@ export default function SurfscapeApp() {
           </div>
           <div className={`velocity-veil ${stats.barrelIntensity > .2 ? "is-barrel" : ""}`} style={{ opacity: velocityIntensity }} aria-hidden="true" />
           {cinemaBeat && <div className={`cinema-impact is-${cinemaBeat}`} key={`${cinemaBeat}-${cinemaBeatKey}`} aria-hidden="true" />}
-          {stats.phase === "wipeout" && (
+          {guidanceEnabled && stats.phase === "wipeout" && (
             <div
               className={`hold-down-instrument ${stats.holdDownSeconds <= .7 ? "is-rising" : ""}`}
               aria-label={`Wipeout. Estimated ${stats.holdDownSeconds.toFixed(1)} seconds until the body settles at the surface. Breath ${stats.breath} percent.`}
@@ -4614,6 +4713,15 @@ export default function SurfscapeApp() {
               <button className="photo-button" onClick={openPhotoMode} aria-label="Open photo mode" title="Photo mode (P)"><Aperture /></button>
               <button className="camera-button" onClick={cycleCamera} aria-label={`Camera: ${CAMERA_LABELS[cameraMode]}. Switch camera.`} title={`Camera: ${CAMERA_LABELS[cameraMode]}`}><Camera /></button>
               <button
+                className={`coach-toggle ${guidanceEnabled ? "is-active" : ""}`}
+                onClick={toggleGuidance}
+                aria-label={guidanceEnabled ? "Hide coaching overlays" : "Show coaching overlays"}
+                aria-pressed={guidanceEnabled}
+                title={`${guidanceEnabled ? "Hide" : "Show"} coaching overlays (H)`}
+              >
+                <Target />
+              </button>
+              <button
                 className={`hud-menu-button ${hudMenuOpen ? "is-active" : ""}`}
                 onClick={() => setHudMenuOpen((value) => !value)}
                 aria-label={hudMenuOpen ? "Close surf computer" : "Open surf computer"}
@@ -4651,7 +4759,7 @@ export default function SurfscapeApp() {
             </div>
             <div><Waves /><span>Crest</span><strong>{surfRadarValue}</strong></div>
           </div>
-          {mechanicsGuide && (
+          {guidanceEnabled && mechanicsGuide && (
             <div className={`mechanics-guide is-${mechanicsGuide.tone}`} role="status" aria-live="polite">
               <i style={{ transform: `rotate(${mechanicsGuide.rotation}deg)` }}><ArrowRight /></i>
               <div>
@@ -4676,7 +4784,7 @@ export default function SurfscapeApp() {
               </div>
             </div>
           )}
-          {stats.phase === "paddling" && !stats.inLineup && (
+          {guidanceEnabled && stats.phase === "paddling" && !stats.inLineup && (
             <div
               className={`paddle-out-controls ${duckDiveApproaching ? "is-warning" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""}`}
               aria-label={`${gamepadConnected ? "Left stick" : "W"} paddles. ${gamepadConnected ? "Left stick" : "A and D"} aims the board. ${gamepadConnected ? "Left bumper" : "Shift"} duck dives.${stats.duckDiveReady ? " Dive now." : duckDiveApproaching ? ` Incoming wall in ${stats.shorebreakSeconds.toFixed(1)} seconds.` : ""}`}
@@ -4695,7 +4803,7 @@ export default function SurfscapeApp() {
               </span>
             </div>
           )}
-          {paddleTrainerActive && (
+          {guidanceEnabled && paddleTrainerActive && (
             <div
               className={`paddle-training-instrument is-${paddleTraining.pressureMode} has-direction-aim`}
               role="img"
@@ -4872,6 +4980,16 @@ export default function SurfscapeApp() {
 
           {rideToast && (
             <div className={`ride-recap is-${rideToast.result}`} key={rideToast.id}>
+              <button
+                type="button"
+                className="ride-recap-close"
+                onClick={() => setRideToast(null)}
+                onPointerDown={(event) => event.stopPropagation()}
+                aria-label="Dismiss ride recap"
+                title="Dismiss"
+              >
+                <X />
+              </button>
               <div className="ride-grade">
                 <span>{sessionFormat === "heat" ? "JUDGES" : rideToast.result === "clean" ? "CLEAN LINE" : "LINE LOST"}</span>
                 <strong>{sessionFormat === "heat" ? heatWaveForToast?.judgeScore.toFixed(2) : rideToast.grade}</strong>

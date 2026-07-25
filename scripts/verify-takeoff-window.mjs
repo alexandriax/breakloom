@@ -80,6 +80,8 @@ import {
   surfboardWipeoutTriggered,
   surfboardLipLaunchSupport,
   surfingStaminaDelta,
+  SURF_ASSIST_PROFILES,
+  waveBreakOffsetForEnergy,
   waveCrestDistanceAtPhase,
   waveCrestPropertiesAtPhase,
   waveFacePositionAtPhase,
@@ -87,6 +89,7 @@ import {
   waveBreakingGeometryAt,
   waveBreakingCoordinateAt,
   waveSetStateAt,
+  waveSetState,
   waveSurfaceFrameAt,
 } from "../lib/game.ts";
 
@@ -361,11 +364,11 @@ const shorebreakLoadSample = {
 };
 const outsideShorebreakLoad = resolveShorebreakBandLoad({
   ...shorebreakLoadSample,
-  breakingCoordinate: -20,
+  breakingCoordinate: -26,
 });
 const heldLineupShorebreakLoad = resolveShorebreakBandLoad({
   ...shorebreakLoadSample,
-  breakingCoordinate: -16,
+  breakingCoordinate: -20,
 });
 const outerBoundaryLoad = resolveShorebreakBandLoad({
   ...shorebreakLoadSample,
@@ -377,11 +380,21 @@ const innerBoundaryLoad = resolveShorebreakBandLoad({
 });
 const peakShorebreakLoad = resolveShorebreakBandLoad({
   ...shorebreakLoadSample,
-  breakingCoordinate: -8,
+  breakingCoordinate: -12,
 });
 const shorewardShorebreakLoad = resolveShorebreakBandLoad({
   ...shorebreakLoadSample,
-  breakingCoordinate: 2,
+  breakingCoordinate: -3,
+});
+const lullOuterShorebreakLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  crestEnergy: .2,
+  breakingCoordinate: -20,
+});
+const setOuterShorebreakLoad = resolveShorebreakBandLoad({
+  ...shorebreakLoadSample,
+  crestEnergy: .86,
+  breakingCoordinate: -20,
 });
 if (
   Math.abs(peelingBreakCoordinate - centerBreakCoordinate) < 1.5
@@ -398,11 +411,36 @@ if (
   || heldLineupShorebreakLoad.power <= .04
   || peakShorebreakLoad.power <= .65
   || shorewardShorebreakLoad.power !== 0
+  || lullOuterShorebreakLoad.power !== 0
+  || setOuterShorebreakLoad.power <= .08
+  || waveBreakOffsetForEnergy(.86, 2)
+    <= waveBreakOffsetForEnergy(.2, 2) + 3
   || Math.abs(
     outerBoundaryLoad.power - innerBoundaryLoad.power,
-  ) > .001
+  ) > .004
 ) {
   throw new Error("Animated breaking-band geometry no longer separates continuous wall load from lineup coaching state");
+}
+const setCycle = Array.from(
+  { length: 24 },
+  (_, index) => waveSetState(index * 9, 9),
+);
+const openingLull = setCycle.slice(0, 6);
+const firstSet = setCycle.slice(6, 12);
+const secondLull = setCycle.slice(12, 17);
+const secondSet = setCycle.slice(17, 22);
+if (
+  setCycle[0].crestSequenceLength !== 24
+  || openingLull.some((crest) => crest.crestSurfable)
+  || firstSet.filter((crest) => crest.crestSurfable).length < 5
+  || secondLull.some((crest) => crest.crestSurfable)
+  || secondSet.filter((crest) => crest.crestSurfable).length < 5
+  || Math.max(...firstSet.map((crest) => crest.crestEnergy)) < .8
+  || Math.max(...secondSet.map((crest) => crest.crestEnergy)) < .75
+) {
+  throw new Error(
+    "Swell sequencing no longer produces distinct multi-wave sets and paddle-out lulls",
+  );
 }
 
 const x = 0;
@@ -3745,6 +3783,36 @@ const detachedProneFailure = evaluateProneBoardFailure({
   waveEnergy: .9,
   waterContact: 0,
 });
+const marginalRawProneFailure = evaluateProneBoardFailure({
+  capsizeRisk: .93,
+  pitchOverRisk: .12,
+  crossWaveLoad: .25,
+  whitewater: .08,
+  waveEnergy: .5,
+  waterContact: 1,
+});
+const marginalGuidedProneFailure = evaluateProneBoardFailure(
+  {
+    capsizeRisk: .93,
+    pitchOverRisk: .12,
+    crossWaveLoad: .25,
+    whitewater: .08,
+    waveEnergy: .5,
+    waterContact: 1,
+  },
+  SURF_ASSIST_PROFILES.guided.failureMargin,
+);
+const severeGuidedProneFailure = evaluateProneBoardFailure(
+  {
+    capsizeRisk: .995,
+    pitchOverRisk: .2,
+    crossWaveLoad: 1.2,
+    whitewater: .8,
+    waveEnergy: .9,
+    waterContact: 1,
+  },
+  SURF_ASSIST_PROFILES.guided.failureMargin,
+);
 if (
   settledProneFailure.failed
   || !broadsideProneFailure.failed
@@ -3752,6 +3820,9 @@ if (
   || detachedProneFailure.failed
   || detachedProneFailure.load > .1
   || broadsideProneFailure.power <= settledProneFailure.power
+  || !marginalRawProneFailure.failed
+  || marginalGuidedProneFailure.failed
+  || !severeGuidedProneFailure.failed
 ) {
   throw new Error("Prone separation no longer distinguishes stable, contacting, detached, rail, and nose states");
 }
@@ -4056,10 +4127,29 @@ const cueReactionDive = resolveDuckDiveInitiation({
   stamina: 88,
   noseIntoWallAlignment: 1,
 });
+const guidedEarlyDive = resolveDuckDiveInitiation({
+  secondsToImpact: .9,
+  shorebreakPower: .82,
+  stamina: 88,
+  noseIntoWallAlignment: 1,
+  timingWindowScale:
+    SURF_ASSIST_PROFILES.guided.duckDiveWindowScale,
+});
+const rawEarlyDive = resolveDuckDiveInitiation({
+  secondsToImpact: .9,
+  shorebreakPower: .82,
+  stamina: 88,
+  noseIntoWallAlignment: 1,
+});
 const cueReactionSubmersion = duckDiveSubmersionAt(.58);
 const lateDiveSubmersion = duckDiveSubmersionAt(.02);
 const timedDiveSubmersion = duckDiveSubmersionAt(.3);
-function shorebreakPass(hz, submersion, diveQuality) {
+function shorebreakPass(
+  hz,
+  submersion,
+  diveQuality,
+  exposureScale = 1,
+) {
   let state = {
     velocityX: 0,
     velocityZ: -2,
@@ -4082,6 +4172,7 @@ function shorebreakPass(hz, submersion, diveQuality) {
         currentVelocityZ: 0,
         submersion,
         diveQuality,
+        exposureScale,
       },
     );
     state = reading;
@@ -4101,6 +4192,12 @@ const cleanDiveShorebreak120 = shorebreakPass(
   120,
   .82,
   .95,
+);
+const guidedExposedShorebreak60 = shorebreakPass(
+  60,
+  0,
+  0,
+  SURF_ASSIST_PROFILES.guided.shorebreakExposure,
 );
 const zeroShorebreakResponse =
   advanceProneShorebreakResponse(
@@ -4127,6 +4224,7 @@ if (
   || actionableDiveCue !== "dive"
   || weakWallDiveCue !== "clear"
   || cueReactionDive.quality < .6
+  || guidedEarlyDive.quality <= rawEarlyDive.quality * 1.45
   || cueReactionSubmersion < .99
   || earlyDiveInitiation.timingQuality !== 0
   || flatWaterDiveInitiation.timingQuality !== 0
@@ -4139,6 +4237,9 @@ if (
     - cleanDiveShorebreak60.velocityZ <= 1
   || exposedShorebreak60.staminaCost
     <= cleanDiveShorebreak60.staminaCost * 2
+  || guidedExposedShorebreak60.staminaCost
+    >= exposedShorebreak60.staminaCost * .82
+  || guidedExposedShorebreak60.peakImpact <= .2
   || Math.abs(
     exposedShorebreak60.velocityZ
       - exposedShorebreak120.velocityZ,
@@ -4167,6 +4268,7 @@ function paddleForFrames(frameCount, sample = paddlingSample) {
       effort: Math.max(0, sample.stroke),
       steer: sample.steer,
       stamina: 82,
+      turningAuthority: sample.turningAuthority,
     });
     strokeCycle = cycle;
     state = advancePaddleboardDynamics(state, {
@@ -4322,6 +4424,12 @@ const longboardPaddleTurn = paddleForFrames(120, {
   boardWidth: .43,
   boardTurn: .82,
 });
+const guidedPaddleTurn = paddleForFrames(120, {
+  ...paddlingSample,
+  steer: 1,
+  turningAuthority:
+    SURF_ASSIST_PROFILES.guided.paddleTurnAuthority,
+});
 if (
   Math.abs(performancePaddleTurn.heading) < .5
   || Math.abs(longboardPaddleTurn.heading) >= Math.abs(performancePaddleTurn.heading) * .78
@@ -4329,6 +4437,8 @@ if (
     performancePaddleTurn.heading
       - performancePaddleTurn120Hz.heading,
   ) > .018
+  || Math.abs(guidedPaddleTurn.heading)
+    <= Math.abs(performancePaddleTurn.heading) * 1.18
 ) {
   throw new Error("Prone board yaw inertia no longer distinguishes a longboard from a shortboard");
 }

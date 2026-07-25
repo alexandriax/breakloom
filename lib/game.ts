@@ -3,6 +3,7 @@ import type { BreakCharacter } from "./beaches";
 
 export type GameMode = "training" | "advanced" | "playground";
 export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
+export type SurfAssistLevel = "guided" | "natural" | "raw";
 export type SessionGrade = "C" | "B" | "A" | "S";
 export type BoardType = "performance" | "fish" | "longboard";
 export const SHORELINE_REFERENCE_Z = 8;
@@ -11,10 +12,59 @@ export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z - 1.2;
 export const OUTER_PADDLE_LIMIT_Z = -900;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
 const WAVE_ENERGY_SEQUENCE = [
-  .18, .42, .29, .76, .58, .23, .34, .88, .67,
-  .51, .2, .27, .46, .37, .92, .33, .62,
+  .12, .16, .2, .14, .18, .24,
+  .29, .42, .64, .86, .72, .48,
+  .22, .15, .11, .17, .25,
+  .34, .53, .78, .61, .39, .23, .16,
 ] as const;
 const SURFABLE_CREST_ENERGY = .28;
+
+/**
+ * Assistance changes how forgiving the surfer's technique is, not the wave
+ * surface. Every profile reads the same polygons, set sequence, current, and
+ * board dimensions; Guided adds leverage and recovery margin so learning the
+ * physical controls does not require surviving raw-ocean punishment first.
+ */
+export const SURF_ASSIST_PROFILES = {
+  guided: {
+    label: "Guided",
+    description: "More paddle leverage, clearer dive timing, gentler wash.",
+    paddleTurnAuthority: 1.38,
+    proneLateralLoad: .56,
+    shorebreakExposure: .68,
+    failureMargin: .08,
+    duckDiveWindowScale: 1.32,
+  },
+  natural: {
+    label: "Natural",
+    description: "Calibrated body and board response with light recovery help.",
+    paddleTurnAuthority: 1.16,
+    proneLateralLoad: .78,
+    shorebreakExposure: .84,
+    failureMargin: .035,
+    duckDiveWindowScale: 1.14,
+  },
+  raw: {
+    label: "Raw",
+    description: "Full lateral load, timing, and separation thresholds.",
+    paddleTurnAuthority: 1,
+    proneLateralLoad: 1,
+    shorebreakExposure: 1,
+    failureMargin: 0,
+    duckDiveWindowScale: 1,
+  },
+} as const satisfies Record<
+  SurfAssistLevel,
+  {
+    label: string;
+    description: string;
+    paddleTurnAuthority: number;
+    proneLateralLoad: number;
+    shorebreakExposure: number;
+    failureMargin: number;
+    duckDiveWindowScale: number;
+  }
+>;
 
 /**
  * One physical calibration shared by every mode. Training changes what the
@@ -91,6 +141,7 @@ export type DuckDiveInitiationSample = {
   shorebreakPower: number;
   stamina: number;
   noseIntoWallAlignment: number;
+  timingWindowScale?: number;
 };
 
 export type DuckDiveInitiationReading = {
@@ -143,11 +194,13 @@ export function resolveDuckDiveInitiation(
     clampValue(sample.noseIntoWallAlignment, -1, 1),
   );
   const incomingWall = shorebreakPower > .06 && secondsToImpact > 0;
+  const timingWindow = SURF_PHYSICS_TUNING.duckDiveTimingWindow
+    * clampValue(sample.timingWindowScale ?? 1, 1, 1.5);
   const timingQuality = incomingWall
     ? clampValue(
         1
           - Math.abs(secondsToImpact - .3)
-            / SURF_PHYSICS_TUNING.duckDiveTimingWindow,
+            / timingWindow,
         0,
         1,
       )
@@ -1079,12 +1132,13 @@ export const BOARD_SPECS: Record<BoardType, {
 };
 
 export const SURFSCAPE_RELEASE = {
-  version: 232,
+  version: 233,
   channel: "STABLE RC",
 } as const;
 
 export type SessionSettings = {
   mode: GameMode;
+  assist: SurfAssistLevel;
   board: BoardType;
   waveHeight: number;
   wavePeriod: number;
@@ -2497,6 +2551,7 @@ export function advanceProneBoardAttitude(
  */
 export function evaluateProneBoardFailure(
   sample: ProneBoardFailureSample,
+  failureMargin = 0,
 ): ProneBoardFailureReading {
   const capsizeRisk = clampValue(sample.capsizeRisk, 0, 1);
   const pitchOverRisk = clampValue(sample.pitchOverRisk, 0, 1);
@@ -2509,9 +2564,10 @@ export function evaluateProneBoardFailure(
   const load = Math.max(capsizeRisk, pitchOverRisk)
     + Math.max(0, crossWaveLoad - .48) * .24
     + whitewater * .16;
-  const failed = capsizeRisk > .9
-    || pitchOverRisk > .9
-    || load > .98;
+  const margin = clampValue(failureMargin, 0, .12);
+  const failed = capsizeRisk > .9 + margin
+    || pitchOverRisk > .9 + margin
+    || load > .98 + margin;
   const power = clampValue(
     .12
       + capsizeRisk * .34
@@ -2545,6 +2601,7 @@ export type PaddleStrokeCycleSample = {
   effort: number;
   steer: number;
   stamina: number;
+  turningAuthority?: number;
 };
 
 export type PaddleStrokeCycleReading = PaddleStrokeCycleState & {
@@ -2701,9 +2758,17 @@ export function advancePaddleStrokeCycle(
   const pull = pullProgress > 0 && pullProgress < 1
     ? Math.sin(pullProgress * Math.PI)
     : 0;
+  const turningAuthority = clampValue(
+    sample.turningAuthority ?? 1,
+    1,
+    1.5,
+  );
   const steeringBias = Math.max(
-    .48,
-    Math.min(1.52, 1 + strokeSide * steer * .42),
+    .4,
+    Math.min(
+      1.6,
+      1 + strokeSide * steer * .42 * turningAuthority,
+    ),
   );
   const fatigueScale = .72 + stamina * .0028;
   const drive = Math.max(
@@ -2882,6 +2947,7 @@ export type PaddleboardDynamicsSample = {
   boardWidth: number;
   boardTurn: number;
   paddleEfficiency: number;
+  turningAuthority?: number;
 };
 
 export type PaddleboardDynamicsReading = PaddleboardDynamicsState & {
@@ -2917,6 +2983,11 @@ export function advancePaddleboardDynamics(
   const safeLength = Math.max(1.6, sample.boardLength);
   const safeWidth = Math.max(.24, sample.boardWidth);
   const turn = Math.max(.45, sample.boardTurn);
+  const turningAuthority = clampValue(
+    sample.turningAuthority ?? 1,
+    1,
+    1.5,
+  );
   const paddleEfficiency = Math.max(.4, Math.min(1.3, sample.paddleEfficiency));
   const speed = Math.hypot(state.velocityX, state.velocityZ);
   // Mass-normalized polar inertia (I / m) for the prone surfer-board system.
@@ -2935,7 +3006,8 @@ export function advancePaddleboardDynamics(
   // turning stroke reaches/sweeps wider, increasing its effective moment arm.
   const neutralStrokeLever = .055 + safeWidth * .12;
   const turningStrokeReach = Math.abs(steer)
-    * (.24 + safeWidth * .18);
+    * (.24 + safeWidth * .18)
+    * turningAuthority;
   const paddleHandLever = strokeSide
     * (neutralStrokeLever + turningStrokeReach);
   const strokeYawAcceleration = -paddleHandLever
@@ -5902,6 +5974,7 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
   const localHour = Number(conditions.observedAt.slice(11, 13));
   return {
     mode: "training",
+    assist: "guided",
     board: "performance",
     waveHeight: conditions.waveHeight,
     wavePeriod: conditions.wavePeriod,
@@ -6047,6 +6120,23 @@ export type ShorebreakBandReading = {
   power: number;
 };
 
+/**
+ * Larger members of a swell set feel bottom sooner and begin standing up
+ * farther offshore. The offset feeds both surface shoaling and breaking-water
+ * load, so the outside set line is geometry rather than a scripted zone.
+ */
+export function waveBreakOffsetForEnergy(
+  crestEnergy: number,
+  waveHeight: number,
+) {
+  return smoothstep(.38, .9, clampValue(crestEnergy, 0, 1))
+    * (2.2 + Math.min(3.8, Math.max(0, waveHeight) * 1.15));
+}
+
+export function maximumSetBreakOffset(waveHeight: number) {
+  return waveBreakOffsetForEnergy(1, waveHeight);
+}
+
 export type ProneShorebreakState = {
   velocityX: number;
   velocityZ: number;
@@ -6062,6 +6152,7 @@ export type ProneShorebreakSample = {
   currentVelocityZ: number;
   submersion: number;
   diveQuality: number;
+  exposureScale?: number;
 };
 
 export type ProneShorebreakReading =
@@ -6081,15 +6172,20 @@ export type ProneShorebreakReading =
 export function resolveShorebreakBandLoad(
   sample: ShorebreakBandSample,
 ): ShorebreakBandReading {
+  const effectiveBreakingCoordinate = sample.breakingCoordinate
+    + waveBreakOffsetForEnergy(
+      sample.crestEnergy,
+      sample.waveHeight,
+    );
   const bandOccupancy = smoothstep(
     -18,
     -8,
-    sample.breakingCoordinate,
+    effectiveBreakingCoordinate,
   ) * (
     1 - smoothstep(
-      -3,
-      1,
-      sample.breakingCoordinate,
+      -7,
+      .5,
+      effectiveBreakingCoordinate,
     )
   );
   const power = clampValue(
@@ -6136,9 +6232,14 @@ export function advanceProneShorebreakResponse(
     : 1;
   const protectedSubmersion = submersion
     * (.35 + diveQuality * .65);
+  const exposureScale = clampValue(
+    sample.exposureScale ?? 1,
+    .55,
+    1,
+  );
   const exposure = clampValue(
-    1 - protectedSubmersion,
-    .08,
+    (1 - protectedSubmersion) * exposureScale,
+    .06,
     1,
   );
   const transportSpeed = .65 + power * 2.15;
@@ -6215,11 +6316,17 @@ export function waveHeightAt(
     character ?? DEFAULT_TIDE_BREAK,
     tideResponse,
   ).breakingCoordinate;
-  const shoreBoost = .72 + smoothstep(-85, 8, breakZ) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const setEnergy = waveEnergyForPhase(p1);
+  const dynamicBreakZ = breakZ + waveBreakOffsetForEnergy(
+    setEnergy,
+    settings.waveHeight * tideResponse.faceScale,
+  );
+  const shoreBoost = .72
+    + smoothstep(-85, 8, dynamicBreakZ)
+      * (.58 + steepness * .24);
   const setLift = 0.78 + setEnergy * 0.34;
-  const shoaling = smoothstep(-96, 9, breakZ);
+  const shoaling = smoothstep(-96, 9, dynamicBreakZ);
   const primaryNonlinearity = shoaling
     * (.18 + steepness * .32 + (character?.hollow ?? .35) * tideResponse.hollowScale * .18)
     * (.7 + setEnergy * .3);
@@ -6244,7 +6351,8 @@ export function waveHeightAt(
   const swellPhase = (
     x * normalizedSwellX + coastalZ * normalizedSwellZ
   ) * (Math.PI * 2 / swellWavelength) - elapsed * (Math.PI * 2 / swellPeriod) + 1.7;
-  const swellShoaling = .84 + smoothstep(-85, 8, breakZ) * .24;
+  const swellShoaling = .84
+    + smoothstep(-85, 8, dynamicBreakZ) * .24;
   // Marine swell height is crest-to-trough height, so its physical mesh
   // amplitude is half that value. It is independent of the local breaking
   // face control in Wave Lab.

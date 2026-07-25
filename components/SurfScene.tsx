@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -837,25 +837,32 @@ const OCEAN_VERTEX = /* glsl */ `
   }
 
   float crestEnergy(float crestIndex) {
-    float ordinal = mod(-crestIndex, 17.0);
-    if (ordinal < 0.0) ordinal += 17.0;
-    if (ordinal < .5) return .18;
-    if (ordinal < 1.5) return .42;
-    if (ordinal < 2.5) return .29;
-    if (ordinal < 3.5) return .76;
-    if (ordinal < 4.5) return .58;
-    if (ordinal < 5.5) return .23;
-    if (ordinal < 6.5) return .34;
-    if (ordinal < 7.5) return .88;
-    if (ordinal < 8.5) return .67;
-    if (ordinal < 9.5) return .51;
-    if (ordinal < 10.5) return .20;
-    if (ordinal < 11.5) return .27;
-    if (ordinal < 12.5) return .46;
-    if (ordinal < 13.5) return .37;
-    if (ordinal < 14.5) return .92;
-    if (ordinal < 15.5) return .33;
-    return .62;
+    float ordinal = mod(-crestIndex, 24.0);
+    if (ordinal < 0.0) ordinal += 24.0;
+    if (ordinal < .5) return .12;
+    if (ordinal < 1.5) return .16;
+    if (ordinal < 2.5) return .20;
+    if (ordinal < 3.5) return .14;
+    if (ordinal < 4.5) return .18;
+    if (ordinal < 5.5) return .24;
+    if (ordinal < 6.5) return .29;
+    if (ordinal < 7.5) return .42;
+    if (ordinal < 8.5) return .64;
+    if (ordinal < 9.5) return .86;
+    if (ordinal < 10.5) return .72;
+    if (ordinal < 11.5) return .48;
+    if (ordinal < 12.5) return .22;
+    if (ordinal < 13.5) return .15;
+    if (ordinal < 14.5) return .11;
+    if (ordinal < 15.5) return .17;
+    if (ordinal < 16.5) return .25;
+    if (ordinal < 17.5) return .34;
+    if (ordinal < 18.5) return .53;
+    if (ordinal < 19.5) return .78;
+    if (ordinal < 20.5) return .61;
+    if (ordinal < 21.5) return .39;
+    if (ordinal < 22.5) return .23;
+    return .16;
   }
 
   float travelingSetEnergy(float phase) {
@@ -901,7 +908,6 @@ const OCEAN_VERTEX = /* glsl */ `
     float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section - uBreakShift;
     float curve = waveDir.x * .0019 * surfaceOrigin.x * surfaceOrigin.x;
     vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
-    float shore = .72 + smoothstep(-85.0, 8.0, breakCoord) * (.58 + uSteepness * .24);
     float shallowCompression = mix(
       1.0,
       mix(.34, .18, clamp(uSteepness, 0.0, 1.0)),
@@ -912,6 +918,10 @@ const OCEAN_VERTEX = /* glsl */ `
     float primaryPhase = dot(curvedOrigin, primaryDirection) * (PI * 2.0 / primaryWavelength) - uTime * angularSpeed;
     float setEnergy = travelingSetEnergy(primaryPhase);
     float setLift = .78 + setEnergy * .34;
+    float setBreakOffset = smoothstep(.38, .9, setEnergy)
+      * (2.2 + min(3.8, max(0.0, uHeight * uTideFaceScale) * 1.15));
+    float dynamicBreakCoord = breakCoord + setBreakOffset;
+    float shore = .72 + smoothstep(-85.0, 8.0, dynamicBreakCoord) * (.58 + uSteepness * .24);
     float amplitude = max(.12, uHeight * .78) * uPower * uTideFaceScale;
     float swellPeriod = max(4.0, uSwellPeriod);
     float swellWavelength = clamp(1.56 * swellPeriod * swellPeriod, 64.0, 520.0);
@@ -921,7 +931,7 @@ const OCEAN_VERTEX = /* glsl */ `
     float swellAmplitude = max(0.0, uSwellHeight * .5);
     // The API reports crest-to-trough swell height. Preserve that height in
     // deep water, then add only the expected shoaling gain near the bank.
-    float swellShoaling = 1.0 + smoothstep(-85.0, 8.0, breakCoord) * .18;
+    float swellShoaling = 1.0 + smoothstep(-85.0, 8.0, dynamicBreakCoord) * .18;
     float windChop = clamp(uWind / 24.0, .12, 1.45);
     float currentBend = clamp(uCurrent / 4.0, 0.0, 1.0);
 
@@ -935,7 +945,7 @@ const OCEAN_VERTEX = /* glsl */ `
       angularSpeed,
       0.0
     );
-    float primaryShoaling = smoothstep(-96.0, 9.0, breakCoord);
+    float primaryShoaling = smoothstep(-96.0, 9.0, dynamicBreakCoord);
     float primaryNonlinearity = clamp(
       primaryShoaling
         * (.18 + uSteepness * .32 + uHollow * .18)
@@ -996,14 +1006,14 @@ const OCEAN_VERTEX = /* glsl */ `
 
     vHeight = p.z;
     vCrest = shapedPrimary * shore;
-    vBreaker = smoothstep(-28.0, 12.0, breakCoord)
+    vBreaker = smoothstep(-28.0, 12.0, dynamicBreakCoord)
       * smoothstep(mix(.9, .74, uHollow), 1.5, shapedPrimary)
       * setLift
       * (.72 + uHollow * .34);
     // Long, unbroken swell lines need to remain readable well before they
     // reach the sandbar. This is an optical ridge only; foam still comes
     // exclusively from vBreaker in shallow water.
-    float deepWaterRead = 1.0 - smoothstep(-92.0, -20.0, breakCoord);
+    float deepWaterRead = 1.0 - smoothstep(-92.0, -20.0, dynamicBreakCoord);
     vSwellRead = pow(max(0.0, liveSwell), 3.2) * deepWaterRead;
     vChop = abs(liveSwell) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
     vSurface = surfaceOrigin;
@@ -10919,6 +10929,7 @@ function Simulation({
   const backgroundRef = useRef<THREE.Color>(null);
   const fogRef = useRef<THREE.Fog>(null);
   const boardSpec = BOARD_SPECS[settings.board];
+  const assistProfile = SURF_ASSIST_PROFILES[settings.assist];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
   const tideResponse = useMemo(
     () => tideResponseForBreak(settings.tide, character),
@@ -12098,6 +12109,8 @@ function Simulation({
             effort: paddleEffort,
             steer: steer * popUpPaddleAvailability,
             stamina: stamina.current,
+            turningAuthority:
+              assistProfile.paddleTurnAuthority,
           },
         );
         paddleStrokeCycle.current.phase = paddleStroke.phase;
@@ -12141,6 +12154,8 @@ function Simulation({
             boardWidth: boardSpec.width,
             boardTurn: boardSpec.turn,
             paddleEfficiency: paddleEfficiency * boardSpec.paddle,
+            turningAuthority:
+              assistProfile.paddleTurnAuthority,
           },
         );
         const strokeWork = paddleStrokeWorkDelta({
@@ -12178,7 +12193,9 @@ function Simulation({
         lineupDirectionZ =
           breakingGeometry.outsideDirectionZ;
         const lineupGeometry = resolveLineupFromBreakingGeometry(
-          breakCoastalZ,
+          breakCoastalZ + maximumSetBreakOffset(
+            settings.waveHeight * tideResponse.faceScale,
+          ),
           outsideBreak.current,
         );
         outsideBreak.current = lineupGeometry.outsideBreak;
@@ -12284,6 +12301,8 @@ function Simulation({
             shorebreakPower,
             stamina: stamina.current,
             noseIntoWallAlignment: duckDiveAlignment,
+            timingWindowScale:
+              assistProfile.duckDiveWindowScale,
           });
           duckDiveQuality.current = diveInitiation.quality;
           duckDiveUntil.current = t + diveInitiation.duration;
@@ -12302,7 +12321,9 @@ function Simulation({
               * THREE.MathUtils.smoothstep(proneDiveEnvelope, .28, .72)
             : 0;
           duckDiveQuality.current = effectiveDiveQuality;
-          const diveThreshold = SURF_PHYSICS_TUNING.duckDiveThreshold;
+          const diveThreshold =
+            SURF_PHYSICS_TUNING.duckDiveThreshold
+              * (1 - assistProfile.failureMargin);
           const cleanDive = effectiveDiveQuality >= diveThreshold;
           shorebreakResult.current = cleanDive ? "clean" : "hit";
           duckDiveWindowOpen.current = false;
@@ -12334,6 +12355,8 @@ function Simulation({
               currentVelocityZ: currentZ,
               submersion: proneDiveEnvelope,
               diveQuality: duckDiveQuality.current,
+              exposureScale:
+                assistProfile.shorebreakExposure,
             },
           );
         paddleVelocity.current.set(
@@ -12655,13 +12678,31 @@ function Simulation({
           boardTurn: boardSpec.turn,
         });
         const pronePressureStep = Math.min(delta, .05);
-        paddleVelocity.current.x += proneWavePressure.accelerationX
-          * pronePressureStep;
-        paddleVelocity.current.y += proneWavePressure.accelerationZ
-          * pronePressureStep;
+        const proneForwardX = Math.sin(paddleHeading.current);
+        const proneForwardZ = Math.cos(paddleHeading.current);
+        const proneRightX = Math.cos(paddleHeading.current);
+        const proneRightZ = -Math.sin(paddleHeading.current);
+        const pressureForward =
+          proneWavePressure.accelerationX * proneForwardX
+            + proneWavePressure.accelerationZ * proneForwardZ;
+        const pressureLateral =
+          (
+            proneWavePressure.accelerationX * proneRightX
+              + proneWavePressure.accelerationZ * proneRightZ
+          ) * assistProfile.proneLateralLoad;
+        paddleVelocity.current.x += (
+          proneForwardX * pressureForward
+            + proneRightX * pressureLateral
+        ) * pronePressureStep;
+        paddleVelocity.current.y += (
+          proneForwardZ * pressureForward
+            + proneRightZ * pressureLateral
+        ) * pronePressureStep;
         paddleYawRate.current = THREE.MathUtils.clamp(
           paddleYawRate.current
-            + proneWavePressure.yawAcceleration * pronePressureStep,
+            + proneWavePressure.yawAcceleration
+              * assistProfile.proneLateralLoad
+              * pronePressureStep,
           -4.8,
           4.8,
         );
@@ -12690,17 +12731,20 @@ function Simulation({
             .18 + landingImpact * .56,
           );
         }
-        const proneFailure = evaluateProneBoardFailure({
-          capsizeRisk: rollCapsizeRisk,
-          pitchOverRisk,
-          crossWaveLoad: proneInteraction.crossWaveLoad,
-          whitewater: Math.max(
-            shorebreakIntensity,
-            proneInteraction.wipeoutRisk * .42,
-          ),
-          waveEnergy: proneCrest.energy,
-          waterContact: boardWaterContact,
-        });
+        const proneFailure = evaluateProneBoardFailure(
+          {
+            capsizeRisk: rollCapsizeRisk,
+            pitchOverRisk,
+            crossWaveLoad: proneInteraction.crossWaveLoad,
+            whitewater: Math.max(
+              shorebreakIntensity,
+              proneInteraction.wipeoutRisk * .42,
+            ),
+            waveEnergy: proneCrest.energy,
+            waterContact: boardWaterContact,
+          },
+          assistProfile.failureMargin,
+        );
         const paddleMatchTarget = THREE.MathUtils.clamp(
           localWaveTransport.speed * .31,
           1.45,
@@ -12899,7 +12943,18 @@ function Simulation({
           paddleVelocity.current.set(0, 0);
         };
 
-        if (proneFailure.failed && !qaScenario) {
+        const shallowWashRecovery =
+          proneFailure.failed
+            && position.current.z - tideShift > -5.5;
+        if (
+          proneFailure.failed
+            && !qaScenario
+            && shallowWashRecovery
+        ) {
+          takeoffOpportunity = 0;
+          prompt =
+            "Shallow wash — step off, keep hold of the board, and reset";
+        } else if (proneFailure.failed && !qaScenario) {
           takeoffOpportunity = 0;
           prompt = rollCapsizeRisk >= pitchOverRisk
             ? "The loaded rail passed its righting limit — protect your head"
@@ -13215,7 +13270,28 @@ function Simulation({
             takeoffOpportunity = 0;
           }
         }
-        if (proneFailure.failed && !qaScenario) {
+        if (
+          proneFailure.failed
+            && !qaScenario
+            && shallowWashRecovery
+        ) {
+          phase.current = "wading";
+          takeoffCommitAt.current = -1;
+          popUpBody.current.progress = 0;
+          popUpBody.current.velocity = 0;
+          takeoffCommitProgress = 0;
+          playerHeading.current = paddleHeading.current;
+          landVelocity.current
+            .copy(paddleVelocity.current)
+            .multiplyScalar(.18);
+          paddleVelocity.current.set(0, 0);
+          paddleYawRate.current = 0;
+          rideEngaged.current = false;
+          motion.current.impact = Math.max(
+            motion.current.impact,
+            .2 + proneFailure.power * .26,
+          );
+        } else if (proneFailure.failed && !qaScenario) {
           phase.current = "wipeout";
           rideEngaged.current = false;
           takeoffCommitAt.current = -1;

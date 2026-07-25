@@ -528,6 +528,60 @@ input:focus-visible {
 .session-format-picker > button.is-selected svg,
 .session-format-picker > button.is-selected small { color: var(--spot-accent); }
 
+.assist-picker {
+  display: grid;
+  grid-template-columns: minmax(128px, .72fr) repeat(3, minmax(0, 1fr));
+  margin-top: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: rgba(5, 17, 23, .62);
+  backdrop-filter: blur(14px);
+}
+.assist-picker > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border-right: 1px solid var(--line);
+}
+.assist-picker > div svg { width: 16px; color: var(--spot-accent); }
+.assist-picker > div span { min-width: 0; display: grid; gap: 2px; }
+.assist-picker > div small { color: var(--spot-accent); font-size: 5px; font-weight: 900; letter-spacing: .12em; }
+.assist-picker > div strong { color: rgba(232, 248, 244, .56); font-size: 6px; letter-spacing: .04em; }
+.assist-picker > button {
+  min-width: 0;
+  min-height: 53px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 8px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: white;
+  text-align: left;
+  cursor: pointer;
+}
+.assist-picker > button:last-child { border-right: 0; }
+.assist-picker > button strong { font-size: 8px; letter-spacing: .07em; }
+.assist-picker > button small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgba(213, 245, 240, .42);
+  font-size: 5px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.assist-picker > button.is-selected {
+  background: color-mix(in srgb, var(--spot-accent) 12%, rgba(6, 20, 27, .72));
+  box-shadow: inset 0 -2px var(--spot-accent);
+}
+.assist-picker > button.is-selected strong { color: #dcfff9; }
+.assist-picker > button.is-selected small { color: var(--spot-accent); }
+
 .quiver-picker { margin-top: 12px; border: 1px solid var(--line); background: rgba(5, 17, 23, 0.62); backdrop-filter: blur(14px); }
 .quiver-head { height: 28px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid var(--line); }
 .quiver-head span { color: var(--spot-accent); font-size: 6px; font-weight: 800; letter-spacing: 0.15em; }
@@ -1969,6 +2023,13 @@ input:focus-visible {
 .game-actions svg { width: 14px; }
 .game-actions .camera-button { color: #b8fff5; border-color: rgba(113, 225, 211, 0.3); box-shadow: inset 0 0 12px rgba(113, 225, 211, 0.07); }
 .game-actions .photo-button { color: #ffd7a3; border-color: rgba(255, 198, 132, .3); box-shadow: inset 0 0 12px rgba(255, 190, 118, .06); }
+.game-actions .coach-toggle { color: rgba(213, 245, 240, .5); }
+.game-actions .coach-toggle.is-active {
+  border-color: rgba(113, 225, 211, .42);
+  background: rgba(40, 142, 136, .18);
+  color: #b8fff5;
+  box-shadow: inset 0 0 12px rgba(113, 225, 211, .1);
+}
 .controller-chip {
   height: 34px;
   display: flex;
@@ -2133,6 +2194,24 @@ input:focus-visible {
   animation: ride-recap 10.8s ease both;
 }
 .ride-recap.is-wipeout { border-color: rgba(242, 100, 78, 0.38); border-bottom-color: var(--coral); }
+.ride-recap-close {
+  position: absolute;
+  z-index: 3;
+  top: -10px;
+  right: -10px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(220, 250, 245, .3);
+  border-radius: 50%;
+  background: rgba(3, 16, 22, .94);
+  color: rgba(231, 255, 251, .78);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .36);
+  cursor: pointer;
+}
+.ride-recap-close:hover { border-color: rgba(220, 250, 245, .62); color: white; }
+.ride-recap-close svg { width: 12px; }
 .ride-grade { min-height: 74px; display: grid; place-items: center; align-content: center; gap: 3px; border-right: 1px solid rgba(255, 255, 255, 0.12); background: rgba(113, 225, 211, 0.08); }
 .is-wipeout .ride-grade { background: rgba(242, 100, 78, 0.08); }
 .ride-grade span { color: #a6fff2; font-size: 5px; font-weight: 900; letter-spacing: 0.14em; }
@@ -2508,6 +2587,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .session-format-picker { grid-template-columns: repeat(2, 1fr); }
   .session-format-picker > div { grid-column: 1 / -1; min-height: 42px; border-right: 0; border-bottom: 1px solid var(--line); }
   .session-format-picker > button { min-height: 68px; }
+  .assist-picker { grid-template-columns: repeat(3, 1fr); }
+  .assist-picker > div { grid-column: 1 / -1; min-height: 40px; border-right: 0; border-bottom: 1px solid var(--line); }
   .quiver-head { height: 34px; }
   .quiver-grid { grid-template-columns: 1fr; }
   .quiver-grid button { min-height: 52px; grid-template-columns: 50px 1fr auto; grid-template-rows: 1fr; border-right: 0; border-bottom: 1px solid var(--line); }
@@ -3141,6 +3222,11 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   border-color: rgba(188, 243, 235, .13);
   background: rgba(2, 12, 17, .46);
 }
+.launch-config .assist-picker {
+  margin-top: 7px;
+  border-color: rgba(188, 243, 235, .13);
+  background: rgba(2, 12, 17, .46);
+}
 
 .launch-config .quiver-head {
   min-height: 29px;
@@ -3458,6 +3544,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 }
 .mode-card > i { left: 14px; right: 14px; bottom: 10px; }
 .session-format-picker,
+.assist-picker,
 .quiver-picker { border-radius: 13px; overflow: hidden; }
 
 .planner {
@@ -4254,6 +4341,10 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .session-format-picker { grid-template-columns: 1fr 1fr; }
   .session-format-picker > div { display: none; }
   .session-format-picker > button { min-height: 56px; border-radius: 0; }
+  .assist-picker { grid-template-columns: repeat(3, 1fr); }
+  .assist-picker > div { display: none; }
+  .assist-picker > button { min-height: 47px; padding: 7px 6px; }
+  .assist-picker > button small { display: none; }
   .quiver-head strong { display: none; }
   .quiver-grid button {
     min-height: 54px;
