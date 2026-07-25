@@ -448,6 +448,20 @@ export type SurfboardRailSlipReading = {
   target: number;
 };
 
+export type SurfboardPlaningSample = {
+  forwardSpeed: number;
+  waveContact: number;
+  waterContact: number;
+  stance: number;
+  boardLength: number;
+  boardWidth: number;
+};
+
+export type SurfboardPlaningReading = {
+  planing: number;
+  threshold: number;
+};
+
 export type BoardRollState = {
   rollAngle: number;
   rollRate: number;
@@ -1721,6 +1735,33 @@ export function resolveSurfboardRailSlip(
 }
 
 /**
+ * Resolves planing support once for every surf phase from water-relative hull
+ * speed, contact, stance, and board geometry.
+ */
+export function resolveSurfboardPlaning(
+  sample: SurfboardPlaningSample,
+): SurfboardPlaningReading {
+  const safeLength = Math.max(1.6, sample.boardLength);
+  const safeWidth = Math.max(.24, sample.boardWidth);
+  const contact = clampValue(sample.waveContact, 0, 1);
+  const hullContact = clampValue(sample.waterContact, 0, 1);
+  const stance = clampValue(sample.stance, -1, 1);
+  const tailPressure = Math.max(0, -stance);
+  const nosePressure = Math.max(0, stance);
+  const lengthPlaningScale = Math.sqrt(safeLength / 2.5);
+  const widthPlaningScale = Math.pow(safeWidth / .34, .16);
+  const threshold = 2.45
+    * (1 + tailPressure * .16 - nosePressure * .08)
+    / Math.max(.72, lengthPlaningScale * widthPlaningScale);
+  const planing = smoothstep(
+    .48,
+    Math.max(.5, threshold * 1.55),
+    Math.abs(sample.forwardSpeed),
+  ) * (.82 + contact * .18) * hullContact;
+  return { planing, threshold };
+}
+
+/**
  * Integrates one horizontal surfboard step from forces at the sampled water
  * polygon. Phase velocity is never assigned to the board. The board can only
  * acquire it through breaking-wave pressure, projected gravity, and its own
@@ -1757,16 +1798,14 @@ export function advanceSurfboardDynamics(
     + currentRelativeZ * initialForwardZ;
   const tailPressure = Math.max(0, -stance);
   const nosePressure = Math.max(0, stance);
-  const lengthPlaningScale = Math.sqrt(safeLength / 2.5);
-  const widthPlaningScale = Math.pow(safeWidth / .34, .16);
-  const planingThreshold = 2.45
-    * (1 + tailPressure * .16 - nosePressure * .08)
-    / Math.max(.72, lengthPlaningScale * widthPlaningScale);
-  const planing = smoothstep(
-    .48,
-    Math.max(.5, planingThreshold * 1.55),
-    Math.abs(initialForwardSpeed),
-  ) * (.36 + contact * .64) * hullContact;
+  const planing = resolveSurfboardPlaning({
+    forwardSpeed: initialForwardSpeed,
+    waveContact: contact,
+    waterContact: hullContact,
+    stance,
+    boardLength: safeLength,
+    boardWidth: safeWidth,
+  }).planing;
 
   const speedAuthority = smoothstep(
     .42,

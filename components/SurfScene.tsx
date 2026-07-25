@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11734,11 +11734,6 @@ function Simulation({
         const surfaceLift = takeoffSurface.height - settings.tide * .3;
         const paddleNormalSpeed = paddleVelocity.current.x * takeoffWaveNormalX
           + paddleVelocity.current.y * takeoffWaveNormalZ;
-        boardPlaning = THREE.MathUtils.clamp(
-          paddleNormalSpeed / Math.max(1.1, localWaveTransport.speed * .66),
-          0,
-          1,
-        );
         const proneInteraction = evaluateBoardWaterInteraction({
           boardHeading: paddleHeading.current,
           velocityX: paddleVelocity.current.x,
@@ -11755,10 +11750,19 @@ function Simulation({
           boardStability: boardSpec.stability,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
         });
-        boardPlaning = Math.max(
-          boardPlaning,
-          proneInteraction.planing * .82,
-        );
+        const proneRelativeForwardSpeed = (
+          paddleVelocity.current.x - currentX
+        ) * paddleForwardX + (
+          paddleVelocity.current.y - currentZ
+        ) * paddleForwardZ;
+        boardPlaning = resolveSurfboardPlaning({
+          forwardSpeed: proneRelativeForwardSpeed,
+          waveContact: proneInteraction.waveContact,
+          waterContact: boardWaterContact,
+          stance: popUpTransition.trim,
+          boardLength: boardSpec.length,
+          boardWidth: boardSpec.width,
+        }).planing;
         const paddleRightX = Math.cos(paddleHeading.current);
         const paddleRightZ = -Math.sin(paddleHeading.current);
         const proneLongitudinalAcceleration = paddlingDynamics.accelerationX * paddleForwardX
@@ -12479,6 +12483,29 @@ function Simulation({
             boardStability: boardSpec.stability,
             waveHeight: settings.waveHeight * tideResponse.faceScale,
           });
+          const standingCurrentAngle = THREE.MathUtils.degToRad(
+            settings.currentDirection - settings.coastHeading,
+          );
+          const standingCurrentSpeed = settings.currentStrength / 3.6;
+          const standingCurrentX = Math.sin(standingCurrentAngle)
+            * standingCurrentSpeed;
+          const standingCurrentZ = -Math.cos(standingCurrentAngle)
+            * standingCurrentSpeed;
+          const standingPlaningForwardX = Math.sin(rideHeading.current);
+          const standingPlaningForwardZ = Math.cos(rideHeading.current);
+          const standingRelativeForwardSpeed = (
+            rideVelocity.current.x - standingCurrentX
+          ) * standingPlaningForwardX + (
+            rideVelocity.current.y - standingCurrentZ
+          ) * standingPlaningForwardZ;
+          const standingPlaning = resolveSurfboardPlaning({
+            forwardSpeed: standingRelativeForwardSpeed,
+            waveContact: standingReading.waveContact,
+            waterContact: boardWaterContact,
+            stance: stance.current,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+          }).planing;
           const standingWaveEngagement = advanceWaveEngagement(
             waveEngagement.current,
             {
@@ -12487,7 +12514,7 @@ function Simulation({
               waveContact: standingReading.waveContact,
               waterContact: boardWaterContact,
               headingAlignment: standingReading.headingAlignment,
-              planing: standingReading.planing,
+              planing: standingPlaning,
               crossWaveLoad: standingReading.crossWaveLoad,
             },
           );
@@ -12495,7 +12522,7 @@ function Simulation({
           boardAlignment = standingReading.headingAlignment;
           boardWaveAngle = standingReading.headingError;
           crossWaveLoad = standingReading.crossWaveLoad * boardWaterContact;
-          boardPlaning = standingReading.planing * boardWaterContact;
+          boardPlaning = standingPlaning;
           waveSurfable = standingReading.waveContact * boardWaterContact > .08;
           takeoffAlignment = (standingReading.headingAlignment + 1) * .5;
           takeoffQuality = standingReading.capture * boardWaterContact;
@@ -12509,12 +12536,6 @@ function Simulation({
 
           const standingWaveNormalX = standingTransport.x / Math.max(.001, standingTransport.speed);
           const standingWaveNormalZ = standingTransport.z / Math.max(.001, standingTransport.speed);
-          const standingCurrentAngle = THREE.MathUtils.degToRad(
-            settings.currentDirection - settings.coastHeading,
-          );
-          const standingCurrentSpeed = settings.currentStrength / 3.6;
-          const standingCurrentX = Math.sin(standingCurrentAngle) * standingCurrentSpeed;
-          const standingCurrentZ = -Math.cos(standingCurrentAngle) * standingCurrentSpeed;
           const standingRollRightX = Math.cos(rideHeading.current);
           const standingRollRightZ = -Math.sin(rideHeading.current);
           const standingHalfRail = Math.max(.12, boardSpec.width * .46);
@@ -12564,7 +12585,7 @@ function Simulation({
               crossWaveSide: standingReading.crossWaveSide,
               turbulenceTorque: standingTurbulenceTorque * boardWaterContact,
               speed: rideVelocity.current.length(),
-              planing: standingReading.planing * boardWaterContact,
+              planing: standingPlaning,
               boardWidth: boardSpec.width,
               boardStability: boardSpec.stability,
               whitewater: standingReading.wipeoutRisk,
@@ -12578,8 +12599,8 @@ function Simulation({
           rollEdgeRisk = standingRoll.edgeRisk;
           rollCapsizeRisk = standingRoll.capsizeRisk;
           balanceTarget = standingRoll.balanceTarget;
-          const standingPitchForwardX = Math.sin(rideHeading.current);
-          const standingPitchForwardZ = Math.cos(rideHeading.current);
+          const standingPitchForwardX = standingPlaningForwardX;
+          const standingPitchForwardZ = standingPlaningForwardZ;
           const standingSlopeAlong = standingSurface.slopeX * standingPitchForwardX
             + standingSurface.slopeZ * standingPitchForwardZ;
           const standingHalfContact = boardSpec.length * .43;
@@ -12619,7 +12640,7 @@ function Simulation({
                   + Math.sin(t * 1.29 + position.current.z * .073) * .12
               ) * (.35 + Math.min(1, settings.windSpeed / 18) * .65),
               speed: rideVelocity.current.length(),
-              planing: standingReading.planing,
+              planing: standingPlaning,
               boardLength: boardSpec.length,
               boardStability: boardSpec.stability,
               waveContact: THREE.MathUtils.clamp(
@@ -12664,7 +12685,7 @@ function Simulation({
                   : settings.board === "longboard"
                     ? .9
                     : .82,
-                planing: standingReading.planing,
+                planing: standingPlaning,
                 waveContact: standingReading.waveContact,
                 crossWaveLoad: standingReading.crossWaveLoad,
                 railSlip: railSlip.current,
@@ -12823,7 +12844,7 @@ function Simulation({
             catchQuality.current = THREE.MathUtils.clamp(
               .18
                 + standingReading.capture * .5
-                + standingReading.planing * .2
+                + standingPlaning * .2
                 + Math.max(0, standingReading.headingAlignment) * .12,
               .14,
               1,
@@ -12986,11 +13007,6 @@ function Simulation({
           0,
           -(rideSurface.slopeX * waveNormalX + rideSurface.slopeZ * waveNormalZ),
         );
-        let gravityPlaning = THREE.MathUtils.smootherstep(
-          faceDownhillSlope,
-          .012,
-          .12 + settings.waveHeight * .025,
-        );
         stance.current = advanceSurfboardStance(
           stance.current,
           move,
@@ -13114,9 +13130,24 @@ function Simulation({
           boardStability: boardSpec.stability,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
         });
+        const planingForwardX = Math.sin(rideHeading.current);
+        const planingForwardZ = Math.cos(rideHeading.current);
+        const rideRelativeForwardSpeed = (
+          rideVelocity.current.x - rideCurrentX
+        ) * planingForwardX + (
+          rideVelocity.current.y - rideCurrentZ
+        ) * planingForwardZ;
+        const ridePlaning = resolveSurfboardPlaning({
+          forwardSpeed: rideRelativeForwardSpeed,
+          waveContact: rideInteraction.waveContact,
+          waterContact: boardWaterContact,
+          stance: stance.current,
+          boardLength: boardSpec.length,
+          boardWidth: boardSpec.width,
+        }).planing;
         const railGrip = resolveSurfboardRailGrip({
           baseGrip: gripBase,
-          planing: rideInteraction.planing,
+          planing: ridePlaning,
           waveContact: rideInteraction.waveContact,
           crossWaveLoad: rideInteraction.crossWaveLoad,
           railSlip: railSlip.current,
@@ -13134,7 +13165,7 @@ function Simulation({
             waveContact: rideInteraction.waveContact,
             waterContact: boardWaterContact,
             headingAlignment: rideInteraction.headingAlignment,
-            planing: rideInteraction.planing,
+            planing: ridePlaning,
             crossWaveLoad: rideInteraction.crossWaveLoad,
           },
         );
@@ -13170,14 +13201,6 @@ function Simulation({
         ) * boardWaterContact;
         const priorLateralAcceleration = rideAcceleration.current.x * rollRightX
           + rideAcceleration.current.y * rollRightZ;
-        const rollPlaningEstimate = Math.max(
-          gravityPlaning,
-          THREE.MathUtils.clamp(
-            speed / Math.max(1.4, waveTransport.speed * .72),
-            0,
-            1,
-          ),
-        );
         const rideRoll = advanceBoardRollDynamics(
           {
             rollAngle: boardRollAngle.current,
@@ -13196,7 +13219,7 @@ function Simulation({
               * boardWaterContact
               * .22,
             speed,
-            planing: rollPlaningEstimate * boardWaterContact,
+            planing: ridePlaning,
             boardWidth: boardSpec.width,
             boardStability: boardSpec.stability,
             whitewater: whitewaterPressure,
@@ -13251,7 +13274,7 @@ function Simulation({
                 + brokenWaterTangent * .12
             ),
             speed,
-            planing: rollPlaningEstimate,
+            planing: ridePlaning,
             boardLength: boardSpec.length,
             boardStability: boardSpec.stability,
             waveContact: THREE.MathUtils.clamp(
@@ -13333,7 +13356,6 @@ function Simulation({
           dynamics.tailStall * .42,
           ridePitch.tailStallRisk,
         );
-        gravityPlaning = Math.max(gravityPlaning, dynamics.planing);
         const slipReading = resolveSurfboardRailSlip({
           railDemand,
           railGrip,
@@ -13444,7 +13466,7 @@ function Simulation({
             normalSpeed: integratedNormalSpeed,
             waveSpeed: waveTransport.speed,
             facePhaseSpan,
-            gravityPlaning: gravityPlaning * boardWaterContact,
+            gravityPlaning: ridePlaning,
           });
           rideCapture.current.overtaken = captureReading.overtaken;
           rideCapture.current.ahead = captureReading.ahead;

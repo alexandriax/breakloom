@@ -19,6 +19,7 @@ import {
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
+  resolveSurfboardPlaning,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
   resolveSurfboardWavePressure,
@@ -479,6 +480,73 @@ const dynamicsState = {
   heading: 0,
   yawRate: 0,
 };
+const sharedPlaning = resolveSurfboardPlaning({
+  forwardSpeed: dynamicsState.velocityZ,
+  waveContact: dynamicsSample.waveContact,
+  waterContact: 1,
+  stance: 0,
+  boardLength: dynamicsSample.boardLength,
+  boardWidth: dynamicsSample.boardWidth,
+});
+const dryPlaning = resolveSurfboardPlaning({
+  forwardSpeed: 8,
+  waveContact: 1,
+  waterContact: 0,
+  stance: 0,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const flatHighSpeedPlaning = resolveSurfboardPlaning({
+  forwardSpeed: 8,
+  waveContact: 0,
+  waterContact: 1,
+  stance: 0,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const longboardPlaning = resolveSurfboardPlaning({
+  forwardSpeed: 2.6,
+  waveContact: .72,
+  waterContact: 1,
+  stance: 0,
+  boardLength: 3.45,
+  boardWidth: .43,
+});
+const shortboardPlaning = resolveSurfboardPlaning({
+  forwardSpeed: 2.6,
+  waveContact: .72,
+  waterContact: 1,
+  stance: 0,
+  boardLength: 2.1,
+  boardWidth: .3,
+});
+const nosePlaning = resolveSurfboardPlaning({
+  forwardSpeed: 2.6,
+  waveContact: .72,
+  waterContact: 1,
+  stance: .8,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const tailPlaningReading = resolveSurfboardPlaning({
+  forwardSpeed: 2.6,
+  waveContact: .72,
+  waterContact: 1,
+  stance: -.8,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+if (
+  sharedPlaning.planing <= 0
+  || dryPlaning.planing !== 0
+  || flatHighSpeedPlaning.planing < .8
+  || longboardPlaning.threshold >= shortboardPlaning.threshold
+  || longboardPlaning.planing <= shortboardPlaning.planing
+  || nosePlaning.threshold >= tailPlaningReading.threshold
+  || nosePlaning.planing <= tailPlaningReading.planing
+) {
+  throw new Error("Shared planing no longer responds consistently to speed, geometry, stance, and contact");
+}
 const alignedWavePressure = resolveSurfboardWavePressure({
   velocityX: dynamicsState.velocityX,
   velocityZ: dynamicsState.velocityZ,
@@ -649,6 +717,16 @@ const flatDynamics = advanceSurfboardDynamics(dynamicsState, {
   ...dynamicsSample,
   waveContact: 0,
 });
+if (Math.abs(flatDynamics.planing - resolveSurfboardPlaning({
+  forwardSpeed: dynamicsState.velocityZ,
+  waveContact: 0,
+  waterContact: 1,
+  stance: 0,
+  boardLength: dynamicsSample.boardLength,
+  boardWidth: dynamicsSample.boardWidth,
+}).planing) > 1e-9) {
+  throw new Error("Horizontal dynamics diverged from the shared planing resolver");
+}
 if (flatDynamics.velocityZ >= dynamicsState.velocityZ || flatDynamics.velocityZ < 1.9) {
   throw new Error(`Flat-water dynamics created thrust or excessive drag: ${JSON.stringify(flatDynamics)}`);
 }
@@ -1794,6 +1872,12 @@ console.log(JSON.stringify({
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
     facePhaseSweep,
+    sharedPlaning: sharedPlaning.planing,
+    flatHighSpeedPlaning: flatHighSpeedPlaning.planing,
+    longboardPlaning: longboardPlaning.planing,
+    shortboardPlaning: shortboardPlaning.planing,
+    nosePlaning: nosePlaning.planing,
+    tailPlaning: tailPlaningReading.planing,
     stillWater: stillWaterStand.outcome,
     angleSweep: angleSweep.map(({ degrees, reading }) => ({
       degrees,
