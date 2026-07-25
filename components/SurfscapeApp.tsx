@@ -55,6 +55,7 @@ import {
   MAX_OFFSHORE_DISTANCE,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  resolvePaddleHeadingTarget,
   settingsFromConditions,
   thermalKitForConditions,
   tideResponseForBreak,
@@ -3092,15 +3093,41 @@ export default function SurfscapeApp() {
       : "CENTERED";
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
-  const offshoreHeadingError = Math.atan2(
-    Math.sin(Math.PI - stats.paddleHeading),
-    Math.cos(Math.PI - stats.paddleHeading),
+  const desiredPaddleHeading = stats.inLineup
+    ? stats.paddleHeading + stats.boardWaveAngle
+    : Math.PI;
+  const desiredPaddleDirectionX =
+    Math.sin(desiredPaddleHeading);
+  const desiredPaddleDirectionZ =
+    Math.cos(desiredPaddleHeading);
+  const paddleCurrentAngle = (
+    settings.currentDirection
+      - settings.coastHeading
+  ) * Math.PI / 180;
+  const paddleCurrentSpeed =
+    settings.currentStrength / 3.6;
+  const paddleHeadingTarget =
+    resolvePaddleHeadingTarget({
+      boardHeading: stats.paddleHeading,
+      desiredDirectionX: desiredPaddleDirectionX,
+      desiredDirectionZ: desiredPaddleDirectionZ,
+      desiredGroundSpeed:
+        2.35 * BOARD_SPECS[settings.board].paddle,
+      currentVelocityX:
+        Math.sin(paddleCurrentAngle)
+          * paddleCurrentSpeed,
+      currentVelocityZ:
+        -Math.cos(paddleCurrentAngle)
+          * paddleCurrentSpeed,
+    });
+  const currentCompensationDegrees = Math.round(
+    Math.abs(
+      paddleHeadingTarget.currentCompensationDegrees,
+    ),
   );
   const paddleTargetKind = stats.inLineup ? "WAVE" : "OFFSHORE";
   const paddleTraining = readPaddleTrainingMechanics({
-    boardWaveAngle: stats.inLineup
-      ? stats.boardWaveAngle
-      : offshoreHeadingError,
+    boardWaveAngle: paddleHeadingTarget.headingError,
     paddleStroke: stats.paddleStroke,
     paddleEffort: stats.paddleEffort,
     waterContact: stats.boardWaterContact,
@@ -3109,7 +3136,7 @@ export default function SurfscapeApp() {
   });
   const surfTrainingForces = readSurfTrainingForces({
     boardWaveAngle: stats.phase === "paddling" && !stats.inLineup
-      ? offshoreHeadingError
+      ? paddleHeadingTarget.headingError
       : stats.boardWaveAngle,
     waveLateralLoad: stats.wavePressureSideLoad,
     waterContact: stats.boardWaterContact,
@@ -3148,13 +3175,17 @@ export default function SurfscapeApp() {
     && !takeoffCommitted
     && !stats.duckDiveReady
     && !stats.duckDiveActive;
+  const currentCompensationCue =
+    currentCompensationDegrees >= 3
+      ? ` · CRAB ${paddleHeadingTarget.currentCompensationDegrees > 0 ? "RIGHT" : "LEFT"} ${currentCompensationDegrees}° FOR CURRENT`
+      : "";
   const paddleAimCue = !stats.inLineup
     ? paddleTraining.turnDirection === "hold"
-      ? "NOSE AIMED OFFSHORE"
-      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° OFFSHORE`
+      ? `NOSE AIMED OFFSHORE${currentCompensationCue}`
+      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° OFFSHORE${currentCompensationCue}`
     : paddleTraining.turnDirection === "hold"
-      ? "NOSE ALIGNED"
-      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}°`;
+      ? `NOSE ALIGNED${currentCompensationCue}`
+      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}°${currentCompensationCue}`;
   const paddleForceCue = paddleTraining.pressureMode === "airborne"
     ? "HANDS OUT OF WATER"
     : paddleTraining.pressureMode === "broadside"
@@ -3247,13 +3278,13 @@ export default function SurfscapeApp() {
             ? paddleTraining.turnDirection === "hold"
               ? {
                   cue: "NOSE OFFSHORE · PADDLE",
-                  detail: "Hold W for alternating pulls. Release W to coast; the board keeps the momentum each hand produced.",
+                  detail: "Hold W for alternating pulls. The offshore arrow already crabs against measured current; release W to coast on retained momentum.",
                   rotation: -90,
                   tone: "paddle",
                 }
               : {
                   cue: `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° TO PADDLE OUT`,
-                  detail: `A/D biases the ${paddleTraining.recommendedHand?.toUpperCase()} pull, whose off-center force rotates the nose toward the offshore arrow.`,
+                  detail: `A/D biases the ${paddleTraining.recommendedHand?.toUpperCase()} pull, whose off-center force rotates the nose toward the current-compensated offshore arrow.`,
                   rotation: paddleTraining.turnDirection === "right" ? 0 : 180,
                   tone: "align",
                 }

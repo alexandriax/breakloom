@@ -30,6 +30,7 @@ import {
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  resolvePaddleHeadingTarget,
   recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
   resolveSeparatedSurfboardWaterForces,
@@ -3903,6 +3904,34 @@ const airborneGuide = readPaddleTrainingMechanics({
   waveForwardDrive: 2,
   waveLateralLoad: 0,
 });
+const stillWaterHeadingTarget = resolvePaddleHeadingTarget({
+  boardHeading: .4,
+  desiredDirectionX: Math.sin(.9),
+  desiredDirectionZ: Math.cos(.9),
+  desiredGroundSpeed: 2.4,
+  currentVelocityX: 0,
+  currentVelocityZ: 0,
+});
+const crossCurrentHeadingTarget =
+  resolvePaddleHeadingTarget({
+    boardHeading: Math.PI,
+    desiredDirectionX: 0,
+    desiredDirectionZ: -1,
+    desiredGroundSpeed: 2.4,
+    currentVelocityX: .8,
+    currentVelocityZ: 0,
+  });
+const crossCurrentRequiredSpeed = Math.hypot(
+  -.8,
+  -2.4,
+);
+const compensatedGroundVelocityX =
+  crossCurrentHeadingTarget.targetDirectionX
+    * crossCurrentRequiredSpeed
+    + .8;
+const compensatedGroundVelocityZ =
+  crossCurrentHeadingTarget.targetDirectionZ
+    * crossCurrentRequiredSpeed;
 if (
   rightTurnLeftPullGuide.turnDirection !== "right"
   || rightTurnLeftPullGuide.turnDegrees !== 60
@@ -3918,8 +3947,19 @@ if (
   || alignedRecoveryGuide.recommendedHand !== null
   || alignedRecoveryGuide.strokePhase !== "recovery"
   || airborneGuide.pressureMode !== "airborne"
+  || Math.abs(
+    stillWaterHeadingTarget.headingError - .5,
+  ) > 1e-9
+  || Math.abs(
+    stillWaterHeadingTarget.currentCompensationDegrees,
+  ) > 1e-9
+  || crossCurrentHeadingTarget.targetDirectionX >= 0
+  || crossCurrentHeadingTarget
+    .currentCompensationDegrees < 10
+  || Math.abs(compensatedGroundVelocityX) > 1e-9
+  || Math.abs(compensatedGroundVelocityZ + 2.4) > 1e-9
 ) {
-  throw new Error("Physical paddle training guidance no longer matches heading, hand cycle, or hull load");
+  throw new Error("Physical paddle training guidance no longer matches ground track, current, hand cycle, or hull load");
 }
 const liveForceGuide = readSurfTrainingForces({
   boardWaveAngle: -Math.PI / 4,
@@ -4465,6 +4505,8 @@ console.log(JSON.stringify({
     guideTurnDegrees: rightTurnLeftPullGuide.turnDegrees,
     guideActiveHand: rightTurnLeftPullGuide.activeHand,
     guideBroadsideMode: leftTurnBroadsideGuide.pressureMode,
+    crossCurrentAim:
+      crossCurrentHeadingTarget.currentCompensationDegrees,
     forwardStance60Hz: forwardStance60,
     forwardStance120Hz: forwardStance120,
     tailStance,

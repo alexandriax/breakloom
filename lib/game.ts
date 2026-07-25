@@ -2478,6 +2478,89 @@ export type PaddleTrainingReading = {
   pressureMode: "airborne" | "broadside" | "drive" | "neutral";
 };
 
+export type PaddleHeadingTargetSample = {
+  boardHeading: number;
+  desiredDirectionX: number;
+  desiredDirectionZ: number;
+  desiredGroundSpeed: number;
+  currentVelocityX: number;
+  currentVelocityZ: number;
+};
+
+export type PaddleHeadingTargetReading = {
+  targetHeading: number;
+  headingError: number;
+  targetDirectionX: number;
+  targetDirectionZ: number;
+  currentCompensationDegrees: number;
+};
+
+/**
+ * Converts a desired ground track into the board heading required through
+ * moving water. The HUD arrow therefore teaches current compensation instead
+ * of pointing at a geometric bearing the paddler would drift away from.
+ */
+export function resolvePaddleHeadingTarget(
+  sample: PaddleHeadingTargetSample,
+): PaddleHeadingTargetReading {
+  const desiredMagnitude = Math.hypot(
+    sample.desiredDirectionX,
+    sample.desiredDirectionZ,
+  );
+  const desiredDirectionX = desiredMagnitude > 1e-6
+    ? sample.desiredDirectionX / desiredMagnitude
+    : Math.sin(sample.boardHeading);
+  const desiredDirectionZ = desiredMagnitude > 1e-6
+    ? sample.desiredDirectionZ / desiredMagnitude
+    : Math.cos(sample.boardHeading);
+  const desiredGroundSpeed = clampValue(
+    sample.desiredGroundSpeed,
+    .6,
+    4,
+  );
+  const requiredVelocityX =
+    desiredDirectionX * desiredGroundSpeed
+      - clampValue(sample.currentVelocityX, -3, 3);
+  const requiredVelocityZ =
+    desiredDirectionZ * desiredGroundSpeed
+      - clampValue(sample.currentVelocityZ, -3, 3);
+  const requiredMagnitude = Math.hypot(
+    requiredVelocityX,
+    requiredVelocityZ,
+  );
+  const targetDirectionX = requiredMagnitude > .08
+    ? requiredVelocityX / requiredMagnitude
+    : desiredDirectionX;
+  const targetDirectionZ = requiredMagnitude > .08
+    ? requiredVelocityZ / requiredMagnitude
+    : desiredDirectionZ;
+  const targetHeading = Math.atan2(
+    targetDirectionX,
+    targetDirectionZ,
+  );
+  const desiredHeading = Math.atan2(
+    desiredDirectionX,
+    desiredDirectionZ,
+  );
+  const headingError = Math.atan2(
+    Math.sin(targetHeading - sample.boardHeading),
+    Math.cos(targetHeading - sample.boardHeading),
+  );
+  const currentCompensation = Math.atan2(
+    Math.sin(targetHeading - desiredHeading),
+    Math.cos(targetHeading - desiredHeading),
+  );
+
+  return {
+    targetHeading,
+    headingError,
+    targetDirectionX,
+    targetDirectionZ,
+    currentCompensationDegrees:
+      currentCompensation * 180 / Math.PI,
+  };
+}
+
 export type SurfTrainingForceSample = {
   boardWaveAngle: number;
   waveLateralLoad: number;
