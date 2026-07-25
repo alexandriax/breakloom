@@ -13887,11 +13887,26 @@ function Simulation({
               0,
               1,
             );
-            const points = Math.round(attempt.base * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
+            const observedYaw = Math.abs(attempt.accumulatedYaw);
+            const resolvedName = attempt.family === "air"
+              ? observedYaw >= Math.PI * 1.55
+                ? "Full-Rotation Air"
+                : observedYaw >= Math.PI * .72
+                  ? "Air Reverse"
+                  : "Straight Air"
+              : attempt.name;
+            const resolvedBase = attempt.family === "air"
+              ? observedYaw >= Math.PI * 1.55
+                ? 780
+                : observedYaw >= Math.PI * .72
+                  ? 690
+                  : 520
+              : attempt.base;
+            const points = Math.round(resolvedBase * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
             maxCombo.current = Math.max(maxCombo.current, combo.current);
-            maneuver.current = attempt.name;
+            maneuver.current = resolvedName;
             maneuverScore.current = points;
             maneuverQuality.current = quality;
             maneuverCount.current += 1;
@@ -13930,9 +13945,9 @@ function Simulation({
             base = settings.board === "longboard" ? 440 : 340;
           } else if (charge > .82 && tailPressure > .34 && rail > .38 && lipLaunchSupport > .64 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
             family = "air";
-            name = charge > .95 && rail > .62 ? "Alley-Oop" : "Air Reverse";
-            base = name === "Alley-Oop" ? 780 : 690;
-            rotation = name === "Alley-Oop" ? Math.PI * 2 : Math.PI;
+            name = "Aerial Release";
+            base = 520;
+            rotation = 0;
           } else if (tailPressure > .56 && rail > .42 && lipLaunchSupport > .42 && physicalFacePosition > .2) {
             family = "lip";
             name = charge > .68 ? "Layback Release" : "Tail Release";
@@ -13972,19 +13987,33 @@ function Simulation({
             : 0;
           const releaseYawRate = family === "air"
             ? surfboardReleaseYawImpulse({
-                desiredRotation: rotation,
+                railInput: physicalRailInput,
+                tailPressure,
+                lipSupport: lipLaunchSupport,
+                speed,
                 verticalImpulse: releaseVelocity,
                 charge,
                 waterContact: boardWaterContact,
                 boardLength: boardSpec.length,
+                boardTurn: boardSpec.turn,
               })
             : 0;
+          if (family === "air") {
+            const ballisticFlightSeconds = THREE.MathUtils.clamp(
+              releaseVelocity * 2 / 9.81,
+              .28,
+              1.18,
+            );
+            rotation = Math.abs(releaseYawRate)
+              * ballisticFlightSeconds;
+          }
           stamina.current = Math.max(0, stamina.current - (5 + charge * 8 + (family === "air" ? 5 : 0)));
           maneuver.current = name;
           maneuverScore.current = 0;
           maneuverQuality.current = 0;
           lastManeuverAt.current = t;
-          const side = Math.sign(physicalRailInput)
+          const side = Math.sign(releaseYawRate)
+            || Math.sign(physicalRailInput)
             || (balanceInput >= 0 ? 1 : -1);
           const baseDuration = family === "air" ? 1.04 : name === "Nose Ride" ? .92 : name === "Foam Floater" ? .8 : family === "carve" ? .78 : .7;
           activeManeuver.current = {
@@ -14014,8 +14043,8 @@ function Simulation({
               * (family === "air" ? .12 : .045)
               * (.65 + tailPressure * .35);
           }
-          if (releaseYawRate > .05) {
-            rideYawRate.current += side * releaseYawRate;
+          if (Math.abs(releaseYawRate) > .05) {
+            rideYawRate.current += releaseYawRate;
           }
           trickCharge.current = 0;
           motion.current.maneuver = .16;

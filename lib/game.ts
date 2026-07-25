@@ -1274,40 +1274,57 @@ export function surfboardReleaseVerticalImpulse(
 }
 
 export type SurfboardYawReleaseSample = {
-  desiredRotation: number;
+  railInput: number;
+  tailPressure: number;
+  lipSupport: number;
+  speed: number;
   verticalImpulse: number;
   charge: number;
   waterContact: number;
   boardLength: number;
+  boardTurn: number;
 };
 
 /**
- * Converts a tail-release rotation request into angular velocity. The expected
- * ballistic flight time sets the required rate, while board length supplies
- * yaw inertia and real hull contact determines how much torque can be applied.
+ * Converts a loaded rail and tail release into signed angular velocity. There
+ * is no requested trick angle: rail load, lip support, retained speed, body
+ * compression, board response, and yaw inertia determine the rotation that is
+ * physically available at takeoff.
  */
 export function surfboardReleaseYawImpulse(
   sample: SurfboardYawReleaseSample,
 ) {
-  const desiredRotation = Math.abs(sample.desiredRotation);
+  const railInput = clampValue(sample.railInput, -1, 1);
+  const railLoad = Math.abs(railInput);
+  const tailPressure = clampValue(sample.tailPressure, 0, 1);
+  const lipSupport = clampValue(sample.lipSupport, 0, 1);
+  const speedAuthority = smoothstep(
+    6.2,
+    14.5,
+    Math.max(0, sample.speed),
+  );
   const verticalImpulse = Math.max(0, sample.verticalImpulse);
   const charge = clampValue(sample.charge, 0, 1);
   const waterContact = clampValue(sample.waterContact, 0, 1);
   const safeLength = Math.max(1.6, sample.boardLength);
-  const estimatedFlightSeconds = clampValue(
-    verticalImpulse * 2 / 9.81,
-    .28,
-    1.18,
-  );
+  const turnResponse = Math.sqrt(Math.max(.45, sample.boardTurn));
   const yawInertia = Math.pow(safeLength / 2.1, 1.38);
-  return clampValue(
-    desiredRotation
-      / estimatedFlightSeconds
-      * (1.04 + charge * .18)
+  const yawRate = railLoad
+      * (
+        2.2
+          + speedAuthority * 3.4
+          + verticalImpulse * .65
+      )
+      * (.62 + tailPressure * .48)
+      * (.18 + lipSupport * .82)
+      * (.72 + charge * .28)
+      * turnResponse
       * waterContact
-      / yawInertia,
-    0,
-    9,
+      / yawInertia;
+  return clampValue(
+    Math.sign(railInput) * yawRate,
+    -8,
+    8,
   );
 }
 

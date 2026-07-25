@@ -1850,30 +1850,54 @@ if (
   throw new Error("A lip release did not produce ballistic flight and a physical reconnection");
 }
 const performanceYawRelease = surfboardReleaseYawImpulse({
-  desiredRotation: Math.PI,
+  railInput: .68,
+  tailPressure: .62,
+  lipSupport: liveLipSupport,
+  speed: 12.4,
   verticalImpulse: lipReleaseImpulse,
   charge: .92,
   waterContact: .94,
   boardLength: 2.1,
+  boardTurn: 1.15,
 });
 const longboardYawRelease = surfboardReleaseYawImpulse({
-  desiredRotation: Math.PI,
+  railInput: .68,
+  tailPressure: .62,
+  lipSupport: liveLipSupport,
+  speed: 12.4,
   verticalImpulse: lipReleaseImpulse,
   charge: .92,
   waterContact: .94,
   boardLength: 3,
+  boardTurn: .72,
 });
 const disconnectedYawRelease = surfboardReleaseYawImpulse({
-  desiredRotation: Math.PI,
+  railInput: .68,
+  tailPressure: .62,
+  lipSupport: liveLipSupport,
+  speed: 12.4,
   verticalImpulse: lipReleaseImpulse,
   charge: .92,
   waterContact: 0,
   boardLength: 2.1,
+  boardTurn: 1.15,
+});
+const unloadedYawRelease = surfboardReleaseYawImpulse({
+  railInput: 0,
+  tailPressure: .62,
+  lipSupport: liveLipSupport,
+  speed: 12.4,
+  verticalImpulse: lipReleaseImpulse,
+  charge: .92,
+  waterContact: .94,
+  boardLength: 2.1,
+  boardTurn: 1.15,
 });
 if (
   performanceYawRelease < 3.5
   || longboardYawRelease >= performanceYawRelease * .72
   || disconnectedYawRelease !== 0
+  || unloadedYawRelease !== 0
 ) {
   throw new Error("Tail-release yaw impulse no longer respects contact and board inertia");
 }
