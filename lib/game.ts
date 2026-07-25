@@ -2337,6 +2337,42 @@ export function resolveSurfboardWipeout(
   };
 }
 
+export type SurfboardLandingSample = {
+  airborneManeuver: boolean;
+  physicalAirLanding: boolean;
+  peakAirborne: number;
+  physicalLandingControl: number;
+  rotationCompletion: number;
+  railSlip: number;
+  rollCapsizeRisk: number;
+  pitchOverRisk: number;
+};
+
+/**
+ * Judges a maneuver from the board's physical reconnection state. HUD targets,
+ * score state, input device, and scripted trick progress are intentionally
+ * absent: a sound attitude can land, while missed water contact or an
+ * over-rotated, slipping, capsizing board cannot.
+ */
+export function surfboardLandingSucceeded(
+  sample: SurfboardLandingSample,
+) {
+  const stableContact = clampValue(sample.railSlip, 0, 1) < .88
+    && clampValue(sample.rollCapsizeRisk, 0, 1) < .9
+    && clampValue(sample.pitchOverRisk, 0, 1) < .9;
+  if (!stableContact) return false;
+  if (!sample.airborneManeuver) return true;
+  const rotationCompletion = Math.max(
+    0,
+    sample.rotationCompletion,
+  );
+  return sample.physicalAirLanding
+    && Math.max(0, sample.peakAirborne) > .08
+    && clampValue(sample.physicalLandingControl, 0, 1) > .12
+    && rotationCompletion > .7
+    && rotationCompletion < 1.16;
+}
+
 /**
  * Resolves planing support once for every surf phase from water-relative hull
  * speed, contact, stance, and board geometry.

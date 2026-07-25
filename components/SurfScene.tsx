@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -4628,7 +4628,7 @@ function WaveReadingGuide({
       const landingAssist = settings.mode === "training" ? .78 : settings.mode === "advanced" ? .3 : .54;
       const targetOpacity = state.phase === "riding" ? state.landingCue * landingAssist * mobileBoost : 0;
       landingMaterial.current.opacity = THREE.MathUtils.damp(landingMaterial.current.opacity, targetOpacity, targetOpacity > .02 ? 12 : 7, delta);
-      landingMarker.current.position.x = THREE.MathUtils.damp(landingMarker.current.position.x, state.landingTarget * 1.35 + state.maneuverSide * .52, 11, delta);
+      landingMarker.current.position.x = THREE.MathUtils.damp(landingMarker.current.position.x, state.landingTarget * 1.35, 11, delta);
       landingMarker.current.position.z = THREE.MathUtils.damp(landingMarker.current.position.z, 1.25 + state.maneuverProgress * 2.2, 10, delta);
       const markerScale = (.74 + state.landingWindow * 1.35) * (1 + Math.sin(clock.elapsedTime * 6.2) * .035);
       landingMarker.current.scale.setScalar(THREE.MathUtils.damp(landingMarker.current.scale.x, markerScale, 10, delta));
@@ -13707,9 +13707,10 @@ function Simulation({
           );
           attempt.accumulatedYaw += yawStep;
           attempt.previousHeading = rideHeading.current;
-          const landingDrift = attempt.side * (arc * (.14 + attempt.rotation * .035) + maneuverProgress * (.08 + attempt.charge * .05));
-          landingTarget = THREE.MathUtils.clamp(balanceTarget + landingDrift, -1, 1);
-          balanceTarget = landingTarget;
+          // The landing marker follows the live external-torque solution. Trick
+          // bookkeeping cannot move the target or create a synthetic balance
+          // error while the board is reconnecting.
+          landingTarget = balanceTarget;
           motion.current.maneuver = Math.max(motion.current.maneuver, .12 + arc * .88);
           motion.current.maneuverSide = attempt.side;
           motion.current.maneuverSpin = attempt.accumulatedYaw;
@@ -13863,17 +13864,16 @@ function Simulation({
                 1.2,
               )
             : 1;
-          const landed = landingError <= landingWindow
-            && railSlip.current < .88
-            && (
-              attempt.family !== "air"
-              || (
-                physicalAirLanding
-                && attempt.peakAirborne > .08
-                && physicalLandingControl > .12
-                && rotationCompletion > .7
-              )
-            );
+          const landed = surfboardLandingSucceeded({
+            airborneManeuver: attempt.family === "air",
+            physicalAirLanding,
+            peakAirborne: attempt.peakAirborne,
+            physicalLandingControl,
+            rotationCompletion,
+            railSlip: railSlip.current,
+            rollCapsizeRisk,
+            pitchOverRisk,
+          });
           if (landed) {
             const landingControl = THREE.MathUtils.clamp(1 - landingError / landingWindow, 0, 1);
             const setupQuality = .52 + attempt.charge * .48;

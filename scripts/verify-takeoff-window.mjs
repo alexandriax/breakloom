@@ -37,6 +37,7 @@ import {
   rideRailInputFromPaddleSteer,
   SHALLOW_DISMOUNT_Z,
   shorelineRideOutProgress,
+  surfboardLandingSucceeded,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
   surfboardWipeoutTriggered,
@@ -1286,6 +1287,65 @@ if (
   || standingWipeout.duration <= lightWipeout.duration
 ) {
   throw new Error("Wipeout severity changed across engagement");
+}
+const stableAirLanding = surfboardLandingSucceeded({
+  airborneManeuver: true,
+  physicalAirLanding: true,
+  peakAirborne: .42,
+  physicalLandingControl: .74,
+  rotationCompletion: .96,
+  railSlip: .22,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+});
+const missedAirLanding = surfboardLandingSucceeded({
+  airborneManeuver: true,
+  physicalAirLanding: false,
+  peakAirborne: .42,
+  physicalLandingControl: .74,
+  rotationCompletion: .96,
+  railSlip: .22,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+});
+const underRotatedLanding = surfboardLandingSucceeded({
+  airborneManeuver: true,
+  physicalAirLanding: true,
+  peakAirborne: .42,
+  physicalLandingControl: .74,
+  rotationCompletion: .52,
+  railSlip: .22,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+});
+const overRotatedLanding = surfboardLandingSucceeded({
+  airborneManeuver: true,
+  physicalAirLanding: true,
+  peakAirborne: .42,
+  physicalLandingControl: .74,
+  rotationCompletion: 1.2,
+  railSlip: .22,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+});
+const slippingSurfaceManeuver = surfboardLandingSucceeded({
+  airborneManeuver: false,
+  physicalAirLanding: false,
+  peakAirborne: 0,
+  physicalLandingControl: 1,
+  rotationCompletion: 1,
+  railSlip: .94,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+});
+if (
+  !stableAirLanding
+  || missedAirLanding
+  || underRotatedLanding
+  || overRotatedLanding
+  || slippingSurfaceManeuver
+) {
+  throw new Error("Maneuver landing no longer follows physical contact, attitude, rotation, and rail state");
 }
 
 const rollSample = {
