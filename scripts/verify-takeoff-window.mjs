@@ -3787,6 +3787,11 @@ const performancePaddleTurn = paddleForFrames(120, {
   ...paddlingSample,
   steer: 1,
 });
+const performancePaddleTurn120Hz = paddleForFrames(240, {
+  ...paddlingSample,
+  deltaSeconds: 1 / 120,
+  steer: 1,
+});
 const longboardPaddleTurn = paddleForFrames(120, {
   ...paddlingSample,
   steer: 1,
@@ -3797,6 +3802,10 @@ const longboardPaddleTurn = paddleForFrames(120, {
 if (
   Math.abs(performancePaddleTurn.heading) < .5
   || Math.abs(longboardPaddleTurn.heading) >= Math.abs(performancePaddleTurn.heading) * .78
+  || Math.abs(
+    performancePaddleTurn.heading
+      - performancePaddleTurn120Hz.heading,
+  ) > .018
 ) {
   throw new Error("Prone board yaw inertia no longer distinguishes a longboard from a shortboard");
 }
@@ -3922,8 +3931,47 @@ const rightHandPull = advancePaddleboardDynamics(
     steer: 0,
   },
 );
-if (leftHandPull.yawRate <= 0 || rightHandPull.yawRate >= 0) {
-  throw new Error("Paddle-side torque is rotating the board toward the pulling hand");
+const wideLeftTurningPull = advancePaddleboardDynamics(
+  {
+    velocityX: 0,
+    velocityZ: 1.4,
+    heading: 0,
+    yawRate: 0,
+  },
+  {
+    ...paddlingSample,
+    stroke: .8,
+    strokeSide: -1,
+    steer: 1,
+  },
+);
+const coastingSteer = advancePaddleboardDynamics(
+  {
+    velocityX: 0,
+    velocityZ: 1.4,
+    heading: 0,
+    yawRate: 0,
+  },
+  {
+    ...paddlingSample,
+    stroke: 0,
+    strokeSide: -1,
+    steer: 1,
+  },
+);
+if (
+  leftHandPull.yawRate <= 0
+  || rightHandPull.yawRate >= 0
+  || leftHandPull.strokeYawAcceleration <= 0
+  || rightHandPull.strokeYawAcceleration >= 0
+  || Math.abs(wideLeftTurningPull.paddleHandLever)
+    <= Math.abs(leftHandPull.paddleHandLever) * 3
+  || Math.abs(wideLeftTurningPull.strokeYawAcceleration)
+    <= Math.abs(leftHandPull.strokeYawAcceleration) * 3
+  || coastingSteer.strokeYawAcceleration !== 0
+  || coastingSteer.yawRate !== 0
+) {
+  throw new Error("Prone paddle yaw no longer comes exclusively from planted-hand leverage");
 }
 const rightTurnLeftPullGuide = readPaddleTrainingMechanics({
   boardWaveAngle: Math.PI / 3,
@@ -4552,7 +4600,13 @@ console.log(JSON.stringify({
     halfContactStrokeForce: halfWetProne.strokeForce,
     fullContactStrokeForce: fullyWetProne.strokeForce,
     performanceTurnRadians: performancePaddleTurn.heading,
+    performanceTurn120HzRadians:
+      performancePaddleTurn120Hz.heading,
     longboardTurnRadians: longboardPaddleTurn.heading,
+    neutralPullLever: leftHandPull.paddleHandLever,
+    turningPullLever: wideLeftTurningPull.paddleHandLever,
+    coastingSteerYawAcceleration:
+      coastingSteer.strokeYawAcceleration,
     averageStrokeDrive,
     paddleWork60,
     paddleWork120,

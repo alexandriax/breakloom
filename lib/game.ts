@@ -2798,12 +2798,16 @@ export type PaddleboardDynamicsReading = PaddleboardDynamicsState & {
   forwardSpeed: number;
   lateralSpeed: number;
   strokeForce: number;
+  strokeYawAcceleration: number;
+  paddleHandLever: number;
 };
 
 /**
  * Integrates prone paddling as repeated human thrust against quadratic hull
- * drag. Input applies force rather than selecting a target speed, so momentum
- * survives between strokes and current acts through the water-relative flow.
+ * drag. Each planted hand applies its reaction force outside the rail, so
+ * turning comes from a real yaw moment rather than directly steering toward an
+ * input-selected angular rate. Momentum survives between strokes and current
+ * acts through the water-relative flow.
  */
 export function advancePaddleboardDynamics(
   state: PaddleboardDynamicsState,
@@ -2823,35 +2827,36 @@ export function advancePaddleboardDynamics(
   const turn = Math.max(.45, sample.boardTurn);
   const paddleEfficiency = Math.max(.4, Math.min(1.3, sample.paddleEfficiency));
   const speed = Math.hypot(state.velocityX, state.velocityZ);
-  const yawInertia = Math.pow(safeLength / 2.5, 1.32);
-  const yawAuthority = (
-    .34
-      + Math.min(1.2, speed * .16)
-      + Math.abs(stroke) * .3
-  ) * turn / yawInertia;
-  const steeringTorque = -steer
-    * (
-      .24
-        + Math.abs(stroke) * .54
-        + Math.min(.34, speed * .055)
-    );
-  const alternatingStrokeTorque = -strokeSide
-    * Math.max(0, stroke)
-    * .16;
-  const targetYawRate = (steeringTorque + alternatingStrokeTorque)
-    * yawAuthority
-    * hullContact;
-  const yawResponse = (
-    .18 + hullContact * (2.02 + Math.abs(stroke) * 1.4)
-  ) / Math.sqrt(yawInertia);
-  let yawRate = state.yawRate + (
-    targetYawRate - state.yawRate
-  ) * (1 - Math.exp(-yawResponse * delta));
+  // Mass-normalized polar inertia (I / m) for the prone surfer-board system.
+  // A longer board places more wetted mass away from the center of rotation.
+  const yawRadiusSquared = .36
+    * Math.pow(safeLength / 2.5, 1.72)
+    * Math.pow(safeWidth / .34, .12);
+  const strokeForce = stroke >= 0
+    ? stroke * (4.8 + paddleEfficiency * 2.1)
+    : stroke * 1.45;
+  const appliedStrokeForce = strokeForce
+    * hullContact
+    * (1 - submersion);
+  // A normal prone pull tracks back toward the hip, so its line of action
+  // passes much closer to the system center than the hand itself. A deliberate
+  // turning stroke reaches/sweeps wider, increasing its effective moment arm.
+  const neutralStrokeLever = .055 + safeWidth * .12;
+  const turningStrokeReach = Math.abs(steer)
+    * (.24 + safeWidth * .18);
+  const paddleHandLever = strokeSide
+    * (neutralStrokeLever + turningStrokeReach);
+  const strokeYawAcceleration = -paddleHandLever
+    * appliedStrokeForce
+    * turn
+    / yawRadiusSquared;
+  let yawRate = state.yawRate
+    + strokeYawAcceleration * delta;
   yawRate *= Math.exp(
     -delta * (
       .08 + hullContact * (
-        .64
-          + (Math.abs(steer) < .04 ? 1.2 : 0)
+        .72
+          + Math.min(.46, speed * .12)
           + submersion * 2.2
       )
     ),
@@ -2871,12 +2876,6 @@ export function advancePaddleboardDynamics(
   const relativeZ = state.velocityZ - waterVelocityZ;
   const forwardSpeed = relativeX * forwardX + relativeZ * forwardZ;
   const lateralSpeed = relativeX * rightX + relativeZ * rightZ;
-  const strokeForce = stroke >= 0
-    ? stroke * (4.8 + paddleEfficiency * 2.1)
-    : stroke * 1.45;
-  const appliedStrokeForce = strokeForce
-    * hullContact
-    * (1 - submersion * .94);
   const lengthDragScale = Math.pow(2.5 / safeLength, .62);
   const widthDragScale = Math.pow(safeWidth / .34, .42);
   const forwardDrag = -forwardSpeed
@@ -2922,6 +2921,8 @@ export function advancePaddleboardDynamics(
     forwardSpeed,
     lateralSpeed,
     strokeForce: appliedStrokeForce,
+    strokeYawAcceleration,
+    paddleHandLever,
   };
 }
 
