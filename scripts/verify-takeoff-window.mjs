@@ -115,6 +115,11 @@ const sustainedEngagement = engagementFor(
   1.1,
   alignedEngagementSample,
 );
+const sustainedEngagement30 = engagementFor(
+  1.1,
+  alignedEngagementSample,
+  30,
+);
 const sustainedEngagement120 = engagementFor(
   1.1,
   alignedEngagementSample,
@@ -145,6 +150,10 @@ const releasedEngagement = engagementFor(
 );
 if (
   sustainedEngagement.engagement < .54
+  || Math.abs(
+    sustainedEngagement.engagement
+      - sustainedEngagement30.engagement
+  ) > .025
   || briefPressurePulse.engagement >= .2
   || Math.abs(
     sustainedEngagement.engagement
@@ -2054,9 +2063,11 @@ function simulateTumble(hz) {
   return tumble;
 }
 const tumble60 = simulateTumble(60);
+const tumble30 = simulateTumble(30);
 const tumble120 = simulateTumble(120);
 if (
   tumble60.roll < 3.2
+  || Math.abs(tumble60.roll - tumble30.roll) > .05
   || Math.abs(tumble60.roll - tumble120.roll) > .025
   || Math.abs(tumble60.pitch - tumble120.pitch) > .025
   || Math.abs(tumble60.yaw - tumble120.yaw) > .025
@@ -3514,6 +3525,7 @@ function dynamicPopUp(hz, load = {}) {
   };
 }
 const quietDynamicPopUp60 = dynamicPopUp(60);
+const quietDynamicPopUp30 = dynamicPopUp(30);
 const quietDynamicPopUp120 = dynamicPopUp(120);
 const tiredDynamicPopUp = dynamicPopUp(60, {
   stamina: 8,
@@ -3567,6 +3579,9 @@ if (
   || quietDynamicPopUp60.progress < 1
   || quietDynamicPopUp60.elapsed < .68
   || quietDynamicPopUp60.elapsed > 1
+  || Math.abs(
+    quietDynamicPopUp60.elapsed - quietDynamicPopUp30.elapsed,
+  ) > .04
   || Math.abs(
     quietDynamicPopUp60.elapsed - quietDynamicPopUp120.elapsed,
   ) > 1 / 60 + 1e-9
@@ -4367,6 +4382,7 @@ function accumulatedPaddleWork(hz, seconds = 2.5) {
   };
 }
 const paddleWork60 = accumulatedPaddleWork(60);
+const paddleWork30 = accumulatedPaddleWork(30);
 const paddleWork120 = accumulatedPaddleWork(120);
 const airbornePaddleWork = paddleStrokeWorkDelta({
   strokeForce: dryProne.strokeForce,
@@ -4409,6 +4425,8 @@ const strongBoardPaddleWork = paddleStrokeWorkDelta({
 if (
   paddleWork60.leftWork < .28
   || paddleWork60.rightWork < .28
+  || Math.abs(paddleWork60.leftWork - paddleWork30.leftWork) > .03
+  || Math.abs(paddleWork60.rightWork - paddleWork30.rightWork) > .03
   || Math.abs(paddleWork60.leftWork - paddleWork120.leftWork) > .015
   || Math.abs(paddleWork60.rightWork - paddleWork120.rightWork) > .015
   || airbornePaddleWork.totalWork !== 0
@@ -4871,12 +4889,17 @@ const crouchedStillWaterBalance = coupledStillWaterBalance(
   .4,
 );
 const correctedStillWaterBalance60 = coupledStillWaterBalance(60, true);
+const correctedStillWaterBalance30 = coupledStillWaterBalance(30, true);
 const correctedStillWaterBalance120 = coupledStillWaterBalance(120, true);
 if (
   unattendedStillWaterBalance.maximumRoll < .45
   || crouchedStillWaterBalance.maximumRoll
     >= unattendedStillWaterBalance.maximumRoll * .9
   || correctedStillWaterBalance60.maximumRoll > .16
+  || Math.abs(
+    correctedStillWaterBalance60.roll.rollAngle
+      - correctedStillWaterBalance30.roll.rollAngle
+  ) > .005
   || Math.abs(correctedStillWaterBalance60.roll.rollAngle) > .08
   || Math.abs(
     correctedStillWaterBalance60.roll.rollAngle
@@ -5043,6 +5066,7 @@ console.log(JSON.stringify({
   },
   waveEngagement: {
     sustained: sustainedEngagement.engagement,
+    sustained30Hz: sustainedEngagement30.engagement,
     sustained120Hz: sustainedEngagement120.engagement,
     briefPressurePulse: briefPressurePulse.engagement,
     misaligned: misalignedEngagement.engagement,
@@ -5135,6 +5159,7 @@ console.log(JSON.stringify({
     alignedTumbleRollRate: alignedTumble.rollRate,
     pearlingTumblePitchRate: pearlingTumble.pitchRate,
     tumbleRoll60Hz: tumble60.roll,
+    tumbleRoll30Hz: tumble30.roll,
     tumbleRoll120Hz: tumble120.roll,
     broadsideBodyRelease: standingFailureRelease,
     alignedBodyRelease: alignedFailureRelease,
@@ -5215,6 +5240,7 @@ console.log(JSON.stringify({
       coastingSteer.strokeYawAcceleration,
     averageStrokeDrive,
     paddleWork60,
+    paddleWork30,
     paddleWork120,
     airbornePaddleWork: airbornePaddleWork.totalWork,
     submergedPaddleWork: submergedPaddleWork.totalWork,
@@ -5257,12 +5283,15 @@ console.log(JSON.stringify({
       crouchedStillWaterBalance.maximumRoll,
     correctedStillWaterRoll60Hz:
       correctedStillWaterBalance60.maximumRoll,
+    correctedStillWaterRoll30Hz:
+      correctedStillWaterBalance30.maximumRoll,
     correctedStillWaterRoll120Hz:
       correctedStillWaterBalance120.maximumRoll,
     quietPopUpEffort60,
     quietPopUpEffort120,
     loadedPopUpEffort,
     quietDynamicPopUpSeconds60Hz: quietDynamicPopUp60.elapsed,
+    quietDynamicPopUpSeconds30Hz: quietDynamicPopUp30.elapsed,
     quietDynamicPopUpSeconds120Hz: quietDynamicPopUp120.elapsed,
     tiredDynamicPopUpSeconds: tiredDynamicPopUp.elapsed,
     loadedDynamicPopUpSeconds: loadedDynamicPopUp.elapsed,

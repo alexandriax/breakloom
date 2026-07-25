@@ -12173,7 +12173,6 @@ function Simulation({
         position.current.z += paddleVelocity.current.y * delta;
         position.current.z = Math.max(OUTER_PADDLE_LIMIT_Z + tideShift, position.current.z);
         speed = paddleVelocity.current.length();
-        const coastalZ = position.current.z - tideShift;
         const breakingGeometry = waveBreakingGeometryAt(
           position.current.x,
           position.current.z,
@@ -14863,8 +14862,6 @@ function Simulation({
         speed = rideStep / Math.max(.001, delta);
         rideDistance.current += rideStep;
         if (lineControl > .5) pocketDistance.current += rideStep;
-        const boardRightX = Math.cos(rideHeading.current);
-        const boardRightZ = -Math.sin(rideHeading.current);
         const noseRidePressure = settings.board === "longboard" ? .42 : .62;
         const noseRideCandidate = nosePressure > noseRidePressure
           && Math.abs(physicalRailInput) < .3
