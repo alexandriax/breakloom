@@ -2354,6 +2354,115 @@ export function resolveSurfboardWipeout(
   };
 }
 
+export type SurfboardSurfaceManeuverSample = {
+  durationSeconds: number;
+  startFacePosition: number;
+  endFacePosition: number;
+  startLinePosition: number;
+  endLinePosition: number;
+  accumulatedYaw: number;
+  peakYawRate: number;
+  peakRailLoad: number;
+  nosePressureSeconds: number;
+  minimumWaterContact: number;
+  endPlaning: number;
+  endWaveContact: number;
+  boardLength: number;
+};
+
+export type SurfboardSurfaceManeuverReading = {
+  name: "Nose Ride" | "Bottom Turn" | "Pocket Cutback" | "Roundhouse Cutback" | "Rail Carve" | "Power Carve";
+  family: "trim" | "carve";
+  base: number;
+  strength: number;
+};
+
+/**
+ * Names a surface maneuver only after the board has physically traced it.
+ * Button state, charge meters, timers, and score state are deliberately absent.
+ * The recognizer sees measured rail/yaw history and the path across the
+ * polygon face and pocket.
+ */
+export function recognizeSurfboardSurfaceManeuver(
+  sample: SurfboardSurfaceManeuverSample,
+): SurfboardSurfaceManeuverReading | null {
+  const duration = Math.max(0, sample.durationSeconds);
+  const accumulatedYaw = Math.abs(sample.accumulatedYaw);
+  const peakYawRate = Math.abs(sample.peakYawRate);
+  const peakRailLoad = Math.abs(sample.peakRailLoad);
+  const contactSound = clampValue(sample.minimumWaterContact, 0, 1) > .46
+    && clampValue(sample.endPlaning, 0, 1) > .28
+    && clampValue(sample.endWaveContact, 0, 1) > .22;
+  if (!contactSound || duration < .34) return null;
+
+  const noseThreshold = sample.boardLength >= 2.72 ? .4 : .6;
+  const noseHoldRatio = clampValue(
+    sample.nosePressureSeconds / Math.max(.001, duration),
+    0,
+    1,
+  );
+  const faceAverage = (
+    sample.startFacePosition + sample.endFacePosition
+  ) * .5;
+  if (
+    duration >= .72
+    && noseHoldRatio > noseThreshold
+    && peakRailLoad < .34
+    && accumulatedYaw < .28
+    && faceAverage > .02
+  ) {
+    return {
+      name: "Nose Ride",
+      family: "trim",
+      base: sample.boardLength >= 2.72 ? 440 : 340,
+      strength: clampValue(
+        .45 + noseHoldRatio * .35 + faceAverage * .2,
+        0,
+        1,
+      ),
+    };
+  }
+
+  const turnSound = peakRailLoad > .28
+    && peakYawRate > .16
+    && accumulatedYaw > .15;
+  if (!turnSound) return null;
+  const faceGain = sample.endFacePosition - sample.startFacePosition;
+  const pocketReturn = sample.startLinePosition - sample.endLinePosition;
+  const strength = clampValue(
+    accumulatedYaw / 1.05 * .48
+      + peakRailLoad * .32
+      + peakYawRate / 1.8 * .12
+      + Math.max(0, faceGain, pocketReturn) * .08,
+    0,
+    1,
+  );
+  if (sample.startFacePosition < -.24 && faceGain > .2) {
+    return {
+      name: "Bottom Turn",
+      family: "carve",
+      base: 185,
+      strength,
+    };
+  }
+  if (sample.startLinePosition > .3 && pocketReturn > .16) {
+    const roundhouse = accumulatedYaw > .72 && pocketReturn > .34;
+    return {
+      name: roundhouse ? "Roundhouse Cutback" : "Pocket Cutback",
+      family: "carve",
+      base: roundhouse ? 410 : 285,
+      strength,
+    };
+  }
+  const powerCarve = accumulatedYaw > .52 && peakRailLoad > .5;
+  return {
+    name: powerCarve ? "Power Carve" : "Rail Carve",
+    family: "carve",
+    base: powerCarve ? 330 : 230,
+    strength,
+  };
+}
+
 export type SurfboardLandingSample = {
   airborneManeuver: boolean;
   physicalAirLanding: boolean;

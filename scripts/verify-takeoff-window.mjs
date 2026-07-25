@@ -22,6 +22,7 @@ import {
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  recognizeSurfboardSurfaceManeuver,
   resolveSurfboardPlaning,
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
@@ -1288,6 +1289,63 @@ if (
 ) {
   throw new Error("Wipeout severity changed across engagement");
 }
+const surfaceObservation = {
+  durationSeconds: .82,
+  startFacePosition: .02,
+  endFacePosition: .08,
+  startLinePosition: .1,
+  endLinePosition: .06,
+  accumulatedYaw: .58,
+  peakYawRate: .76,
+  peakRailLoad: .62,
+  nosePressureSeconds: 0,
+  minimumWaterContact: .82,
+  endPlaning: .76,
+  endWaveContact: .74,
+  boardLength: 2.1,
+};
+const observedBottomTurn = recognizeSurfboardSurfaceManeuver({
+  ...surfaceObservation,
+  startFacePosition: -.58,
+  endFacePosition: .12,
+  accumulatedYaw: .46,
+});
+const observedRoundhouse = recognizeSurfboardSurfaceManeuver({
+  ...surfaceObservation,
+  startLinePosition: .72,
+  endLinePosition: .16,
+  accumulatedYaw: .88,
+});
+const observedLongboardNoseRide = recognizeSurfboardSurfaceManeuver({
+  ...surfaceObservation,
+  durationSeconds: .94,
+  startFacePosition: .18,
+  endFacePosition: .22,
+  accumulatedYaw: .08,
+  peakYawRate: .12,
+  peakRailLoad: .18,
+  nosePressureSeconds: .78,
+  boardLength: 3,
+});
+const untracedTurn = recognizeSurfboardSurfaceManeuver({
+  ...surfaceObservation,
+  accumulatedYaw: .04,
+  peakYawRate: .1,
+  peakRailLoad: .2,
+});
+const disconnectedTurn = recognizeSurfboardSurfaceManeuver({
+  ...surfaceObservation,
+  minimumWaterContact: .28,
+});
+if (
+  observedBottomTurn?.name !== "Bottom Turn"
+  || observedRoundhouse?.name !== "Roundhouse Cutback"
+  || observedLongboardNoseRide?.name !== "Nose Ride"
+  || untracedTurn !== null
+  || disconnectedTurn !== null
+) {
+  throw new Error("Surface maneuver recognition no longer follows the board's measured path and contact");
+}
 const stableAirLanding = surfboardLandingSucceeded({
   airborneManeuver: true,
   physicalAirLanding: true,
@@ -2378,6 +2436,13 @@ console.log(JSON.stringify({
     standingWipeoutPower: standingWipeout.power,
     engagedWipeoutPower: engagedWipeout.power,
     lightWipeoutPower: lightWipeout.power,
+  },
+  surfaceManeuvers: {
+    bottomTurn: observedBottomTurn.name,
+    roundhouse: observedRoundhouse.name,
+    longboardNoseRide: observedLongboardNoseRide.name,
+    untracedTurn,
+    disconnectedTurn,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,
