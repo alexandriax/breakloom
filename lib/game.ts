@@ -1913,6 +1913,7 @@ export type ProneBoardFailureSample = {
   crossWaveLoad: number;
   whitewater: number;
   waveEnergy: number;
+  waterContact?: number;
 };
 
 export type ProneBoardFailureReading = {
@@ -2097,17 +2098,21 @@ export function advanceProneBoardAttitude(
 }
 
 /**
- * Converts prone attitude and water load into a physical separation event.
- * A rail beyond its righting limit or a buried nose fails immediately, while
- * combined broadside wash can overwhelm the hull before either angle peaks.
+ * Converts prone attitude and contacting water load into a physical separation
+ * event. A rail beyond its righting limit or a buried nose fails immediately,
+ * while combined broadside wash can overwhelm a contacting hull before either
+ * angle peaks; detached polygon pressure cannot throw the board.
  */
 export function evaluateProneBoardFailure(
   sample: ProneBoardFailureSample,
 ): ProneBoardFailureReading {
   const capsizeRisk = clampValue(sample.capsizeRisk, 0, 1);
   const pitchOverRisk = clampValue(sample.pitchOverRisk, 0, 1);
-  const crossWaveLoad = clampValue(sample.crossWaveLoad, 0, 1.5);
-  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const waterContact = clampValue(sample.waterContact ?? 1, 0, 1);
+  const crossWaveLoad = clampValue(sample.crossWaveLoad, 0, 1.5)
+    * waterContact;
+  const whitewater = clampValue(sample.whitewater, 0, 1)
+    * waterContact;
   const waveEnergy = clampValue(sample.waveEnergy, 0, 1);
   const load = Math.max(capsizeRisk, pitchOverRisk)
     + Math.max(0, crossWaveLoad - .48) * .24

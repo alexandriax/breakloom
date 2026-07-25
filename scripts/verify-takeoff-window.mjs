@@ -2148,6 +2148,7 @@ const settledProneFailure = evaluateProneBoardFailure({
   crossWaveLoad: 0,
   whitewater: 0,
   waveEnergy: .4,
+  waterContact: 1,
 });
 const broadsideProneFailure = evaluateProneBoardFailure({
   capsizeRisk: broadsideProne.roll.capsizeRisk,
@@ -2155,6 +2156,7 @@ const broadsideProneFailure = evaluateProneBoardFailure({
   crossWaveLoad: 1.18,
   whitewater: .42,
   waveEnergy: .7,
+  waterContact: 1,
 });
 const noseLoadedProneFailure = evaluateProneBoardFailure({
   capsizeRisk: noseLoadedProne.roll.capsizeRisk,
@@ -2162,14 +2164,25 @@ const noseLoadedProneFailure = evaluateProneBoardFailure({
   crossWaveLoad: .28,
   whitewater: .08,
   waveEnergy: .68,
+  waterContact: 1,
+});
+const detachedProneFailure = evaluateProneBoardFailure({
+  capsizeRisk: .08,
+  pitchOverRisk: .06,
+  crossWaveLoad: 1.5,
+  whitewater: 1,
+  waveEnergy: .9,
+  waterContact: 0,
 });
 if (
   settledProneFailure.failed
   || !broadsideProneFailure.failed
   || !noseLoadedProneFailure.failed
+  || detachedProneFailure.failed
+  || detachedProneFailure.load > .1
   || broadsideProneFailure.power <= settledProneFailure.power
 ) {
-  throw new Error("Prone separation no longer distinguishes stable contact from rail and nose failure");
+  throw new Error("Prone separation no longer distinguishes stable, contacting, detached, rail, and nose states");
 }
 const flatLipSupport = surfboardLipLaunchSupport({
   facePosition: -.1,
@@ -3199,6 +3212,7 @@ console.log(JSON.stringify({
     popUpHandLoadedElevation: handLoadedProne.heave.elevation,
     proneNoseImmersion: noseLoadedProne.pitch.noseImmersion,
     proneBroadsideFailurePower: broadsideProneFailure.power,
+    detachedProneFailureLoad: detachedProneFailure.load,
     popUpDuration: popUpStanding.duration,
     popUpFootImpact: popUpFootPlant.footImpact,
     popUpNoseTrim: noseHeavyPopUp.trim,

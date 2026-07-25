@@ -12239,6 +12239,7 @@ function Simulation({
             proneInteraction.wipeoutRisk * .42,
           ),
           waveEnergy: setState.energy,
+          waterContact: boardWaterContact,
         });
         const paddleMatchTarget = THREE.MathUtils.clamp(
           localWaveTransport.speed * .31,
@@ -12301,7 +12302,7 @@ function Simulation({
               waterContact: boardWaterContact,
               headingAlignment: proneInteraction.headingAlignment,
               planing: boardPlaning,
-              crossWaveLoad: proneInteraction.crossWaveLoad,
+              crossWaveLoad,
             },
           );
           waveEngagement.current = proneWaveEngagement.engagement;
@@ -12690,7 +12691,7 @@ function Simulation({
                 )
               : .12;
             unstableFor.current = Math.max(
-              popReading.wipeoutRisk,
+              popReading.wipeoutRisk * boardWaterContact,
               rollCapsizeRisk,
               pitchOverRisk,
             ) * 1.25;
@@ -12732,7 +12733,7 @@ function Simulation({
             proneFailure.power,
           );
           const proneRailThrow = proneInteraction.crossWaveSide
-            * proneInteraction.crossWaveLoad
+            * crossWaveLoad
             * (1.05 + proneFailure.power * 1.9);
           const proneWashSpeed = .75
             + proneFailure.power * 3.4
@@ -12751,7 +12752,7 @@ function Simulation({
             pitchAngle: physicalPitchAngle,
             pitchRate: physicalPitchRate,
             yawRate: paddleYawRate.current,
-            crossWaveLoad: proneInteraction.crossWaveLoad,
+            crossWaveLoad,
             crossWaveSide: proneInteraction.crossWaveSide,
             railSlip: railSlip.current,
             rollCapsizeRisk,
