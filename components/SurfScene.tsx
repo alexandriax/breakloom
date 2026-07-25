@@ -17250,6 +17250,8 @@ function Simulation({
           : setState.crestEnergy,
         crestApproach: setState.crestProximity,
         crestDistance: Number(crestDistance.toFixed(1)),
+        crestOvertake: rideCapture.current.overtaken,
+        crestAhead: rideCapture.current.ahead,
         nextWaveEnergy: setState.nextSurfableEnergy,
         waveSurfable,
         maneuver: maneuver.current,

@@ -30,6 +30,7 @@ import {
   paddlingStaminaDelta,
   popUpStaminaDelta,
   primaryWaveVelocityAt,
+  readCrestTimingMechanics,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
   resolvePaddleHeadingTarget,
@@ -408,13 +409,22 @@ const resetPopUpCrest = advanceRideCaptureState(
     waveSupport: 1,
   },
 );
+const trackedCrestCue = readCrestTimingMechanics(.05, .08);
+const overtakenCrestCue =
+  readCrestTimingMechanics(.46, .18);
+const aheadCrestCue = readCrestTimingMechanics(.14, .57);
 if (
   preservedPopUpCrest.overtaken
     - resetPopUpCrest.overtaken < .33
   || preservedPopUpCrest.overtaken
     <= popUpCrestState.overtaken
+  || trackedCrestCue.state !== "tracking"
+  || overtakenCrestCue.state !== "overtaken"
+  || overtakenCrestCue.percent !== 46
+  || aheadCrestCue.state !== "ahead"
+  || aheadCrestCue.percent !== 57
 ) {
-  throw new Error("Pop-up handoff no longer preserves accumulated crest overtake");
+  throw new Error("Pop-up handoff or its physical crest-timing guide lost continuous state");
 }
 
 let unsupportedCrestRelation = { overtaken: .9, ahead: .8 };
@@ -4700,6 +4710,9 @@ console.log(JSON.stringify({
     preservedPopUpOvertake:
       preservedPopUpCrest.overtaken,
     resetPopUpOvertake: resetPopUpCrest.overtaken,
+    trackedCrestCue,
+    overtakenCrestCue,
+    aheadCrestCue,
     unsupportedLipOvertake: unsupportedCrestRelation.lipOvertake,
     unsupportedOvertaken: unsupportedCrestRelation.overtaken,
     unsupportedAhead: unsupportedCrestRelation.ahead,

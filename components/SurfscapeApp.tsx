@@ -53,6 +53,7 @@ import {
   formatClock,
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
+  readCrestTimingMechanics,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
   resolvePaddleHeadingTarget,
@@ -3105,6 +3106,10 @@ export default function SurfscapeApp() {
       : "CENTERED";
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
+  const crestTiming = readCrestTimingMechanics(
+    stats.crestOvertake,
+    stats.crestAhead,
+  );
   const desiredPaddleDirectionX = stats.inLineup
     ? Math.sin(
         stats.paddleHeading + stats.boardWaveAngle,
@@ -3271,10 +3276,26 @@ export default function SurfscapeApp() {
                 tone: "danger",
               }
           : takeoffCommitted
-            ? stats.takeoffCommitProgress < .2
+            ? crestTiming.state === "overtaken"
+                && crestTiming.severity > .28
+              ? {
+                  cue: `LIP OVERTAKING ${crestTiming.percent}%`,
+                  detail: `${popUpBodyRate}% body drive · the tracked crest kept moving during the pop-up; finish low and keep the board aligned.`,
+                  rotation: -90,
+                  tone: "danger",
+                }
+              : crestTiming.state === "ahead"
+                  && crestTiming.severity > .28
+                ? {
+                    cue: `POWER FALLING BEHIND ${crestTiming.percent}%`,
+                    detail: `${popUpBodyRate}% body drive · retained board speed has outrun the powered face; finish the landing and expect low support.`,
+                    rotation: 90,
+                    tone: "danger",
+                  }
+                : stats.takeoffCommitProgress < .2
               ? {
                   cue: "LAST STROKE · HANDS IN",
-                  detail: `${popUpBodyRate}% body drive · ${hullPatchContact}% four-patch water support · wave capture does not set either.`,
+                  detail: `${popUpBodyRate}% body drive · ${hullPatchContact}% four-patch water support · crest tracking ${crestTiming.percent}%.`,
                   rotation: -90,
                   tone: "ready",
                 }

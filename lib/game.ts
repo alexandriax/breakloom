@@ -505,6 +505,36 @@ export type RideCaptureState = {
   ahead: number;
 };
 
+export type CrestTimingReading = {
+  state: "tracking" | "overtaken" | "ahead";
+  severity: number;
+  percent: number;
+};
+
+/**
+ * Converts the continuous crest-relation state into tutorial language without
+ * changing it. The stronger physical loss wins when lip overtake and shoulder
+ * runout overlap.
+ */
+export function readCrestTimingMechanics(
+  overtaken: number,
+  ahead: number,
+): CrestTimingReading {
+  const safeOvertaken = clampValue(overtaken, 0, 1.4);
+  const safeAhead = clampValue(ahead, 0, 1.4);
+  const severity = Math.max(safeOvertaken, safeAhead);
+  const state = severity < .12
+    ? "tracking"
+    : safeOvertaken >= safeAhead
+      ? "overtaken"
+      : "ahead";
+  return {
+    state,
+    severity,
+    percent: Math.round(clampValue(severity, 0, 1) * 100),
+  };
+}
+
 /**
  * Measures trough-to-lip position directly from the board's phase on the
  * current polygon wave. This contains no steering, stance, score, or display
@@ -5371,6 +5401,8 @@ export type GameStats = {
   crestEnergy: number;
   crestApproach: number;
   crestDistance: number;
+  crestOvertake: number;
+  crestAhead: number;
   nextWaveEnergy: number;
   waveSurfable: boolean;
   maneuver: string;
@@ -5503,6 +5535,8 @@ export const INITIAL_STATS: GameStats = {
   crestEnergy: 0,
   crestApproach: 0,
   crestDistance: 0,
+  crestOvertake: 0,
+  crestAhead: 0,
   nextWaveEnergy: 0,
   waveSurfable: false,
   maneuver: "",
