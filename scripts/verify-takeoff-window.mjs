@@ -40,6 +40,7 @@ import {
   resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
+  resolveLineupFromBreakingGeometry,
   resolveSurfboardFailureRelease,
   resolveSurfboardLeashReaction,
   resolveSurfboardLeashTorque,
@@ -73,6 +74,7 @@ import {
   waveCrestPropertiesAtPhase,
   waveFacePositionAtPhase,
   waveHeightAt,
+  waveBreakingCoordinateAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
 } from "../lib/game.ts";
@@ -171,6 +173,47 @@ const character = {
   variability: .32,
   length: 1,
 };
+
+const centerBreakCoordinate = waveBreakingCoordinateAt(
+  0,
+  -18,
+  12,
+  settings,
+  character,
+);
+const peelingBreakCoordinate = waveBreakingCoordinateAt(
+  80,
+  -18,
+  12,
+  settings,
+  character,
+);
+const enteredLineup = resolveLineupFromBreakingGeometry(
+  -20.1,
+  false,
+);
+const heldLineup = resolveLineupFromBreakingGeometry(
+  -16,
+  true,
+);
+const exitedLineup = resolveLineupFromBreakingGeometry(
+  -15.4,
+  true,
+);
+const prematureLineup = resolveLineupFromBreakingGeometry(
+  -19,
+  false,
+);
+if (
+  Math.abs(peelingBreakCoordinate - centerBreakCoordinate) < 1.5
+  || !enteredLineup.outsideBreak
+  || !heldLineup.outsideBreak
+  || exitedLineup.outsideBreak
+  || prematureLineup.outsideBreak
+  || enteredLineup.outsideMargin <= 2
+) {
+  throw new Error("Lineup state no longer follows the animated peeling-break geometry with hysteresis");
+}
 
 const x = 0;
 const z = -34;
@@ -4418,6 +4461,13 @@ if (
 }
 
 console.log(JSON.stringify({
+  breakGeometry: {
+    centerBreakCoordinate,
+    peelingBreakCoordinate,
+    enteredLineup,
+    heldLineup,
+    exitedLineup,
+  },
   idealTraining,
   marginalTraining,
   idealAdvanced,

@@ -5704,6 +5704,81 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
   };
 }
 
+function breakingCoordinateWithTide(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character: BreakCharacter,
+  tideResponse: TideResponse,
+) {
+  const coastalZ = z - shorelineShiftForTide(settings.tide);
+  const peel = character.peel ?? 0;
+  const variability = (character.variability ?? .4)
+    * tideResponse.variabilityScale;
+  const section = Math.sin(x * .07 + elapsed * .05)
+    * variability
+    * 2.3;
+  return coastalZ
+    + x * peel * .16
+    + section
+    - tideResponse.breakShift;
+}
+
+/**
+ * Returns the same animated cross-shore coordinate used to shoal and bend the
+ * rendered polygon waves. Gameplay can therefore locate the outside break
+ * without relying on a fixed world-space z threshold.
+ */
+export function waveBreakingCoordinateAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+) {
+  const safeCharacter = character ?? DEFAULT_TIDE_BREAK;
+  const tideResponse = tideResponseForBreak(
+    settings.tide,
+    safeCharacter,
+  );
+  return breakingCoordinateWithTide(
+    x,
+    z,
+    elapsed,
+    settings,
+    safeCharacter,
+    tideResponse,
+  );
+}
+
+export type LineupGeometryReading = {
+  outsideBreak: boolean;
+  breakingCoordinate: number;
+  boundary: number;
+  outsideMargin: number;
+};
+
+/**
+ * Tracks whether the surfer is beyond the polygon breaking band. Separate
+ * enter/exit boundaries add physical hysteresis so a moving section does not
+ * rapidly flip the tutorial target or disable shorebreak from frame to frame.
+ */
+export function resolveLineupFromBreakingGeometry(
+  breakingCoordinate: number,
+  wasOutsideBreak: boolean,
+): LineupGeometryReading {
+  const boundary = -18;
+  const threshold = wasOutsideBreak ? -15.5 : -20;
+  const outsideBreak = breakingCoordinate < threshold;
+  return {
+    outsideBreak,
+    breakingCoordinate,
+    boundary,
+    outsideMargin: boundary - breakingCoordinate,
+  };
+}
+
 export function waveHeightAt(
   x: number,
   z: number,
@@ -5714,14 +5789,18 @@ export function waveHeightAt(
   const tideResponse = tideResponseForBreak(settings.tide, character ?? DEFAULT_TIDE_BREAK);
   const power = (character?.power ?? 1) * tideResponse.powerScale;
   const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
-  const peel = character?.peel ?? 0;
-  const variability = (character?.variability ?? .4) * tideResponse.variabilityScale;
   const amplitude = Math.max(0.12, settings.waveHeight * 0.78) * power * tideResponse.faceScale;
   const period = Math.max(4, settings.wavePeriod);
   const speed = (Math.PI * 2) / period;
   const coastalZ = z - shorelineShiftForTide(settings.tide);
-  const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
-  const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
+  const breakZ = breakingCoordinateWithTide(
+    x,
+    z,
+    elapsed,
+    settings,
+    character ?? DEFAULT_TIDE_BREAK,
+    tideResponse,
+  );
   const shoreBoost = .72 + smoothstep(-85, 8, breakZ) * (.58 + steepness * .24);
   const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
   const setEnergy = waveEnergyForPhase(p1);
@@ -5924,12 +6003,16 @@ export function primaryWavePhaseAt(
   const tideResponse = tideResponseForBreak(settings.tide, character ?? DEFAULT_TIDE_BREAK);
   const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
   const peel = character?.peel ?? 0;
-  const variability = (character?.variability ?? .4) * tideResponse.variabilityScale;
   const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const coastalZ = z - shorelineShiftForTide(settings.tide);
-  const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
-  const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
+  const breakZ = breakingCoordinateWithTide(
+    x,
+    z,
+    elapsed,
+    settings,
+    character ?? DEFAULT_TIDE_BREAK,
+    tideResponse,
+  );
   const shoaling = smoothstep(-108, 9, breakZ);
   const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
@@ -5952,12 +6035,16 @@ export function primaryWaveVelocityAt(
   const tideResponse = tideResponseForBreak(settings.tide, character ?? DEFAULT_TIDE_BREAK);
   const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
   const peel = character?.peel ?? 0;
-  const variability = (character?.variability ?? .4) * tideResponse.variabilityScale;
   const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
   const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const coastalZ = z - shorelineShiftForTide(settings.tide);
-  const section = Math.sin(x * .07 + elapsed * .05) * variability * 2.3;
-  const breakZ = coastalZ + x * peel * .16 + section - tideResponse.breakShift;
+  const breakZ = breakingCoordinateWithTide(
+    x,
+    z,
+    elapsed,
+    settings,
+    character ?? DEFAULT_TIDE_BREAK,
+    tideResponse,
+  );
   const shoaling = smoothstep(-108, 9, breakZ);
   const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
   const compression = 1 + (shallowScale - 1) * shoaling;
