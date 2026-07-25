@@ -11322,7 +11322,7 @@ function Simulation({
       settings,
       character,
     );
-    const crestDistance = waveCrestDistanceAtPhase(
+    let crestDistance = waveCrestDistanceAtPhase(
       setState.crestPhaseError,
       localWaveTransport.wavelength,
     );
@@ -11978,6 +11978,31 @@ function Simulation({
           settings,
           character,
         );
+        const proneSurfacePhase = primaryWavePhaseAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const proneCrestPhase = takeoffCommitting
+          ? rideWavePhase.current
+          : shorebreakSetState.crestPhase;
+        const proneCrestPhaseError = Math.atan2(
+          Math.sin(proneSurfacePhase - proneCrestPhase),
+          Math.cos(proneSurfacePhase - proneCrestPhase),
+        );
+        crestDistance = waveCrestDistanceAtPhase(
+          proneCrestPhaseError,
+          localWaveTransport.wavelength,
+        );
+        const proneCrest = takeoffCommitting
+          ? waveCrestPropertiesAtPhase(proneCrestPhase)
+          : {
+              energy: shorebreakSetState.crestEnergy,
+              surfable: shorebreakSetState.crestSurfable,
+            };
+        boardCrestEnergy = proneCrest.energy;
         const openFaceSlope = Math.max(
           0,
           -(takeoffSurface.slopeX * takeoffWaveNormalX + takeoffSurface.slopeZ * takeoffWaveNormalZ),
@@ -12009,8 +12034,8 @@ function Simulation({
           surfaceRise,
           surfaceLift,
           crestDistance,
-          crestEnergy: setState.crestEnergy,
-          crestSurfable: setState.crestSurfable,
+          crestEnergy: proneCrest.energy,
+          crestSurfable: proneCrest.surfable,
           boardStability: boardSpec.stability,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
         });
@@ -12238,7 +12263,7 @@ function Simulation({
             shorebreakIntensity,
             proneInteraction.wipeoutRisk * .42,
           ),
-          waveEnergy: setState.energy,
+          waveEnergy: proneCrest.energy,
           waterContact: boardWaterContact,
         });
         const paddleMatchTarget = THREE.MathUtils.clamp(
@@ -12262,8 +12287,8 @@ function Simulation({
         );
         const takeoffReading = evaluateWaveTakeoff({
           crestDistance,
-          crestEnergy: setState.crestEnergy,
-          crestSurfable: setState.crestSurfable,
+          crestEnergy: proneCrest.energy,
+          crestSurfable: proneCrest.surfable,
           faceSlope: openFaceSlope,
           surfaceRise,
           surfaceLift,
@@ -12529,8 +12554,8 @@ function Simulation({
           );
           const caughtReading = evaluateWaveTakeoff({
             crestDistance: caughtCrestDistance,
-            crestEnergy: setState.crestEnergy,
-            crestSurfable: setState.crestSurfable,
+            crestEnergy: proneCrest.energy,
+            crestSurfable: proneCrest.surfable,
             faceSlope: caughtFaceSlope,
             surfaceRise: caughtSurfaceRise,
             surfaceLift: caughtSurface.height - settings.tide * .3,
@@ -12550,8 +12575,8 @@ function Simulation({
             surfaceRise: caughtSurfaceRise,
             surfaceLift: caughtSurface.height - settings.tide * .3,
             crestDistance: caughtCrestDistance,
-            crestEnergy: setState.crestEnergy,
-            crestSurfable: setState.crestSurfable,
+            crestEnergy: proneCrest.energy,
+            crestSurfable: proneCrest.surfable,
             boardStability: boardSpec.stability,
             waveHeight: settings.waveHeight * tideResponse.faceScale,
           });
@@ -15448,6 +15473,7 @@ function Simulation({
       delta,
     );
     motion.current.setEnergy = phase.current === "riding"
+      || (phase.current === "paddling" && takeoffCommitAt.current >= 0)
       ? boardCrestEnergy
       : setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
@@ -16384,13 +16410,17 @@ function Simulation({
         barrelIntensity: motion.current.barrel,
         stamina: Math.round(stamina.current),
         setEnergy: phase.current === "riding"
+          || (phase.current === "paddling" && takeoffCommitAt.current >= 0)
           ? boardCrestEnergy
           : setState.energy,
         nextSetSeconds: setState.secondsToPeak,
         setWaveIndex: setState.setWaveIndex,
         setWaveCount: setState.waveCount,
         setActive: setState.setActive,
-        crestEnergy: setState.crestEnergy,
+        crestEnergy: phase.current === "riding"
+          || (phase.current === "paddling" && takeoffCommitAt.current >= 0)
+          ? boardCrestEnergy
+          : setState.crestEnergy,
         crestApproach: setState.crestProximity,
         crestDistance: Number(crestDistance.toFixed(1)),
         nextWaveEnergy: setState.nextSurfableEnergy,
