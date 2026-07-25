@@ -337,6 +337,29 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   tailStall: number;
 };
 
+export type SurfboardWavePressureSample = {
+  velocityX: number;
+  velocityZ: number;
+  heading: number;
+  waveVelocityX: number;
+  waveVelocityZ: number;
+  waveContact: number;
+  waterContact?: number;
+  waveHeight: number;
+  stance: number;
+  pearlingRisk?: number;
+};
+
+export type SurfboardWavePressureReading = {
+  accelerationX: number;
+  accelerationZ: number;
+  pressure: number;
+  forwardDrive: number;
+  lateralLoad: number;
+  waveDeficit: number;
+  headingAlignment: number;
+};
+
 export type BoardRollState = {
   rollAngle: number;
   rollRate: number;
@@ -1314,6 +1337,71 @@ export function advancePaddleboardDynamics(
 }
 
 /**
+ * Resolves the breaking face's horizontal pressure on a contacting hull.
+ * The force always follows the live wave normal: a board pointed with the
+ * wave receives useful longitudinal drive, while a broadside board receives
+ * the same event mostly as lateral load. This is shared by prone takeoff and
+ * standing surf dynamics so changing body phase cannot grant crest speed.
+ */
+export function resolveSurfboardWavePressure(
+  sample: SurfboardWavePressureSample,
+): SurfboardWavePressureReading {
+  const waveSpeed = Math.hypot(
+    sample.waveVelocityX,
+    sample.waveVelocityZ,
+  );
+  const contact = clampValue(sample.waveContact, 0, 1);
+  const hullContact = clampValue(sample.waterContact ?? 1, 0, 1);
+  if (waveSpeed < .001 || contact <= 0 || hullContact <= 0) {
+    return {
+      accelerationX: 0,
+      accelerationZ: 0,
+      pressure: 0,
+      forwardDrive: 0,
+      lateralLoad: 0,
+      waveDeficit: Math.max(0, waveSpeed),
+      headingAlignment: 0,
+    };
+  }
+
+  const waveNormalX = sample.waveVelocityX / waveSpeed;
+  const waveNormalZ = sample.waveVelocityZ / waveSpeed;
+  const forwardX = Math.sin(sample.heading);
+  const forwardZ = Math.cos(sample.heading);
+  const rightX = Math.cos(sample.heading);
+  const rightZ = -Math.sin(sample.heading);
+  const headingAlignment = clampValue(
+    forwardX * waveNormalX + forwardZ * waveNormalZ,
+    -1,
+    1,
+  );
+  const normalSpeed = sample.velocityX * waveNormalX
+    + sample.velocityZ * waveNormalZ;
+  const waveDeficit = Math.max(0, waveSpeed - normalSpeed);
+  const stance = clampValue(sample.stance, -1, 1);
+  const tailPressure = Math.max(0, -stance);
+  const nosePressure = Math.max(0, stance);
+  const pearlingRisk = clampValue(sample.pearlingRisk ?? 0, 0, 1);
+  const pressure = contact
+    * hullContact
+    * waveDeficit
+    * (.48 + Math.max(0, headingAlignment) * .72)
+    * (.72 + Math.max(.25, sample.waveHeight) * .11)
+    * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .42);
+  const accelerationX = waveNormalX * pressure;
+  const accelerationZ = waveNormalZ * pressure;
+  return {
+    accelerationX,
+    accelerationZ,
+    pressure,
+    forwardDrive: accelerationX * forwardX + accelerationZ * forwardZ,
+    lateralLoad: accelerationX * rightX + accelerationZ * rightZ,
+    waveDeficit,
+    headingAlignment,
+  };
+}
+
+/**
  * Integrates one horizontal surfboard step from forces at the sampled water
  * polygon. Phase velocity is never assigned to the board. The board can only
  * acquire it through breaking-wave pressure, projected gravity, and its own
@@ -1341,8 +1429,6 @@ export function advanceSurfboardDynamics(
     .001,
     Math.hypot(sample.waveVelocityX, sample.waveVelocityZ),
   );
-  const waveNormalX = sample.waveVelocityX / waveSpeed;
-  const waveNormalZ = sample.waveVelocityZ / waveSpeed;
 
   const initialForwardX = Math.sin(state.heading);
   const initialForwardZ = Math.cos(state.heading);
@@ -1458,18 +1544,18 @@ export function advanceSurfboardDynamics(
     Math.max(pressureTailStall, immersionTailStall),
   );
 
-  const normalSpeed = state.velocityX * waveNormalX
-    + state.velocityZ * waveNormalZ;
-  const waveDeficit = Math.max(0, waveSpeed - normalSpeed);
-  const headingAlignment = forwardX * waveNormalX + forwardZ * waveNormalZ;
-  const wavePressure = contact
-    * hullContact
-    * waveDeficit
-    * (.48 + Math.max(0, headingAlignment) * .72)
-    * (.72 + Math.max(.25, sample.waveHeight) * .11)
-    * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .42);
-  const wavePressureX = waveNormalX * wavePressure;
-  const wavePressureZ = waveNormalZ * wavePressure;
+  const wavePressure = resolveSurfboardWavePressure({
+    velocityX: state.velocityX,
+    velocityZ: state.velocityZ,
+    heading,
+    waveVelocityX: sample.waveVelocityX,
+    waveVelocityZ: sample.waveVelocityZ,
+    waveContact: contact,
+    waterContact: hullContact,
+    waveHeight: sample.waveHeight,
+    stance,
+    pearlingRisk,
+  });
 
   const lengthDragScale = Math.pow(2.5 / safeLength, .58);
   const widthDragScale = Math.pow(safeWidth / .34, .46);
@@ -1507,12 +1593,12 @@ export function advanceSurfboardDynamics(
     * hullContact
     / Math.sqrt(stability);
   let accelerationX = gravityAccelerationX
-    + wavePressureX
+    + wavePressure.accelerationX
     + forwardX * dragForward
     + rightX * dragLateral
     + turbulenceX;
   let accelerationZ = gravityAccelerationZ
-    + wavePressureZ
+    + wavePressure.accelerationZ
     + forwardZ * dragForward
     + rightZ * dragLateral
     + turbulenceZ;
@@ -1559,7 +1645,7 @@ export function advanceSurfboardDynamics(
     railLoad,
     sideslip,
     gravityDrive,
-    wavePressure,
+    wavePressure: wavePressure.pressure,
     pearlingRisk,
     tailStall,
   };

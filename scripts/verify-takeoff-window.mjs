@@ -17,6 +17,7 @@ import {
   initialWavePopUpCapture,
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
+  resolveSurfboardWavePressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
@@ -445,6 +446,78 @@ const dynamicsState = {
   heading: 0,
   yawRate: 0,
 };
+const alignedWavePressure = resolveSurfboardWavePressure({
+  velocityX: dynamicsState.velocityX,
+  velocityZ: dynamicsState.velocityZ,
+  heading: dynamicsState.heading,
+  waveVelocityX: dynamicsSample.waveVelocityX,
+  waveVelocityZ: dynamicsSample.waveVelocityZ,
+  waveContact: dynamicsSample.waveContact,
+  waterContact: 1,
+  waveHeight: dynamicsSample.waveHeight,
+  stance: 0,
+});
+const broadsideWavePressure = resolveSurfboardWavePressure({
+  velocityX: dynamicsState.velocityX,
+  velocityZ: dynamicsState.velocityZ,
+  heading: Math.PI / 2,
+  waveVelocityX: dynamicsSample.waveVelocityX,
+  waveVelocityZ: dynamicsSample.waveVelocityZ,
+  waveContact: dynamicsSample.waveContact,
+  waterContact: 1,
+  waveHeight: dynamicsSample.waveHeight,
+  stance: 0,
+});
+const stillWaterPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 0,
+  heading: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 0,
+  waveContact: 1,
+  waterContact: 1,
+  waveHeight: 0,
+  stance: 0,
+});
+if (
+  alignedWavePressure.forwardDrive < 3
+  || Math.abs(alignedWavePressure.lateralLoad) > .001
+  || Math.abs(broadsideWavePressure.forwardDrive) > .001
+  || Math.abs(broadsideWavePressure.lateralLoad) < 1
+  || stillWaterPressure.pressure !== 0
+) {
+  throw new Error("Shared wave pressure no longer distinguishes aligned drive, broadside load, and still water");
+}
+function pressureCatchAfterOneSecond(hz) {
+  const deltaSeconds = 1 / hz;
+  let state = { velocityX: .7, velocityZ: 1.2 };
+  for (let frame = 0; frame < hz; frame += 1) {
+    const pressure = resolveSurfboardWavePressure({
+      ...state,
+      heading: 0,
+      waveVelocityX: 0,
+      waveVelocityZ: 6,
+      waveContact: .8,
+      waterContact: 1,
+      waveHeight: 2,
+      stance: -.06,
+    });
+    state = {
+      velocityX: state.velocityX + pressure.accelerationX * deltaSeconds,
+      velocityZ: state.velocityZ + pressure.accelerationZ * deltaSeconds,
+    };
+  }
+  return state;
+}
+const pressureCatch60 = pressureCatchAfterOneSecond(60);
+const pressureCatch120 = pressureCatchAfterOneSecond(120);
+if (
+  pressureCatch60.velocityZ <= 3.4
+  || Math.abs(pressureCatch60.velocityZ - pressureCatch120.velocityZ) > .025
+  || Math.abs(pressureCatch60.velocityX - .7) > .001
+) {
+  throw new Error("Prone catch pressure is not frame-stable or is deleting cross-wave momentum");
+}
 const flatDynamics = advanceSurfboardDynamics(dynamicsState, {
   ...dynamicsSample,
   waveContact: 0,
@@ -1326,6 +1399,10 @@ console.log(JSON.stringify({
     alignedCapture: alignedBoard.capture,
     broadsideLoad: broadsideBoard.crossWaveLoad,
     broadsideWipeoutRisk: broadsideBoard.wipeoutRisk,
+    alignedWavePressure: alignedWavePressure.forwardDrive,
+    broadsideWaveLoad: Math.abs(broadsideWavePressure.lateralLoad),
+    proneCatchSpeed60Hz: pressureCatch60.velocityZ,
+    proneCatchSpeed120Hz: pressureCatch120.velocityZ,
     stillWater: stillWaterStand.outcome,
     angleSweep: angleSweep.map(({ degrees, reading }) => ({
       degrees,

@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11916,6 +11916,24 @@ function Simulation({
         airborneHeight = proneAttitude.heave.airborneHeight;
         verticalVelocity = proneAttitude.heave.verticalVelocity;
         landingImpact = proneAttitude.heave.landingImpact;
+        const proneWavePressure = resolveSurfboardWavePressure({
+          velocityX: paddleVelocity.current.x,
+          velocityZ: paddleVelocity.current.y,
+          heading: paddleHeading.current,
+          waveVelocityX: localWaveTransport.x,
+          waveVelocityZ: localWaveTransport.z,
+          waveContact: proneInteraction.waveContact,
+          waterContact: boardWaterContact,
+          waveHeight: settings.waveHeight * tideResponse.faceScale,
+          stance: popUpTransition.trim,
+          pearlingRisk,
+        });
+        const pronePressureStep = Math.min(delta, .05);
+        paddleVelocity.current.x += proneWavePressure.accelerationX
+          * pronePressureStep;
+        paddleVelocity.current.y += proneWavePressure.accelerationZ
+          * pronePressureStep;
+        speed = paddleVelocity.current.length();
         crossWaveLoad = proneInteraction.crossWaveLoad * boardWaterContact;
         proneHeaveIntegrated = true;
         const proneAttitudeQuality = THREE.MathUtils.clamp(
@@ -12134,12 +12152,8 @@ function Simulation({
           );
           const catchNormalX = catchTransport.x / Math.max(.001, catchTransport.speed);
           const catchNormalZ = catchTransport.z / Math.max(.001, catchTransport.speed);
-          const catchTangentX = catchNormalZ;
-          const catchTangentZ = -catchNormalX;
           const currentNormalSpeed = paddleVelocity.current.x * catchNormalX
             + paddleVelocity.current.y * catchNormalZ;
-          const currentTangentSpeed = paddleVelocity.current.x * catchTangentX
-            + paddleVelocity.current.y * catchTangentZ;
           const caughtPhase = primaryWavePhaseAt(
             position.current.x,
             position.current.z,
@@ -12225,22 +12239,6 @@ function Simulation({
             delta,
             boardStillEngaged,
             captureStrength,
-          );
-          const wavePushAcceleration = Math.min(
-            9.5,
-            Math.max(0, catchTransport.speed - currentNormalSpeed)
-            * captureStrength
-            * (1.25 + setState.crestEnergy * .75),
-          );
-          const capturedNormalSpeed = currentNormalSpeed
-            + wavePushAcceleration * Math.min(delta, .05);
-          const tangentRetention = Math.exp(
-            -Math.min(delta, .05) * captureStrength * .82,
-          );
-          const capturedTangentSpeed = currentTangentSpeed * tangentRetention;
-          paddleVelocity.current.set(
-            catchNormalX * capturedNormalSpeed + catchTangentX * capturedTangentSpeed,
-            catchNormalZ * capturedNormalSpeed + catchTangentZ * capturedTangentSpeed,
           );
           stamina.current = Math.max(
             0,
