@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -10699,11 +10699,9 @@ function Simulation({
   const stance = useRef(0);
   const barrelTime = useRef(0);
   const rideStartScore = useRef(0);
-  const rideOriginAlong = useRef(0);
   const rideWavePhase = useRef(0);
   const rideFacePosition = useRef(0);
   const rideCapture = useRef({ overtaken: 0, ahead: 0 });
-  const ridePocketOffset = useRef(0);
   const waveCrestOffset = useRef(0);
   const rideLineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
   const rideHeading = useRef(0);
@@ -11141,8 +11139,6 @@ function Simulation({
         );
         rideWavePhase.current = Math.PI * .5
           + Math.round((qaRidePhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-        rideOriginAlong.current = position.current.x * tangentX + position.current.z * tangentZ;
-        ridePocketOffset.current = 0;
         waveCrestOffset.current = 0;
         rideFacePosition.current = .24;
         rideCapture.current.overtaken = 0;
@@ -12091,12 +12087,6 @@ function Simulation({
           );
           rideWavePhase.current = Math.PI * .5
             + Math.round((capturedPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-          const catchNormalX = catchTransport.x / Math.max(.001, catchTransport.speed);
-          const catchNormalZ = catchTransport.z / Math.max(.001, catchTransport.speed);
-          const catchTangentX = catchNormalZ;
-          const catchTangentZ = -catchNormalX;
-          rideOriginAlong.current = position.current.x * catchTangentX + position.current.z * catchTangentZ;
-          ridePocketOffset.current = 0;
           const capturedWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
           const capturedPhaseError = Math.atan2(
             Math.sin(capturedPhase - rideWavePhase.current),
@@ -12519,6 +12509,117 @@ function Simulation({
             },
           );
           waveEngagement.current = standingWaveEngagement.engagement;
+          const standingPhase = primaryWavePhaseAt(
+            position.current.x,
+            position.current.z,
+            t,
+            settings,
+            character,
+          );
+          if (
+            waveEngagement.current < .06
+            && standingWaveEngagement.pressure < .04
+          ) {
+            // While the hull is detached, follow whichever crest is physically
+            // nearest. Once pressure begins to build, freeze that crest identity
+            // so crossing the capture threshold cannot switch waves.
+            rideWavePhase.current = Math.PI * .5
+              + Math.round(
+                (standingPhase - Math.PI * .5) / (Math.PI * 2),
+              ) * Math.PI * 2;
+          }
+          const standingFacePhaseSpan = THREE.MathUtils.clamp(
+            .76 + settings.waveHeight * tideResponse.faceScale * .07,
+            .78,
+            1.18,
+          );
+          const standingCrestPhaseError = Math.atan2(
+            Math.sin(standingPhase - rideWavePhase.current),
+            Math.cos(standingPhase - rideWavePhase.current),
+          );
+          const standingPhysicalFacePosition = waveFacePositionAtPhase(
+            standingCrestPhaseError,
+            standingFacePhaseSpan,
+          );
+          rideFacePosition.current = THREE.MathUtils.damp(
+            rideFacePosition.current,
+            standingPhysicalFacePosition,
+            7.2,
+            delta,
+          );
+          const standingWaveNumber = Math.PI * 2
+            / Math.max(.1, standingTransport.wavelength);
+          const standingCrestTravelLimit = THREE.MathUtils.clamp(
+            standingTransport.wavelength * .075,
+            5.4,
+            15,
+          );
+          waveCrestOffset.current = THREE.MathUtils.damp(
+            waveCrestOffset.current,
+            THREE.MathUtils.clamp(
+              -standingCrestPhaseError / Math.max(.08, standingWaveNumber),
+              -standingCrestTravelLimit,
+              standingCrestTravelLimit,
+            ),
+            8.5,
+            delta,
+          );
+          const standingWaveNormalX = standingTransport.x
+            / Math.max(.001, standingTransport.speed);
+          const standingWaveNormalZ = standingTransport.z
+            / Math.max(.001, standingTransport.speed);
+          const standingWaveTangentX = standingWaveNormalZ;
+          const standingWaveTangentZ = -standingWaveNormalX;
+          const standingNormalCoordinate = position.current.x * standingWaveNormalX
+            + position.current.z * standingWaveNormalZ;
+          const standingReferenceX = standingWaveNormalX
+            * standingNormalCoordinate;
+          const standingReferenceZ = standingWaveNormalZ
+            * standingNormalCoordinate;
+          const standingPocketFrame = resolveWavePocketFrame({
+            crestPhase: rideWavePhase.current,
+            referencePhase: primaryWavePhaseAt(
+              standingReferenceX,
+              standingReferenceZ,
+              t,
+              settings,
+              character,
+            ),
+            elapsed: t,
+            wavePeriod: settings.wavePeriod,
+            waveSpeed: standingTransport.speed,
+            peel: character.peel,
+            breakLength: character.length,
+            lineSide: rideLineSide.current,
+            variability: tideVariability,
+          });
+          const standingPocketWidth = THREE.MathUtils.clamp(
+            3.4
+              + settings.waveHeight * tideResponse.faceScale * .46
+              + (1 - tideSteepness) * .9,
+            3.6,
+            6.7,
+          );
+          const standingSection = resolveWaveSectionPressure({
+            surferAlong: position.current.x * standingWaveTangentX
+              + position.current.z * standingWaveTangentZ,
+            pocketAlong: standingPocketFrame.pocketAlong,
+            pocketWidth: standingPocketWidth,
+            lineSide: rideLineSide.current,
+            facePosition: standingPhysicalFacePosition,
+            waveEnergy: setState.energy,
+            tidePower,
+            tideVariability,
+            onshoreChop,
+          });
+          const standingBrokenWater = Math.max(
+            standingReading.wipeoutRisk,
+            standingSection.whitewaterPressure,
+          );
+          linePosition = standingSection.linePosition;
+          lineControl = standingSection.lineControl;
+          sectionPressure = standingSection.sectionPressure;
+          whitewaterPressure = standingBrokenWater;
           boardAlignment = standingReading.headingAlignment;
           boardWaveAngle = standingReading.headingError;
           crossWaveLoad = standingReading.crossWaveLoad * boardWaterContact;
@@ -12534,8 +12635,6 @@ function Simulation({
             delta,
           );
 
-          const standingWaveNormalX = standingTransport.x / Math.max(.001, standingTransport.speed);
-          const standingWaveNormalZ = standingTransport.z / Math.max(.001, standingTransport.speed);
           const standingRollRightX = Math.cos(rideHeading.current);
           const standingRollRightZ = -Math.sin(rideHeading.current);
           const standingHalfRail = Math.max(.12, boardSpec.width * .46);
@@ -12588,7 +12687,7 @@ function Simulation({
               planing: standingPlaning,
               boardWidth: boardSpec.width,
               boardStability: boardSpec.stability,
-              whitewater: standingReading.wipeoutRisk,
+              whitewater: standingBrokenWater,
               waterContact: boardWaterContact,
             },
           );
@@ -12648,7 +12747,7 @@ function Simulation({
                 0,
                 1,
               ) * boardWaterContact,
-              whitewater: standingReading.wipeoutRisk,
+              whitewater: standingBrokenWater,
             },
           );
           boardPitchAngle.current = standingPitch.pitchAngle;
@@ -12690,12 +12789,12 @@ function Simulation({
                 crossWaveLoad: standingReading.crossWaveLoad,
                 railSlip: railSlip.current,
                 stance: stance.current,
-                facePosition: 0,
+                facePosition: standingPhysicalFacePosition,
                 tubePressure: 0,
-                whitewater: standingReading.wipeoutRisk,
+                whitewater: standingBrokenWater,
                 onshoreChop,
               }),
-              whitewater: standingReading.wipeoutRisk,
+              whitewater: standingBrokenWater,
               noseImmersion: standingPitch.noseImmersion,
               tailImmersion: standingPitch.tailImmersion,
               noseSurfaceOffset: standingNoseHeight
@@ -12774,7 +12873,7 @@ function Simulation({
                 )
                   + rollCapsizeRisk * 2.4
                   + Math.max(0, Math.abs(physicalRollRate) - 1.15) * .16
-                  + standingReading.wipeoutRisk * .72
+                  + standingBrokenWater * .72
                   + Math.max(0, standingReading.crossWaveLoad - .36) * .72
                   + pearlingRisk * 1.45
                   + pitchOverRisk * 1.8
@@ -12803,9 +12902,10 @@ function Simulation({
             1,
           );
           waveQuality = standingReading.waveContact * .36;
-          lineControl = 0;
-          sectionPressure = standingReading.crossWaveLoad;
-          whitewaterPressure = standingReading.wipeoutRisk;
+          sectionPressure = Math.max(
+            sectionPressure,
+            standingReading.crossWaveLoad,
+          );
 
           const captureNow = waveEngagement.current >= .46
             && standingWaveEngagement.pressure >= .16
@@ -12818,29 +12918,8 @@ function Simulation({
             rideResult.current = "";
             cleanFinish.current = false;
             finishAt.current = -1;
-            const capturedPhase = primaryWavePhaseAt(
-              position.current.x,
-              position.current.z,
-              t,
-              settings,
-              character,
-            );
-            rideWavePhase.current = Math.PI * .5
-              + Math.round((capturedPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-            const standingTangentX = standingWaveNormalZ;
-            const standingTangentZ = -standingWaveNormalX;
-            rideOriginAlong.current = position.current.x * standingTangentX
-              + position.current.z * standingTangentZ;
-            ridePocketOffset.current = 0;
-            waveCrestOffset.current = 0;
-            rideFacePosition.current = .04 + standingReading.capture * .2;
             rideCapture.current.overtaken = 0;
             rideCapture.current.ahead = 0;
-            rideLineSide.current = Math.abs(character.peel) >= .18
-              ? Math.sign(character.peel)
-              : Math.abs(steer) > .16
-                ? Math.sign(steer)
-                : position.current.x < 0 ? -1 : 1;
             catchQuality.current = THREE.MathUtils.clamp(
               .18
                 + standingReading.capture * .5
@@ -12862,7 +12941,7 @@ function Simulation({
           } else {
             const standingTumble = standingReading.outcome === "tumble"
               && (
-                standingReading.wipeoutRisk > .78
+                standingBrokenWater > .78
                 || unstableFor.current > .22
               );
             if (standingTumble || rollCapsizeRisk > .72 || pitchOverRisk > .84 || unstableFor.current > (
@@ -12873,7 +12952,7 @@ function Simulation({
               wipeoutAt.current = t;
               const tumblePower = THREE.MathUtils.clamp(
                 .18
-                  + standingReading.wipeoutRisk * .58
+                  + standingBrokenWater * .58
                   + standingReading.crossWaveLoad * .2
                   + rollCapsizeRisk * .18
                   + pitchOverRisk * .2
@@ -12991,10 +13070,6 @@ function Simulation({
         // wave transport, down-the-line trim, pocket tracking, and the visible face.
         const waveTangentX = waveNormalZ;
         const waveTangentZ = -waveNormalX;
-        const peelVelocity = rideLineSide.current
-          * waveTransport.speed
-          * (.38 + Math.abs(character.peel) * .22 + character.length * .018);
-        ridePocketOffset.current += peelVelocity * delta;
         const waveSpeed = waveTransport.speed * (.88 + tidePower * .12);
         const rideSurface = waveSurfaceFrameAt(
           position.current.x,
@@ -13018,28 +13093,47 @@ function Simulation({
         const highFace = Math.max(0, physicalFacePosition);
         const lowFace = Math.max(0, -physicalFacePosition);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * 6.5, 0, 100);
-        const breakTravel = rideDistance.current;
-        const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * tideVariability * 1.1;
-        const pocketAlong = rideOriginAlong.current + ridePocketOffset.current + pocketPulse;
+        const waveNormalCoordinate = position.current.x * waveNormalX
+          + position.current.z * waveNormalZ;
+        const pocketReferenceX = waveNormalX * waveNormalCoordinate;
+        const pocketReferenceZ = waveNormalZ * waveNormalCoordinate;
+        const pocketReferencePhase = primaryWavePhaseAt(
+          pocketReferenceX,
+          pocketReferenceZ,
+          t,
+          settings,
+          character,
+        );
+        const pocketFrame = resolveWavePocketFrame({
+          crestPhase: rideWavePhase.current,
+          referencePhase: pocketReferencePhase,
+          elapsed: t,
+          wavePeriod: settings.wavePeriod,
+          waveSpeed: waveTransport.speed,
+          peel: character.peel,
+          breakLength: character.length,
+          lineSide: rideLineSide.current,
+          variability: tideVariability,
+        });
+        const pocketAlong = pocketFrame.pocketAlong;
         const pocketWidth = THREE.MathUtils.clamp(3.4 + settings.waveHeight * tideResponse.faceScale * .46 + (1 - tideSteepness) * .9, 3.6, 6.7);
         const surferAlong = position.current.x * waveTangentX + position.current.z * waveTangentZ;
-        const signedPocketDistance = (surferAlong - pocketAlong) * rideLineSide.current;
-        linePosition = THREE.MathUtils.clamp(signedPocketDistance / pocketWidth, -1.5, 1.5);
-        const lineTolerance = settings.mode === "training" ? 1.3 : settings.mode === "advanced" ? .88 : 1.06;
-        lineControl = 1 - THREE.MathUtils.smoothstep(Math.abs(linePosition), .38 * lineTolerance, 1.16 * lineTolerance);
-        const deepRisk = THREE.MathUtils.smoothstep(-linePosition, .64 * lineTolerance, 1.34 * lineTolerance);
-        const shoulderStall = THREE.MathUtils.smoothstep(linePosition, .76 * lineTolerance, 1.42 * lineTolerance);
-        whitewaterPressure = THREE.MathUtils.clamp(
-          deepRisk
-            * (.55 + setState.energy * .28 + tidePower * .1 + onshoreChop * .07)
-            * (.94 + highFace * .12),
-          0,
-          1,
-        );
-        sectionPressure = Math.max(
-          whitewaterPressure,
-          shoulderStall * .7 * (.7 + tideVariability * .3),
-        );
+        const sectionReading = resolveWaveSectionPressure({
+          surferAlong,
+          pocketAlong,
+          pocketWidth,
+          lineSide: rideLineSide.current,
+          facePosition: physicalFacePosition,
+          waveEnergy: setState.energy,
+          tidePower,
+          tideVariability,
+          onshoreChop,
+        });
+        linePosition = sectionReading.linePosition;
+        lineControl = sectionReading.lineControl;
+        whitewaterPressure = sectionReading.whitewaterPressure;
+        sectionPressure = sectionReading.sectionPressure;
+        const shoulderStall = sectionReading.shoulderStall;
         const tubePocket = 1 - THREE.MathUtils.smoothstep(
           Math.abs(linePosition + .18),
           .34,

@@ -155,6 +155,130 @@ export function waveFacePositionAtPhase(
   );
 }
 
+export type WavePocketSample = {
+  crestPhase: number;
+  referencePhase: number;
+  elapsed: number;
+  wavePeriod: number;
+  waveSpeed: number;
+  peel: number;
+  breakLength: number;
+  lineSide: number;
+  variability: number;
+};
+
+/**
+ * Locates the breaking pocket in the crest-tangent frame without using the
+ * surfer's position or the moment a ride was declared. Each crest carries its
+ * own phase identifier; its pocket peels away from the A-frame origin as that
+ * crest ages. Catching the wave therefore reveals the line the board already
+ * occupies instead of placing a fresh pocket beneath it.
+ */
+export function resolveWavePocketFrame(
+  sample: WavePocketSample,
+) {
+  const period = Math.max(4, sample.wavePeriod);
+  const angularSpeed = Math.PI * 2 / period;
+  const crestAge = (
+    sample.crestPhase - sample.referencePhase
+  ) / angularSpeed;
+  const lineSide = sample.lineSide < 0 ? -1 : 1;
+  const peelRate = lineSide
+    * Math.max(0, sample.waveSpeed)
+    * (
+      .38
+        + Math.min(1.4, Math.abs(sample.peel)) * .22
+        + Math.max(0, sample.breakLength) * .018
+    );
+  const sectionOffset = lineSide
+    * Math.sin(sample.crestPhase * .18 + sample.elapsed * .13)
+    * Math.max(0, sample.variability)
+    * 1.1;
+  return {
+    crestAge,
+    peelRate,
+    sectionOffset,
+    pocketAlong: peelRate * crestAge + sectionOffset,
+  };
+}
+
+export type WaveSectionSample = {
+  surferAlong: number;
+  pocketAlong: number;
+  pocketWidth: number;
+  lineSide: number;
+  facePosition: number;
+  waveEnergy: number;
+  tidePower: number;
+  tideVariability: number;
+  onshoreChop: number;
+};
+
+/**
+ * Resolves the board's actual position relative to the moving pocket. This is
+ * shared before and after ride capture so an engagement flag cannot move the
+ * foam line, widen the shoulder, or grant a centered takeoff.
+ */
+export function resolveWaveSectionPressure(
+  sample: WaveSectionSample,
+) {
+  const lineSide = sample.lineSide < 0 ? -1 : 1;
+  const pocketWidth = Math.max(.5, sample.pocketWidth);
+  const linePosition = clampValue(
+    (
+      (sample.surferAlong - sample.pocketAlong)
+        * lineSide
+    ) / pocketWidth,
+    -1.5,
+    1.5,
+  );
+  const lineTolerance = 1.06;
+  const lineControl = 1 - smoothstep(
+    .38 * lineTolerance,
+    1.16 * lineTolerance,
+    Math.abs(linePosition),
+  );
+  const deepRisk = smoothstep(
+    .64 * lineTolerance,
+    1.34 * lineTolerance,
+    -linePosition,
+  );
+  const shoulderStall = smoothstep(
+    .76 * lineTolerance,
+    1.42 * lineTolerance,
+    linePosition,
+  );
+  const whitewaterPressure = clampValue(
+    deepRisk
+      * (
+        .55
+          + clampValue(sample.waveEnergy, 0, 1) * .28
+          + clampValue(sample.tidePower, 0, 1.5) * .1
+          + clampValue(sample.onshoreChop, 0, 1.5) * .07
+      )
+      * (.94 + Math.max(0, sample.facePosition) * .12),
+    0,
+    1,
+  );
+  const sectionPressure = Math.max(
+    whitewaterPressure,
+    shoulderStall
+      * .7
+      * (
+        .7
+          + clampValue(sample.tideVariability, 0, 1.5) * .3
+      ),
+  );
+  return {
+    linePosition,
+    lineControl,
+    deepRisk,
+    shoulderStall,
+    whitewaterPressure,
+    sectionPressure,
+  };
+}
+
 export function advanceRideCaptureState(
   current: RideCaptureState,
   sample: {

@@ -23,6 +23,8 @@ import {
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
   resolveSurfboardWavePressure,
+  resolveWavePocketFrame,
+  resolveWaveSectionPressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
@@ -453,6 +455,65 @@ if (
   ) > .001
 ) {
   throw new Error("Instantaneous wave-face measurement no longer clamps to the physical face");
+}
+
+const sharedPocketSample = {
+  crestPhase: Math.PI * .5 - Math.PI * 2 * 3,
+  referencePhase: Math.PI * .5 - Math.PI * 2 * 3 - .8,
+  elapsed: 26,
+  wavePeriod: 8,
+  waveSpeed: 6,
+  peel: .32,
+  breakLength: 1,
+  lineSide: 1,
+  variability: .28,
+};
+const absolutePocket = resolveWavePocketFrame(sharedPocketSample);
+const repeatedPocket = resolveWavePocketFrame(sharedPocketSample);
+const laterPocket = resolveWavePocketFrame({
+  ...sharedPocketSample,
+  referencePhase: sharedPocketSample.referencePhase - Math.PI * 2 / 8 * .1,
+  elapsed: sharedPocketSample.elapsed + .1,
+});
+if (
+  absolutePocket.pocketAlong !== repeatedPocket.pocketAlong
+  || Math.abs(
+    laterPocket.pocketAlong - absolutePocket.pocketAlong
+      - absolutePocket.peelRate * .1
+  ) > .02
+  || absolutePocket.peelRate <= 0
+) {
+  throw new Error("Wave pocket no longer follows crest age independently of capture time");
+}
+const pocketSection = resolveWaveSectionPressure({
+  surferAlong: absolutePocket.pocketAlong,
+  pocketAlong: absolutePocket.pocketAlong,
+  pocketWidth: 4.8,
+  lineSide: 1,
+  facePosition: .3,
+  waveEnergy: .72,
+  tidePower: .8,
+  tideVariability: .3,
+  onshoreChop: .12,
+});
+const deepSection = resolveWaveSectionPressure({
+  surferAlong: absolutePocket.pocketAlong - 7,
+  pocketAlong: absolutePocket.pocketAlong,
+  pocketWidth: 4.8,
+  lineSide: 1,
+  facePosition: .3,
+  waveEnergy: .72,
+  tidePower: .8,
+  tideVariability: .3,
+  onshoreChop: .12,
+});
+if (
+  pocketSection.lineControl < .99
+  || pocketSection.whitewaterPressure > .001
+  || deepSection.whitewaterPressure < .65
+  || deepSection.lineControl > .05
+) {
+  throw new Error("Absolute wave section no longer distinguishes the clean pocket from broken water");
 }
 
 const dynamicsSample = {
@@ -1872,6 +1933,10 @@ console.log(JSON.stringify({
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
     facePhaseSweep,
+    absolutePocketAlong: absolutePocket.pocketAlong,
+    pocketPeelRate: absolutePocket.peelRate,
+    cleanPocketLineControl: pocketSection.lineControl,
+    brokenSectionPressure: deepSection.whitewaterPressure,
     sharedPlaning: sharedPlaning.planing,
     flatHighSpeedPlaning: flatHighSpeedPlaning.planing,
     longboardPlaning: longboardPlaning.planing,
