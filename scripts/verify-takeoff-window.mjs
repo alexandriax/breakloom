@@ -380,6 +380,43 @@ if (shoulderCapture.ahead < .86) {
   throw new Error(`A board beyond the power failed to lose the wave: ${shoulderCapture.ahead.toFixed(2)}`);
 }
 
+const popUpCrestState = {
+  overtaken: .34,
+  ahead: .08,
+};
+const preservedPopUpCrest = advanceRideCaptureState(
+  popUpCrestState,
+  {
+    deltaSeconds: 1 / 60,
+    crestPhaseError: -.38,
+    normalSpeed: 4.2,
+    waveSpeed: 6,
+    facePhaseSpan: .9,
+    gravityPlaning: .18,
+    waveSupport: 1,
+  },
+);
+const resetPopUpCrest = advanceRideCaptureState(
+  { overtaken: 0, ahead: 0 },
+  {
+    deltaSeconds: 1 / 60,
+    crestPhaseError: -.38,
+    normalSpeed: 4.2,
+    waveSpeed: 6,
+    facePhaseSpan: .9,
+    gravityPlaning: .18,
+    waveSupport: 1,
+  },
+);
+if (
+  preservedPopUpCrest.overtaken
+    - resetPopUpCrest.overtaken < .33
+  || preservedPopUpCrest.overtaken
+    <= popUpCrestState.overtaken
+) {
+  throw new Error("Pop-up handoff no longer preserves accumulated crest overtake");
+}
+
 let unsupportedCrestRelation = { overtaken: .9, ahead: .8 };
 for (let frame = 0; frame < 180; frame += 1) {
   unsupportedCrestRelation = advanceRideCaptureState(
@@ -4660,6 +4697,9 @@ console.log(JSON.stringify({
   captureLoss: {
     overtaken: overtakenCapture.overtaken,
     ahead: shoulderCapture.ahead,
+    preservedPopUpOvertake:
+      preservedPopUpCrest.overtaken,
+    resetPopUpOvertake: resetPopUpCrest.overtaken,
     unsupportedLipOvertake: unsupportedCrestRelation.lipOvertake,
     unsupportedOvertaken: unsupportedCrestRelation.overtaken,
     unsupportedAhead: unsupportedCrestRelation.ahead,

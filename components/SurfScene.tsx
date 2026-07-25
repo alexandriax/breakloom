@@ -12811,7 +12811,7 @@ function Simulation({
           rideWavePhase.current = resolveWaveCrestPhaseIdentity(
             capturedPhase,
             rideWavePhase.current,
-            0,
+            initialEngagement,
           );
           const capturedCrest = waveCrestPropertiesAtPhase(
             rideWavePhase.current,
@@ -12839,8 +12839,6 @@ function Simulation({
             capturedPhaseError,
             capturedFacePhaseSpan,
           );
-          rideCapture.current.overtaken = 0;
-          rideCapture.current.ahead = 0;
           const capturedNormalX = catchTransport.x
             / Math.max(.001, catchTransport.speed);
           const capturedNormalZ = catchTransport.z
@@ -13037,6 +13035,36 @@ function Simulation({
             },
           );
           waveEngagement.current = popUpWaveEngagement.engagement;
+          const caughtFacePhaseSpan = THREE.MathUtils.clamp(
+            .76
+              + settings.waveHeight
+                * tideResponse.faceScale
+                * .07,
+            .78,
+            1.18,
+          );
+          const popUpCrestRelation = advanceRideCaptureState(
+            rideCapture.current,
+            {
+              deltaSeconds: delta,
+              crestPhaseError: caughtPhaseError,
+              normalSpeed: currentNormalSpeed,
+              waveSpeed: catchTransport.speed,
+              facePhaseSpan: caughtFacePhaseSpan,
+              gravityPlaning: boardPlaning,
+              waveSupport: THREE.MathUtils.clamp(
+                caughtInteraction.waveContact
+                  * boardWaterContact
+                  * (.35 + proneCrest.energy * .65),
+                0,
+                1,
+              ),
+            },
+          );
+          rideCapture.current.overtaken =
+            popUpCrestRelation.overtaken;
+          rideCapture.current.ahead =
+            popUpCrestRelation.ahead;
           const popUpBalanceError = Math.abs(
             physicalBalance * popUpTransition.counterweightScale
               - balanceTarget,
@@ -13069,7 +13097,12 @@ function Simulation({
           catchReady = false;
           const lostCrest = caughtCrestDistance < -3.6
             || caughtCrestDistance > 15.5 + settings.waveHeight * 1.6
-            || (commitElapsed > 1.5 && waveEngagement.current <= .04);
+            || rideCapture.current.overtaken > .88
+            || rideCapture.current.ahead > .96
+            || (
+              commitElapsed > 1.5
+              && waveEngagement.current <= .04
+            );
           const bodyDrive = Math.round(popUpMovementAuthority * 100);
           prompt = takeoffCommitProgress < .2
             ? captureStrength < .12
@@ -13088,7 +13121,8 @@ function Simulation({
               && caughtInteraction.outcome !== "tumble"
               && boardWaterContact > .24
               && rollCapsizeRisk < .84
-              && pitchOverRisk < .86;
+              && pitchOverRisk < .86
+              && rideCapture.current.overtaken < .76;
             const planingMatch = THREE.MathUtils.clamp(
               currentNormalSpeed / Math.max(.1, catchTransport.speed * .72),
               0,
@@ -13159,6 +13193,10 @@ function Simulation({
             // hands, feet, and standing without an action-triggered bonus.
             takeoffCommitProgress = 0;
             takeoffCommitQuality.current = committedQuality;
+            if (waveEngagement.current < .06) {
+              rideCapture.current.overtaken = 0;
+              rideCapture.current.ahead = 0;
+            }
             const popPhase = primaryWavePhaseAt(
               position.current.x,
               position.current.z,
