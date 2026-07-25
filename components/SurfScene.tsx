@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardRailGrip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12656,11 +12656,22 @@ function Simulation({
               waterContact: boardWaterContact,
               railInput: standingRoll.effectiveRail,
               stance: stance.current,
-              railGrip: THREE.MathUtils.clamp(
-                1 - railSlip.current * .72 - standingReading.crossWaveLoad * .16,
-                .12,
-                1,
-              ),
+              railGrip: resolveSurfboardRailGrip({
+                baseGrip: settings.board === "performance"
+                  ? .96
+                  : settings.board === "longboard"
+                    ? .9
+                    : .82,
+                planing: standingReading.planing,
+                waveContact: standingReading.waveContact,
+                crossWaveLoad: standingReading.crossWaveLoad,
+                railSlip: railSlip.current,
+                stance: stance.current,
+                facePosition: 0,
+                tubePressure: 0,
+                whitewater: standingReading.wipeoutRisk,
+                onshoreChop,
+              }),
               whitewater: standingReading.wipeoutRisk,
               noseImmersion: standingPitch.noseImmersion,
               tailImmersion: standingPitch.tailImmersion,
@@ -12819,7 +12830,6 @@ function Simulation({
             rideStartScore.current = score.current;
             rideManeuverStart.current = maneuverCount.current;
             score.current += Math.round(45 + catchQuality.current * 310);
-            unstableFor.current *= .28;
             motion.current.takeoff = Math.max(motion.current.takeoff, .72);
             motion.current.impact = Math.max(
               motion.current.impact,
@@ -13061,15 +13071,7 @@ function Simulation({
               * foamFatigueScale,
           );
         }
-        const priorWaveQuality = motion.current.waveQuality;
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const railGrip = gripBase
-          + priorWaveQuality * .2
-          + tailPressure * .08
-          - nosePressure * .1
-          - highFace * .045
-          - tubePressure * .035
-          - whitewaterPressure * (.12 + onshoreChop * .045);
         const foamCrossChop = Math.sin(
           t * (8.8 + setState.energy * 1.6)
             + position.current.x * .19
@@ -13107,6 +13109,18 @@ function Simulation({
           crestSurfable: setState.crestSurfable,
           boardStability: boardSpec.stability,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
+        });
+        const railGrip = resolveSurfboardRailGrip({
+          baseGrip: gripBase,
+          planing: rideInteraction.planing,
+          waveContact: rideInteraction.waveContact,
+          crossWaveLoad: rideInteraction.crossWaveLoad,
+          railSlip: railSlip.current,
+          stance: stance.current,
+          facePosition: physicalFacePosition,
+          tubePressure,
+          whitewater: whitewaterPressure,
+          onshoreChop,
         });
         const rideWaveEngagement = advanceWaveEngagement(
           waveEngagement.current,
@@ -13288,7 +13302,7 @@ function Simulation({
             waterContact: boardWaterContact,
             railInput: physicalRailInput,
             stance: stance.current,
-            railGrip: THREE.MathUtils.clamp(1 - railSlip.current * .78, .08, 1),
+            railGrip,
             whitewater: whitewaterPressure,
             noseImmersion: ridePitch.noseImmersion,
             tailImmersion: ridePitch.tailImmersion,

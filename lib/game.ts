@@ -396,6 +396,19 @@ export type SurfboardWavePressureReading = {
   tailContact: number;
 };
 
+export type SurfboardRailGripSample = {
+  baseGrip: number;
+  planing: number;
+  waveContact: number;
+  crossWaveLoad: number;
+  railSlip: number;
+  stance: number;
+  facePosition: number;
+  tubePressure: number;
+  whitewater: number;
+  onshoreChop: number;
+};
+
 export type BoardRollState = {
   rollAngle: number;
   rollRate: number;
@@ -1566,6 +1579,41 @@ export function resolveSurfboardWavePressure(
     noseContact,
     tailContact,
   };
+}
+
+/**
+ * Resolves fin and rail grip from the actual hull/water state. Engagement,
+ * catch quality, score, and tutorial mode are deliberately absent, so crossing
+ * a bookkeeping boundary cannot grant the board extra turning authority.
+ */
+export function resolveSurfboardRailGrip(
+  sample: SurfboardRailGripSample,
+) {
+  const stance = clampValue(sample.stance, -1, 1);
+  const tailPressure = Math.max(0, -stance);
+  const nosePressure = Math.max(0, stance);
+  const highFace = Math.max(0, clampValue(sample.facePosition, -1, 1));
+  const planing = clampValue(sample.planing, 0, 1);
+  const waveContact = clampValue(sample.waveContact, 0, 1);
+  const crossWaveLoad = clampValue(sample.crossWaveLoad, 0, 1.5);
+  const railSlip = clampValue(sample.railSlip, 0, 1);
+  const tubePressure = clampValue(sample.tubePressure, 0, 1);
+  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const onshoreChop = clampValue(sample.onshoreChop, 0, 1);
+  return clampValue(
+    sample.baseGrip
+      + planing * .08
+      + waveContact * .04
+      + tailPressure * .08
+      - nosePressure * .1
+      - highFace * .045
+      - tubePressure * .035
+      - whitewater * (.12 + onshoreChop * .045)
+      - crossWaveLoad * .09
+      - railSlip * .78,
+    .08,
+    1,
+  );
 }
 
 /**

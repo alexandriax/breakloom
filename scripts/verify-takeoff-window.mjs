@@ -18,6 +18,7 @@ import {
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
+  resolveSurfboardRailGrip,
   resolveSurfboardWavePressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
@@ -781,6 +782,58 @@ const lowSpeedTailPressure = advanceSurfboardDynamics(
 );
 if (lowSpeedTailPressure.tailStall < .3) {
   throw new Error("Heavy tail pressure at low speed is not stalling the board");
+}
+const sharedGripSample = {
+  baseGrip: .9,
+  planing: .72,
+  waveContact: .64,
+  crossWaveLoad: .18,
+  railSlip: .12,
+  stance: 0,
+  facePosition: .2,
+  tubePressure: .1,
+  whitewater: .08,
+  onshoreChop: .2,
+};
+const standingBoundaryGrip = resolveSurfboardRailGrip(sharedGripSample);
+const engagedBoundaryGrip = resolveSurfboardRailGrip(sharedGripSample);
+const cleanPlaningGrip = resolveSurfboardRailGrip({
+  ...sharedGripSample,
+  planing: 1,
+  waveContact: 1,
+  crossWaveLoad: 0,
+  railSlip: 0,
+  facePosition: 0,
+  tubePressure: 0,
+  whitewater: 0,
+});
+const washedBroadsideGrip = resolveSurfboardRailGrip({
+  ...sharedGripSample,
+  planing: .3,
+  waveContact: .8,
+  crossWaveLoad: 1.2,
+  railSlip: .55,
+  stance: .6,
+  facePosition: .6,
+  tubePressure: .4,
+  whitewater: 1,
+  onshoreChop: 1,
+});
+const tailWeightedGrip = resolveSurfboardRailGrip({
+  ...sharedGripSample,
+  stance: -.8,
+});
+const noseWeightedGrip = resolveSurfboardRailGrip({
+  ...sharedGripSample,
+  stance: .8,
+});
+if (
+  standingBoundaryGrip !== engagedBoundaryGrip
+  || cleanPlaningGrip < .98
+  || washedBroadsideGrip >= standingBoundaryGrip * .55
+  || tailWeightedGrip <= noseWeightedGrip
+) {
+  throw new Error("Shared physical rail grip no longer preserves boundary continuity or responds to hull load");
 }
 
 const rollSample = {
@@ -1661,6 +1714,10 @@ console.log(JSON.stringify({
     immersedNosePearlingRisk: immersedNoseContact.pearlingRisk,
     immersedNoseDeceleration: immersedNoseContact.accelerationZ,
     lowSpeedTailStall: lowSpeedTailPressure.tailStall,
+    standingBoundaryGrip,
+    engagedBoundaryGrip,
+    cleanPlaningGrip,
+    washedBroadsideGrip,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,
