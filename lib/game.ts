@@ -1052,8 +1052,8 @@ export const BOARD_SPECS: Record<BoardType, {
 };
 
 export const SURFSCAPE_RELEASE = {
-  version: 228,
-  channel: "QA",
+  version: 229,
+  channel: "RC PREP",
 } as const;
 
 export type SessionSettings = {

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/build-sites.mjs",
+    "build": "next build && node scripts/build-sites.mjs && node scripts/verify-sites-artifact.mjs",
     "build:sites": "npm run build",
     "start": "next dev",
     "test": "npm run verify:release && npm run build",
