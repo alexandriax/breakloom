@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -360,6 +360,12 @@ type MotionState = {
   wipeout: number;
   wipeoutProgress: number;
   wipeoutPower: number;
+  wipeoutRoll: number;
+  wipeoutPitch: number;
+  wipeoutYaw: number;
+  wipeoutRollRate: number;
+  wipeoutPitchRate: number;
+  wipeoutYawRate: number;
   breath: number;
   maneuver: number;
   maneuverSide: number;
@@ -421,6 +427,10 @@ type ReplayRestoreState = {
   boardPitchAngle: number;
   boardPitchRate: number;
   wipeoutVelocity: THREE.Vector2;
+  wipeoutHeading: number;
+  wipeoutRotation: THREE.Vector3;
+  wipeoutAngularVelocity: THREE.Vector3;
+  wipeoutTumbleSide: number;
   phase: GamePhase;
   playerHeading: number;
   paddleHeading: number;
@@ -4233,16 +4243,18 @@ function SurferModel({
     const carryStride = carrying ? THREE.MathUtils.smoothstep(state.speed, .16, 1.35) * (1 - waterDepth * .42) : 0;
     const carryStep = Math.sin(clock.elapsedTime * (2.5 + state.speed * 1.55)) * carryStride;
     const bodyRigRoll = wipeout
-      ? state.wipeoutProgress * (2.8 + state.wipeoutPower * 2.35)
-        + Math.sin(clock.elapsedTime * 3.6) * state.wipeoutPower * .16
+      ? -state.wipeoutRoll
       : riding
         ? state.slip * state.rail * -.08 * (1 - rideSettle)
         : paddle
           ? Math.sin(clock.elapsedTime * 8) * state.shorebreak * .025
           : 0;
-    const bodyRigYaw = riding
-      ? state.slip * Math.sign(state.rail) * .13
-      : 0;
+    const bodyRigPitch = wipeout ? state.wipeoutPitch : 0;
+    const bodyRigYaw = wipeout
+      ? state.wipeoutYaw
+      : riding
+        ? state.slip * Math.sign(state.rail) * .13
+        : 0;
     const bodyRigLift = riding
       ? state.maneuverLift
       : paddle
@@ -4260,7 +4272,7 @@ function SurferModel({
     body.current.rotation.x = THREE.MathUtils.damp(body.current.rotation.x, bodyRotationX, 8, delta);
     body.current.rotation.z = THREE.MathUtils.damp(
       body.current.rotation.z,
-      wipeout ? 1.7 : riding ? (-state.balance * 0.3 + state.rail * .18 + state.maneuverSide * state.maneuver * 0.34) * (1 - rideSettle * .86) : 0,
+      riding ? (-state.balance * 0.3 + state.rail * .18 + state.maneuverSide * state.maneuver * 0.34) * (1 - rideSettle * .86) : 0,
       7,
       delta,
     );
@@ -4272,8 +4284,9 @@ function SurferModel({
     );
     body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? .84 - state.takeoff * .34 - rideCompression * .15 + rebound * .08 + state.maneuverLift * .05 + rideSettle * .08 : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) + Math.sin(clock.elapsedTime * (4.1 + state.wipeoutPower * 1.8)) * (.035 + state.wipeoutPower * .035) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
-    rig.current.rotation.z = THREE.MathUtils.damp(rig.current.rotation.z, bodyRigRoll, 9, delta);
-    rig.current.rotation.y = THREE.MathUtils.damp(rig.current.rotation.y, bodyRigYaw, state.maneuverLift > .12 ? 13 : 8, delta);
+    rig.current.rotation.x = dampAngle(rig.current.rotation.x, bodyRigPitch, wipeout ? 18 : 9, delta);
+    rig.current.rotation.z = dampAngle(rig.current.rotation.z, bodyRigRoll, wipeout ? 18 : 9, delta);
+    rig.current.rotation.y = dampAngle(rig.current.rotation.y, bodyRigYaw, wipeout ? 18 : state.maneuverLift > .12 ? 13 : 8, delta);
     rig.current.position.y = THREE.MathUtils.damp(rig.current.position.y, bodyRigLift, state.maneuverLift > .08 || state.duckDive > .08 || wipeout ? 13 : 9, delta);
 
     const baseBoardX = carrying ? THREE.MathUtils.lerp(.68 + carryStep * .018, .04, waterDepth) : 0;
@@ -4325,9 +4338,9 @@ function SurferModel({
         board.current.rotation.z,
       );
       dynamics.angularVelocity.set(
-        .92 + throwPower * .44,
-        -throwSide * (.72 + throwPower * .34),
-        throwSide * (1.22 + throwPower * .52),
+        state.wipeoutPitchRate,
+        state.wipeoutYawRate,
+        -state.wipeoutRollRate,
       );
     }
 
@@ -10752,6 +10765,10 @@ function Simulation({
   const wipeoutDuration = useRef(2.25);
   const wipeoutPower = useRef(0);
   const wipeoutVelocity = useRef(new THREE.Vector2());
+  const wipeoutHeading = useRef(0);
+  const wipeoutRotation = useRef(new THREE.Vector3());
+  const wipeoutAngularVelocity = useRef(new THREE.Vector3());
+  const wipeoutTumbleSide = useRef(1);
   const breath = useRef(100);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
@@ -10786,6 +10803,12 @@ function Simulation({
     wipeout: 0,
     wipeoutProgress: 0,
     wipeoutPower: 0,
+    wipeoutRoll: 0,
+    wipeoutPitch: 0,
+    wipeoutYaw: 0,
+    wipeoutRollRate: 0,
+    wipeoutPitchRate: 0,
+    wipeoutYawRate: 0,
     breath: 100,
     maneuver: 0,
     maneuverSide: 0,
@@ -10946,6 +10969,10 @@ function Simulation({
         boardPitchAngle.current = restore.boardPitchAngle;
         boardPitchRate.current = restore.boardPitchRate;
         wipeoutVelocity.current.copy(restore.wipeoutVelocity);
+        wipeoutHeading.current = restore.wipeoutHeading;
+        wipeoutRotation.current.copy(restore.wipeoutRotation);
+        wipeoutAngularVelocity.current.copy(restore.wipeoutAngularVelocity);
+        wipeoutTumbleSide.current = restore.wipeoutTumbleSide;
         phase.current = restore.phase;
         playerHeading.current = restore.playerHeading;
         paddleHeading.current = restore.paddleHeading;
@@ -11031,6 +11058,10 @@ function Simulation({
           boardPitchAngle: boardPitchAngle.current,
           boardPitchRate: boardPitchRate.current,
           wipeoutVelocity: wipeoutVelocity.current.clone(),
+          wipeoutHeading: wipeoutHeading.current,
+          wipeoutRotation: wipeoutRotation.current.clone(),
+          wipeoutAngularVelocity: wipeoutAngularVelocity.current.clone(),
+          wipeoutTumbleSide: wipeoutTumbleSide.current,
           phase: phase.current,
           playerHeading: playerHeading.current,
           paddleHeading: paddleHeading.current,
@@ -12436,11 +12467,49 @@ function Simulation({
               + takeoffWaveNormalZ * proneWashSpeed
               + paddleRightZ * proneRailThrow,
           );
+          const proneTumble = resolveSurfboardTumbleRelease({
+            rollAngle: physicalRollAngle,
+            rollRate: physicalRollRate,
+            pitchAngle: physicalPitchAngle,
+            pitchRate: physicalPitchRate,
+            yawRate: paddleYawRate.current,
+            crossWaveLoad: proneInteraction.crossWaveLoad,
+            crossWaveSide: proneInteraction.crossWaveSide,
+            railSlip: railSlip.current,
+            rollCapsizeRisk,
+            pitchOverRisk,
+            pearlingRisk,
+            impactPower: proneFailure.power,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+          });
+          wipeoutHeading.current = paddleHeading.current;
+          wipeoutRotation.current.set(
+            proneTumble.pitch,
+            proneTumble.yaw,
+            proneTumble.roll,
+          );
+          wipeoutAngularVelocity.current.set(
+            proneTumble.pitchRate,
+            proneTumble.yawRate,
+            proneTumble.rollRate,
+          );
+          wipeoutTumbleSide.current = Math.sign(
+            proneInteraction.crossWaveSide
+              || proneTumble.rollRate
+              || 1,
+          );
           breath.current = 100;
           combo.current = 1;
           motion.current.wipeout = 0;
           motion.current.wipeoutProgress = 0;
           motion.current.wipeoutPower = proneFailure.power;
+          motion.current.wipeoutRoll = proneTumble.roll;
+          motion.current.wipeoutPitch = proneTumble.pitch;
+          motion.current.wipeoutYaw = proneTumble.yaw;
+          motion.current.wipeoutRollRate = proneTumble.rollRate;
+          motion.current.wipeoutPitchRate = proneTumble.pitchRate;
+          motion.current.wipeoutYawRate = proneTumble.yawRate;
           motion.current.impact = Math.max(
             motion.current.impact,
             .68 + proneFailure.power * .32,
@@ -13072,11 +13141,52 @@ function Simulation({
                     * standingWipeoutReading.washSpeed
                   + standingRightZ * standingRailThrow,
               );
+              const standingTumble = resolveSurfboardTumbleRelease({
+                rollAngle: physicalRollAngle,
+                rollRate: physicalRollRate,
+                pitchAngle: physicalPitchAngle,
+                pitchRate: physicalPitchRate,
+                yawRate: rideYawRate.current,
+                crossWaveLoad: standingReading.crossWaveLoad,
+                crossWaveSide: standingReading.crossWaveSide,
+                railSlip: railSlip.current,
+                rollCapsizeRisk,
+                pitchOverRisk,
+                pearlingRisk,
+                impactPower: tumblePower,
+                boardLength: boardSpec.length,
+                boardWidth: boardSpec.width,
+              });
+              wipeoutHeading.current = rideHeading.current;
+              wipeoutRotation.current.set(
+                standingTumble.pitch,
+                standingTumble.yaw,
+                standingTumble.roll,
+              );
+              wipeoutAngularVelocity.current.set(
+                standingTumble.pitchRate,
+                standingTumble.yawRate,
+                standingTumble.rollRate,
+              );
+              wipeoutTumbleSide.current = Math.sign(
+                standingReading.crossWaveSide
+                  || standingTumble.rollRate
+                  || 1,
+              );
               breath.current = 100;
               rideScore.current = 0;
               rideResult.current = "wipeout";
               rideResultId.current += 1;
               combo.current = 1;
+              motion.current.wipeout = 0;
+              motion.current.wipeoutProgress = 0;
+              motion.current.wipeoutPower = tumblePower;
+              motion.current.wipeoutRoll = standingTumble.roll;
+              motion.current.wipeoutPitch = standingTumble.pitch;
+              motion.current.wipeoutYaw = standingTumble.yaw;
+              motion.current.wipeoutRollRate = standingTumble.rollRate;
+              motion.current.wipeoutPitchRate = standingTumble.pitchRate;
+              motion.current.wipeoutYawRate = standingTumble.yawRate;
               motion.current.impact = .72 + tumblePower * .28;
               prompt = "The wave hit the rail broadside — protect your head";
             } else if (actionPressed) {
@@ -13167,7 +13277,6 @@ function Simulation({
         // wave transport, down-the-line trim, pocket tracking, and the visible face.
         const waveTangentX = waveNormalZ;
         const waveTangentZ = -waveNormalX;
-        const waveSpeed = waveTransport.speed * (.88 + tidePower * .12);
         const rideSurface = waveSurfaceFrameAt(
           position.current.x,
           position.current.z,
@@ -14324,10 +14433,46 @@ function Simulation({
               + boardRightZ * railThrow
               - Math.cos(currentAngle) * currentSpeed * .72,
           );
+          const rideTumble = resolveSurfboardTumbleRelease({
+            rollAngle: physicalRollAngle,
+            rollRate: physicalRollRate,
+            pitchAngle: physicalPitchAngle,
+            pitchRate: physicalPitchRate,
+            yawRate: rideYawRate.current,
+            crossWaveLoad,
+            crossWaveSide: Math.sign(boardWaveAngle) || 1,
+            railSlip: railSlip.current,
+            rollCapsizeRisk,
+            pitchOverRisk,
+            pearlingRisk,
+            impactPower: waveEnergy,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+          });
+          wipeoutHeading.current = rideHeading.current;
+          wipeoutRotation.current.set(
+            rideTumble.pitch,
+            rideTumble.yaw,
+            rideTumble.roll,
+          );
+          wipeoutAngularVelocity.current.set(
+            rideTumble.pitchRate,
+            rideTumble.yawRate,
+            rideTumble.rollRate,
+          );
+          wipeoutTumbleSide.current = Math.sign(
+            boardWaveAngle || rideTumble.rollRate || 1,
+          );
           breath.current = 100;
           motion.current.wipeout = 0;
           motion.current.wipeoutProgress = 0;
           motion.current.wipeoutPower = waveEnergy;
+          motion.current.wipeoutRoll = rideTumble.roll;
+          motion.current.wipeoutPitch = rideTumble.pitch;
+          motion.current.wipeoutYaw = rideTumble.yaw;
+          motion.current.wipeoutRollRate = rideTumble.rollRate;
+          motion.current.wipeoutPitchRate = rideTumble.pitchRate;
+          motion.current.wipeoutYawRate = rideTumble.yawRate;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
           rideResult.current = "wipeout";
@@ -14381,6 +14526,36 @@ function Simulation({
         wipeoutVelocity.current.multiplyScalar(Math.exp(-delta * (.48 + progress * 1.7)));
         position.current.x += wipeoutVelocity.current.x * delta;
         position.current.z += wipeoutVelocity.current.y * delta;
+        const tumble = advanceSurfboardTumble(
+          {
+            roll: wipeoutRotation.current.z,
+            pitch: wipeoutRotation.current.x,
+            yaw: wipeoutRotation.current.y,
+            rollRate: wipeoutAngularVelocity.current.z,
+            pitchRate: wipeoutAngularVelocity.current.x,
+            yawRate: wipeoutAngularVelocity.current.y,
+          },
+          {
+            deltaSeconds: delta,
+            waterDrag: THREE.MathUtils.clamp(
+              .22 + turbulence * .64 + progress * .18,
+              0,
+              1,
+            ),
+            washTorque: residualWash * 1.7,
+            washSide: wipeoutTumbleSide.current,
+          },
+        );
+        wipeoutRotation.current.set(
+          tumble.pitch,
+          tumble.yaw,
+          tumble.roll,
+        );
+        wipeoutAngularVelocity.current.set(
+          tumble.pitchRate,
+          tumble.yawRate,
+          tumble.rollRate,
+        );
         position.current.z = THREE.MathUtils.clamp(
           position.current.z,
           OUTER_PADDLE_LIMIT_Z + tideShift,
@@ -14401,6 +14576,12 @@ function Simulation({
         motion.current.wipeout = Math.min(1.8, elapsed);
         motion.current.wipeoutProgress = progress;
         motion.current.wipeoutPower = wipeoutPower.current;
+        motion.current.wipeoutRoll = tumble.roll;
+        motion.current.wipeoutPitch = tumble.pitch;
+        motion.current.wipeoutYaw = tumble.yaw;
+        motion.current.wipeoutRollRate = tumble.rollRate;
+        motion.current.wipeoutPitchRate = tumble.pitchRate;
+        motion.current.wipeoutYawRate = tumble.yawRate;
         motion.current.breath = breath.current;
         if (progress >= 1) {
           if (position.current.z > 1 + tideShift) {
@@ -14418,6 +14599,12 @@ function Simulation({
           motion.current.wipeout = 0;
           motion.current.wipeoutProgress = 0;
           motion.current.wipeoutPower = 0;
+          motion.current.wipeoutRoll = 0;
+          motion.current.wipeoutPitch = 0;
+          motion.current.wipeoutYaw = 0;
+          motion.current.wipeoutRollRate = 0;
+          motion.current.wipeoutPitchRate = 0;
+          motion.current.wipeoutYawRate = 0;
         }
       }
     }
@@ -14719,7 +14906,9 @@ function Simulation({
         ? playerHeading.current
         : phase.current === "paddling"
           ? paddleHeading.current
-          : steer * -.2;
+          : phase.current === "wipeout"
+            ? wipeoutHeading.current
+            : steer * -.2;
     player.current.rotation.y = dampAngle(player.current.rotation.y, targetPlayerHeading, 7, delta);
     const surfaceContact = phase.current === "riding"
       ? boardWaterContact * .88
@@ -14753,7 +14942,11 @@ function Simulation({
           ? motion.current.pitch
           : 0
       ),
-      phase.current === "riding" || phase.current === "paddling" ? 8 : 5.8,
+      phase.current === "wipeout"
+        ? 18
+        : phase.current === "riding" || phase.current === "paddling"
+          ? 8
+          : 5.8,
       delta,
     );
     player.current.rotation.z = THREE.MathUtils.damp(
@@ -14763,7 +14956,11 @@ function Simulation({
           ? -motion.current.roll
           : 0
       ),
-      phase.current === "riding" || phase.current === "paddling" ? 8 : 5.8,
+      phase.current === "wipeout"
+        ? 18
+        : phase.current === "riding" || phase.current === "paddling"
+          ? 8
+          : 5.8,
       delta,
     );
     if (waveStage.current) {

@@ -9,6 +9,7 @@ import {
   advanceSurfboardInstability,
   advanceSurfboardRailSlip,
   advanceSurfboardStance,
+  advanceSurfboardTumble,
   advanceRideCaptureState,
   advanceWaveEngagement,
   advanceWaveTakeoffCapture,
@@ -28,6 +29,7 @@ import {
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
+  resolveSurfboardTumbleRelease,
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
   resolveSurfboardWipeout,
@@ -1290,6 +1292,75 @@ if (
 ) {
   throw new Error("Wipeout severity changed across engagement");
 }
+const sharedTumbleRelease = {
+  rollAngle: .32,
+  rollRate: .8,
+  pitchAngle: .08,
+  pitchRate: .18,
+  yawRate: .3,
+  crossWaveLoad: 1.1,
+  crossWaveSide: 1,
+  railSlip: .64,
+  rollCapsizeRisk: .96,
+  pitchOverRisk: .24,
+  pearlingRisk: .18,
+  impactPower: .82,
+  boardLength: 2.1,
+  boardWidth: .5,
+};
+const broadsideTumble = resolveSurfboardTumbleRelease(
+  sharedTumbleRelease,
+);
+const alignedTumble = resolveSurfboardTumbleRelease({
+  ...sharedTumbleRelease,
+  crossWaveLoad: .08,
+  railSlip: .05,
+  rollCapsizeRisk: .12,
+  impactPower: .28,
+});
+const oppositeBroadsideTumble = resolveSurfboardTumbleRelease({
+  ...sharedTumbleRelease,
+  rollAngle: -.32,
+  rollRate: -.8,
+  crossWaveSide: -1,
+});
+const pearlingTumble = resolveSurfboardTumbleRelease({
+  ...sharedTumbleRelease,
+  crossWaveLoad: .08,
+  railSlip: .12,
+  rollCapsizeRisk: .1,
+  pitchOverRisk: .98,
+  pearlingRisk: .9,
+});
+if (
+  broadsideTumble.rollRate < alignedTumble.rollRate + 2.5
+  || oppositeBroadsideTumble.rollRate > -alignedTumble.rollRate - 2.5
+  || pearlingTumble.pitchRate < alignedTumble.pitchRate + 1.8
+) {
+  throw new Error("Tumble release no longer inherits broadside rail side or nose-over momentum");
+}
+function simulateTumble(hz) {
+  let tumble = broadsideTumble;
+  for (let frame = 0; frame < hz * 1.2; frame += 1) {
+    tumble = advanceSurfboardTumble(tumble, {
+      deltaSeconds: 1 / hz,
+      waterDrag: .58,
+      washTorque: .7,
+      washSide: 1,
+    });
+  }
+  return tumble;
+}
+const tumble60 = simulateTumble(60);
+const tumble120 = simulateTumble(120);
+if (
+  tumble60.roll < 3.2
+  || Math.abs(tumble60.roll - tumble120.roll) > .025
+  || Math.abs(tumble60.pitch - tumble120.pitch) > .025
+  || Math.abs(tumble60.yaw - tumble120.yaw) > .025
+) {
+  throw new Error("Separated board tumble is no longer physical or frame-rate stable");
+}
 const surfaceObservation = {
   durationSeconds: .82,
   startFacePosition: .02,
@@ -2528,6 +2599,11 @@ console.log(JSON.stringify({
     standingWipeoutPower: standingWipeout.power,
     engagedWipeoutPower: engagedWipeout.power,
     lightWipeoutPower: lightWipeout.power,
+    broadsideTumbleRollRate: broadsideTumble.rollRate,
+    alignedTumbleRollRate: alignedTumble.rollRate,
+    pearlingTumblePitchRate: pearlingTumble.pitchRate,
+    tumbleRoll60Hz: tumble60.roll,
+    tumbleRoll120Hz: tumble120.roll,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,

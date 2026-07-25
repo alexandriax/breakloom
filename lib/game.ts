@@ -2355,6 +2355,156 @@ export function resolveSurfboardWipeout(
   };
 }
 
+export type SurfboardTumbleState = {
+  roll: number;
+  pitch: number;
+  yaw: number;
+  rollRate: number;
+  pitchRate: number;
+  yawRate: number;
+};
+
+export type SurfboardTumbleReleaseSample = {
+  rollAngle: number;
+  rollRate: number;
+  pitchAngle: number;
+  pitchRate: number;
+  yawRate: number;
+  crossWaveLoad: number;
+  crossWaveSide: number;
+  railSlip: number;
+  rollCapsizeRisk: number;
+  pitchOverRisk: number;
+  pearlingRisk: number;
+  impactPower: number;
+  boardLength: number;
+  boardWidth: number;
+};
+
+/**
+ * Carries the board's live attitude and angular momentum through separation.
+ * A broadside wall adds a rail-over-rail impulse, while a buried nose adds a
+ * forward pitch impulse. The board dimensions change the response through
+ * rotational inertia; no requested trick angle or animation target is used.
+ */
+export function resolveSurfboardTumbleRelease(
+  sample: SurfboardTumbleReleaseSample,
+): SurfboardTumbleState {
+  const crossWaveLoad = clampValue(sample.crossWaveLoad, 0, 1.5);
+  const railSlip = clampValue(sample.railSlip, 0, 1);
+  const capsizeRisk = clampValue(sample.rollCapsizeRisk, 0, 1);
+  const pitchFailure = Math.max(
+    clampValue(sample.pitchOverRisk, 0, 1),
+    clampValue(sample.pearlingRisk, 0, 1),
+  );
+  const impactPower = clampValue(sample.impactPower, 0, 1);
+  const rollSide = Math.sign(sample.crossWaveSide)
+    || Math.sign(sample.rollRate)
+    || Math.sign(sample.rollAngle)
+    || 1;
+  const widthInertia = clampValue(
+    Math.pow(.5 / Math.max(.38, sample.boardWidth), 1.35),
+    .62,
+    1.5,
+  );
+  const lengthInertia = clampValue(
+    Math.pow(2.1 / Math.max(1.6, sample.boardLength), 1.45),
+    .52,
+    1.45,
+  );
+  const broadsideImpulse = (
+    crossWaveLoad * (1.08 + impactPower * 1.72)
+      + capsizeRisk * (1.02 + impactPower * .74)
+      + railSlip * crossWaveLoad * .46
+  ) * widthInertia;
+  const pitchImpulse = pitchFailure
+    * (1.18 + impactPower * 1.62)
+    * lengthInertia;
+  const retainedYaw = sample.yawRate
+    * (.72 + (1 - impactPower) * .16);
+
+  return {
+    roll: sample.rollAngle,
+    pitch: sample.pitchAngle,
+    yaw: 0,
+    rollRate: clampValue(
+      sample.rollRate * .88 + rollSide * broadsideImpulse,
+      -7.4,
+      7.4,
+    ),
+    pitchRate: clampValue(
+      sample.pitchRate * .9 + pitchImpulse,
+      -5.8,
+      5.8,
+    ),
+    yawRate: clampValue(
+      retainedYaw
+        + rollSide * crossWaveLoad * railSlip * .22 * lengthInertia,
+      -4.8,
+      4.8,
+    ),
+  };
+}
+
+export type SurfboardTumbleSample = {
+  deltaSeconds: number;
+  waterDrag: number;
+  washTorque: number;
+  washSide: number;
+};
+
+/**
+ * Integrates a separated surfer/board tumble with angular drag from the
+ * surrounding water. Midpoint angle steps keep the visible fall consistent
+ * at common browser frame rates.
+ */
+export function advanceSurfboardTumble(
+  state: SurfboardTumbleState,
+  sample: SurfboardTumbleSample,
+): SurfboardTumbleState {
+  const delta = clampValue(sample.deltaSeconds, 0, .05);
+  const waterDrag = clampValue(sample.waterDrag, 0, 1);
+  const washTorque = clampValue(sample.washTorque, 0, 2.5);
+  const washSide = Math.sign(sample.washSide)
+    || Math.sign(state.rollRate)
+    || 1;
+  const nextRollRate = clampValue(
+    (
+      state.rollRate
+        + washSide * washTorque * (1.12 + waterDrag * .58) * delta
+    ) * Math.exp(-delta * (.38 + waterDrag * 1.42)),
+    -7.4,
+    7.4,
+  );
+  const nextPitchRate = clampValue(
+    (
+      state.pitchRate
+        + Math.sign(state.pitchRate || state.pitch || 1)
+          * washTorque
+          * .16
+          * delta
+    ) * Math.exp(-delta * (.46 + waterDrag * 1.62)),
+    -5.8,
+    5.8,
+  );
+  const nextYawRate = clampValue(
+    (
+      state.yawRate + washSide * washTorque * .08 * delta
+    ) * Math.exp(-delta * (.32 + waterDrag * 1.24)),
+    -4.8,
+    4.8,
+  );
+
+  return {
+    roll: state.roll + (state.rollRate + nextRollRate) * .5 * delta,
+    pitch: state.pitch + (state.pitchRate + nextPitchRate) * .5 * delta,
+    yaw: state.yaw + (state.yawRate + nextYawRate) * .5 * delta,
+    rollRate: nextRollRate,
+    pitchRate: nextPitchRate,
+    yawRate: nextYawRate,
+  };
+}
+
 export type SurfboardSurfaceManeuverSample = {
   durationSeconds: number;
   startFacePosition: number;
