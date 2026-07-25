@@ -5337,6 +5337,9 @@ export type GameStats = {
   cameraHeading: number;
   paddleHeading: number;
   speed: number;
+  takeoffNormalSpeed: number;
+  takeoffMatchSpeed: number;
+  takeoffSpeedMatch: number;
   acceleration: number;
   lateralForce: number;
   paddleEffort: number;
@@ -5472,6 +5475,9 @@ export const INITIAL_STATS: GameStats = {
   cameraHeading: 0,
   paddleHeading: 0,
   speed: 0,
+  takeoffNormalSpeed: 0,
+  takeoffMatchSpeed: 0,
+  takeoffSpeedMatch: 0,
   acceleration: 0,
   lateralForce: 0,
   paddleEffort: 0,
@@ -6169,6 +6175,17 @@ export type TakeoffPaddleDriveSample = {
   waterContact: number;
 };
 
+export function resolveTakeoffSpeedMatch(
+  normalSpeed: number,
+  matchTargetSpeed: number,
+) {
+  return smoothstep(
+    .48,
+    Math.max(.49, matchTargetSpeed),
+    normalSpeed,
+  );
+}
+
 /**
  * Measures the propulsive state carried into a takeoff. Most credit comes from
  * board speed already earned through the water; only the currently resolved
@@ -6178,10 +6195,9 @@ export type TakeoffPaddleDriveSample = {
 export function resolveTakeoffPaddleDrive(
   sample: TakeoffPaddleDriveSample,
 ) {
-  const speedMatch = smoothstep(
-    .48,
-    Math.max(.49, sample.matchTargetSpeed),
+  const speedMatch = resolveTakeoffSpeedMatch(
     sample.normalSpeed,
+    sample.matchTargetSpeed,
   );
   const resolvedPull = clampValue(
     Math.max(0, sample.strokeForce) / 6.9,

@@ -3007,6 +3007,9 @@ export default function SurfscapeApp() {
   const takeoffOpportunityPercent = Math.round(
     stats.takeoffOpportunity * 100,
   );
+  const takeoffSpeedMatchPercent = Math.round(
+    stats.takeoffSpeedMatch * 100,
+  );
   const pitchHazardActive = stats.pitchOverRisk > .28 || stats.tailStall > .38;
   const attitudeDegrees = pitchHazardActive ? pitchDegrees : rollDegrees;
   const stanceLabel = stats.stance > 0.42 ? "NOSE PRESSURE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
@@ -3218,6 +3221,11 @@ export default function SurfscapeApp() {
           : paddleTraining.strokePhase === "recovery"
             ? "ARMS RECOVERING"
             : "HOLD W TO STROKE";
+  const paddleSpeedCue = stats.inLineup
+    ? ` · BOARD ${stats.takeoffNormalSpeed.toFixed(1)} / FACE ${stats.takeoffMatchSpeed.toFixed(1)} M/S · MATCH ${takeoffSpeedMatchPercent}%`
+    : "";
+  const paddlePhysicsCue =
+    `${paddleForceCue}${paddleSpeedCue}`;
   const paddleLeftWorkPercent = Math.round(
     Math.min(1, stats.paddleLeftWork / PADDLE_WORK_LESSON_TARGET)
       * 100,
@@ -3365,7 +3373,7 @@ export default function SurfscapeApp() {
                 : stats.crestDistance > -.8 && stats.crestDistance < 11 && stats.speed < 1.6
                   ? {
                       cue: "BUILD BOARD SPEED",
-                      detail: "Each hand only drives during its pull. Keep W held, align the nose, and carry the pulsed momentum.",
+                      detail: `Board ${stats.takeoffNormalSpeed.toFixed(1)} m/s along the wave / face target ${stats.takeoffMatchSpeed.toFixed(1)} m/s · ${takeoffSpeedMatchPercent}% speed match. Each hand only adds force during its pull.`,
                       rotation: -90,
                       tone: "paddle",
                     }
@@ -3562,7 +3570,7 @@ export default function SurfscapeApp() {
         ? "SURFABLE CREST"
         : "NEXT SURFABLE WAVE";
   const surfRadarDetail = stats.takeoffOpportunity > .02
-    ? `${takeoffOpportunityPercent}% physical opportunity · ${Math.round(stats.takeoffQuality * 100)}% entry quality`
+    ? `${takeoffOpportunityPercent}% physical opportunity · ${takeoffSpeedMatchPercent}% speed match · ${Math.round(stats.takeoffQuality * 100)}% entry quality`
     : crestAtBoard
       ? "Match the wall's speed and keep driving"
       : currentCrestInRange
@@ -3630,7 +3638,7 @@ export default function SurfscapeApp() {
             : stats.duckDiveReady
               ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · use the separate DIVE control and punch through` }
             : stats.takeoffOpportunity > .02
-            ? { title: `TAKEOFF SUPPORT ${takeoffOpportunityPercent}%`, detail: `${hullPatchContact}% polygon contact · ${Math.round(stats.takeoffQuality * 100)}% entry quality · paddle or POP` }
+            ? { title: `TAKEOFF SUPPORT ${takeoffOpportunityPercent}%`, detail: `${stats.takeoffNormalSpeed.toFixed(1)} / ${stats.takeoffMatchSpeed.toFixed(1)} m/s · ${takeoffSpeedMatchPercent}% speed match · paddle or POP` }
             : stats.inLineup && stats.takeoffAlignment < .3
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
@@ -4628,7 +4636,7 @@ export default function SurfscapeApp() {
             <div
               className={`paddle-training-instrument is-${paddleTraining.pressureMode} has-direction-aim`}
               role="img"
-              aria-label={`${paddleTargetKind} target. ${paddleAimCue}. ${paddleForceCue}${paddleWorkCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
+              aria-label={`${paddleTargetKind} target. ${paddleAimCue}. ${paddlePhysicsCue}${paddleWorkCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
             >
               <div className="paddle-heading-dial" aria-hidden="true">
                 <span className="paddle-board-nose"><ArrowRight /></span>
@@ -4643,7 +4651,7 @@ export default function SurfscapeApp() {
               <div className="paddle-training-readout">
                 <span>PHYSICAL TAKEOFF GUIDE</span>
                 <strong>{paddleAimCue}</strong>
-                <small>{paddleForceCue}{paddleWorkCue}</small>
+                <small>{paddlePhysicsCue}{paddleWorkCue}</small>
                 <div className="paddle-hand-cycle" aria-hidden="true">
                   <i className={paddleTraining.activeHand === "left" ? "is-pulling" : ""}>
                     <b>L</b>

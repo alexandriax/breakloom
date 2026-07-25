@@ -59,6 +59,7 @@ import {
   resolveSurfboardWavePressure,
   resolveSurfboardWipeout,
   resolveTakeoffPaddleDrive,
+  resolveTakeoffSpeedMatch,
   resolveWaveCrestPhaseIdentity,
   resolveWaveLineSide,
   resolveWavePocketFrame,
@@ -671,6 +672,12 @@ const halfContactTakeoffDrive =
     attitudeQuality: 1,
     waterContact: .5,
   });
+const slowTakeoffSpeedMatch =
+  resolveTakeoffSpeedMatch(.48, 2);
+const halfwayTakeoffSpeedMatch =
+  resolveTakeoffSpeedMatch(1.24, 2);
+const matchedTakeoffSpeedMatch =
+  resolveTakeoffSpeedMatch(2, 2);
 if (
   idleTakeoffDrive !== 0
   || plantedHandTakeoffDrive <= idleTakeoffDrive
@@ -678,6 +685,9 @@ if (
     <= plantedHandTakeoffDrive * 4
   || halfContactTakeoffDrive
     >= coastingTakeoffDrive * .72
+  || slowTakeoffSpeedMatch !== 0
+  || Math.abs(halfwayTakeoffSpeedMatch - .5) > .000001
+  || matchedTakeoffSpeedMatch !== 1
 ) {
   throw new Error("Takeoff paddle drive no longer comes from carried board speed and resolved hand force");
 }
@@ -4849,6 +4859,9 @@ console.log(JSON.stringify({
     plantedHandTakeoffDrive,
     coastingTakeoffDrive,
     halfContactTakeoffDrive,
+    slowTakeoffSpeedMatch,
+    halfwayTakeoffSpeedMatch,
+    matchedTakeoffSpeedMatch,
   },
   alignedProneEngagement,
   independentPopUpSeconds: independentPopUp.duration,
