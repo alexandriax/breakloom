@@ -3287,7 +3287,7 @@ export default function SurfscapeApp() {
                     }
                 : {
                     cue: "READ THE SURFACE",
-                    detail: "Watch crest distance and board speed. SPACE can stand even without a wave.",
+                    detail: `${hullContactPercent}% flotation · ${hullPatchContact}% breaking-face support. SPACE can stand with either value.`,
                     rotation: -90,
                     tone: "align",
                   }
@@ -3522,7 +3522,7 @@ export default function SurfscapeApp() {
             ? { title: "LIVE HULL LOAD", detail: `${hullPatchContact}% nose/tail/rail face support · stay aligned` }
           : stats.crossWaveLoad > .28
             ? { title: `TURN ${headingTurn}`, detail: `${Math.round(stats.crossWaveLoad * 100)}% cross-wave load · balance against the roll` }
-            : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: "Balance with the slider · tap PRONE to reposition" }
+            : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: `${hullContactPercent}% flotation · ${hullPatchContact}% face support · balance or tap PRONE` }
         : stats.phase === "paddling"
           ? stats.airborneHeight > .055
             ? { title: "HULL AIRBORNE", detail: `${airborneCentimeters} cm · center the balance control before contact` }

@@ -40,6 +40,7 @@ import {
   resolveSurferPassiveCompression,
   resolveSurfboardTumbleRelease,
   resolveSurfboardTurbulence,
+  resolveSurfboardWavePatchContact,
   resolveSurfboardWavePressure,
   resolveSurfboardWipeout,
   resolveWaveCrestPhaseIdentity,
@@ -1034,6 +1035,33 @@ const detachedFourPatchPressure = resolveSurfboardWavePressure({
   boardWidth: .34,
   boardTurn: 1,
 });
+const decomposedFourPatchContact = resolveSurfboardWavePatchContact({
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  noseSurfaceOffset: .08,
+  tailSurfaceOffset: .08,
+  rightRailSurfaceOffset: .08,
+  leftRailSurfaceOffset: .08,
+});
+const stillWaterFaceSupport = resolveSurfboardWavePatchContact({
+  waveContact: 0,
+  waterContact: 1,
+  waveHeight: 0,
+  noseSurfaceOffset: .08,
+  tailSurfaceOffset: .08,
+  rightRailSurfaceOffset: .08,
+  leftRailSurfaceOffset: .08,
+});
+const detachedFaceSupport = resolveSurfboardWavePatchContact({
+  waveContact: .8,
+  waterContact: 0,
+  waveHeight: 2,
+  noseSurfaceOffset: .08,
+  tailSurfaceOffset: .08,
+  rightRailSurfaceOffset: .08,
+  leftRailSurfaceOffset: .08,
+});
 if (
   alignedWavePressure.forwardDrive < 3
   || Math.abs(alignedWavePressure.lateralLoad) > .001
@@ -1065,6 +1093,10 @@ if (
     rightRailLoadedPressure.pressure - leftRailLoadedPressure.pressure
   ) > 1e-9
   || symmetricFourPatchPressure.patchContact < .95
+  || decomposedFourPatchContact.patchContact
+    !== symmetricFourPatchPressure.patchContact
+  || stillWaterFaceSupport.patchContact !== 0
+  || Object.values(detachedFaceSupport).some((value) => value !== 0)
   || rightRailLoadedPressure.patchContact
     >= symmetricFourPatchPressure.patchContact
   || detachedFourPatchPressure.pressure !== 0
@@ -2350,6 +2382,42 @@ if (
 ) {
   throw new Error("Pop-up hand pressure no longer sinks and nose-loads the prone hull");
 }
+const proneSupportInitial = {
+  roll: { rollAngle: .08, rollRate: .12 },
+  pitch: { pitchAngle: -.04, pitchRate: .08 },
+  heave: {
+    elevation: staticHeave.elevation,
+    verticalVelocity: staticHeave.verticalVelocity,
+    previousSurfaceHeight: 0,
+    waterContact: 1,
+  },
+};
+const unsupportedProneFace = advanceProneBoardAttitude(
+  proneSupportInitial,
+  {
+    ...proneSample,
+    waveContact: .82,
+    wavePatchContact: 0,
+  },
+);
+const supportedProneFace = advanceProneBoardAttitude(
+  proneSupportInitial,
+  {
+    ...proneSample,
+    waveContact: .82,
+    wavePatchContact: 1,
+  },
+);
+if (
+  supportedProneFace.heave.verticalAcceleration
+    <= unsupportedProneFace.heave.verticalAcceleration + .05
+  || supportedProneFace.roll.rollAngle
+    !== unsupportedProneFace.roll.rollAngle
+  || supportedProneFace.pitch.pitchAngle
+    !== unsupportedProneFace.pitch.pitchAngle
+) {
+  throw new Error("Prone face-patch support no longer changes heave without rewriting roll or pitch contact");
+}
 const broadsideProne = proneForFrames(90, {
   ...proneSample,
   crossSlope: .11,
@@ -3413,6 +3481,7 @@ console.log(JSON.stringify({
       rightRailLoadedPressure.patchContact,
     detachedHullPatchContact:
       detachedFourPatchPressure.patchContact,
+    stillWaterFaceSupport: stillWaterFaceSupport.patchContact,
     proneCatchSpeed60Hz: pressureCatch60.velocityZ,
     proneCatchSpeed120Hz: pressureCatch120.velocityZ,
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
@@ -3600,6 +3669,10 @@ console.log(JSON.stringify({
     planingElevation: planingHeave.elevation,
     unsupportedPlaningElevation: unsupportedPlaningHeave.elevation,
     polygonSupportedPlaningElevation: polygonSupportedHeave.elevation,
+    unsupportedProneFaceAcceleration:
+      unsupportedProneFace.heave.verticalAcceleration,
+    supportedProneFaceAcceleration:
+      supportedProneFace.heave.verticalAcceleration,
     droppedAirborneHeight: droppedSurface.airborneHeight,
     landingImpact: peakLandingImpact,
     risingAcceleration: risingSurface.verticalAcceleration,

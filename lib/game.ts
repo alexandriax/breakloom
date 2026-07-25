@@ -1166,6 +1166,24 @@ export type SurfboardWavePressureSample = {
   boardTurn?: number;
 };
 
+export type SurfboardWavePatchContactSample = {
+  waveContact: number;
+  waterContact?: number;
+  waveHeight: number;
+  noseSurfaceOffset?: number;
+  tailSurfaceOffset?: number;
+  rightRailSurfaceOffset?: number;
+  leftRailSurfaceOffset?: number;
+};
+
+export type SurfboardWavePatchContactReading = {
+  noseContact: number;
+  tailContact: number;
+  rightRailContact: number;
+  leftRailContact: number;
+  patchContact: number;
+};
+
 export type SurfboardWavePressureReading = {
   accelerationX: number;
   accelerationZ: number;
@@ -2044,6 +2062,7 @@ export type ProneBoardAttitudeSample = {
   speed: number;
   planing: number;
   waveContact: number;
+  wavePatchContact?: number;
   boardLength: number;
   boardWidth: number;
   boardStability: number;
@@ -2360,7 +2379,7 @@ export function advanceProneBoardAttitude(
     flotationOffset: sample.flotationOffset,
     planing: sample.planing,
     speed: sample.speed,
-    waveContact: sample.waveContact,
+    waveContact: sample.wavePatchContact ?? sample.waveContact,
     boardLength: sample.boardLength,
     boardWidth: sample.boardWidth,
     boardStability: sample.boardStability,
@@ -2780,6 +2799,64 @@ export function advancePaddleboardDynamics(
 }
 
 /**
+ * Measures how much of the nose, tail, and both rails is supported by the
+ * breaking-face polygons beneath the current board pose. Ordinary buoyancy is
+ * separate: a board can float in still water while receiving zero face support.
+ */
+export function resolveSurfboardWavePatchContact(
+  sample: SurfboardWavePatchContactSample,
+): SurfboardWavePatchContactReading {
+  const contact = clampValue(sample.waveContact, 0, 1);
+  const hullContact = clampValue(sample.waterContact ?? 1, 0, 1);
+  const contactRelief = .055 + Math.max(.25, sample.waveHeight) * .035;
+  const noseContact = clampValue(
+    contact * (
+      1 + (sample.noseSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  ) * hullContact;
+  const tailContact = clampValue(
+    contact * (
+      1 + (sample.tailSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  ) * hullContact;
+  const rightRailContact = clampValue(
+    contact * (
+      1 + (sample.rightRailSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  ) * hullContact;
+  const leftRailContact = clampValue(
+    contact * (
+      1 + (sample.leftRailSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  ) * hullContact;
+  const patchContact = clampValue(
+    (
+      noseContact
+        + tailContact
+        + rightRailContact
+        + leftRailContact
+    ) * .25,
+    0,
+    1,
+  );
+  return {
+    noseContact,
+    tailContact,
+    rightRailContact,
+    leftRailContact,
+    patchContact,
+  };
+}
+
+/**
  * Resolves the breaking face's horizontal pressure across the nose, tail, and
  * both rail contact patches. The force always follows the live wave normal:
  * a board pointed with the wave receives useful longitudinal drive, while a
@@ -2838,46 +2915,13 @@ export function resolveSurfboardWavePressure(
   const safeLength = Math.max(1.6, sample.boardLength ?? 2.5);
   const safeWidth = Math.max(.24, sample.boardWidth ?? .34);
   const turn = Math.max(.45, sample.boardTurn ?? 1);
-  const contactRelief = .055 + Math.max(.25, sample.waveHeight) * .035;
-  const noseContact = clampValue(
-    contact * (
-      1 + (sample.noseSurfaceOffset ?? 0) / contactRelief
-    ),
-    0,
-    1,
-  );
-  const tailContact = clampValue(
-    contact * (
-      1 + (sample.tailSurfaceOffset ?? 0) / contactRelief
-    ),
-    0,
-    1,
-  );
-  const rightRailContact = clampValue(
-    contact * (
-      1 + (sample.rightRailSurfaceOffset ?? 0) / contactRelief
-    ),
-    0,
-    1,
-  );
-  const leftRailContact = clampValue(
-    contact * (
-      1 + (sample.leftRailSurfaceOffset ?? 0) / contactRelief
-    ),
-    0,
-    1,
-  );
-  const distributedContact = clampValue(
-    (
-      noseContact
-        + tailContact
-        + rightRailContact
-        + leftRailContact
-    ) * .25,
-    0,
-    1,
-  );
-  const patchContact = distributedContact * hullContact;
+  const {
+    noseContact,
+    tailContact,
+    rightRailContact,
+    leftRailContact,
+    patchContact,
+  } = resolveSurfboardWavePatchContact(sample);
   const pressure = patchContact
     * waveDeficit
     * (.48 + Math.max(0, headingAlignment) * .72)

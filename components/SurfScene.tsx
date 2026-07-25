@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12168,6 +12168,12 @@ function Simulation({
         );
         const proneSlopeAlong = takeoffSurface.slopeX * paddleForwardX
           + takeoffSurface.slopeZ * paddleForwardZ;
+        const proneNoseSurfaceOffset = proneNoseHeight
+          - takeoffSurface.height
+          - proneSlopeAlong * proneHalfContact;
+        const proneTailSurfaceOffset = proneTailHeight
+          - takeoffSurface.height
+          + proneSlopeAlong * proneHalfContact;
         if (
           !waterRide.current.engaged
           || Math.abs(
@@ -12181,6 +12187,22 @@ function Simulation({
           waterRide.current.contact = 1;
           waterRide.current.engaged = true;
         }
+        const proneSupportOffsets = resolveSurfboardContactPatchOffsets({
+          noseSurfaceOffset: proneNoseSurfaceOffset,
+          tailSurfaceOffset: proneTailSurfaceOffset,
+          rightRailSurfaceOffset: proneRailContact.rightOffset,
+          leftRailSurfaceOffset: proneRailContact.leftOffset,
+          pitchAngle: boardPitchAngle.current,
+          rollAngle: boardRollAngle.current,
+          halfLength: proneHalfContact,
+          halfWidth: proneHalfRail,
+        });
+        const proneFaceSupport = resolveSurfboardWavePatchContact({
+          waveContact: proneInteraction.waveContact,
+          waterContact: waterRide.current.contact,
+          waveHeight: settings.waveHeight * tideResponse.faceScale,
+          ...proneSupportOffsets,
+        });
         const proneAttitude = advanceProneBoardAttitude(
           {
             roll: {
@@ -12209,12 +12231,8 @@ function Simulation({
             longitudinalAcceleration: proneLongitudinalAcceleration,
             crossWaveLoad: proneInteraction.crossWaveLoad,
             crossWaveSide: proneInteraction.crossWaveSide,
-            noseSurfaceOffset: proneNoseHeight
-              - takeoffSurface.height
-              - proneSlopeAlong * proneHalfContact,
-            tailSurfaceOffset: proneTailHeight
-              - takeoffSurface.height
-              + proneSlopeAlong * proneHalfContact,
+            noseSurfaceOffset: proneNoseSurfaceOffset,
+            tailSurfaceOffset: proneTailSurfaceOffset,
             turbulenceTorque: (
               paddleStroke.strokeSide * paddleStroke.drive * .16
                 + Math.sign(boardRollAngle.current || 1)
@@ -12227,11 +12245,8 @@ function Simulation({
             ),
             speed,
             planing: boardPlaning,
-            waveContact: THREE.MathUtils.clamp(
-              .22 + proneInteraction.waveContact * .78,
-              .22,
-              1,
-            ),
+            waveContact: proneInteraction.waveContact,
+            wavePatchContact: proneFaceSupport.patchContact,
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
             boardStability: boardSpec.stability,
@@ -12274,12 +12289,8 @@ function Simulation({
         verticalVelocity = proneAttitude.heave.verticalVelocity;
         landingImpact = proneAttitude.heave.landingImpact;
         const pronePressureContact = resolveSurfboardContactPatchOffsets({
-          noseSurfaceOffset: proneNoseHeight
-            - takeoffSurface.height
-            - proneSlopeAlong * proneHalfContact,
-          tailSurfaceOffset: proneTailHeight
-            - takeoffSurface.height
-            + proneSlopeAlong * proneHalfContact,
+          noseSurfaceOffset: proneNoseSurfaceOffset,
+          tailSurfaceOffset: proneTailSurfaceOffset,
           rightRailSurfaceOffset: proneRailContact.rightOffset,
           leftRailSurfaceOffset: proneRailContact.leftOffset,
           pitchAngle: physicalPitchAngle,
