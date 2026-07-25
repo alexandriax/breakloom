@@ -6,6 +6,7 @@ import {
   advancePaddleStrokeCycle,
   advanceProneBoardAttitude,
   advanceSurfboardDynamics,
+  advanceSurfboardStance,
   advanceRideCaptureState,
   advanceWaveEngagement,
   advanceWaveTakeoffCapture,
@@ -1696,6 +1697,32 @@ if (
 ) {
   throw new Error("Physical paddle training guidance no longer matches heading, hand cycle, or hull load");
 }
+function stanceAfterOneSecond(input, hz = 60, initial = 0, forcedCenter = false) {
+  let stance = initial;
+  for (let frame = 0; frame < hz; frame += 1) {
+    stance = advanceSurfboardStance(
+      stance,
+      input,
+      1 / hz,
+      forcedCenter,
+    );
+  }
+  return stance;
+}
+const forwardStance60 = stanceAfterOneSecond(1);
+const forwardStance120 = stanceAfterOneSecond(1, 120);
+const tailStance = stanceAfterOneSecond(-1);
+const neutralStance = stanceAfterOneSecond(0, 60, .8);
+const rideOutStance = stanceAfterOneSecond(0, 60, .8, true);
+if (
+  Math.abs(forwardStance60 - .72) > .001
+  || Math.abs(forwardStance60 - forwardStance120) > .001
+  || Math.abs(tailStance + .86) > .001
+  || neutralStance >= .3
+  || rideOutStance >= .01
+) {
+  throw new Error("Fore-aft body pressure no longer integrates consistently across engagement and frame rate");
+}
 
 const marginalCaptureStart = .22 + marginalTraining.averageQuality * .22;
 let marginalCapture = marginalCaptureStart;
@@ -1810,6 +1837,11 @@ console.log(JSON.stringify({
     guideTurnDegrees: rightTurnLeftPullGuide.turnDegrees,
     guideActiveHand: rightTurnLeftPullGuide.activeHand,
     guideBroadsideMode: leftTurnBroadsideGuide.pressureMode,
+    forwardStance60Hz: forwardStance60,
+    forwardStance120Hz: forwardStance120,
+    tailStance,
+    neutralStance,
+    rideOutStance,
   },
   rollDynamics: {
     performanceRailAngle: loadedPerformanceRail.rollAngle,

@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12501,9 +12501,11 @@ function Simulation({
           takeoffQuality = standingReading.capture * boardWaterContact;
 
           const standingSteer = rideRailInputFromPaddleSteer(steer);
-          if (move > .08) stance.current = Math.min(1, stance.current + delta * .58 * move);
-          else if (move < -.08) stance.current = Math.max(-1, stance.current + delta * .58 * move);
-          else stance.current = THREE.MathUtils.damp(stance.current, 0, .82, delta);
+          stance.current = advanceSurfboardStance(
+            stance.current,
+            move,
+            delta,
+          );
 
           const standingWaveNormalX = standingTransport.x / Math.max(.001, standingTransport.speed);
           const standingWaveNormalZ = standingTransport.z / Math.max(.001, standingTransport.speed);
@@ -12989,10 +12991,12 @@ function Simulation({
           .012,
           .12 + settings.waveHeight * .025,
         );
-        if (finishing) stance.current = THREE.MathUtils.damp(stance.current, 0, 4.8, delta);
-        else if (move > 0.08) stance.current = Math.min(1, stance.current + delta * 0.72 * move);
-        else if (move < -0.08) stance.current = Math.max(-1, stance.current + delta * 0.86 * move);
-        else stance.current = THREE.MathUtils.damp(stance.current, 0, 1.05, delta);
+        stance.current = advanceSurfboardStance(
+          stance.current,
+          move,
+          delta,
+          finishing,
+        );
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
         const highFace = Math.max(0, physicalFacePosition);

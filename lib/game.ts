@@ -37,6 +37,31 @@ export function rideRailInputFromPaddleSteer(paddleSteer: number) {
   return -Math.max(-1, Math.min(1, paddleSteer));
 }
 
+/**
+ * Integrates the surfer's fore-aft center of pressure. Wave engagement and
+ * game mode do not change how quickly the same body input moves over the board.
+ */
+export function advanceSurfboardStance(
+  currentStance: number,
+  input: number,
+  deltaSeconds: number,
+  forcedCenter = false,
+) {
+  const delta = Math.max(0, Math.min(.05, deltaSeconds));
+  const current = clampValue(currentStance, -1, 1);
+  const intent = clampValue(input, -1, 1);
+  if (forcedCenter) {
+    return current * Math.exp(-4.8 * delta);
+  }
+  if (intent > .08) {
+    return Math.min(1, current + delta * .72 * intent);
+  }
+  if (intent < -.08) {
+    return Math.max(-1, current + delta * .86 * intent);
+  }
+  return current * Math.exp(-1.05 * delta);
+}
+
 export type WaveEngagementSample = {
   deltaSeconds: number;
   capture: number;
