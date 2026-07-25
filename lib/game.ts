@@ -5392,6 +5392,7 @@ export type GameStats = {
   balanceTarget: number;
   waveEngaged: boolean;
   waveEngagement: number;
+  wavePressure: number;
   proneTransition: number;
   lipLaunchSupport: number;
   boardAlignment: number;
@@ -5499,7 +5500,6 @@ export type GameStats = {
   takeoffCommitProgress: number;
   popUpMovementAuthority: number;
   popUpFootPlacementRisk: number;
-  waveCapture: number;
   prompt: string;
 };
 
@@ -5532,6 +5532,7 @@ export const INITIAL_STATS: GameStats = {
   balanceTarget: 0,
   waveEngaged: false,
   waveEngagement: 0,
+  wavePressure: 0,
   proneTransition: 0,
   lipLaunchSupport: 0,
   boardAlignment: 1,
@@ -5639,7 +5640,6 @@ export const INITIAL_STATS: GameStats = {
   takeoffCommitProgress: 0,
   popUpMovementAuthority: 0,
   popUpFootPlacementRisk: 0,
-  waveCapture: 0,
   prompt: "Walk toward the water · or find the van",
 };
 

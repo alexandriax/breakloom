@@ -3010,6 +3010,10 @@ export default function SurfscapeApp() {
   const takeoffSpeedMatchPercent = Math.round(
     stats.takeoffSpeedMatch * 100,
   );
+  const wavePressurePercent = Math.round(stats.wavePressure * 100);
+  const waveEngagementPercent = Math.round(
+    stats.waveEngagement * 100,
+  );
   const pitchHazardActive = stats.pitchOverRisk > .28 || stats.tailStall > .38;
   const attitudeDegrees = pitchHazardActive ? pitchDegrees : rollDegrees;
   const stanceLabel = stats.stance > 0.42 ? "NOSE PRESSURE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
@@ -3582,7 +3586,7 @@ export default function SurfscapeApp() {
         ? "SURFABLE CREST"
         : "NEXT SURFABLE WAVE";
   const surfRadarDetail = stats.takeoffOpportunity > .02
-    ? `${takeoffOpportunityPercent}% physical opportunity · ${takeoffSpeedMatchPercent}% speed match · ${Math.round(stats.takeoffQuality * 100)}% entry quality`
+    ? `${takeoffOpportunityPercent}% physical opportunity · ${takeoffSpeedMatchPercent}% speed match · ${wavePressurePercent}% live pressure / ${waveEngagementPercent}% sustained`
     : crestAtBoard
       ? "Match the wall's speed and keep driving"
       : currentCrestInRange
@@ -3623,7 +3627,7 @@ export default function SurfscapeApp() {
             }
         : standingOnBoard
           ? stats.hullPatchContact > .08
-            ? { title: "LIVE HULL LOAD", detail: `${hullPatchContact}% nose/tail/rail face support · stay aligned` }
+            ? { title: "LIVE HULL LOAD", detail: `${hullPatchContact}% face support · ${wavePressurePercent}% live pressure / ${waveEngagementPercent}% sustained · stay aligned` }
           : stats.crossWaveLoad > .28
             ? { title: `TURN ${headingTurn}`, detail: `${stats.crossWaveSpeed.toFixed(1)} m/s cross-flow · ${Math.round(stats.crossWaveLoad * 100)}% load · balance against the roll` }
             : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: `${hullContactPercent}% flotation · ${hullPatchContact}% face support · balance or tap PRONE` }

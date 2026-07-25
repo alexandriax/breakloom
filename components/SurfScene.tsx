@@ -11656,6 +11656,7 @@ function Simulation({
     let returnProneCounterweightAuthority = 1;
     let returnProneVerticalLoad = 0;
     let takeoffOpportunity = 0;
+    let wavePressure = 0;
     let inLineup = false;
     let lineupOutsideMargin = 0;
     let lineupDirectionX = 0;
@@ -12761,6 +12762,7 @@ function Simulation({
             },
           );
           waveEngagement.current = proneWaveEngagement.engagement;
+          wavePressure = proneWaveEngagement.pressure;
         }
         // Coaching follows the live physical opportunity every frame. There is
         // no cached "catch window": surface support and board stability fade
@@ -13034,6 +13036,7 @@ function Simulation({
             },
           );
           waveEngagement.current = popUpWaveEngagement.engagement;
+          wavePressure = popUpWaveEngagement.pressure;
           const caughtFacePhaseSpan = THREE.MathUtils.clamp(
             .76
               + settings.waveHeight
@@ -13499,6 +13502,7 @@ function Simulation({
             },
           );
           waveEngagement.current = standingWaveEngagement.engagement;
+          wavePressure = standingWaveEngagement.pressure;
           const standingFacePhaseSpan = THREE.MathUtils.clamp(
             .76 + settings.waveHeight * tideResponse.faceScale * .07,
             .78,
@@ -14077,7 +14081,7 @@ function Simulation({
                   : 0,
               }),
           );
-          const captureNow = standingReleased || (
+          const captureNow = (
             waveEngagement.current >= .46
               && standingWaveEngagement.pressure >= .16
               && standingReading.headingAlignment > .08
@@ -14556,6 +14560,7 @@ function Simulation({
           },
         );
         waveEngagement.current = rideWaveEngagement.engagement;
+        wavePressure = rideWaveEngagement.pressure;
         const wavePressureReleased = waveEngagement.current < .12
           && rideWaveEngagement.pressure < .08;
         const rollRightX = Math.cos(rideHeading.current);
@@ -17212,6 +17217,12 @@ function Simulation({
         )
           ? waveEngagement.current
           : 0,
+        wavePressure: (
+          phase.current === "riding"
+          || phase.current === "paddling"
+        )
+          ? wavePressure
+          : 0,
         proneTransition: phase.current === "riding"
           ? motion.current.proneTransition
           : 0,
@@ -17343,9 +17354,6 @@ function Simulation({
         takeoffCommitProgress,
         popUpMovementAuthority,
         popUpFootPlacementRisk,
-        waveCapture: phase.current === "paddling"
-          ? waveEngagement.current
-          : 0,
         prompt,
       });
     }

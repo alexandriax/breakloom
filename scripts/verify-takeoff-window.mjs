@@ -117,6 +117,10 @@ const sustainedEngagement120 = engagementFor(
   alignedEngagementSample,
   120,
 );
+const briefPressurePulse = engagementFor(
+  .12,
+  alignedEngagementSample,
+);
 const misalignedEngagement = engagementFor(1.1, {
   ...alignedEngagementSample,
   headingAlignment: -.45,
@@ -138,6 +142,7 @@ const releasedEngagement = engagementFor(
 );
 if (
   sustainedEngagement.engagement < .54
+  || briefPressurePulse.engagement >= .2
   || Math.abs(
     sustainedEngagement.engagement
       - sustainedEngagement120.engagement
@@ -4899,6 +4904,7 @@ console.log(JSON.stringify({
   waveEngagement: {
     sustained: sustainedEngagement.engagement,
     sustained120Hz: sustainedEngagement120.engagement,
+    briefPressurePulse: briefPressurePulse.engagement,
     misaligned: misalignedEngagement.engagement,
     released: releasedEngagement.engagement,
   },
