@@ -7,6 +7,7 @@ import {
   advancePopUpBodyTransition,
   advanceProneBoardAttitude,
   advanceReturnProneTransition,
+  advanceSeparatedSurferHorizontalDynamics,
   advanceSeparatedSurferVerticalDynamics,
   advanceSurferCompression,
   advanceSurferCounterweightDynamics,
@@ -1892,6 +1893,49 @@ if (
 ) {
   throw new Error("Tumble no longer conserves airborne rotation or damps from measured immersion");
 }
+function simulateSeparatedHorizontal(hz) {
+  let body = { velocityX: 8, velocityZ: 5 };
+  let airborneVelocity = null;
+  for (let frame = 0; frame < Math.round(2.5 * hz); frame += 1) {
+    const elapsed = frame / hz;
+    const immersion = elapsed < .5 ? 0 : 1;
+    body = advanceSeparatedSurferHorizontalDynamics(body, {
+      deltaSeconds: 1 / hz,
+      immersion,
+      waterVelocityX: 2,
+      waterVelocityZ: -1,
+      turbulence: immersion ? .8 : 0,
+    });
+    if (frame === Math.round(.5 * hz) - 1) {
+      airborneVelocity = { ...body };
+    }
+  }
+  return { ...body, airborneVelocity };
+}
+const separatedHorizontal60 = simulateSeparatedHorizontal(60);
+const separatedHorizontal120 = simulateSeparatedHorizontal(120);
+const initialHorizontalSpeed = Math.hypot(8, 5);
+if (
+  separatedHorizontal60.airborneVelocity === null
+  || Math.hypot(
+    separatedHorizontal60.airborneVelocity.velocityX,
+    separatedHorizontal60.airborneVelocity.velocityZ,
+  ) < initialHorizontalSpeed * .99
+  || Math.hypot(
+    separatedHorizontal60.velocityX - 2,
+    separatedHorizontal60.velocityZ + 1,
+  ) > 1.9
+  || Math.abs(
+    separatedHorizontal60.velocityX
+      - separatedHorizontal120.velocityX,
+  ) > .025
+  || Math.abs(
+    separatedHorizontal60.velocityZ
+      - separatedHorizontal120.velocityZ,
+  ) > .025
+) {
+  throw new Error("Separated horizontal motion no longer retains air momentum or couples to occupied water");
+}
 const surfaceObservation = {
   durationSeconds: .82,
   startFacePosition: .02,
@@ -3762,6 +3806,8 @@ console.log(JSON.stringify({
     proneBodyFall,
     coupledTumble60,
     coupledTumble120,
+    separatedHorizontal60,
+    separatedHorizontal120,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,

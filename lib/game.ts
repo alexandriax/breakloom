@@ -3551,6 +3551,76 @@ export function advanceSeparatedSurferVerticalDynamics(
   };
 }
 
+export type SeparatedSurferHorizontalState = {
+  velocityX: number;
+  velocityZ: number;
+};
+
+export type SeparatedSurferHorizontalSample = {
+  deltaSeconds: number;
+  immersion: number;
+  waterVelocityX: number;
+  waterVelocityZ: number;
+  turbulence: number;
+};
+
+/**
+ * Integrates a separated surfer horizontally against the water actually
+ * occupied by the body. Airborne momentum sees only weak air drag; immersion
+ * progressively couples the body to current and breaking-water velocity via
+ * quadratic drag. Wipeout progress and hold-down duration are absent.
+ */
+export function advanceSeparatedSurferHorizontalDynamics(
+  state: SeparatedSurferHorizontalState,
+  sample: SeparatedSurferHorizontalSample,
+): SeparatedSurferHorizontalState {
+  let velocityX = clampValue(state.velocityX, -24, 24);
+  let velocityZ = clampValue(state.velocityZ, -24, 24);
+  const immersion = clampValue(sample.immersion, 0, 1);
+  const turbulence = clampValue(sample.turbulence, 0, 1);
+  const waterVelocityX = clampValue(sample.waterVelocityX, -12, 12);
+  const waterVelocityZ = clampValue(sample.waterVelocityZ, -12, 12);
+  let remaining = clampValue(sample.deltaSeconds, 0, .05);
+  const maxStep = 1 / 240;
+
+  while (remaining > 1e-9) {
+    const step = Math.min(maxStep, remaining);
+    const relativeX = velocityX - waterVelocityX;
+    const relativeZ = velocityZ - waterVelocityZ;
+    const dragCoefficient = immersion * (.12 + turbulence * .22);
+    let accelerationX = -relativeX
+      * Math.abs(relativeX)
+      * dragCoefficient
+      - velocityX * .018 * (1 - immersion);
+    let accelerationZ = -relativeZ
+      * Math.abs(relativeZ)
+      * dragCoefficient
+      - velocityZ * .018 * (1 - immersion);
+    const accelerationMagnitude = Math.hypot(
+      accelerationX,
+      accelerationZ,
+    );
+    if (accelerationMagnitude > 18) {
+      const scale = 18 / accelerationMagnitude;
+      accelerationX *= scale;
+      accelerationZ *= scale;
+    }
+    velocityX = clampValue(
+      velocityX + accelerationX * step,
+      -24,
+      24,
+    );
+    velocityZ = clampValue(
+      velocityZ + accelerationZ * step,
+      -24,
+      24,
+    );
+    remaining -= step;
+  }
+
+  return { velocityX, velocityZ };
+}
+
 export type SurfboardSurfaceManeuverSample = {
   durationSeconds: number;
   startFacePosition: number;
