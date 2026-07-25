@@ -12253,7 +12253,18 @@ function Simulation({
             -12,
             12,
           );
-          rideFacePosition.current = engaged ? .06 + committedQuality * .18 : 0;
+          const capturedFacePhaseSpan = THREE.MathUtils.clamp(
+            .76 + settings.waveHeight * tideResponse.faceScale * .07,
+            .78,
+            1.18,
+          );
+          // The handoff begins at the board's measured polygon phase. Takeoff
+          // quality may score the transition, but it cannot move the board
+          // higher on the visible face or center a flat-water pop-up.
+          rideFacePosition.current = waveFacePositionAtPhase(
+            capturedPhaseError,
+            capturedFacePhaseSpan,
+          );
           rideCapture.current.overtaken = 0;
           rideCapture.current.ahead = 0;
           const capturedNormalX = catchTransport.x
