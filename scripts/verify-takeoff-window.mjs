@@ -22,6 +22,7 @@ import {
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
+  waveFacePositionAtPhase,
   waveHeightAt,
   waveSetStateAt,
   waveSurfaceFrameAt,
@@ -420,6 +421,33 @@ if (
   || alignedPopUpStart >= .72
 ) {
   throw new Error("Initial wave capture no longer starts below full engagement");
+}
+const facePhaseSpan = .92;
+const facePhaseSweep = [.14, .32, .5, .7, facePhaseSpan].map(
+  (crestPhaseError) => ({
+    crestPhaseError,
+    facePosition: waveFacePositionAtPhase(
+      crestPhaseError,
+      facePhaseSpan,
+    ),
+  }),
+);
+for (let index = 1; index < facePhaseSweep.length; index += 1) {
+  if (
+    facePhaseSweep[index].facePosition
+      >= facePhaseSweep[index - 1].facePosition
+  ) {
+    throw new Error("Polygon phase no longer maps monotonically from lip to trough");
+  }
+}
+if (
+  facePhaseSweep[0].facePosition < .99
+  || facePhaseSweep.at(-1).facePosition > -.99
+  || Math.abs(
+    waveFacePositionAtPhase(.5, facePhaseSpan) - .0769230769
+  ) > .001
+) {
+  throw new Error("Instantaneous wave-face measurement no longer clamps to the physical face");
 }
 
 const dynamicsSample = {
@@ -1615,6 +1643,7 @@ console.log(JSON.stringify({
     proneCatchSpeed120Hz: pressureCatch120.velocityZ,
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
+    facePhaseSweep,
     stillWater: stillWaterStand.outcome,
     angleSweep: angleSweep.map(({ degrees, reading }) => ({
       degrees,

@@ -108,6 +108,28 @@ export type RideCaptureState = {
   ahead: number;
 };
 
+/**
+ * Measures trough-to-lip position directly from the board's phase on the
+ * current polygon wave. This contains no steering, stance, score, or display
+ * state, so a HUD smoothing filter cannot move the board up or down the face.
+ */
+export function waveFacePositionAtPhase(
+  crestPhaseError: number,
+  facePhaseSpan: number,
+) {
+  const safeSpan = Math.max(.24, facePhaseSpan);
+  return Math.max(
+    -1,
+    Math.min(
+      1,
+      (
+        (safeSpan - crestPhaseError)
+          / Math.max(.1, safeSpan - .14)
+      ) * 2 - 1,
+    ),
+  );
+}
+
 export function advanceRideCaptureState(
   current: RideCaptureState,
   sample: {

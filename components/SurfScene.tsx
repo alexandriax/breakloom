@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardWavePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12929,17 +12929,14 @@ function Simulation({
         // Face position is measured from the board's actual phase on the
         // polygon wave. W/S changes stance pressure below; it cannot move the
         // surfer through an invisible trough-to-lip lane.
-        const measuredFacePosition = THREE.MathUtils.clamp(
-          (
-            (facePhaseSpan - crestPhaseError)
-              / Math.max(.1, facePhaseSpan - .14)
-          ) * 2 - 1,
-          -1,
-          1,
+        const measuredFacePosition = waveFacePositionAtPhase(
+          crestPhaseError,
+          facePhaseSpan,
         );
+        const physicalFacePosition = finishing ? 0 : measuredFacePosition;
         rideFacePosition.current = THREE.MathUtils.damp(
           rideFacePosition.current,
-          finishing ? 0 : measuredFacePosition,
+          physicalFacePosition,
           finishing ? 4.6 : 7.2,
           delta,
         );
@@ -12988,8 +12985,8 @@ function Simulation({
         else stance.current = THREE.MathUtils.damp(stance.current, 0, 1.05, delta);
         const nosePressure = Math.max(0, stance.current);
         const tailPressure = Math.max(0, -stance.current);
-        const highFace = Math.max(0, rideFacePosition.current);
-        const lowFace = Math.max(0, -rideFacePosition.current);
+        const highFace = Math.max(0, physicalFacePosition);
+        const lowFace = Math.max(0, -physicalFacePosition);
         stamina.current = THREE.MathUtils.clamp(stamina.current + delta * 6.5, 0, 100);
         const breakTravel = rideDistance.current;
         const pocketPulse = rideLineSide.current * Math.sin(breakTravel * .18 + t * .13 + rideOriginAlong.current * .07) * tideVariability * 1.1;
@@ -13019,7 +13016,7 @@ function Simulation({
           .92,
         );
         const tubeFace = THREE.MathUtils.smoothstep(
-          rideFacePosition.current,
+          physicalFacePosition,
           -.14,
           .58,
         );
@@ -13560,7 +13557,7 @@ function Simulation({
           && waveQuality > barrelThreshold
           && controlQuality > .72
           && tubePressure > .24
-          && rideFacePosition.current > -.18
+          && physicalFacePosition > -.18
           && Math.abs(rideSteer) < .68
           && stance.current > -.58;
         barrelIntensity = inBarrel
@@ -13599,7 +13596,7 @@ function Simulation({
           score.current += (26 + barrelTime.current * 4) * controlQuality * combo.current * delta;
         }
         const turnBonus = Math.abs(railLoad) * (
-          12 + compression * 5 + Math.abs(rideFacePosition.current) * 3.5
+          12 + compression * 5 + Math.abs(physicalFacePosition) * 3.5
         ) * (1 - railSlip.current * .42);
         if (!finishing) {
           combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15);
@@ -13705,29 +13702,29 @@ function Simulation({
         if (!finishing && wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
           const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
           const rail = Math.abs(physicalRailInput);
-          let name = rideFacePosition.current < -.42 ? "Bottom Turn" : "High Line";
-          let family: ManeuverAttempt["family"] = rideFacePosition.current < -.42 ? "carve" : "trim";
-          let base = rideFacePosition.current < -.42 ? 185 : 150;
-          let rotation = rideFacePosition.current < -.42 ? .34 : .08;
-          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55 && rideFacePosition.current > .08) {
+          let name = physicalFacePosition < -.42 ? "Bottom Turn" : "High Line";
+          let family: ManeuverAttempt["family"] = physicalFacePosition < -.42 ? "carve" : "trim";
+          let base = physicalFacePosition < -.42 ? 185 : 150;
+          let rotation = physicalFacePosition < -.42 ? .34 : .08;
+          if (nosePressure > (settings.board === "longboard" ? 0.42 : 0.62) && rail < 0.32 && waveQuality > 0.55 && physicalFacePosition > .08) {
             name = "Nose Ride";
             base = settings.board === "longboard" ? 440 : 340;
-          } else if (charge > .82 && tailPressure > .34 && rail > .38 && waveQuality > .7 && speed > 10.2 && linePosition < .5 && rideFacePosition.current > .38) {
+          } else if (charge > .82 && tailPressure > .34 && rail > .38 && waveQuality > .7 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
             family = "air";
             name = charge > .95 && rail > .62 ? "Alley-Oop" : "Air Reverse";
             base = name === "Alley-Oop" ? 780 : 690;
             rotation = name === "Alley-Oop" ? Math.PI * 2 : Math.PI;
-          } else if (tailPressure > .56 && rail > .42 && waveQuality > .54 && rideFacePosition.current > .2) {
+          } else if (tailPressure > .56 && rail > .42 && waveQuality > .54 && physicalFacePosition > .2) {
             family = "lip";
             name = charge > .68 ? "Layback Release" : "Tail Release";
             base = charge > .68 ? 470 : 390;
             rotation = .64 + charge * .34;
-          } else if (waveQuality > .72 && rail > .42 && rideFacePosition.current > .3) {
+          } else if (waveQuality > .72 && rail > .42 && physicalFacePosition > .3) {
             family = "lip";
             name = "Lip Snap";
             base = 360;
             rotation = .58 + charge * .42;
-          } else if (waveQuality > 0.68 && rideFacePosition.current > .46) {
+          } else if (waveQuality > 0.68 && physicalFacePosition > .46) {
             family = "lip";
             name = "Foam Floater";
             base = 305;
@@ -13747,7 +13744,7 @@ function Simulation({
             ? surfboardReleaseVerticalImpulse({
                 compression: charge,
                 tailPressure,
-                facePosition: rideFacePosition.current,
+                facePosition: physicalFacePosition,
                 waveQuality,
                 speed,
                 planing: boardPlaning,
@@ -13847,9 +13844,9 @@ function Simulation({
             ? `Shoulder fading · cut back ${rideLineSide.current > 0 ? "left" : "right"} toward the pocket`
           : lineControl > .76 && Math.abs(steer) < .18
             ? "Power pocket locked · build speed or release a move"
-          : rideFacePosition.current > .58
+          : physicalFacePosition > .58
             ? "Lip line — load the tail and release through the pitching section"
-          : rideFacePosition.current < -.58
+          : physicalFacePosition < -.58
             ? "Bottom turn — set the rail and drive back toward the lip"
           : steer
             ? "Hold the rail · hold TRICK / SPACE to load, then release"
