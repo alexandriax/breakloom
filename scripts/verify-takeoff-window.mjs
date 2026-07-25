@@ -13,13 +13,11 @@ import {
   advanceSurfboardTumble,
   advanceRideCaptureState,
   advanceWaveEngagement,
-  advanceWaveTakeoffCapture,
   boardRailContactFrame,
   evaluateBoardWaterInteraction,
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
-  initialWavePopUpCapture,
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
@@ -466,15 +464,19 @@ const backwardsBoard = evaluateBoardWaterInteraction({
 if (backwardsBoard.outcome === "capture" || backwardsBoard.capture > .02) {
   throw new Error(`A board facing offshore captured the wave: ${JSON.stringify(backwardsBoard)}`);
 }
-const alignedPopUpStart = initialWavePopUpCapture(
-  alignedBoard.capture,
-  alignedBoard.planing,
-);
+const alignedProneEngagement = engagementFor(.8, {
+  capture: alignedBoard.capture,
+  waveContact: alignedBoard.waveContact,
+  waterContact: 1,
+  headingAlignment: alignedBoard.headingAlignment,
+  planing: alignedBoard.planing,
+  crossWaveLoad: alignedBoard.crossWaveLoad,
+}).engagement;
 if (
-  alignedPopUpStart < .2
-  || alignedPopUpStart >= .72
+  alignedProneEngagement < .2
+  || alignedProneEngagement >= .72
 ) {
-  throw new Error("Initial wave capture no longer starts below full engagement");
+  throw new Error("Prone wave engagement no longer builds continuously below full capture");
 }
 const facePhaseSpan = .92;
 const facePhaseSweep = [.14, .32, .5, .7, facePhaseSpan].map(
@@ -2558,36 +2560,39 @@ if (
   throw new Error("Surfer compression no longer behaves as a frame-rate-stable crouch and extension");
 }
 
-const marginalCaptureStart = .22 + marginalTraining.averageQuality * .22;
-let marginalCapture = marginalCaptureStart;
-const marginalCaptureStrength = Math.min(
-  1,
-  earlyFace.opportunity * .68 + earlyFace.slopeStrength * .12 + .2 * .2,
-);
-for (let frame = 0; frame < 42; frame += 1) {
-  marginalCapture = advanceWaveTakeoffCapture(
-    marginalCapture,
-    1 / 60,
-    true,
-    marginalCaptureStrength,
-  );
+let marginalCapture = 0;
+for (let frame = 0; frame < 72; frame += 1) {
+  const reading = advanceWaveEngagement(marginalCapture, {
+    deltaSeconds: 1 / 60,
+    capture: .66,
+    waveContact: .72,
+    waterContact: .94,
+    headingAlignment: .7,
+    planing: .46,
+    crossWaveLoad: .08,
+  });
+  marginalCapture = reading.engagement;
 }
 let lostWaveCapture = marginalCapture;
-for (let frame = 0; frame < 42; frame += 1) {
-  lostWaveCapture = advanceWaveTakeoffCapture(
-    lostWaveCapture,
-    1 / 60,
-    false,
-    0,
-  );
+for (let frame = 0; frame < 72; frame += 1) {
+  const reading = advanceWaveEngagement(lostWaveCapture, {
+    deltaSeconds: 1 / 60,
+    capture: 0,
+    waveContact: 0,
+    waterContact: .92,
+    headingAlignment: .7,
+    planing: .22,
+    crossWaveLoad: .08,
+  });
+  lostWaveCapture = reading.engagement;
 }
 const independentPopUp = evaluatePopUpTransition(.7, 100);
 if (
-  marginalCapture <= marginalCaptureStart
+  marginalCapture <= .2
   || lostWaveCapture >= marginalCapture
   || independentPopUp.progress < .99
 ) {
-  throw new Error("Wave capture no longer evolves independently from the completed body transition");
+  throw new Error("Wave engagement no longer evolves independently from the body transition");
 }
 
 console.log(JSON.stringify({
@@ -2601,7 +2606,7 @@ console.log(JSON.stringify({
     pocket: pocketFace.quality,
     late: lateFace.quality,
   },
-  alignedPopUpStart,
+  alignedProneEngagement,
   independentPopUpSeconds: independentPopUp.duration,
   endurance: {
     fiveMinutePaddleReserve,

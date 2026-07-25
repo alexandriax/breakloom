@@ -4182,39 +4182,6 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
   };
 }
 
-export function advanceWaveTakeoffCapture(
-  capture: number,
-  delta: number,
-  boardStillEngaged: boolean,
-  captureStrength: number,
-) {
-  return Math.max(
-    0,
-    Math.min(
-      1,
-      capture + Math.max(0, delta) * (
-        boardStillEngaged
-          ? .62 + Math.max(0, Math.min(1, captureStrength)) * 1.25
-          : -.28
-      ),
-    ),
-  );
-}
-
-export function initialWavePopUpCapture(
-  boardCapture: number,
-  planing: number,
-) {
-  return Math.max(
-    .08,
-    Math.min(
-      .58,
-      Math.max(0, Math.min(1, boardCapture)) * .44
-        + Math.max(0, Math.min(1, planing)) * .18,
-    ),
-  );
-}
-
 function primaryWaveWavelength(period: number, compression: number) {
   return Math.max(48, Math.min(320, 1.56 * period * period)) * compression;
 }

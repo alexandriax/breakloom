@@ -3230,8 +3230,8 @@ export default function SurfscapeApp() {
                   : {
                       cue: "FRONT FOOT LANDING",
                       detail: stats.waveCapture > .1
-                        ? `${Math.round(stats.waveCapture * 100)}% wave capture · look down the open face; both feet inherit the live attitude.`
-                        : "No wave capture: finish centered and expect to balance without forward drive.",
+                        ? `${Math.round(stats.waveCapture * 100)}% sustained hull engagement · look down the open face; both feet inherit the live attitude.`
+                        : "No hull engagement: finish centered and expect to balance without forward drive.",
                       rotation: -90,
                       tone: "ready",
                     }
@@ -3486,7 +3486,7 @@ export default function SurfscapeApp() {
             }
         : standingOnBoard
           ? stats.waveEngagement > .08
-            ? { title: "PRESSURE BUILDING", detail: `${Math.round(stats.waveEngagement * 100)}% sustained capture · stay aligned` }
+            ? { title: "PRESSURE BUILDING", detail: `${Math.round(stats.waveEngagement * 100)}% continuous hull engagement · stay aligned` }
           : stats.crossWaveLoad > .28
             ? { title: `TURN ${headingTurn}`, detail: `${Math.round(stats.crossWaveLoad * 100)}% cross-wave load · balance against the roll` }
             : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: "Balance with the slider · tap PRONE to reposition" }
@@ -3506,7 +3506,7 @@ export default function SurfscapeApp() {
                     : stats.takeoffCommitProgress < .74
                       ? "REAR FOOT IN"
                       : "FRONT FOOT DOWN",
-                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body transition · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% wave capture` : "no wave capture"}`,
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body transition · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% hull engagement` : "no hull engagement"}`,
               }
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
