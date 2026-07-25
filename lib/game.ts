@@ -5833,6 +5833,32 @@ export type ShorebreakBandReading = {
   power: number;
 };
 
+export type ProneShorebreakState = {
+  velocityX: number;
+  velocityZ: number;
+};
+
+export type ProneShorebreakSample = {
+  deltaSeconds: number;
+  intensity: number;
+  power: number;
+  waveNormalX: number;
+  waveNormalZ: number;
+  currentVelocityX: number;
+  currentVelocityZ: number;
+  submersion: number;
+  diveQuality: number;
+};
+
+export type ProneShorebreakReading =
+  ProneShorebreakState & {
+    accelerationX: number;
+    accelerationZ: number;
+    exposure: number;
+    impactLoad: number;
+    staminaCost: number;
+  };
+
 /**
  * Resolves breaking-water power continuously from the animated polygon band.
  * The tutorial's lineup state is intentionally absent: crossing a coaching
@@ -5868,6 +5894,89 @@ export function resolveShorebreakBandLoad(
     1,
   );
   return { bandOccupancy, power };
+}
+
+/**
+ * Couples a prone surfer-board system to moving whitewater with continuous
+ * drag. A deep, well-timed dive reduces projected area; it never changes the
+ * solver branch or receives a one-frame velocity bonus.
+ */
+export function advanceProneShorebreakResponse(
+  state: ProneShorebreakState,
+  sample: ProneShorebreakSample,
+): ProneShorebreakReading {
+  const delta = clampValue(sample.deltaSeconds, 0, .05);
+  const intensity = clampValue(sample.intensity, 0, 1.4);
+  const power = clampValue(sample.power, 0, 1);
+  const submersion = clampValue(sample.submersion, 0, 1);
+  const diveQuality = clampValue(sample.diveQuality, 0, 1);
+  const normalMagnitude = Math.hypot(
+    sample.waveNormalX,
+    sample.waveNormalZ,
+  );
+  const waveNormalX = normalMagnitude > .001
+    ? sample.waveNormalX / normalMagnitude
+    : 0;
+  const waveNormalZ = normalMagnitude > .001
+    ? sample.waveNormalZ / normalMagnitude
+    : 1;
+  const protectedSubmersion = submersion
+    * (.35 + diveQuality * .65);
+  const exposure = clampValue(
+    1 - protectedSubmersion,
+    .08,
+    1,
+  );
+  const transportSpeed = .65 + power * 2.15;
+  const waterVelocityX = sample.currentVelocityX
+    + waveNormalX * transportSpeed;
+  const waterVelocityZ = sample.currentVelocityZ
+    + waveNormalZ * transportSpeed;
+  const couplingRate = intensity
+    * exposure
+    * (1.4 + power * 2.4);
+  let accelerationX = (
+    waterVelocityX - state.velocityX
+  ) * couplingRate;
+  let accelerationZ = (
+    waterVelocityZ - state.velocityZ
+  ) * couplingRate;
+  const accelerationMagnitude = Math.hypot(
+    accelerationX,
+    accelerationZ,
+  );
+  const accelerationLimit = 8.5
+    * Math.min(1, intensity + .08);
+  if (
+    accelerationMagnitude > accelerationLimit
+    && accelerationMagnitude > .001
+  ) {
+    const scale = accelerationLimit / accelerationMagnitude;
+    accelerationX *= scale;
+    accelerationZ *= scale;
+  }
+  const velocityX = state.velocityX
+    + accelerationX * delta;
+  const velocityZ = state.velocityZ
+    + accelerationZ * delta;
+  const impactLoad = clampValue(
+    intensity * exposure,
+    0,
+    1,
+  );
+  const staminaCost = intensity
+    * exposure
+    * (2.2 + power * 4.6)
+    * delta;
+  return {
+    velocityX,
+    velocityZ,
+    accelerationX,
+    accelerationZ,
+    exposure,
+    impactLoad,
+    staminaCost,
+  };
 }
 
 export function waveHeightAt(

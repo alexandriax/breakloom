@@ -5,6 +5,7 @@ import {
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
   advancePopUpBodyTransition,
+  advanceProneShorebreakResponse,
   advanceProneBoardAttitude,
   advanceReturnProneTransition,
   advanceSeparatedSurferHorizontalDynamics,
@@ -3755,6 +3756,64 @@ const flatWaterDiveInitiation = resolveDuckDiveInitiation({
 });
 const lateDiveSubmersion = duckDiveSubmersionAt(.02);
 const timedDiveSubmersion = duckDiveSubmersionAt(.3);
+function shorebreakPass(hz, submersion, diveQuality) {
+  let state = {
+    velocityX: 0,
+    velocityZ: -2,
+  };
+  let staminaCost = 0;
+  let peakImpact = 0;
+  const duration = 1.4;
+  const frames = Math.round(duration * hz);
+  for (let frame = 0; frame < frames; frame += 1) {
+    const progress = (frame + .5) / frames;
+    const reading = advanceProneShorebreakResponse(
+      state,
+      {
+        deltaSeconds: 1 / hz,
+        intensity: Math.sin(progress * Math.PI) * .82,
+        power: .82,
+        waveNormalX: 0,
+        waveNormalZ: 1,
+        currentVelocityX: .15,
+        currentVelocityZ: 0,
+        submersion,
+        diveQuality,
+      },
+    );
+    state = reading;
+    staminaCost += reading.staminaCost;
+    peakImpact = Math.max(peakImpact, reading.impactLoad);
+  }
+  return {
+    ...state,
+    staminaCost,
+    peakImpact,
+  };
+}
+const exposedShorebreak60 = shorebreakPass(60, 0, 0);
+const exposedShorebreak120 = shorebreakPass(120, 0, 0);
+const cleanDiveShorebreak60 = shorebreakPass(60, .82, .95);
+const cleanDiveShorebreak120 = shorebreakPass(
+  120,
+  .82,
+  .95,
+);
+const zeroShorebreakResponse =
+  advanceProneShorebreakResponse(
+    { velocityX: .4, velocityZ: -1.2 },
+    {
+      deltaSeconds: 1 / 60,
+      intensity: 0,
+      power: .82,
+      waveNormalX: 0,
+      waveNormalZ: 1,
+      currentVelocityX: .15,
+      currentVelocityZ: 0,
+      submersion: 0,
+      diveQuality: 0,
+    },
+  );
 if (
   optimalDiveInitiation.timingQuality < .99
   || earlyDiveInitiation.timingQuality !== 0
@@ -3762,8 +3821,25 @@ if (
   || flatWaterDiveInitiation.effortCost <= 0
   || lateDiveSubmersion >= .1
   || timedDiveSubmersion < .7
+  || exposedShorebreak60.velocityZ <= 1
+  || cleanDiveShorebreak60.velocityZ >= .8
+  || exposedShorebreak60.velocityZ
+    - cleanDiveShorebreak60.velocityZ <= 1
+  || exposedShorebreak60.staminaCost
+    <= cleanDiveShorebreak60.staminaCost * 2
+  || Math.abs(
+    exposedShorebreak60.velocityZ
+      - exposedShorebreak120.velocityZ,
+  ) > .045
+  || Math.abs(
+    cleanDiveShorebreak60.velocityZ
+      - cleanDiveShorebreak120.velocityZ,
+  ) > .045
+  || zeroShorebreakResponse.velocityX !== .4
+  || zeroShorebreakResponse.velocityZ !== -1.2
+  || zeroShorebreakResponse.staminaCost !== 0
 ) {
-  throw new Error("Duck diving no longer separates physical action from wall timing and achieved depth");
+  throw new Error("Duck diving no longer reduces continuous, frame-rate-stable whitewater exposure");
 }
 function paddleForFrames(frameCount, sample = paddlingSample) {
   let state = {
@@ -4817,6 +4893,10 @@ console.log(JSON.stringify({
     idleEffortCost: flatWaterDiveInitiation.effortCost,
     lateSubmersion: lateDiveSubmersion,
     timedSubmersion: timedDiveSubmersion,
+    exposedShorebreak60,
+    exposedShorebreak120,
+    cleanDiveShorebreak60,
+    cleanDiveShorebreak120,
     surfaceStrokeForce: surfaceStrokeAtSpeed.strokeForce,
     submergedStrokeForce: submergedStrokeAtSpeed.strokeForce,
     submergedCoast60Hz: submergedCoast60.velocityZ,

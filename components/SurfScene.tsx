@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12302,32 +12302,47 @@ function Simulation({
           shorebreakResult.current = cleanDive ? "clean" : "hit";
           duckDiveWindowOpen.current = false;
           shorebreakId.current += 1;
-          if (cleanDive) {
-            paddleVelocity.current.multiplyScalar(.86 + duckDiveQuality.current * .08);
-            const submergedImpulse = .08 + shorebreakPower * .14;
-            paddleVelocity.current.x += shorebreakWaveNormalX
-              * submergedImpulse;
-            paddleVelocity.current.y += shorebreakWaveNormalZ
-              * submergedImpulse;
-            stamina.current = Math.max(0, stamina.current - (.45 + shorebreakPower * .55));
-            motion.current.impact = .22 + shorebreakPower * .24;
-          } else {
-            paddleVelocity.current.multiplyScalar(.54);
-            const washImpulse = .72 + shorebreakPower * 1.38;
-            paddleVelocity.current.x += shorebreakWaveNormalX
-              * washImpulse
-              + currentX * (.55 + shorebreakPower * .9);
-            paddleVelocity.current.y += shorebreakWaveNormalZ
-              * washImpulse
-              + currentZ * (.55 + shorebreakPower * .9);
-            stamina.current = Math.max(0, stamina.current - (2.1 + shorebreakPower * 3.7));
-            motion.current.impact = .66 + shorebreakPower * .34;
-          }
+          motion.current.impact = Math.max(
+            motion.current.impact,
+            cleanDive
+              ? .22 + shorebreakPower * .24
+              : .66 + shorebreakPower * .34,
+          );
           if (qaScenario) {
             nextShorebreakAt.current = t
               + Math.max(4.4, settings.wavePeriod * .58);
           }
         }
+        const shorebreakResponse =
+          advanceProneShorebreakResponse(
+            {
+              velocityX: paddleVelocity.current.x,
+              velocityZ: paddleVelocity.current.y,
+            },
+            {
+              deltaSeconds: delta,
+              intensity: shorebreakIntensity,
+              power: shorebreakPower,
+              waveNormalX: shorebreakWaveNormalX,
+              waveNormalZ: shorebreakWaveNormalZ,
+              currentVelocityX: currentX,
+              currentVelocityZ: currentZ,
+              submersion: proneDiveEnvelope,
+              diveQuality: duckDiveQuality.current,
+            },
+          );
+        paddleVelocity.current.set(
+          shorebreakResponse.velocityX,
+          shorebreakResponse.velocityZ,
+        );
+        stamina.current = Math.max(
+          0,
+          stamina.current - shorebreakResponse.staminaCost,
+        );
+        motion.current.impact = Math.max(
+          motion.current.impact,
+          shorebreakResponse.impactLoad,
+        );
         previousShorebreakPhaseError.current = wallApproach.phaseError;
         const takeoffWaveNormalX = localWaveTransport.x / Math.max(.001, localWaveTransport.speed);
         const takeoffWaveNormalZ = localWaveTransport.z / Math.max(.001, localWaveTransport.speed);
