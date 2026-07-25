@@ -33,6 +33,7 @@ import {
   readCrestTimingMechanics,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  resolveBoardTakeoffOpportunity,
   resolvePaddleHeadingTarget,
   recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
@@ -482,14 +483,14 @@ function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
   });
 }
 
-function catchWindows(alignment, paddleDrive, mode, sampleZ = z) {
+function supportedFaceSpans(alignment, paddleDrive, mode, sampleZ = z) {
   const step = .05;
   const windows = [];
   let start = null;
   let quality = [];
   for (let time = settings.wavePeriod; time <= settings.wavePeriod * 17; time += step) {
     const reading = readingAt(time, alignment, paddleDrive, mode, sampleZ);
-    if (reading.catchable) {
+    if (reading.surfable && reading.opportunity > .13) {
       if (start === null) {
         start = time;
         quality = [];
@@ -511,44 +512,44 @@ function median(values) {
   return ordered[Math.floor(ordered.length / 2)];
 }
 
-function verifyWindows(label, windows, minimumMedian) {
-  if (windows.length < 12) {
-    throw new Error(`${label}: expected repeated surfable faces, found ${windows.length}`);
+function verifyFaceSpans(label, spans, minimumMedian) {
+  if (spans.length < 12) {
+    throw new Error(`${label}: expected repeated surfable faces, found ${spans.length}`);
   }
-  const medianDuration = median(windows.map((window) => window.duration));
+  const medianDuration = median(spans.map((span) => span.duration));
   if (medianDuration < minimumMedian) {
-    throw new Error(`${label}: median catch window ${medianDuration.toFixed(2)}s is too short`);
+    throw new Error(`${label}: median supported-face span ${medianDuration.toFixed(2)}s is too short`);
   }
   return {
-    count: windows.length,
+    count: spans.length,
     medianDuration,
-    averageQuality: windows.reduce((total, window) => total + window.quality, 0) / windows.length,
+    averageQuality: spans.reduce((total, span) => total + span.quality, 0) / spans.length,
   };
 }
 
-const idealTraining = verifyWindows(
+const idealTraining = verifyFaceSpans(
   "ideal training takeoff",
-  catchWindows(1, .85, "training"),
+  supportedFaceSpans(1, .85, "training"),
   2.2,
 );
-const marginalTraining = verifyWindows(
+const marginalTraining = verifyFaceSpans(
   "marginal training takeoff",
-  catchWindows(.35, .15, "training"),
+  supportedFaceSpans(.35, .15, "training"),
   1.9,
 );
-const idealAdvanced = verifyWindows(
+const idealAdvanced = verifyFaceSpans(
   "ideal advanced takeoff",
-  catchWindows(1, .85, "advanced"),
+  supportedFaceSpans(1, .85, "advanced"),
   2,
 );
-const marginalAdvanced = verifyWindows(
+const marginalAdvanced = verifyFaceSpans(
   "marginal advanced takeoff",
-  catchWindows(.35, .15, "advanced"),
+  supportedFaceSpans(.35, .15, "advanced"),
   1.7,
 );
-const insideReform = verifyWindows(
+const insideReform = verifyFaceSpans(
   "inside reform takeoff",
-  catchWindows(.55, .35, "training", -20),
+  supportedFaceSpans(.55, .35, "training", -20),
   1.6,
 );
 
@@ -584,11 +585,59 @@ const sharedSample = {
 const earlyFace = evaluateWaveTakeoff({ ...sharedSample, crestDistance: 8 });
 const pocketFace = evaluateWaveTakeoff({ ...sharedSample, crestDistance: 3.2 });
 const lateFace = evaluateWaveTakeoff({ ...sharedSample, crestDistance: -1.8 });
-if (!earlyFace.catchable || !pocketFace.catchable || !lateFace.catchable) {
-  throw new Error("The rising face is not catchable across early, pocket, and late positions");
+if (
+  earlyFace.opportunity <= .13
+  || pocketFace.opportunity <= .13
+  || lateFace.opportunity <= .13
+) {
+  throw new Error("The rising face no longer carries continuous opportunity across early, pocket, and late positions");
 }
 if (pocketFace.quality <= earlyFace.quality || pocketFace.quality <= lateFace.quality) {
   throw new Error("Better face placement should improve takeoff quality without gating other entries");
+}
+const supportedTakeoffOpportunity =
+  resolveBoardTakeoffOpportunity({
+    waveOpportunity: pocketFace.opportunity,
+    waterContact: 1,
+    capsizeRisk: 0,
+    pitchOverRisk: 0,
+  });
+const halfContactTakeoffOpportunity =
+  resolveBoardTakeoffOpportunity({
+    waveOpportunity: pocketFace.opportunity,
+    waterContact: .5,
+    capsizeRisk: 0,
+    pitchOverRisk: 0,
+  });
+const unstableTakeoffOpportunity =
+  resolveBoardTakeoffOpportunity({
+    waveOpportunity: pocketFace.opportunity,
+    waterContact: 1,
+    capsizeRisk: .75,
+    pitchOverRisk: .2,
+  });
+const dryTakeoffOpportunity =
+  resolveBoardTakeoffOpportunity({
+    waveOpportunity: pocketFace.opportunity,
+    waterContact: 0,
+    capsizeRisk: 0,
+    pitchOverRisk: 0,
+  });
+if (
+  Math.abs(
+    supportedTakeoffOpportunity - pocketFace.opportunity,
+  ) > .000001
+  || Math.abs(
+    halfContactTakeoffOpportunity
+      - supportedTakeoffOpportunity * .5,
+  ) > .000001
+  || Math.abs(
+    unstableTakeoffOpportunity
+      - supportedTakeoffOpportunity * .25,
+  ) > .000001
+  || dryTakeoffOpportunity !== 0
+) {
+  throw new Error("Live takeoff opportunity no longer follows continuous hull support and attitude stability");
 }
 
 const visiblyStandingWeakCrest = evaluateWaveTakeoff({
@@ -597,8 +646,11 @@ const visiblyStandingWeakCrest = evaluateWaveTakeoff({
   crestEnergy: .2,
   crestSurfable: false,
 });
-if (!visiblyStandingWeakCrest.catchable) {
-  throw new Error("A visibly standing lower-energy crest should remain catchable");
+if (
+  !visiblyStandingWeakCrest.surfable
+  || visiblyStandingWeakCrest.opportunity <= .13
+) {
+  throw new Error("A visibly standing lower-energy crest should retain physical takeoff opportunity");
 }
 
 const flatWater = evaluateWaveTakeoff({
@@ -610,8 +662,8 @@ const flatWater = evaluateWaveTakeoff({
   surfaceRise: 0,
   surfaceLift: 0,
 });
-if (flatWater.catchable) {
-  throw new Error("Flat water must not produce a takeoff opportunity");
+if (flatWater.surfable || flatWater.opportunity !== 0) {
+  throw new Error("Flat water must not produce physical takeoff opportunity");
 }
 
 const sharedBoardWater = {
@@ -4747,6 +4799,10 @@ console.log(JSON.stringify({
     early: earlyFace.quality,
     pocket: pocketFace.quality,
     late: lateFace.quality,
+    supportedOpportunity: supportedTakeoffOpportunity,
+    halfContactOpportunity: halfContactTakeoffOpportunity,
+    unstableOpportunity: unstableTakeoffOpportunity,
+    dryOpportunity: dryTakeoffOpportunity,
   },
   alignedProneEngagement,
   independentPopUpSeconds: independentPopUp.duration,

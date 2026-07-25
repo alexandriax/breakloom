@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -393,7 +393,7 @@ type MotionState = {
   takeoff: number;
   finish: number;
   takeoffRead: number;
-  catchReady: number;
+  takeoffOpportunity: number;
   takeoffCommit: number;
   proneTransition: number;
   shorebreak: number;
@@ -4896,13 +4896,13 @@ function WaveReadingGuide({
     if (crest.current && crestMaterial.current) {
       const paddling = state.phase === "paddling";
       const read = THREE.MathUtils.smoothstep(state.takeoffRead, .18, .86);
-      const targetOpacity = paddling ? read * (.12 + state.catchReady * .58) * assist * mobileBoost : 0;
-      crestMaterial.current.opacity = THREE.MathUtils.damp(crestMaterial.current.opacity, targetOpacity, state.catchReady > .4 ? 12 : 5, delta);
-      crestMaterial.current.color.lerp(state.catchReady > .42 ? readyColor : coolColor, 1 - Math.exp(-delta * 6));
-      const pulse = 1 + Math.sin(clock.elapsedTime * (3.2 + state.catchReady * 2.8)) * (.025 + state.catchReady * .055);
+      const targetOpacity = paddling ? read * (.12 + state.takeoffOpportunity * .58) * assist * mobileBoost : 0;
+      crestMaterial.current.opacity = THREE.MathUtils.damp(crestMaterial.current.opacity, targetOpacity, state.takeoffOpportunity > .4 ? 12 : 5, delta);
+      crestMaterial.current.color.lerp(state.takeoffOpportunity > .42 ? readyColor : coolColor, 1 - Math.exp(-delta * 6));
+      const pulse = 1 + Math.sin(clock.elapsedTime * (3.2 + state.takeoffOpportunity * 2.8)) * (.025 + state.takeoffOpportunity * .055);
       const crestScale = (.72 + read * .42) * pulse;
       crest.current.scale.setScalar(crestScale);
-      crest.current.rotation.z = clock.elapsedTime * (.045 + state.catchReady * .04);
+      crest.current.rotation.z = clock.elapsedTime * (.045 + state.takeoffOpportunity * .04);
       crest.current.visible = crestMaterial.current.opacity > .006;
     }
 
@@ -11046,9 +11046,6 @@ function Simulation({
   const previousShorebreakPhaseError = useRef(Number.NaN);
   const duckDiveUntil = useRef(0);
   const duckDiveWindowOpen = useRef(false);
-  const catchWindowOpen = useRef(false);
-  const catchGraceUntil = useRef(0);
-  const catchWindowQuality = useRef(.5);
   const duckDiveQuality = useRef(0);
   const shorebreakId = useRef(0);
   const shorebreakResult = useRef<GameStats["shorebreakResult"]>("");
@@ -11144,7 +11141,7 @@ function Simulation({
     takeoff: 0,
     finish: 0,
     takeoffRead: 0,
-    catchReady: 0,
+    takeoffOpportunity: 0,
     takeoffCommit: 0,
     proneTransition: 0,
     shorebreak: 0,
@@ -11500,7 +11497,6 @@ function Simulation({
         );
         rideWavePhase.current = Math.PI * .5
           + Math.round((qaTakeoffPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-        catchWindowOpen.current = false;
       }
       if (qaStage.current < 5 && qaElapsed >= 8.55) {
         qaStage.current = 5;
@@ -11659,7 +11655,7 @@ function Simulation({
     let returnProneFootSupport = 1;
     let returnProneCounterweightAuthority = 1;
     let returnProneVerticalLoad = 0;
-    let catchReady = false;
+    let takeoffOpportunity = 0;
     let inLineup = false;
     let lineupOutsideMargin = 0;
     let lineupDirectionX = 0;
@@ -12740,9 +12736,6 @@ function Simulation({
               1,
             )
           : 0;
-        // Preserve the live solver reading before the HUD applies a short
-        // visual memory to keep the catch cue legible. The cached guide value
-        // must never improve capture, rail state, or takeoff stability.
         const physicalTakeoffQuality = takeoffQuality;
         if (!takeoffCommitting) {
           const proneWaveEngagement = advanceWaveEngagement(
@@ -12759,30 +12752,17 @@ function Simulation({
           );
           waveEngagement.current = proneWaveEngagement.engagement;
         }
-        const catchWindowCandidate = !takeoffCommitting
-          && takeoffReading.catchable
-          && boardWaterContact > .28
-          && rollCapsizeRisk < .78
-          && pitchOverRisk < .8;
-        if (catchWindowCandidate) {
-          catchWindowOpen.current = true;
-          catchWindowQuality.current = takeoffQuality;
-          catchGraceUntil.current = t + SURF_PHYSICS_TUNING.catchGrace;
-        } else if (
-          takeoffCommitting
-          || t >= catchGraceUntil.current
-          || crestDistance < -3.6
-          || crestDistance > 15.5 + settings.waveHeight
-        ) {
-          catchWindowOpen.current = false;
-          catchWindowQuality.current = 0;
-        } else if (catchWindowOpen.current) {
-          takeoffQuality = Math.max(
-            takeoffQuality,
-            catchWindowQuality.current * .86,
-          );
-        }
-        catchReady = catchWindowOpen.current;
+        // Coaching follows the live physical opportunity every frame. There is
+        // no cached "catch window": surface support and board stability fade
+        // continuously as the polygon wall moves beneath the hull.
+        takeoffOpportunity = takeoffCommitting
+          ? 0
+          : resolveBoardTakeoffOpportunity({
+              waveOpportunity: takeoffReading.opportunity,
+              waterContact: boardWaterContact,
+              capsizeRisk: rollCapsizeRisk,
+              pitchOverRisk,
+            });
         const waveReadCopy = takeoffReading.surfable && crestDistance > -3.2 && crestDistance < 15
           ? takeoffReading.physicalLift > .32
             ? `Rising face · lift ${Math.round(takeoffReading.physicalLift * 100)}%`
@@ -12907,9 +12887,7 @@ function Simulation({
         };
 
         if (proneFailure.failed && !qaScenario) {
-          catchWindowOpen.current = false;
-          catchWindowQuality.current = 0;
-          catchReady = false;
+          takeoffOpportunity = 0;
           prompt = rollCapsizeRisk >= pitchOverRisk
             ? "The loaded rail passed its righting limit — protect your head"
             : "The buried nose pitched the board over — protect your head";
@@ -13096,7 +13074,7 @@ function Simulation({
             .12,
             1,
           );
-          catchReady = false;
+          takeoffOpportunity = 0;
           const lostCrest = caughtCrestDistance < -3.6
             || caughtCrestDistance > 15.5 + settings.waveHeight * 1.6
             || rideCapture.current.overtaken > .88
@@ -13158,7 +13136,7 @@ function Simulation({
               ? `Nose contact ${Math.round(noseImmersion * 100)} cm · lift your chest before the board pearls`
             : takeoffReading.headingQuality < .16 && takeoffReading.physicalLift > .1
               ? "Wave approaching across the rail — point the nose with A/D"
-              : catchReady
+              : takeoffOpportunity > .02
                 ? `${takeoffQuality > .72 ? "Clean open face" : "The swell has the board"} · stand when you choose`
                 : takeoffReading.surfable && takeoffReading.faceEnvelope > .08
                   ? `Face rising ${Math.round(takeoffReading.physicalLift * 100)}% · paddle to match its speed`
@@ -13211,8 +13189,7 @@ function Simulation({
             prompt = engaged
               ? "Last stroke — plant the hands as the face lifts"
               : "Hands moving under the ribs — the board keeps its own momentum";
-            catchWindowOpen.current = false;
-            catchReady = false;
+            takeoffOpportunity = 0;
           }
         }
         if (proneFailure.failed && !qaScenario) {
@@ -16406,7 +16383,12 @@ function Simulation({
       delta,
     );
     motion.current.takeoffRead = THREE.MathUtils.damp(motion.current.takeoffRead, takeoffQuality, 8, delta);
-    motion.current.catchReady = THREE.MathUtils.damp(motion.current.catchReady, catchReady ? 1 : 0, catchReady ? 12 : 5, delta);
+    motion.current.takeoffOpportunity = THREE.MathUtils.damp(
+      motion.current.takeoffOpportunity,
+      takeoffOpportunity,
+      takeoffOpportunity > motion.current.takeoffOpportunity ? 12 : 7,
+      delta,
+    );
     motion.current.takeoffCommit = THREE.MathUtils.damp(
       motion.current.takeoffCommit,
       takeoffCommitProgress,
@@ -17310,7 +17292,7 @@ function Simulation({
         lineupOutsideMargin,
         lineupDirectionX,
         lineupDirectionZ,
-        catchReady,
+        takeoffOpportunity,
         shorebreakIntensity: motion.current.shorebreak,
         shorebreakSeconds,
         duckDiveReady,

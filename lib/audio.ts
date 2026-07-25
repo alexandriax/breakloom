@@ -670,7 +670,7 @@ export class SurfscapeAudio {
     phase: GamePhase,
     setEnergy: number,
     shorebreakIntensity: number,
-    catchReady: boolean,
+    takeoffOpportunity: number,
     lineSide: number,
     sectionPressure: number,
     waveHeight: number,
@@ -694,6 +694,10 @@ export class SurfscapeAudio {
     const now = this.context.currentTime;
     const energy = Math.min(1, Math.max(0, setEnergy));
     const shorebreak = Math.min(1, Math.max(0, shorebreakIntensity));
+    const takeoff = Math.min(
+      1,
+      Math.max(0, takeoffOpportunity),
+    );
     const pressure = Math.min(1, Math.max(0, sectionPressure));
     const face = Math.min(1.45, Math.max(.12, waveHeight) / 2.4);
     const swell = Math.min(1.45, Math.max(0, swellHeight) / 2.4);
@@ -712,13 +716,13 @@ export class SurfscapeAudio {
     const risingSet = Math.pow(energy, .72);
     const audible = active && this.enabled;
     const rumbleLevel = audible
-      ? (.006 + risingSet * .047 + shorebreak * .072 + (catchReady ? .016 : 0) + pressure * .026)
+      ? (.006 + risingSet * .047 + shorebreak * .072 + takeoff * .016 + pressure * .026)
         * (.68 + face * .32)
         * phasePresence
         + crossingPresence * (.004 + crossingBeat * .008) * phasePresence
       : 0;
     const washLevel = audible
-      ? (.005 + risingSet * .038 + shorebreak * .086 + (catchReady ? .021 : 0) + pressure * .038)
+      ? (.005 + risingSet * .038 + shorebreak * .086 + takeoff * .021 + pressure * .038)
         * (.64 + face * .36)
         * phasePresence
         + crossingPresence * (.003 + (1 - crossingBeat) * .006) * phasePresence
@@ -731,7 +735,7 @@ export class SurfscapeAudio {
       Math.cos(sourceHeading - cameraHeading),
     );
     const shoulderPan = Math.sin(sourceBearing)
-      * (phase === "riding" ? .3 + pressure * .52 : .12 + (catchReady ? .18 : 0) + risingSet * .1);
+      * (phase === "riding" ? .3 + pressure * .52 : .12 + takeoff * .18 + risingSet * .1);
     const sourceDistance = phase === "riding"
       ? 2.15 + (1 - pressure) * 1.2
       : phase === "paddling"

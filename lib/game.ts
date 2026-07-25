@@ -23,13 +23,10 @@ const SURFABLE_CREST_ENERGY = .28;
 export const SURF_PHYSICS_TUNING = {
   paddleRecovery: 1.55,
   paddleStrokeDrain: .19,
-  takeoffOpportunityThreshold: .13,
-  takeoffHeadingMinimum: -.1,
   shorebreakLead: 2.55,
   duckDiveTimingWindow: .78,
   duckDiveThreshold: .34,
   takeoffWindPenalty: .055,
-  catchGrace: .7,
   tubeFatigue: 1.2,
   foamFatigue: 1,
   lipOvertakeFailure: 1.08,
@@ -1079,7 +1076,6 @@ export type WaveTakeoffSample = {
 };
 
 export type WaveTakeoffReading = {
-  catchable: boolean;
   surfable: boolean;
   opportunity: number;
   quality: number;
@@ -5443,7 +5439,7 @@ export type GameStats = {
   lineupOutsideMargin: number;
   lineupDirectionX: number;
   lineupDirectionZ: number;
-  catchReady: boolean;
+  takeoffOpportunity: number;
   shorebreakIntensity: number;
   shorebreakSeconds: number;
   duckDiveReady: boolean;
@@ -5578,7 +5574,7 @@ export const INITIAL_STATS: GameStats = {
   lineupOutsideMargin: 0,
   lineupDirectionX: 0,
   lineupDirectionZ: -1,
-  catchReady: false,
+  takeoffOpportunity: 0,
   shorebreakIntensity: 0,
   shorebreakSeconds: 0,
   duckDiveReady: false,
@@ -6132,6 +6128,39 @@ function smoothstep(edge0: number, edge1: number, value: number) {
   return normalized * normalized * (3 - 2 * normalized);
 }
 
+export type BoardTakeoffOpportunitySample = {
+  waveOpportunity: number;
+  waterContact: number;
+  capsizeRisk: number;
+  pitchOverRisk: number;
+};
+
+/**
+ * Carries the wave solver's continuous opportunity through the board's actual
+ * water support and attitude stability. It deliberately returns a continuum:
+ * no action window opens, lingers, or improves the underlying takeoff.
+ */
+export function resolveBoardTakeoffOpportunity(
+  sample: BoardTakeoffOpportunitySample,
+) {
+  const waveOpportunity = clampValue(
+    sample.waveOpportunity,
+    0,
+    1,
+  );
+  const waterSupport = clampValue(
+    sample.waterContact,
+    0,
+    1,
+  );
+  const stability = 1 - clampValue(
+    Math.max(sample.capsizeRisk, sample.pitchOverRisk),
+    0,
+    1,
+  );
+  return waveOpportunity * waterSupport * stability;
+}
+
 export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReading {
   const waveHeight = Math.max(.25, sample.waveHeight);
   // A real takeoff develops across the rising wall, not at one mathematical
@@ -6200,14 +6229,7 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
           + physicalLift * .1,
       ))
     : 0;
-  const threshold = SURF_PHYSICS_TUNING.takeoffOpportunityThreshold;
-  const headingMinimum = SURF_PHYSICS_TUNING.takeoffHeadingMinimum;
   return {
-    catchable: surfable
-      && faceEnvelope > .045
-      && physicalLift > .075
-      && sample.alignment >= headingMinimum
-      && opportunity >= threshold,
     surfable,
     opportunity,
     quality,
