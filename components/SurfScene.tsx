@@ -11662,10 +11662,13 @@ function Simulation({
         }
         duckDiveReady = duckDiveWindowOpen.current && !duckDiveActive;
         if (divePressed && duckDiveReady) {
-          const diveTimingWindow = mobileRenderer
-            ? .88
-            : SURF_PHYSICS_TUNING.duckDiveTimingWindow;
-          duckDiveQuality.current = THREE.MathUtils.clamp(1 - Math.abs(shorebreakSeconds - .3) / diveTimingWindow, 0, 1);
+          duckDiveQuality.current = THREE.MathUtils.clamp(
+            1
+              - Math.abs(shorebreakSeconds - .3)
+                / SURF_PHYSICS_TUNING.duckDiveTimingWindow,
+            0,
+            1,
+          );
           duckDiveUntil.current = t + 1.12;
           duckDiveActive = true;
           duckDiveWindowOpen.current = false;
@@ -12019,16 +12022,13 @@ function Simulation({
         const staminaQuality = .9 + stamina.current * .001;
         const windQuality = 1
           - onshoreChop * SURF_PHYSICS_TUNING.takeoffWindPenalty;
-        const touchQuality = mobileRenderer ? .025 : 0;
         takeoffQuality = takeoffReading.surfable
           ? THREE.MathUtils.clamp(
               (
                 takeoffReading.quality
                   * staminaQuality
                   * windQuality
-              ) * (
-                .68 + proneAttitudeQuality * .32
-              ) + touchQuality,
+              ) * (.68 + proneAttitudeQuality * .32),
               .12,
               1,
             )
@@ -13614,11 +13614,9 @@ function Simulation({
           maneuverProgress = THREE.MathUtils.clamp(attemptElapsed / attempt.duration, 0, 1);
           const familyWindow = attempt.family === "air" ? .82 : attempt.family === "lip" ? .92 : 1;
           landingWindow = THREE.MathUtils.clamp(
-            (
-              SURF_PHYSICS_TUNING.maneuverBalanceWindow
-                * Math.sqrt(boardSpec.stability)
-                + (mobileRenderer ? .08 : 0)
-            ) * familyWindow,
+            SURF_PHYSICS_TUNING.maneuverBalanceWindow
+              * Math.sqrt(boardSpec.stability)
+              * familyWindow,
             .27,
             .82,
           );
@@ -13761,7 +13759,6 @@ function Simulation({
         );
         if (attempt && maneuverResolved) {
           const landingError = Math.abs(balanceInput - landingTarget);
-          const recoveryAssist = mobileRenderer ? 1.12 : 1;
           const reconnectLoad = attempt.family === "air"
             ? motion.current.landingImpact
             : 0;
@@ -13787,7 +13784,7 @@ function Simulation({
                 1.2,
               )
             : 1;
-          const landed = landingError <= landingWindow * recoveryAssist
+          const landed = landingError <= landingWindow
             && railSlip.current < .88
             && (
               attempt.family !== "air"
@@ -13921,11 +13918,8 @@ function Simulation({
             launchYawRate: releaseYawRate,
             rotation,
             startedAt: t,
-            duration: (
-              baseDuration + charge * .12
-            ) * SURF_PHYSICS_TUNING.maneuverTiming + (
-              mobileRenderer ? .08 : 0
-            ),
+            duration: (baseDuration + charge * .12)
+              * SURF_PHYSICS_TUNING.maneuverTiming,
             becameAirborne: false,
             peakAirborne: 0,
             previousHeading: rideHeading.current,
