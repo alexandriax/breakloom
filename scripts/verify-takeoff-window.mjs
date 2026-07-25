@@ -21,6 +21,7 @@ import {
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
+  readSurfTrainingForces,
   resolveSurfboardPlaning,
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
@@ -2054,6 +2055,42 @@ if (
   || airborneGuide.pressureMode !== "airborne"
 ) {
   throw new Error("Physical paddle training guidance no longer matches heading, hand cycle, or hull load");
+}
+const liveForceGuide = readSurfTrainingForces({
+  boardWaveAngle: -Math.PI / 4,
+  waveLateralLoad: 1.24,
+  waterContact: .91,
+  balance: -.18,
+  balanceTarget: .46,
+});
+const settledForceGuide = readSurfTrainingForces({
+  boardWaveAngle: .04,
+  waveLateralLoad: .03,
+  waterContact: .86,
+  balance: .21,
+  balanceTarget: .24,
+});
+const airborneForceGuide = readSurfTrainingForces({
+  boardWaveAngle: Math.PI / 2,
+  waveLateralLoad: -2.1,
+  waterContact: .04,
+  balance: .8,
+  balanceTarget: -.8,
+});
+if (
+  liveForceGuide.noseDirection !== "left"
+  || liveForceGuide.noseDegrees !== 45
+  || liveForceGuide.waterDirection !== "right"
+  || liveForceGuide.counterweightDirection !== "right"
+  || liveForceGuide.counterweightPercent !== 64
+  || settledForceGuide.noseDirection !== "hold"
+  || settledForceGuide.waterDirection !== "hold"
+  || settledForceGuide.counterweightDirection !== "hold"
+  || airborneForceGuide.waterDirection !== "hold"
+  || airborneForceGuide.counterweightDirection !== "left"
+  || airborneForceGuide.counterweightPercent !== 100
+) {
+  throw new Error("Live force training no longer reports board alignment, water push, and counterweight error");
 }
 function stanceAfterOneSecond(input, hz = 60, initial = 0, forcedCenter = false) {
   let stance = initial;

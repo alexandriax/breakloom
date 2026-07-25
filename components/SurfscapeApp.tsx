@@ -54,6 +54,7 @@ import {
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
   readPaddleTrainingMechanics,
+  readSurfTrainingForces,
   settingsFromConditions,
   thermalKitForConditions,
   tideResponseForBreak,
@@ -3099,6 +3100,39 @@ export default function SurfscapeApp() {
     waveForwardDrive: stats.wavePressureDrive,
     waveLateralLoad: stats.wavePressureSideLoad,
   });
+  const surfTrainingForces = readSurfTrainingForces({
+    boardWaveAngle: stats.boardWaveAngle,
+    waveLateralLoad: stats.wavePressureSideLoad,
+    waterContact: stats.boardWaterContact,
+    balance: stats.balance,
+    balanceTarget: stats.balanceTarget,
+  });
+  const counterweightCue = surfTrainingForces.counterweightDirection === "hold"
+    ? "HOLD WEIGHT"
+    : `MOVE ${surfTrainingForces.counterweightDirection.toUpperCase()} ${surfTrainingForces.counterweightPercent}%`;
+  const trainingForceVectors = [
+    {
+      label: "NOSE",
+      value: surfTrainingForces.noseDirection === "hold"
+        ? "ALIGNED"
+        : `${surfTrainingForces.noseDirection.toUpperCase()} ${surfTrainingForces.noseDegrees}°`,
+      direction: surfTrainingForces.noseDirection,
+    },
+    {
+      label: "WATER PUSH",
+      value: surfTrainingForces.airborne
+        ? "AIRBORNE"
+        : surfTrainingForces.waterDirection === "hold"
+          ? "CENTERED"
+          : `${surfTrainingForces.waterDirection.toUpperCase()} ${surfTrainingForces.waterLoad.toFixed(1)}`,
+      direction: surfTrainingForces.waterDirection,
+    },
+    {
+      label: "COUNTERWEIGHT",
+      value: counterweightCue,
+      direction: surfTrainingForces.counterweightDirection,
+    },
+  ] as const;
   const paddleTrainerActive = settings.mode === "training"
     && stats.phase === "paddling"
     && trainingStep <= 4
@@ -3154,7 +3188,7 @@ export default function SurfscapeApp() {
           : stats.capsizeRisk > .34
             ? {
                 cue: `PRONE ROLL ${rollSide} ${rollDegrees}°`,
-                detail: `Q/E counterweights toward the marker · turn the nose out of the broadside load before popping up.`,
+                detail: `Q/E: ${counterweightCue} toward the torque target · turn the nose out of the broadside load before popping up.`,
                 rotation: rollSide === "RIGHT" ? 180 : 0,
                 tone: "danger",
               }
@@ -3176,7 +3210,7 @@ export default function SurfscapeApp() {
                 : stats.takeoffCommitProgress < .74
                   ? {
                       cue: "REAR FOOT UNDER HIPS",
-                      detail: "Counterweight toward the marker as the raised center of mass reduces roll stability.",
+                      detail: `${counterweightCue} toward the torque target as the raised center of mass reduces roll stability.`,
                       rotation: rollSide === "RIGHT" ? 180 : 0,
                       tone: "balance",
                     }
@@ -3247,7 +3281,7 @@ export default function SurfscapeApp() {
             : stats.capsizeRisk > .48
             ? {
                 cue: `BOARD ROLLING ${rollSide} · COUNTERWEIGHT`,
-                detail: `${rollDegrees}° roll · move Q/E toward the marker before the rail trips.`,
+                detail: `${rollDegrees}° roll · Q/E: ${counterweightCue} before the rail trips.`,
                 rotation: rollSide === "RIGHT" ? 180 : 0,
                 tone: "danger",
               }
@@ -3282,7 +3316,7 @@ export default function SurfscapeApp() {
           : stats.crossWaveLoad > .28
             ? {
                 cue: `RAIL HIT · TURN ${headingTurn}`,
-                detail: `Cross-wave load ${Math.round(stats.crossWaveLoad * 100)}% · Q/E counterweights the roll.`,
+                detail: `Cross-wave load ${Math.round(stats.crossWaveLoad * 100)}% · Q/E: ${counterweightCue}.`,
                 rotation: headingTurn === "RIGHT" ? 0 : 180,
                 tone: "danger",
               }
@@ -3326,7 +3360,7 @@ export default function SurfscapeApp() {
               : stats.capsizeRisk > .48
               ? {
                   cue: `BOARD ROLLING ${rollSide} · COUNTERWEIGHT`,
-                  detail: `${rollDegrees}° bank exceeds the righting range · move Q/E toward the marker.`,
+                  detail: `${rollDegrees}° bank exceeds the righting range · Q/E: ${counterweightCue}.`,
                   rotation: rollSide === "RIGHT" ? 180 : 0,
                   tone: "danger",
                 }
@@ -4440,6 +4474,21 @@ export default function SurfscapeApp() {
                 <span>LIVE BOARD COACH</span>
                 <strong>{mechanicsGuide.cue}</strong>
                 <small>{mechanicsGuide.detail}</small>
+                {(stats.phase === "paddling" || stats.phase === "riding") && !ridingOut && (
+                  <div
+                    className="training-force-vectors"
+                    role="img"
+                    aria-label={`Board nose ${trainingForceVectors[0].value}. Water push ${trainingForceVectors[1].value}. Counterweight ${trainingForceVectors[2].value}.`}
+                  >
+                    {trainingForceVectors.map((vector) => (
+                      <span key={vector.label} className={`is-${vector.direction}`}>
+                        <i aria-hidden="true"><ArrowRight /></i>
+                        <em>{vector.label}</em>
+                        <b>{vector.value}</b>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

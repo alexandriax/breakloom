@@ -3727,6 +3727,67 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .mechanics-guide.is-ready { --guide-color: #9effda; }
 .mechanics-guide.is-balance { --guide-color: #f4cf8d; }
 
+.training-force-vectors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(225, 249, 245, .08);
+}
+.mechanics-guide .training-force-vectors > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 4px;
+  padding: 4px 5px;
+  border: 1px solid rgba(220, 248, 243, .08);
+  border-radius: 7px;
+  background: rgba(218, 249, 244, .035);
+  color: var(--guide-color);
+  font-size: inherit;
+  letter-spacing: normal;
+}
+.training-force-vectors > span > i {
+  grid-row: 1 / 3;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  color: currentColor;
+  font-style: normal;
+  transition: transform .12s linear;
+}
+.training-force-vectors > span.is-left > i { transform: rotate(180deg); }
+.training-force-vectors > span.is-hold > i {
+  opacity: .36;
+  transform: rotate(-90deg) scale(.74);
+}
+.training-force-vectors > span > i svg {
+  width: 13px;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.training-force-vectors > span > em {
+  overflow: hidden;
+  color: rgba(214, 243, 238, .42);
+  font-size: 4px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-force-vectors > span > b {
+  overflow: hidden;
+  color: #effbf8;
+  font-size: 5px;
+  letter-spacing: .025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .paddle-training-instrument {
   --paddle-guide-color: #8de9dc;
   position: absolute;
@@ -4281,6 +4342,12 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .mechanics-guide > i svg { width: 19px; }
   .mechanics-guide strong { font-size: 9px; }
   .mechanics-guide small { font-size: 6px; }
+  .training-force-vectors { gap: 3px; margin-top: 3px; padding-top: 4px; }
+  .mechanics-guide .training-force-vectors > span { grid-template-columns: 12px minmax(0, 1fr); gap: 0 3px; padding: 3px 4px; }
+  .training-force-vectors > span > i { width: 12px; height: 12px; }
+  .training-force-vectors > span > i svg { width: 11px; }
+  .training-force-vectors > span > em { font-size: 3px; }
+  .training-force-vectors > span > b { font-size: 4px; }
   .paddle-training-instrument {
     top: 43%;
     width: min(calc(100vw - 18px), 330px);
@@ -4333,6 +4400,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .game-objective { top: 48px; }
   .hud-vitals { top: 78px; }
   .mechanics-guide { top: 108px; }
+  .training-force-vectors { display: none; }
   .hud-vitals > div:nth-child(4) { display: none; }
   .hud-drawer { top: 54px; }
   .mobile-controls { bottom: max(5px, env(safe-area-inset-bottom)); }

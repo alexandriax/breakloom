@@ -1639,6 +1639,25 @@ export type PaddleTrainingReading = {
   pressureMode: "airborne" | "broadside" | "drive" | "neutral";
 };
 
+export type SurfTrainingForceSample = {
+  boardWaveAngle: number;
+  waveLateralLoad: number;
+  waterContact: number;
+  balance: number;
+  balanceTarget: number;
+};
+
+export type SurfTrainingForceReading = {
+  noseDirection: "left" | "right" | "hold";
+  noseDegrees: number;
+  waterDirection: "left" | "right" | "hold";
+  waterLoad: number;
+  counterweightDirection: "left" | "right" | "hold";
+  counterweightCorrection: number;
+  counterweightPercent: number;
+  airborne: boolean;
+};
+
 /**
  * Resolves alternating prone paddle strokes. Input expresses effort, while
  * force exists only through each hand's pull phase; recovery advances the arm
@@ -1732,6 +1751,57 @@ export function readPaddleTrainingMechanics(
     strokePhase,
     strokeDrive,
     pressureMode,
+  };
+}
+
+/**
+ * Turns the live hydrodynamic and roll-control state into a causal training
+ * chain: nose alignment, water push, then the rider correction required to
+ * cancel the board's unresolved external torque. This only observes solver
+ * state; it never changes control input or physics.
+ */
+export function readSurfTrainingForces(
+  sample: SurfTrainingForceSample,
+): SurfTrainingForceReading {
+  const boardWaveAngle = Math.atan2(
+    Math.sin(sample.boardWaveAngle),
+    Math.cos(sample.boardWaveAngle),
+  );
+  const noseDegrees = Math.round(Math.abs(boardWaveAngle) * 180 / Math.PI);
+  const noseDirection = noseDegrees <= 6
+    ? "hold"
+    : boardWaveAngle > 0
+      ? "right"
+      : "left";
+  const waterLoad = Math.abs(sample.waveLateralLoad);
+  const waterDirection = waterLoad <= .08
+    ? "hold"
+    : sample.waveLateralLoad > 0
+      ? "right"
+      : "left";
+  const counterweightCorrection = clampValue(
+    sample.balanceTarget - sample.balance,
+    -1,
+    1,
+  );
+  const counterweightPercent = Math.round(
+    Math.abs(counterweightCorrection) * 100,
+  );
+  const counterweightDirection = counterweightPercent <= 5
+    ? "hold"
+    : counterweightCorrection > 0
+      ? "right"
+      : "left";
+  const airborne = clampValue(sample.waterContact, 0, 1) < .18;
+  return {
+    noseDirection,
+    noseDegrees,
+    waterDirection: airborne ? "hold" : waterDirection,
+    waterLoad,
+    counterweightDirection,
+    counterweightCorrection,
+    counterweightPercent,
+    airborne,
   };
 }
 
