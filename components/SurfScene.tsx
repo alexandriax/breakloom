@@ -12925,6 +12925,8 @@ function Simulation({
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
           }).planing;
+          crossWaveLoad = standingReading.crossWaveLoad
+            * boardWaterContact;
           const standingWaveEngagement = advanceWaveEngagement(
             waveEngagement.current,
             {
@@ -12934,7 +12936,7 @@ function Simulation({
               waterContact: boardWaterContact,
               headingAlignment: standingReading.headingAlignment,
               planing: standingPlaning,
-              crossWaveLoad: standingReading.crossWaveLoad,
+              crossWaveLoad,
             },
           );
           waveEngagement.current = standingWaveEngagement.engagement;
@@ -13111,7 +13113,6 @@ function Simulation({
           whitewaterPressure = standingBrokenWater;
           boardAlignment = standingReading.headingAlignment;
           boardWaveAngle = standingReading.headingError;
-          crossWaveLoad = standingReading.crossWaveLoad * boardWaterContact;
           boardPlaning = standingPlaning;
           waveSurfable = standingReading.waveContact * boardWaterContact > .08;
           takeoffAlignment = (standingReading.headingAlignment + 1) * .5;
@@ -13169,7 +13170,7 @@ function Simulation({
               counterweight: standingCounterweight,
               crossSlope: standingRailContact.crossSlope,
               lateralAcceleration: standingLateralAcceleration,
-              crossWaveLoad: standingReading.crossWaveLoad * boardWaterContact,
+              crossWaveLoad,
               crossWaveSide: standingReading.crossWaveSide,
               turbulenceTorque: standingTurbulence.rollTorque,
               speed: rideVelocity.current.length(),
@@ -13251,7 +13252,7 @@ function Simulation({
                 : .82,
             planing: standingPlaning,
             waveContact: standingReading.waveContact,
-            crossWaveLoad: standingReading.crossWaveLoad,
+            crossWaveLoad,
             railSlip: railSlip.current,
             stance: stance.current,
             facePosition: standingPhysicalFacePosition,
@@ -13372,7 +13373,7 @@ function Simulation({
               tubePressure: standingTubePressure,
               balanceError: standingBalanceError,
               balanceFailureThreshold: standingFailThreshold,
-              crossWaveLoad: standingReading.crossWaveLoad,
+              crossWaveLoad,
               sideslip: standingDynamics.sideslip,
               waveContact: standingReading.waveContact,
               pearlingRisk,
@@ -13409,7 +13410,7 @@ function Simulation({
             tubePressure: standingTubePressure,
             whitewaterPressure: standingBrokenWater,
             balanceError: standingBalanceError,
-            crossWaveLoad: standingReading.crossWaveLoad,
+            crossWaveLoad,
           });
           const standingCompressionBeforeStep = bodyCompression.current;
           const standingCompression = advanceSurferCompression(
@@ -13453,7 +13454,7 @@ function Simulation({
           waveQuality = standingReading.waveContact * .36;
           sectionPressure = Math.max(
             sectionPressure,
-            standingReading.crossWaveLoad,
+            crossWaveLoad,
           );
           const standingFaceDownhillSlope = Math.max(
             0,
@@ -13557,7 +13558,7 @@ function Simulation({
                 whitewater: standingBrokenWater,
                 shoulderStall: standingSection.shoulderStall,
                 railSlip: railSlip.current,
-                crossWaveLoad: standingReading.crossWaveLoad,
+                crossWaveLoad,
                 sideslip: standingDynamics.sideslip,
                 pearlingRisk,
                 pitchOverRisk,
@@ -13587,7 +13588,7 @@ function Simulation({
                 pitchAngle: physicalPitchAngle,
                 pitchRate: physicalPitchRate,
                 yawRate: rideYawRate.current,
-                crossWaveLoad: standingReading.crossWaveLoad,
+                crossWaveLoad,
                 crossWaveSide: standingReading.crossWaveSide,
                 railSlip: railSlip.current,
                 rollCapsizeRisk,
@@ -13864,6 +13865,8 @@ function Simulation({
           boardLength: boardSpec.length,
           boardWidth: boardSpec.width,
         }).planing;
+        crossWaveLoad = rideInteraction.crossWaveLoad
+          * boardWaterContact;
         const rideNormalSpeed = rideVelocity.current.x * waveNormalX
           + rideVelocity.current.y * waveNormalZ;
         const crestRelation = advanceRideCaptureState(rideCapture.current, {
@@ -13930,7 +13933,7 @@ function Simulation({
           baseGrip: gripBase,
           planing: ridePlaning,
           waveContact: rideInteraction.waveContact,
-          crossWaveLoad: rideInteraction.crossWaveLoad,
+          crossWaveLoad,
           railSlip: railSlip.current,
           stance: stance.current,
           facePosition: physicalFacePosition,
@@ -13947,7 +13950,7 @@ function Simulation({
             waterContact: boardWaterContact,
             headingAlignment: rideInteraction.headingAlignment,
             planing: ridePlaning,
-            crossWaveLoad: rideInteraction.crossWaveLoad,
+            crossWaveLoad,
           },
         );
         waveEngagement.current = rideWaveEngagement.engagement;
@@ -13994,7 +13997,7 @@ function Simulation({
             counterweight: rideCounterweight,
             crossSlope: rideRailContact.crossSlope,
             lateralAcceleration: priorLateralAcceleration,
-            crossWaveLoad: rideInteraction.crossWaveLoad * boardWaterContact,
+            crossWaveLoad,
             crossWaveSide: rideInteraction.crossWaveSide,
             turbulenceTorque: rideTurbulence.rollTorque,
             speed,
@@ -14190,7 +14193,7 @@ function Simulation({
           tubePressure,
           whitewaterPressure,
           balanceError,
-          crossWaveLoad: rideInteraction.crossWaveLoad,
+          crossWaveLoad,
         });
         const lateralVelocity = rideVelocity.current.x;
         const shorewardVelocity = rideVelocity.current.y;
@@ -14198,8 +14201,6 @@ function Simulation({
         position.current.z += shorewardVelocity * delta;
         // The board keeps the velocity produced by the hull-force integration;
         // no crest speed or target phase is injected after the position step.
-        const integratedNormalSpeed = rideVelocity.current.x * waveNormalX
-          + rideVelocity.current.y * waveNormalZ;
         boardAlignment = THREE.MathUtils.clamp(
           Math.sin(rideHeading.current) * waveNormalX
             + Math.cos(rideHeading.current) * waveNormalZ,
@@ -14212,17 +14213,6 @@ function Simulation({
           boardAlignment,
         );
         boardPlaning = dynamics.planing;
-        crossWaveLoad = Math.max(
-          rideInteraction.crossWaveLoad * boardWaterContact,
-          THREE.MathUtils.clamp(
-            (1 - Math.abs(boardAlignment))
-              * Math.max(0, waveTransport.speed - integratedNormalSpeed)
-              / Math.max(1.2, waveTransport.speed * .54)
-              * (.38 + boardCrestEnergy * .28),
-            0,
-            1.5,
-          ) * boardWaterContact,
-        );
         const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
         speed = rideStep / Math.max(.001, delta);
         rideDistance.current += rideStep;

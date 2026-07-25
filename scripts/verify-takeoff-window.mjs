@@ -478,6 +478,7 @@ if (angleSweep.find(({ degrees }) => degrees === 45).reading.capture <= .3) {
 
 const stillWaterStand = evaluateBoardWaterInteraction({
   ...sharedBoardWater,
+  boardHeading: Math.PI / 2,
   waveVelocityZ: 5,
   slopeZ: 0,
   surfaceRise: 0,
@@ -486,7 +487,12 @@ const stillWaterStand = evaluateBoardWaterInteraction({
   crestEnergy: .1,
   crestSurfable: false,
 });
-if (stillWaterStand.outcome !== "stand" || stillWaterStand.capture !== 0) {
+if (
+  stillWaterStand.outcome !== "stand"
+  || stillWaterStand.capture !== 0
+  || stillWaterStand.crossWaveLoad !== 0
+  || stillWaterStand.wipeoutRisk !== 0
+) {
   throw new Error(`Standing in still water incorrectly created a ride: ${JSON.stringify(stillWaterStand)}`);
 }
 
