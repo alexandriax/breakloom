@@ -3486,6 +3486,96 @@ export type SeparatedSurferVerticalState = {
   verticalVelocity: number;
 };
 
+export type SeparatedSurferBreakingWashSample = {
+  crestDistance: number;
+  crestEnergy: number;
+  faceSlope: number;
+  surfaceRise: number;
+  breakingActivation: number;
+};
+
+export type SeparatedSurferBreakingWashReading = {
+  intensity: number;
+  crestOccupancy: number;
+  foamOccupancy: number;
+  downwardWaterVelocity: number;
+  transportSpeed: number;
+  turbulence: number;
+};
+
+/**
+ * Resolves breaking-water load from the surfer's measured location on the
+ * polygon wave. The crest ridge and its shoreward foam trail are spatial
+ * regions, so the wash arrives and leaves as those regions pass the body
+ * rather than following a wipeout animation clock.
+ */
+export function resolveSeparatedSurferBreakingWash(
+  sample: SeparatedSurferBreakingWashSample,
+): SeparatedSurferBreakingWashReading {
+  const crestDistance = clampValue(sample.crestDistance, -30, 30);
+  const crestEnergy = clampValue(sample.crestEnergy, 0, 1);
+  const faceSlope = Math.max(0, sample.faceSlope);
+  const surfaceRise = Math.abs(sample.surfaceRise);
+  const breakingActivation = clampValue(
+    sample.breakingActivation,
+    0,
+    1,
+  );
+  const crestOccupancy = 1 - smoothstep(
+    1.1,
+    5.8,
+    Math.abs(crestDistance),
+  );
+  const distanceBehindCrest = -crestDistance;
+  const foamOccupancy = smoothstep(
+    .15,
+    1.1,
+    distanceBehindCrest,
+  ) * (
+    1 - smoothstep(
+      5.5,
+      12,
+      distanceBehindCrest,
+    )
+  );
+  const steepFace = smoothstep(.035, .28, faceSlope);
+  const movingSurface = smoothstep(.04, .72, surfaceRise);
+  const crestLoad = crestOccupancy
+    * (
+      .38
+        + steepFace * .35
+        + movingSurface * .27
+    );
+  const foamLoad = foamOccupancy
+    * (
+      .46 + crestEnergy * .32
+    );
+  const intensity = clampValue(
+    Math.max(crestLoad, foamLoad)
+      * crestEnergy
+      * breakingActivation
+      * 1.35,
+    0,
+    1.25,
+  );
+  const turbulence = clampValue(
+    intensity * (.75 + foamOccupancy * .55),
+    0,
+    1,
+  );
+
+  return {
+    intensity,
+    crestOccupancy,
+    foamOccupancy,
+    downwardWaterVelocity:
+      -intensity * (1.15 + crestEnergy * 1.7),
+    transportSpeed:
+      intensity * (.9 + crestEnergy * 1.8),
+    turbulence,
+  };
+}
+
 export type SeparatedSurferVerticalSample = {
   deltaSeconds: number;
   downwardWaterVelocity: number;

@@ -3555,7 +3555,7 @@ export default function SurfscapeApp() {
           : stats.phase === "wipeout"
             ? {
                 title: stats.holdDownSeconds > .7 ? "HOLD-DOWN" : "RESURFACING",
-                detail: `${stats.holdDownSeconds.toFixed(1)}s · ${stats.breath}% breath · follow the leash`,
+                detail: `~${stats.holdDownSeconds.toFixed(1)}s physical estimate · ${stats.breath}% breath · follow the leash`,
               }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
   const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
@@ -4377,12 +4377,12 @@ export default function SurfscapeApp() {
           {stats.phase === "wipeout" && (
             <div
               className={`hold-down-instrument ${stats.holdDownSeconds <= .7 ? "is-rising" : ""}`}
-              aria-label={`Wipeout. ${stats.holdDownSeconds.toFixed(1)} seconds until the surface. Breath ${stats.breath} percent.`}
+              aria-label={`Wipeout. Estimated ${stats.holdDownSeconds.toFixed(1)} seconds until the body settles at the surface. Breath ${stats.breath} percent.`}
             >
               <div className="hold-down-heading">
                 <Waves />
                 <span>{stats.holdDownSeconds > .7 ? "HOLD-DOWN" : "RESURFACING"}</span>
-                <strong>{stats.holdDownSeconds.toFixed(1)}<small>s</small></strong>
+                <strong>~{stats.holdDownSeconds.toFixed(1)}<small>s</small></strong>
               </div>
               <div className="breath-meter">
                 <span>BREATH</span>

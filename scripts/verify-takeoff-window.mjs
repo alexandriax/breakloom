@@ -32,6 +32,7 @@ import {
   readSurfTrainingForces,
   recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
+  resolveSeparatedSurferBreakingWash,
   resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
@@ -1997,6 +1998,88 @@ const safetyRecovery = advanceSeparatedSurferRecovery(0, {
   leashTension: 1,
   maximumHoldSeconds: 7.5,
 });
+const detachedBreakingWash =
+  resolveSeparatedSurferBreakingWash({
+    crestDistance: 15,
+    crestEnergy: .86,
+    faceSlope: .34,
+    surfaceRise: .7,
+    breakingActivation: 1,
+  });
+const unbrokenCrestWash =
+  resolveSeparatedSurferBreakingWash({
+    crestDistance: 0,
+    crestEnergy: .86,
+    faceSlope: .34,
+    surfaceRise: .7,
+    breakingActivation: 0,
+  });
+const strongLipWash = resolveSeparatedSurferBreakingWash({
+  crestDistance: 0,
+  crestEnergy: .86,
+  faceSlope: .34,
+  surfaceRise: .7,
+  breakingActivation: 1,
+});
+const trailingFoamWash =
+  resolveSeparatedSurferBreakingWash({
+    crestDistance: -4,
+    crestEnergy: .86,
+    faceSlope: .03,
+    surfaceRise: .06,
+    breakingActivation: 1,
+  });
+const equalDistanceOpenFaceWash =
+  resolveSeparatedSurferBreakingWash({
+    crestDistance: 4,
+    crestEnergy: .86,
+    faceSlope: .03,
+    surfaceRise: .06,
+    breakingActivation: 1,
+  });
+function simulateSpatialWashPassage(hz) {
+  let body = {
+    surfaceOffset: .35,
+    verticalVelocity: -.4,
+  };
+  let maximumIntensity = 0;
+  let minimumOffset = body.surfaceOffset;
+  for (let frame = 0; frame < hz * 4; frame += 1) {
+    const passage = (frame + 1) / (hz * 4);
+    const wash = resolveSeparatedSurferBreakingWash({
+      crestDistance: 7 - passage * 18,
+      crestEnergy: .82,
+      faceSlope: .28 * (
+        1 - Math.min(1, Math.abs(passage - .39) / .24)
+      ),
+      surfaceRise: .62 * (
+        1 - Math.min(1, Math.abs(passage - .39) / .3)
+      ),
+      breakingActivation: 1,
+    });
+    body = advanceSeparatedSurferVerticalDynamics(body, {
+      deltaSeconds: 1 / hz,
+      downwardWaterVelocity: wash.downwardWaterVelocity,
+    });
+    maximumIntensity = Math.max(
+      maximumIntensity,
+      wash.intensity,
+    );
+    minimumOffset = Math.min(
+      minimumOffset,
+      body.surfaceOffset,
+    );
+  }
+  return {
+    ...body,
+    maximumIntensity,
+    minimumOffset,
+  };
+}
+const spatialWashPassage60 =
+  simulateSpatialWashPassage(60);
+const spatialWashPassage120 =
+  simulateSpatialWashPassage(120);
 if (
   settledRecovery60.readyAt === null
   || settledRecovery120.readyAt === null
@@ -2013,8 +2096,25 @@ if (
   || !safetyRecovery.ready
   || !safetyRecovery.safetyRelease
   || safetyRecovery.limitingFactor !== "safety"
+  || detachedBreakingWash.intensity !== 0
+  || unbrokenCrestWash.intensity !== 0
+  || strongLipWash.intensity < .7
+  || strongLipWash.downwardWaterVelocity >= -1
+  || strongLipWash.transportSpeed <= 1
+  || trailingFoamWash.intensity
+    <= equalDistanceOpenFaceWash.intensity * 2
+  || spatialWashPassage60.maximumIntensity < .6
+  || spatialWashPassage60.minimumOffset > -.35
+  || Math.abs(
+    spatialWashPassage60.surfaceOffset
+      - spatialWashPassage120.surfaceOffset,
+  ) > .03
+  || Math.abs(
+    spatialWashPassage60.verticalVelocity
+      - spatialWashPassage120.verticalVelocity,
+  ) > .04
 ) {
-  throw new Error("Wipeout recovery no longer waits for stable physical resurfacing");
+  throw new Error("Wipeout wash or recovery no longer follows local wave geometry and stable physical resurfacing");
 }
 const stretchedLeash = resolveSurfboardLeashReaction({
   stretch: .62,
@@ -4110,6 +4210,11 @@ console.log(JSON.stringify({
     settledRecovery120,
     submergedRecovery,
     violentSurfaceRecovery,
+    strongLipWash,
+    trailingFoamWash,
+    equalDistanceOpenFaceWash,
+    spatialWashPassage60,
+    spatialWashPassage120,
     stretchedLeash,
     longboardLeash,
     lateralLeashTorque,
