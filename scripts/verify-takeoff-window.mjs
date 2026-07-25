@@ -35,6 +35,7 @@ import {
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
   resolveSurfboardFailureRelease,
+  resolveSurfboardLeashReaction,
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
@@ -1936,6 +1937,118 @@ if (
 ) {
   throw new Error("Separated horizontal motion no longer retains air momentum or couples to occupied water");
 }
+const stretchedLeash = resolveSurfboardLeashReaction({
+  stretch: .62,
+  separationRate: 2.4,
+  surferMass: 76,
+  boardMass: 3.2,
+});
+const slackLeash = resolveSurfboardLeashReaction({
+  stretch: 0,
+  separationRate: 5,
+  surferMass: 76,
+  boardMass: 3.2,
+});
+const closingLeash = resolveSurfboardLeashReaction({
+  stretch: .62,
+  separationRate: -2.4,
+  surferMass: 76,
+  boardMass: 3.2,
+});
+const longboardLeash = resolveSurfboardLeashReaction({
+  stretch: .62,
+  separationRate: 2.4,
+  surferMass: 76,
+  boardMass: 7.2,
+});
+if (
+  stretchedLeash.force <= closingLeash.force
+  || slackLeash.force !== 0
+  || Math.abs(
+    stretchedLeash.surferAcceleration * 76
+      - stretchedLeash.boardAcceleration * 3.2,
+  ) > 1e-9
+  || Math.abs(
+    stretchedLeash.relativeAcceleration
+      - stretchedLeash.surferAcceleration
+      - stretchedLeash.boardAcceleration,
+  ) > 1e-9
+  || longboardLeash.surferAcceleration
+    !== stretchedLeash.surferAcceleration
+  || longboardLeash.boardAcceleration
+    >= stretchedLeash.boardAcceleration
+) {
+  throw new Error("Leash reaction no longer applies equal force from stretch, damping, and mass");
+}
+function simulateLeashCoupling(hz) {
+  const surferMass = 76;
+  const boardMass = 3.2;
+  const restLength = 2.2;
+  let surferPosition = 0;
+  let boardPosition = 3.1;
+  let surferVelocity = 0;
+  let boardVelocity = 3;
+  let maximumDistance = boardPosition - surferPosition;
+  const initialMomentum = surferVelocity * surferMass
+    + boardVelocity * boardMass;
+  for (let frame = 0; frame < hz * 2; frame += 1) {
+    const distance = boardPosition - surferPosition;
+    const direction = Math.sign(distance) || 1;
+    const separationRate = (
+      boardVelocity - surferVelocity
+    ) * direction;
+    const reaction = resolveSurfboardLeashReaction({
+      stretch: Math.max(0, Math.abs(distance) - restLength),
+      separationRate,
+      surferMass,
+      boardMass,
+    });
+    const step = 1 / hz;
+    surferVelocity += direction
+      * reaction.surferAcceleration
+      * step;
+    boardVelocity -= direction
+      * reaction.boardAcceleration
+      * step;
+    surferPosition += surferVelocity * step;
+    boardPosition += boardVelocity * step;
+    maximumDistance = Math.max(
+      maximumDistance,
+      Math.abs(boardPosition - surferPosition),
+    );
+  }
+  return {
+    surferPosition,
+    boardPosition,
+    surferVelocity,
+    boardVelocity,
+    maximumDistance,
+    momentum: surferVelocity * surferMass
+      + boardVelocity * boardMass,
+    initialMomentum,
+  };
+}
+const leashCoupling60 = simulateLeashCoupling(60);
+const leashCoupling120 = simulateLeashCoupling(120);
+if (
+  leashCoupling60.maximumDistance > 3.35
+  || Math.abs(
+    leashCoupling60.momentum - leashCoupling60.initialMomentum,
+  ) > 1e-9
+  || Math.abs(
+    leashCoupling120.momentum - leashCoupling120.initialMomentum,
+  ) > 1e-9
+  || Math.abs(
+    leashCoupling60.surferPosition
+      - leashCoupling120.surferPosition,
+  ) > .035
+  || Math.abs(
+    leashCoupling60.boardPosition
+      - leashCoupling120.boardPosition,
+  ) > .08
+) {
+  throw new Error("Coupled leash no longer conserves center-of-mass momentum or frame stability");
+}
 const surfaceObservation = {
   durationSeconds: .82,
   startFacePosition: .02,
@@ -3808,6 +3921,10 @@ console.log(JSON.stringify({
     coupledTumble120,
     separatedHorizontal60,
     separatedHorizontal120,
+    stretchedLeash,
+    longboardLeash,
+    leashCoupling60,
+    leashCoupling120,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,

@@ -958,6 +958,7 @@ export const BOARD_SPECS: Record<BoardType, {
   description: string;
   length: number;
   width: number;
+  mass: number;
   speed: number;
   turn: number;
   stability: number;
@@ -972,6 +973,7 @@ export const BOARD_SPECS: Record<BoardType, {
     description: "Fast rail changes and the highest maneuver ceiling.",
     length: 2.5,
     width: 0.32,
+    mass: 3.2,
     speed: 1,
     turn: 1.16,
     stability: 0.9,
@@ -986,6 +988,7 @@ export const BOARD_SPECS: Record<BoardType, {
     description: "Carries speed through soft sections with loose twin-fin flow.",
     length: 2.3,
     width: 0.39,
+    mass: 3.6,
     speed: 1.08,
     turn: 1.02,
     stability: 1.02,
@@ -1000,6 +1003,7 @@ export const BOARD_SPECS: Record<BoardType, {
     description: "Effortless paddle power, steady trim, and true nose rides.",
     length: 3.45,
     width: 0.43,
+    mass: 7.2,
     speed: 0.96,
     turn: 0.82,
     stability: 1.28,
@@ -3619,6 +3623,70 @@ export function advanceSeparatedSurferHorizontalDynamics(
   }
 
   return { velocityX, velocityZ };
+}
+
+export type SurfboardLeashReactionSample = {
+  stretch: number;
+  separationRate: number;
+  surferMass: number;
+  boardMass: number;
+  springStiffness?: number;
+  damping?: number;
+  maximumForce?: number;
+};
+
+export type SurfboardLeashReactionReading = {
+  force: number;
+  tension: number;
+  surferAcceleration: number;
+  boardAcceleration: number;
+  relativeAcceleration: number;
+};
+
+/**
+ * Resolves a stretched urethane leash as a one-dimensional spring-damper along
+ * the measured cord direction. Force on the surfer and board is equal and
+ * opposite; their different masses determine acceleration. A slack or closing
+ * cord cannot push either body apart.
+ */
+export function resolveSurfboardLeashReaction(
+  sample: SurfboardLeashReactionSample,
+): SurfboardLeashReactionReading {
+  const stretch = Math.max(0, sample.stretch);
+  const separationRate = Math.max(0, sample.separationRate);
+  const surferMass = clampValue(sample.surferMass, 45, 130);
+  const boardMass = clampValue(sample.boardMass, 2.4, 10);
+  const springStiffness = clampValue(
+    sample.springStiffness ?? 82,
+    30,
+    140,
+  );
+  const damping = clampValue(sample.damping ?? 12,
+    4,
+    24,
+  );
+  const maximumForce = clampValue(
+    sample.maximumForce ?? 220,
+    90,
+    320,
+  );
+  const force = stretch > 0
+    ? Math.min(
+        maximumForce,
+        springStiffness * stretch + damping * separationRate,
+      )
+    : 0;
+  const surferAcceleration = force / surferMass;
+  const boardAcceleration = force / boardMass;
+
+  return {
+    force,
+    tension: force / maximumForce,
+    surferAcceleration,
+    boardAcceleration,
+    relativeAcceleration:
+      surferAcceleration + boardAcceleration,
+  };
 }
 
 export type SurfboardSurfaceManeuverSample = {
