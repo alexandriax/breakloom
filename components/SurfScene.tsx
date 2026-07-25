@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -10759,6 +10759,7 @@ function Simulation({
   const unstableFor = useRef(0);
   const railSlip = useRef(0);
   const nextShorebreakAt = useRef(0);
+  const previousShorebreakPhaseError = useRef(Number.NaN);
   const duckDiveUntil = useRef(0);
   const duckDiveWindowOpen = useRef(false);
   const catchWindowOpen = useRef(false);
@@ -10979,6 +10980,7 @@ function Simulation({
         wipeoutAngularVelocity.current.copy(restore.wipeoutAngularVelocity);
         wipeoutTumbleSide.current = restore.wipeoutTumbleSide;
         phase.current = restore.phase;
+        previousShorebreakPhaseError.current = Number.NaN;
         playerHeading.current = restore.playerHeading;
         paddleHeading.current = restore.paddleHeading;
         rideHeading.current = restore.rideHeading;
@@ -11128,6 +11130,7 @@ function Simulation({
         paddleHeading.current = Math.PI;
         paddleYawRate.current = 0;
         paddleVelocity.current.set(0, -2.1);
+        previousShorebreakPhaseError.current = Number.NaN;
         nextShorebreakAt.current = t + 1.42;
         shorebreakResult.current = "";
       }
@@ -11146,6 +11149,7 @@ function Simulation({
         paddleYawRate.current = 0;
         playerHeading.current = 0;
         paddleVelocity.current.set(0, 1.8);
+        previousShorebreakPhaseError.current = Number.NaN;
         nextShorebreakAt.current = t + 20;
         takeoffCommitAt.current = t;
         takeoffCommitQuality.current = .92;
@@ -11581,6 +11585,7 @@ function Simulation({
           paddleStrokeCycle.current.phase = 0;
           paddleVelocity.current.copy(landVelocity.current).multiplyScalar(.55);
           nextShorebreakAt.current = t + SURF_PHYSICS_TUNING.shorebreakLead;
+          previousShorebreakPhaseError.current = Number.NaN;
           shorebreakResult.current = "";
           landVelocity.current.set(0, 0);
         }
@@ -11656,9 +11661,6 @@ function Simulation({
         const currentSpeed = settings.currentStrength / 3.6;
         const currentX = Math.sin(relativeCurrentAngle) * currentSpeed;
         const currentZ = -Math.cos(relativeCurrentAngle) * currentSpeed;
-        const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-        const waveTravelX = Math.sin(relativeWaveAngle);
-        const waveTravelZ = Math.max(.35, Math.cos(relativeWaveAngle));
         const paddleSurface = waveSurfaceFrameAt(
           position.current.x,
           position.current.z,
@@ -11708,13 +11710,64 @@ function Simulation({
         speed = paddleVelocity.current.length();
         const coastalZ = position.current.z - tideShift;
         inLineup = coastalZ < LINEUP_ENTRY_Z;
-        if (nextShorebreakAt.current <= 0) nextShorebreakAt.current = t + 2.55;
         const breakCoastalZ = coastalZ - tideResponse.breakShift;
         const breakZone = THREE.MathUtils.smoothstep(breakCoastalZ, -18, -8) * (1 - THREE.MathUtils.smoothstep(breakCoastalZ, -3, 1));
+        const shorebreakSetState = waveSetStateAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        const shorebreakWaveNormalX = localWaveTransport.x
+          / Math.max(.001, localWaveTransport.speed);
+        const shorebreakWaveNormalZ = localWaveTransport.z
+          / Math.max(.001, localWaveTransport.speed);
+        const boardNormalSpeed = paddleVelocity.current.x
+          * shorebreakWaveNormalX
+          + paddleVelocity.current.y * shorebreakWaveNormalZ;
+        const wallApproach = resolveWaveWallApproach({
+          crestPhaseError: shorebreakSetState.crestPhaseError,
+          previousCrestPhaseError: previousShorebreakPhaseError.current,
+          wavelength: localWaveTransport.wavelength,
+          wavePeriod: settings.wavePeriod,
+          boardNormalSpeed,
+        });
+        const nextCrestEnergy = waveEnergyForPhase(
+          shorebreakSetState.crestPhase - Math.PI * 2,
+        );
+        const incomingCrestEnergy = wallApproach.currentCrestIsUpcoming
+          ? shorebreakSetState.crestEnergy
+          : nextCrestEnergy;
+        const geometricShorebreakSeconds = Number.isFinite(
+          wallApproach.secondsToImpact,
+        )
+          ? wallApproach.secondsToImpact
+          : 999;
+        shorebreakSeconds = !inLineup
+          ? qaScenario
+            ? Math.max(0, nextShorebreakAt.current - t)
+            : geometricShorebreakSeconds
+          : 0;
+        if (!qaScenario) {
+          nextShorebreakAt.current = Number.isFinite(
+            wallApproach.secondsToImpact,
+          )
+            ? t + wallApproach.secondsToImpact
+            : 0;
+        }
+        const wallImpact = !inLineup && (
+          qaScenario
+            ? t >= nextShorebreakAt.current
+            : wallApproach.crossedCrest
+        );
+        const wallEnergy = wallImpact
+          ? shorebreakSetState.crestEnergy
+          : incomingCrestEnergy;
         shorebreakPower = !inLineup
           ? THREE.MathUtils.clamp(
               breakZone
-                * (.34 + setState.energy * .66)
+                * (.34 + wallEnergy * .66)
                 * (.52 + settings.waveHeight * tideResponse.faceScale * .22)
                 * (.86 + tidePower * .14)
                 * tideResponse.shorebreakScale,
@@ -11722,7 +11775,6 @@ function Simulation({
               1,
             )
           : 0;
-        shorebreakSeconds = !inLineup ? Math.max(0, nextShorebreakAt.current - t) : 0;
         const shorebreakApproach = 1 - THREE.MathUtils.smoothstep(shorebreakSeconds, .06, 2.45);
         shorebreakIntensity = shorebreakPower * shorebreakApproach;
         if (
@@ -11756,7 +11808,7 @@ function Simulation({
             stamina.current - diveInitiation.effortCost,
           );
         }
-        if (!inLineup && t >= nextShorebreakAt.current) {
+        if (wallImpact && shorebreakPower > .04) {
           if (!duckDiveActive) duckDiveQuality.current = 0;
           const effectiveDiveQuality = duckDiveActive
             ? duckDiveQuality.current
@@ -11770,24 +11822,31 @@ function Simulation({
           shorebreakId.current += 1;
           if (cleanDive) {
             paddleVelocity.current.multiplyScalar(.86 + duckDiveQuality.current * .08);
-            position.current.x += waveTravelX * (.08 + shorebreakPower * .14);
-            position.current.z += waveTravelZ * (.08 + shorebreakPower * .14);
+            const submergedImpulse = .08 + shorebreakPower * .14;
+            paddleVelocity.current.x += shorebreakWaveNormalX
+              * submergedImpulse;
+            paddleVelocity.current.y += shorebreakWaveNormalZ
+              * submergedImpulse;
             stamina.current = Math.max(0, stamina.current - (.45 + shorebreakPower * .55));
             motion.current.impact = .22 + shorebreakPower * .24;
           } else {
-            const wash = .72 + shorebreakPower * 1.38;
-            position.current.x += waveTravelX * wash;
-            position.current.z += waveTravelZ * wash;
-            paddleVelocity.current.y += waveTravelZ * (.82 + shorebreakPower * 1.32);
-            paddleVelocity.current.x += waveTravelX * (.82 + shorebreakPower * 1.32) + currentX * (.55 + shorebreakPower * .9);
             paddleVelocity.current.multiplyScalar(.54);
+            const washImpulse = .72 + shorebreakPower * 1.38;
+            paddleVelocity.current.x += shorebreakWaveNormalX
+              * washImpulse
+              + currentX * (.55 + shorebreakPower * .9);
+            paddleVelocity.current.y += shorebreakWaveNormalZ
+              * washImpulse
+              + currentZ * (.55 + shorebreakPower * .9);
             stamina.current = Math.max(0, stamina.current - (2.1 + shorebreakPower * 3.7));
             motion.current.impact = .66 + shorebreakPower * .34;
           }
-          const breakInterval = Math.max(4.4, settings.wavePeriod * .58);
-          const variation = Math.sin(shorebreakId.current * 2.31 + position.current.x * .04) * tideVariability * .09;
-          nextShorebreakAt.current = t + breakInterval * (.88 + setState.energy * .16 + variation);
+          if (qaScenario) {
+            nextShorebreakAt.current = t
+              + Math.max(4.4, settings.wavePeriod * .58);
+          }
         }
+        previousShorebreakPhaseError.current = wallApproach.phaseError;
         const takeoffWaveNormalX = localWaveTransport.x / Math.max(.001, localWaveTransport.speed);
         const takeoffWaveNormalZ = localWaveTransport.z / Math.max(.001, localWaveTransport.speed);
         const boardWaveAlignment = paddleForwardX * takeoffWaveNormalX + paddleForwardZ * takeoffWaveNormalZ;
@@ -13289,6 +13348,7 @@ function Simulation({
               paddleYawRate.current = rideYawRate.current;
               paddleVelocity.current.copy(rideVelocity.current);
               rideVelocity.current.set(0, 0);
+              previousShorebreakPhaseError.current = Number.NaN;
               stance.current = 0;
               prompt = "Back prone — paddle to reposition";
             } else if (waveEngagement.current > .08) {
@@ -14708,6 +14768,7 @@ function Simulation({
             paddleHeading.current = Math.atan2(waveNormalX, waveNormalZ);
             paddleYawRate.current = 0;
             paddleVelocity.current.copy(wipeoutVelocity.current).multiplyScalar(.18);
+            previousShorebreakPhaseError.current = Number.NaN;
           }
           rideEngaged.current = false;
           unstableFor.current = 0;

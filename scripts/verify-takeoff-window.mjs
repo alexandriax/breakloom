@@ -39,6 +39,7 @@ import {
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
   resolveWaveTubePressure,
+  resolveWaveWallApproach,
   RIDE_RESULT_LINE_Z,
   rideRailInputFromPaddleSteer,
   SHALLOW_DISMOUNT_Z,
@@ -513,6 +514,42 @@ if (
   || waveCrestDistanceAtPhase(-.2, 320) >= 0
 ) {
   throw new Error("Crest phase no longer preserves signed physical distance on long waves");
+}
+const offshoreWallApproach = resolveWaveWallApproach({
+  crestPhaseError: .3,
+  previousCrestPhaseError: .34,
+  wavelength: 80,
+  wavePeriod: 8,
+  boardNormalSpeed: -2,
+});
+const outrunningWallApproach = resolveWaveWallApproach({
+  crestPhaseError: .3,
+  previousCrestPhaseError: .28,
+  wavelength: 80,
+  wavePeriod: 8,
+  boardNormalSpeed: 11,
+});
+const crossedWall = resolveWaveWallApproach({
+  crestPhaseError: -.02,
+  previousCrestPhaseError: .03,
+  wavelength: 80,
+  wavePeriod: 8,
+  boardNormalSpeed: -1,
+});
+const wrappedWall = resolveWaveWallApproach({
+  crestPhaseError: Math.PI - .01,
+  previousCrestPhaseError: -Math.PI + .01,
+  wavelength: 80,
+  wavePeriod: 8,
+  boardNormalSpeed: 0,
+});
+if (
+  Math.abs(offshoreWallApproach.secondsToImpact - .318309886) > .001
+  || Number.isFinite(outrunningWallApproach.secondsToImpact)
+  || !crossedWall.crossedCrest
+  || wrappedWall.crossedCrest
+) {
+  throw new Error("Shorebreak walls no longer follow polygon crest phase and relative board speed");
 }
 
 const sharedPocketSample = {
@@ -2724,6 +2761,9 @@ console.log(JSON.stringify({
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
     facePhaseSweep,
     longPeriodCrestDistance,
+    offshoreWallSeconds: offshoreWallApproach.secondsToImpact,
+    offshoreWallClosingSpeed: offshoreWallApproach.relativeNormalSpeed,
+    crossedWall: crossedWall.crossedCrest,
     absolutePocketAlong: absolutePocket.pocketAlong,
     pocketPeelRate: absolutePocket.peelRate,
     cleanPocketLineControl: pocketSection.lineControl,

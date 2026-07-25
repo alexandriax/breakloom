@@ -337,6 +337,54 @@ export function waveCrestDistanceAtPhase(
   return crestPhaseError / waveNumber;
 }
 
+export type WaveWallApproachSample = {
+  crestPhaseError: number;
+  previousCrestPhaseError: number;
+  wavelength: number;
+  wavePeriod: number;
+  boardNormalSpeed: number;
+};
+
+/**
+ * Resolves an incoming wall from the same crest phase used by the polygon
+ * surface. Paddling offshore increases closing speed, moving with the swell
+ * reduces it, and a wall impact occurs only when that crest actually crosses
+ * the board.
+ */
+export function resolveWaveWallApproach(
+  sample: WaveWallApproachSample,
+) {
+  const phaseError = Math.atan2(
+    Math.sin(sample.crestPhaseError),
+    Math.cos(sample.crestPhaseError),
+  );
+  const previousPhaseError = sample.previousCrestPhaseError;
+  const wavelength = Math.max(.1, sample.wavelength);
+  const waveNumber = Math.PI * 2 / wavelength;
+  const waveSpeed = wavelength / Math.max(4, sample.wavePeriod);
+  const relativeNormalSpeed = waveSpeed - sample.boardNormalSpeed;
+  const currentCrestIsUpcoming = phaseError > 0;
+  const phaseToImpact = currentCrestIsUpcoming
+    ? phaseError
+    : phaseError + Math.PI * 2;
+  const distanceToImpact = phaseToImpact / waveNumber;
+  const secondsToImpact = relativeNormalSpeed > .05
+    ? distanceToImpact / relativeNormalSpeed
+    : Number.POSITIVE_INFINITY;
+  const crossedCrest = Number.isFinite(previousPhaseError)
+    && previousPhaseError > 0
+    && phaseError <= 0
+    && previousPhaseError - phaseError < Math.PI;
+  return {
+    phaseError,
+    currentCrestIsUpcoming,
+    relativeNormalSpeed,
+    distanceToImpact,
+    secondsToImpact,
+    crossedCrest,
+  };
+}
+
 export type WavePocketSample = {
   crestPhase: number;
   referencePhase: number;
