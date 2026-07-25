@@ -1300,6 +1300,7 @@ export type PaddleboardDynamicsSample = {
   stroke: number;
   strokeSide?: number;
   steer: number;
+  waterContact?: number;
   surfaceSlopeX: number;
   surfaceSlopeZ: number;
   waveVelocityX: number;
@@ -1336,6 +1337,7 @@ export function advancePaddleboardDynamics(
     Math.min(1, sample.strokeSide ?? 0),
   );
   const steer = Math.max(-1, Math.min(1, sample.steer));
+  const hullContact = clampValue(sample.waterContact ?? 1, 0, 1);
   const safeLength = Math.max(1.6, sample.boardLength);
   const safeWidth = Math.max(.24, sample.boardWidth);
   const turn = Math.max(.45, sample.boardTurn);
@@ -1357,19 +1359,28 @@ export function advancePaddleboardDynamics(
     * Math.max(0, stroke)
     * .16;
   const targetYawRate = (steeringTorque + alternatingStrokeTorque)
-    * yawAuthority;
-  const yawResponse = (2.2 + Math.abs(stroke) * 1.4) / Math.sqrt(yawInertia);
+    * yawAuthority
+    * hullContact;
+  const yawResponse = (
+    .18 + hullContact * (2.02 + Math.abs(stroke) * 1.4)
+  ) / Math.sqrt(yawInertia);
   let yawRate = state.yawRate + (
     targetYawRate - state.yawRate
   ) * (1 - Math.exp(-yawResponse * delta));
-  yawRate *= Math.exp(-delta * (.72 + (Math.abs(steer) < .04 ? 1.2 : 0)));
+  yawRate *= Math.exp(
+    -delta * (
+      .08 + hullContact * (
+        .64 + (Math.abs(steer) < .04 ? 1.2 : 0)
+      )
+    ),
+  );
   const heading = state.heading + yawRate * delta;
   const forwardX = Math.sin(heading);
   const forwardZ = Math.cos(heading);
   const rightX = Math.cos(heading);
   const rightZ = -Math.sin(heading);
 
-  const orbitalCoupling = .026;
+  const orbitalCoupling = .026 * hullContact;
   const waterVelocityX = sample.currentVelocityX
     + sample.waveVelocityX * orbitalCoupling;
   const waterVelocityZ = sample.currentVelocityZ
@@ -1381,24 +1392,30 @@ export function advancePaddleboardDynamics(
   const strokeForce = stroke >= 0
     ? stroke * (4.8 + paddleEfficiency * 2.1)
     : stroke * 1.45;
+  const appliedStrokeForce = strokeForce * hullContact;
   const lengthDragScale = Math.pow(2.5 / safeLength, .62);
   const widthDragScale = Math.pow(safeWidth / .34, .42);
   const forwardDrag = -forwardSpeed
     * Math.abs(forwardSpeed)
     * .31
     * lengthDragScale
-    * widthDragScale;
+    * widthDragScale
+    * hullContact;
   const lateralDrag = -lateralSpeed
     * Math.abs(lateralSpeed)
     * .82
-    * widthDragScale;
+    * widthDragScale
+    * hullContact;
   const slopeMagnitudeSquared = sample.surfaceSlopeX * sample.surfaceSlopeX
     + sample.surfaceSlopeZ * sample.surfaceSlopeZ;
-  const slopeGravity = 9.81 * .2 / Math.max(1, 1 + slopeMagnitudeSquared);
-  let accelerationX = forwardX * (strokeForce + forwardDrag)
+  const slopeGravity = 9.81
+    * .2
+    * hullContact
+    / Math.max(1, 1 + slopeMagnitudeSquared);
+  let accelerationX = forwardX * (appliedStrokeForce + forwardDrag)
     + rightX * lateralDrag
     - sample.surfaceSlopeX * slopeGravity;
-  let accelerationZ = forwardZ * (strokeForce + forwardDrag)
+  let accelerationZ = forwardZ * (appliedStrokeForce + forwardDrag)
     + rightZ * lateralDrag
     - sample.surfaceSlopeZ * slopeGravity;
   const accelerationMagnitude = Math.hypot(accelerationX, accelerationZ);
@@ -1418,7 +1435,7 @@ export function advancePaddleboardDynamics(
     accelerationZ,
     forwardSpeed,
     lateralSpeed,
-    strokeForce,
+    strokeForce: appliedStrokeForce,
   };
 }
 

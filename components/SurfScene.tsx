@@ -11604,6 +11604,7 @@ function Simulation({
               : move * popUpPaddleAvailability,
             strokeSide: paddleStroke.strokeSide,
             steer: steer * popUpPaddleAvailability,
+            waterContact: boardWaterContact,
             surfaceSlopeX: paddleSurface.slopeX,
             surfaceSlopeZ: paddleSurface.slopeZ,
             waveVelocityX: localWaveTransport.x,

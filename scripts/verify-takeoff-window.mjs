@@ -1340,6 +1340,74 @@ const paddleCurrent = advancePaddleboardDynamics(
 if (paddleCurrent.velocityX <= 0) {
   throw new Error("A prone board did not begin drifting with the current");
 }
+const dryProneState = {
+  velocityX: .4,
+  velocityZ: 1.2,
+  heading: .2,
+  yawRate: .3,
+};
+const dryProne = advancePaddleboardDynamics(
+  dryProneState,
+  {
+    ...paddlingSample,
+    stroke: 1,
+    strokeSide: -1,
+    steer: 1,
+    waterContact: 0,
+    surfaceSlopeX: .18,
+    currentVelocityX: .8,
+  },
+);
+const halfWetProne = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: 1,
+    waterContact: .5,
+  },
+);
+const fullyWetProne = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: 1,
+    waterContact: 1,
+  },
+);
+function dryProneAfterOneSecond(hz) {
+  let state = dryProneState;
+  for (let frame = 0; frame < hz; frame += 1) {
+    state = advancePaddleboardDynamics(state, {
+      ...paddlingSample,
+      deltaSeconds: 1 / hz,
+      stroke: 1,
+      strokeSide: -1,
+      steer: 1,
+      waterContact: 0,
+      surfaceSlopeX: .18,
+      currentVelocityX: .8,
+    });
+  }
+  return state;
+}
+const dryProne60 = dryProneAfterOneSecond(60);
+const dryProne120 = dryProneAfterOneSecond(120);
+if (
+  Math.abs(dryProne.accelerationX) > .001
+  || Math.abs(dryProne.accelerationZ) > .001
+  || Math.abs(dryProne.velocityX - dryProneState.velocityX) > .001
+  || Math.abs(dryProne.velocityZ - dryProneState.velocityZ) > .001
+  || dryProne.strokeForce !== 0
+  || dryProne.yawRate < dryProneState.yawRate * .995
+  || halfWetProne.strokeForce <= 0
+  || halfWetProne.strokeForce >= fullyWetProne.strokeForce
+  || Math.abs(dryProne60.velocityX - dryProneState.velocityX) > .001
+  || Math.abs(dryProne60.velocityZ - dryProneState.velocityZ) > .001
+  || Math.abs(dryProne60.yawRate - dryProne120.yawRate) > .001
+  || Math.abs(dryProne60.heading - dryProne120.heading) > .002
+) {
+  throw new Error("Prone paddle authority no longer follows live hull water contact");
+}
 const performancePaddleTurn = paddleForFrames(120, {
   ...paddlingSample,
   steer: 1,
@@ -1569,6 +1637,12 @@ console.log(JSON.stringify({
     terminalSpeed: steadyPaddle.velocityZ,
     twoSecondCoastSpeed: paddleCoast.velocityZ,
     currentDrift: paddleCurrent.velocityX,
+    dryHullAcceleration: Math.hypot(dryProne.accelerationX, dryProne.accelerationZ),
+    dryHullYawRetention: dryProne.yawRate / dryProneState.yawRate,
+    dryHullHeading60Hz: dryProne60.heading,
+    dryHullHeading120Hz: dryProne120.heading,
+    halfContactStrokeForce: halfWetProne.strokeForce,
+    fullContactStrokeForce: fullyWetProne.strokeForce,
     performanceTurnRadians: performancePaddleTurn.heading,
     longboardTurnRadians: longboardPaddleTurn.heading,
     averageStrokeDrive,
