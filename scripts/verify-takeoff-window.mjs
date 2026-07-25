@@ -6,6 +6,7 @@ import {
   advancePaddleStrokeCycle,
   advanceProneBoardAttitude,
   advanceSurfboardDynamics,
+  advanceSurfboardInstability,
   advanceSurfboardRailSlip,
   advanceSurfboardStance,
   advanceRideCaptureState,
@@ -26,12 +27,14 @@ import {
   resolveSurfboardRailSlip,
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
+  resolveSurfboardWipeout,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
   resolveWaveTubePressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
+  surfboardWipeoutTriggered,
   surfboardLipLaunchSupport,
   waveCrestDistanceAtPhase,
   waveFacePositionAtPhase,
@@ -1139,6 +1142,93 @@ if (
 ) {
   throw new Error("Rail demand or slip integration changed across engagement");
 }
+const sharedInstabilitySample = {
+  rollEdgeRisk: .65,
+  rollCapsizeRisk: .5,
+  rollRate: 1.8,
+  whitewater: .4,
+  shoulderStall: .12,
+  tubePressure: .28,
+  balanceError: .74,
+  balanceFailureThreshold: 1,
+  crossWaveLoad: .8,
+  sideslip: .4,
+  waveContact: .8,
+  pearlingRisk: .2,
+  pitchOverRisk: .25,
+  tailStall: .2,
+};
+function instabilityAfterOneSecond(hz) {
+  let instability = 0;
+  for (let frame = 0; frame < hz; frame += 1) {
+    instability = advanceSurfboardInstability(
+      instability,
+      {
+        ...sharedInstabilitySample,
+        deltaSeconds: 1 / hz,
+      },
+    ).instability;
+  }
+  return instability;
+}
+const standingInstability60 = instabilityAfterOneSecond(60);
+const engagedInstability120 = instabilityAfterOneSecond(120);
+if (
+  Math.abs(
+    standingInstability60 - engagedInstability120
+  ) > .002
+  || !surfboardWipeoutTriggered(
+    standingInstability60,
+    sharedInstabilitySample.rollCapsizeRisk,
+    sharedInstabilitySample.pitchOverRisk,
+  )
+  || surfboardWipeoutTriggered(.2, .2, .2)
+) {
+  throw new Error("Instability or wipeout threshold changed across engagement");
+}
+const sharedWipeoutSample = {
+  waveHeight: 2.4,
+  wavePeriod: 11,
+  waveEnergy: .78,
+  tidePower: .86,
+  speed: 9.2,
+  tubePressure: .34,
+  whitewater: .46,
+  shoulderStall: .18,
+  railSlip: .62,
+  crossWaveLoad: .88,
+  sideslip: .54,
+  pearlingRisk: .28,
+  pitchOverRisk: .34,
+  rollCapsizeRisk: .52,
+  rollEdgeRisk: .66,
+};
+const standingWipeout = resolveSurfboardWipeout(
+  sharedWipeoutSample,
+);
+const engagedWipeout = resolveSurfboardWipeout(
+  sharedWipeoutSample,
+);
+const lightWipeout = resolveSurfboardWipeout({
+  ...sharedWipeoutSample,
+  waveEnergy: .18,
+  whitewater: .04,
+  crossWaveLoad: .12,
+  sideslip: .08,
+  pearlingRisk: .04,
+  pitchOverRisk: .04,
+  rollCapsizeRisk: .08,
+  rollEdgeRisk: .1,
+});
+if (
+  standingWipeout.power !== engagedWipeout.power
+  || standingWipeout.duration !== engagedWipeout.duration
+  || standingWipeout.washSpeed !== engagedWipeout.washSpeed
+  || standingWipeout.power <= lightWipeout.power
+  || standingWipeout.duration <= lightWipeout.duration
+) {
+  throw new Error("Wipeout severity changed across engagement");
+}
 
 const rollSample = {
   deltaSeconds: 1 / 60,
@@ -2105,6 +2195,11 @@ console.log(JSON.stringify({
     engagedRailDemand,
     standingRailSlip60,
     engagedRailSlip120,
+    standingInstability60,
+    engagedInstability120,
+    standingWipeoutPower: standingWipeout.power,
+    engagedWipeoutPower: engagedWipeout.power,
+    lightWipeoutPower: lightWipeout.power,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,

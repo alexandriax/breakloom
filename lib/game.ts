@@ -28,8 +28,6 @@ export const SURF_PHYSICS_TUNING = {
   duckDiveThreshold: .34,
   takeoffWindPenalty: .055,
   catchGrace: .7,
-  standingEdgeFailure: .92,
-  standingUnstableThreshold: .56,
   tubeFatigue: 1.2,
   foamFatigue: 1,
   lipOvertakeFailure: 1.08,
@@ -46,6 +44,8 @@ export const SURF_PHYSICS_TUNING = {
   tailStallFailure: .2,
   maneuverTiming: 1,
   wipeoutInstability: 1.42,
+  capsizeWipeout: .9,
+  pitchWipeout: .9,
   wipeoutHold: .94,
   landingImpactFailure: .44,
 } as const;
@@ -739,6 +739,24 @@ export type SurfboardRailDemandSample = {
   tideSteepness: number;
   facePosition: number;
   tubePressure: number;
+};
+
+export type SurfboardInstabilitySample = {
+  deltaSeconds: number;
+  rollEdgeRisk: number;
+  rollCapsizeRisk: number;
+  rollRate: number;
+  whitewater: number;
+  shoulderStall: number;
+  tubePressure: number;
+  balanceError: number;
+  balanceFailureThreshold: number;
+  crossWaveLoad: number;
+  sideslip: number;
+  waveContact: number;
+  pearlingRisk: number;
+  pitchOverRisk: number;
+  tailStall: number;
 };
 
 export type SurfboardPlaningSample = {
@@ -2065,6 +2083,129 @@ export function advanceSurfboardRailSlip(
   return {
     ...reading,
     railSlip: clampValue(railSlip, 0, 1),
+  };
+}
+
+/**
+ * Accumulates loss of control from physical board and water loads. Capture,
+ * score, tutorial mode, and maneuver bookkeeping are deliberately absent.
+ */
+export function advanceSurfboardInstability(
+  currentInstability: number,
+  sample: SurfboardInstabilitySample,
+) {
+  const delta = clampValue(sample.deltaSeconds, 0, .05);
+  const edgeRisk = clampValue(sample.rollEdgeRisk, 0, 1);
+  const capsizeRisk = clampValue(sample.rollCapsizeRisk, 0, 1);
+  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const shoulderStall = clampValue(sample.shoulderStall, 0, 1);
+  const tubePressure = clampValue(sample.tubePressure, 0, 1);
+  const crossWaveLoad = clampValue(sample.crossWaveLoad, 0, 1.5);
+  const sideslip = clampValue(sample.sideslip, 0, 1);
+  const waveContact = clampValue(sample.waveContact, 0, 1);
+  const rollFailureLoad = edgeRisk * SURF_PHYSICS_TUNING.rollFailure
+    + capsizeRisk * 2.65
+    + Math.max(0, Math.abs(sample.rollRate) - 1.35) * .14;
+  const broadsideFailure = Math.max(0, crossWaveLoad - .24)
+    * (1 + sideslip * .72)
+    * waveContact;
+  const balanceThreshold = Math.max(
+    .1,
+    sample.balanceFailureThreshold,
+  );
+  const loadRate = rollFailureLoad
+    + whitewater * SURF_PHYSICS_TUNING.whitewaterFailure
+    + shoulderStall * SURF_PHYSICS_TUNING.shoulderFailure
+    + tubePressure
+      * Math.max(
+        0,
+        sample.balanceError - balanceThreshold * .58,
+      )
+      * SURF_PHYSICS_TUNING.tubeFailure
+    + broadsideFailure * SURF_PHYSICS_TUNING.broadsideFailure
+    + clampValue(sample.pearlingRisk, 0, 1)
+      * SURF_PHYSICS_TUNING.pearlingFailure
+    + clampValue(sample.pitchOverRisk, 0, 1)
+      * SURF_PHYSICS_TUNING.pitchOverFailure
+    + clampValue(sample.tailStall, 0, 1)
+      * SURF_PHYSICS_TUNING.tailStallFailure
+    - (edgeRisk < .08 ? 1.8 : 0);
+  return {
+    instability: Math.max(
+      0,
+      currentInstability + loadRate * delta,
+    ),
+    loadRate,
+    rollFailureLoad,
+    broadsideFailure,
+  };
+}
+
+export function surfboardWipeoutTriggered(
+  instability: number,
+  rollCapsizeRisk: number,
+  pitchOverRisk: number,
+) {
+  return rollCapsizeRisk > SURF_PHYSICS_TUNING.capsizeWipeout
+    || pitchOverRisk > SURF_PHYSICS_TUNING.pitchWipeout
+    || instability > SURF_PHYSICS_TUNING.wipeoutInstability;
+}
+
+export type SurfboardWipeoutSample = {
+  waveHeight: number;
+  wavePeriod: number;
+  waveEnergy: number;
+  tidePower: number;
+  speed: number;
+  tubePressure: number;
+  whitewater: number;
+  shoulderStall: number;
+  railSlip: number;
+  crossWaveLoad: number;
+  sideslip: number;
+  pearlingRisk: number;
+  pitchOverRisk: number;
+  rollCapsizeRisk: number;
+  rollEdgeRisk: number;
+};
+
+export function resolveSurfboardWipeout(
+  sample: SurfboardWipeoutSample,
+) {
+  const waveEnergy = clampValue(
+    Math.max(.25, sample.waveHeight) / 4.2 * .24
+      + Math.max(0, sample.wavePeriod - 6) / 12 * .16
+      + clampValue(sample.waveEnergy, 0, 1) * .18
+      + clampValue(sample.tidePower, 0, 1.5) * .09
+      + Math.min(1, Math.max(0, sample.speed) / 22) * .13
+      + clampValue(sample.tubePressure, 0, 1) * .08
+      + clampValue(sample.whitewater, 0, 1) * .18
+      + clampValue(sample.shoulderStall, 0, 1) * .035
+      + clampValue(sample.railSlip, 0, 1) * .08
+      + Math.min(1, clampValue(sample.crossWaveLoad, 0, 1.5)) * .13
+      + clampValue(sample.sideslip, 0, 1) * .08
+      + clampValue(sample.pearlingRisk, 0, 1) * .16
+      + clampValue(sample.pitchOverRisk, 0, 1) * .2
+      + clampValue(sample.rollCapsizeRisk, 0, 1) * .18
+      + clampValue(sample.rollEdgeRisk, 0, 1) * .08,
+    0,
+    1,
+  );
+  return {
+    power: waveEnergy,
+    duration: clampValue(
+      (
+        1.55 + (4.18 - 1.55) * Math.pow(waveEnergy, .84)
+      ) * SURF_PHYSICS_TUNING.wipeoutHold,
+      1.35,
+      4.65,
+    ),
+    momentumRetention: .62 + waveEnergy * .14,
+    washSpeed: 1.25
+      + waveEnergy * 4.1
+      + clampValue(sample.waveEnergy, 0, 1) * .72,
+    railThrow: clampValue(sample.crossWaveLoad, 0, 1.5)
+      * (1.2 + waveEnergy * 2.1),
   };
 }
 

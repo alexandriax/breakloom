@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12878,21 +12878,30 @@ function Simulation({
           );
 
           const standingBalanceError = Math.abs(balanceInput - balanceTarget);
-          unstableFor.current = Math.max(
-            0,
-            unstableFor.current
-              + delta * (
-                rollEdgeRisk * SURF_PHYSICS_TUNING.standingEdgeFailure
-                  + rollCapsizeRisk * 2.4
-                  + Math.max(0, Math.abs(physicalRollRate) - 1.15) * .16
-                  + standingBrokenWater * .72
-                  + Math.max(0, standingReading.crossWaveLoad - .36) * .72
-                  + pearlingRisk * 1.45
-                  + pitchOverRisk * 1.8
-                  + tailStall * .42
-                  - (rollEdgeRisk < .08 ? .48 : 0)
-              ),
+          const standingFailThreshold = SURF_PHYSICS_TUNING
+            .balanceFailureThreshold
+            * Math.sqrt(boardSpec.stability);
+          const standingInstability = advanceSurfboardInstability(
+            unstableFor.current,
+            {
+              deltaSeconds: delta,
+              rollEdgeRisk,
+              rollCapsizeRisk,
+              rollRate: physicalRollRate,
+              whitewater: standingBrokenWater,
+              shoulderStall: standingSection.shoulderStall,
+              tubePressure: standingTubePressure,
+              balanceError: standingBalanceError,
+              balanceFailureThreshold: standingFailThreshold,
+              crossWaveLoad: standingReading.crossWaveLoad,
+              sideslip: standingDynamics.sideslip,
+              waveContact: standingReading.waveContact,
+              pearlingRisk,
+              pitchOverRisk,
+              tailStall,
+            },
           );
+          unstableFor.current = standingInstability.instability;
           const standingRailDemand = resolveSurfboardRailDemand({
             railInput: standingRoll.effectiveRail,
             speed,
@@ -12930,7 +12939,12 @@ function Simulation({
             && standingWaveEngagement.pressure >= .16
             && standingReading.headingAlignment > .08
             && boardWaterContact > .34;
-          if (captureNow) {
+          const standingWipeout = surfboardWipeoutTriggered(
+            unstableFor.current,
+            rollCapsizeRisk,
+            pitchOverRisk,
+          );
+          if (captureNow && !standingWipeout) {
             rideEngaged.current = true;
             rideDistance.current = 0;
             pocketDistance.current = 0;
@@ -12958,46 +12972,42 @@ function Simulation({
             );
             prompt = "The face has the board — set a rail into the open shoulder";
           } else {
-            const standingTumble = standingReading.outcome === "tumble"
-              && (
-                standingReading.wipeoutRisk > .78
-                || standingBrokenWater > .78
-                || unstableFor.current > .22
-              );
-            if (
-              standingTumble
-              || rollCapsizeRisk > .72
-              || pitchOverRisk > .84
-              || unstableFor.current
-                > SURF_PHYSICS_TUNING.standingUnstableThreshold
-            ) {
+            if (standingWipeout) {
               phase.current = "wipeout";
               rideEngaged.current = false;
               wipeoutAt.current = t;
-              const tumblePower = THREE.MathUtils.clamp(
-                .18
-                  + Math.max(
-                    standingReading.wipeoutRisk,
-                    standingBrokenWater,
-                  ) * .58
-                  + standingReading.crossWaveLoad * .2
-                  + rollCapsizeRisk * .18
-                  + pitchOverRisk * .2
-                  + setState.energy * .08,
-                .18,
-                1,
-              );
+              const standingWipeoutReading = resolveSurfboardWipeout({
+                waveHeight: settings.waveHeight,
+                wavePeriod: settings.wavePeriod,
+                waveEnergy: setState.energy,
+                tidePower,
+                speed,
+                tubePressure: standingTubePressure,
+                whitewater: standingBrokenWater,
+                shoulderStall: standingSection.shoulderStall,
+                railSlip: railSlip.current,
+                crossWaveLoad: standingReading.crossWaveLoad,
+                sideslip: standingDynamics.sideslip,
+                pearlingRisk,
+                pitchOverRisk,
+                rollCapsizeRisk,
+                rollEdgeRisk,
+              });
+              const tumblePower = standingWipeoutReading.power;
               wipeoutPower.current = tumblePower;
-              wipeoutDuration.current = THREE.MathUtils.lerp(1.35, 3.45, tumblePower);
+              wipeoutDuration.current = standingWipeoutReading.duration;
               const standingRailThrow = standingReading.crossWaveSide
-                * standingReading.crossWaveLoad
-                * (1.1 + tumblePower * 1.7);
+                * standingWipeoutReading.railThrow;
               wipeoutVelocity.current.set(
-                rideVelocity.current.x * .62
-                  + standingWaveNormalX * (1.1 + tumblePower * 3)
+                rideVelocity.current.x
+                  * standingWipeoutReading.momentumRetention
+                  + standingWaveNormalX
+                    * standingWipeoutReading.washSpeed
                   + standingRightX * standingRailThrow,
-                rideVelocity.current.y * .62
-                  + standingWaveNormalZ * (1.1 + tumblePower * 3)
+                rideVelocity.current.y
+                  * standingWipeoutReading.momentumRetention
+                  + standingWaveNormalZ
+                    * standingWipeoutReading.washSpeed
                   + standingRightZ * standingRailThrow,
               );
               breath.current = 100;
@@ -13640,41 +13650,27 @@ function Simulation({
         const balanceError = Math.abs(balanceInput - balanceTarget);
         const failThreshold = SURF_PHYSICS_TUNING.balanceFailureThreshold
           * Math.sqrt(boardSpec.stability);
-        const rollFailureLoad = rollEdgeRisk
-          * SURF_PHYSICS_TUNING.rollFailure
-          + rollCapsizeRisk * 2.65
-          + Math.max(0, Math.abs(physicalRollRate) - 1.35) * .14;
-        unstableFor.current = Math.max(
-          0,
-          unstableFor.current + delta * (
-            rollFailureLoad - (rollEdgeRisk < .08 ? 1.8 : 0)
-          ),
+        const rideInstability = advanceSurfboardInstability(
+          unstableFor.current,
+          {
+            deltaSeconds: delta,
+            rollEdgeRisk,
+            rollCapsizeRisk,
+            rollRate: physicalRollRate,
+            whitewater: whitewaterPressure,
+            shoulderStall,
+            tubePressure,
+            balanceError,
+            balanceFailureThreshold: failThreshold,
+            crossWaveLoad,
+            sideslip: dynamics.sideslip,
+            waveContact: rideInteraction.waveContact,
+            pearlingRisk,
+            pitchOverRisk,
+            tailStall,
+          },
         );
-        unstableFor.current += whitewaterPressure
-          * delta
-          * SURF_PHYSICS_TUNING.whitewaterFailure;
-        unstableFor.current += shoulderStall
-          * delta
-          * SURF_PHYSICS_TUNING.shoulderFailure;
-        unstableFor.current += tubePressure
-          * Math.max(0, balanceError - failThreshold * .58)
-          * delta
-          * SURF_PHYSICS_TUNING.tubeFailure;
-        const broadsideFailure = Math.max(0, crossWaveLoad - .24)
-          * (1 + dynamics.sideslip * .72)
-          * rideInteraction.waveContact;
-        unstableFor.current += broadsideFailure
-          * delta
-          * SURF_PHYSICS_TUNING.broadsideFailure;
-        unstableFor.current += pearlingRisk
-          * delta
-          * SURF_PHYSICS_TUNING.pearlingFailure;
-        unstableFor.current += pitchOverRisk
-          * delta
-          * SURF_PHYSICS_TUNING.pitchOverFailure;
-        unstableFor.current += tailStall
-          * delta
-          * SURF_PHYSICS_TUNING.tailStallFailure;
+        unstableFor.current = rideInstability.instability;
         const wavePhase = Math.sin(primaryWavePhaseAt(position.current.x, position.current.z, t, settings, character));
         const lineMatch = THREE.MathUtils.clamp(
           .64 + lineControl * .36 - whitewaterPressure * .12,
@@ -14031,59 +14027,46 @@ function Simulation({
         if (
           !qaScenario
           && !finishing
-          && (
-            rollCapsizeRisk > .9
-            || pitchOverRisk > .9
-              || unstableFor.current
-                > SURF_PHYSICS_TUNING.wipeoutInstability
+          && surfboardWipeoutTriggered(
+            unstableFor.current,
+            rollCapsizeRisk,
+            pitchOverRisk,
           )
         ) {
           phase.current = "wipeout";
           rideEngaged.current = false;
           wipeoutAt.current = t;
-          const waveEnergy = THREE.MathUtils.clamp(
-            settings.waveHeight / 4.2 * .24
-              + Math.max(0, settings.wavePeriod - 6) / 12 * .16
-              + setState.energy * .18
-              + tidePower * .09
-              + Math.min(1, speed / 22) * .13
-              + barrelIntensity * .08
-              + whitewaterPressure * .18
-              + shoulderStall * .035
-              + railSlip.current * .08
-              + Math.min(1, crossWaveLoad) * .13
-              + dynamics.sideslip * .08
-              + pearlingRisk * .16
-              + pitchOverRisk * .2
-              + rollCapsizeRisk * .18
-              + rollEdgeRisk * .08,
-            0,
-            1,
-          );
+          const wipeoutReading = resolveSurfboardWipeout({
+            waveHeight: settings.waveHeight,
+            wavePeriod: settings.wavePeriod,
+            waveEnergy: setState.energy,
+            tidePower,
+            speed,
+            tubePressure,
+            whitewater: whitewaterPressure,
+            shoulderStall,
+            railSlip: railSlip.current,
+            crossWaveLoad,
+            sideslip: dynamics.sideslip,
+            pearlingRisk,
+            pitchOverRisk,
+            rollCapsizeRisk,
+            rollEdgeRisk,
+          });
+          const waveEnergy = wipeoutReading.power;
           wipeoutPower.current = waveEnergy;
-          wipeoutDuration.current = THREE.MathUtils.clamp(
-            THREE.MathUtils.lerp(
-              1.55,
-              4.18,
-              Math.pow(waveEnergy, .84),
-            ) * SURF_PHYSICS_TUNING.wipeoutHold,
-            1.35,
-            4.65,
-          );
+          wipeoutDuration.current = wipeoutReading.duration;
           const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
           const currentSpeed = settings.currentStrength / 3.6;
-          const washSpeed = 1.25 + waveEnergy * 4.1 + setState.energy * .72;
-          const wipeoutMomentum = .62 + waveEnergy * .14;
           const railThrow = (Math.sign(boardWaveAngle) || 1)
-            * Math.min(1.5, crossWaveLoad)
-            * (1.2 + waveEnergy * 2.1);
+            * wipeoutReading.railThrow;
           wipeoutVelocity.current.set(
-            rideVelocity.current.x * wipeoutMomentum
-              + waveNormalX * washSpeed
+            rideVelocity.current.x * wipeoutReading.momentumRetention
+              + waveNormalX * wipeoutReading.washSpeed
               + boardRightX * railThrow
               + Math.sin(currentAngle) * currentSpeed * .72,
-            rideVelocity.current.y * wipeoutMomentum
-              + waveNormalZ * washSpeed
+            rideVelocity.current.y * wipeoutReading.momentumRetention
+              + waveNormalZ * wipeoutReading.washSpeed
               + boardRightZ * railThrow
               - Math.cos(currentAngle) * currentSpeed * .72,
           );
