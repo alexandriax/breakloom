@@ -2087,6 +2087,28 @@ export type PopUpTransitionReading = {
   verticalLoadAcceleration: number;
 };
 
+export type PopUpBodyState = {
+  progress: number;
+  velocity: number;
+};
+
+export type PopUpBodySample = {
+  deltaSeconds: number;
+  stamina: number;
+  rollAngle: number;
+  rollRate: number;
+  pitchAngle: number;
+  pitchRate: number;
+  crossWaveLoad: number;
+  balanceError: number;
+  waterContact: number;
+};
+
+export type PopUpBodyReading = PopUpBodyState & {
+  movementAuthority: number;
+  correctiveLoad: number;
+};
+
 export type PopUpEffortSample = {
   deltaSeconds: number;
   handLoad: number;
@@ -2122,24 +2144,18 @@ export function popUpStaminaDelta(sample: PopUpEffortSample) {
 }
 
 /**
- * Advances the surfer's body transition independently from wave capture.
- * Hands load the forward half, the rear foot arrives first, then the front
- * foot raises the center of mass into a standing balance state.
+ * Maps physical body progress to the hand, foot, and center-of-mass loads
+ * applied to the board. This pose mapping contains no clock and no wave state.
  */
-export function evaluatePopUpTransition(
-  elapsedSeconds: number,
+export function evaluatePopUpTransitionAtProgress(
+  bodyProgress: number,
   stamina: number,
   foreAftFootPlacement = 0,
 ): PopUpTransitionReading {
   const staminaRatio = clampValue(stamina / 100, 0, 1);
   const footPlacement = clampValue(foreAftFootPlacement, -1, 1);
   const duration = .9 - staminaRatio * .24;
-  const linearProgress = clampValue(
-    Math.max(0, elapsedSeconds) / duration,
-    0,
-    1,
-  );
-  const progress = linearProgress * linearProgress * (3 - 2 * linearProgress);
+  const progress = clampValue(bodyProgress, 0, 1);
   const handEntry = smoothstep(.16, .34, progress);
   const handRelease = smoothstep(.56, .76, progress);
   const handLoad = handEntry * (1 - handRelease);
@@ -2184,6 +2200,111 @@ export function evaluatePopUpTransition(
     counterweightScale,
     verticalLoadAcceleration,
   };
+}
+
+/**
+ * Advances the actual body movement from muscular authority and the board
+ * loads the surfer must correct. Wave capture is deliberately absent. Flat
+ * water therefore still permits a pop-up, while roll, pitch, angular motion,
+ * cross-wave pressure, poor counterweight, and fatigue slow the movement.
+ */
+export function advancePopUpBodyTransition(
+  state: PopUpBodyState,
+  sample: PopUpBodySample,
+): PopUpBodyReading {
+  const delta = clampValue(sample.deltaSeconds, 0, .25);
+  let progress = clampValue(state.progress, 0, 1);
+  let velocity = progress >= 1
+    ? 0
+    : clampValue(state.velocity, 0, 3);
+  let movementAuthority = progress >= 1 ? 0 : 1;
+  let correctiveLoad = 0;
+  let remaining = delta;
+  const maxStep = 1 / 240;
+
+  while (remaining > 1e-9 && progress < 1) {
+    const step = Math.min(maxStep, remaining);
+    const pose = evaluatePopUpTransitionAtProgress(
+      progress,
+      sample.stamina,
+    );
+    const waterContact = clampValue(sample.waterContact, 0, 1);
+    const rollTilt = clampValue(Math.abs(sample.rollAngle) / .72, 0, 1);
+    const pitchTilt = clampValue(Math.abs(sample.pitchAngle) / .58, 0, 1);
+    const rollMotion = clampValue(Math.abs(sample.rollRate) / 3.2, 0, 1);
+    const pitchMotion = clampValue(Math.abs(sample.pitchRate) / 2.7, 0, 1);
+    const crossWaterLoad = clampValue(
+      Math.abs(sample.crossWaveLoad) * waterContact / 1.35,
+      0,
+      1,
+    );
+    const balanceCorrection = clampValue(
+      Math.abs(sample.balanceError) / 1.15,
+      0,
+      1,
+    );
+    const uprightExposure = .42 + pose.centerOfMassHeight * .58;
+    correctiveLoad = clampValue(
+      rollTilt * .2
+        + pitchTilt * .16
+        + rollMotion * .16
+        + pitchMotion * .13
+        + crossWaterLoad * .22
+        + balanceCorrection * .18,
+      0,
+      .88,
+    ) * uprightExposure;
+    const staminaRatio = clampValue(sample.stamina / 100, 0, 1);
+    const muscularAuthority = .56 + staminaRatio * .44;
+    movementAuthority = clampValue(
+      muscularAuthority * (1 - correctiveLoad * .76),
+      .2,
+      1,
+    );
+    const supportResistance = pose.handLoad * .055
+      + pose.footImpact * .09
+      + pose.centerOfMassHeight * (1 - staminaRatio) * .07;
+    const targetVelocity = 1.38
+      * movementAuthority
+      * (1 - supportResistance);
+    const response = 11.5 - correctiveLoad * 2.5;
+    velocity += (targetVelocity - velocity)
+      * (1 - Math.exp(-response * step));
+    progress = Math.min(1, progress + velocity * step);
+    remaining -= step;
+  }
+
+  if (progress >= 1) velocity = 0;
+  return {
+    progress,
+    velocity,
+    movementAuthority,
+    correctiveLoad,
+  };
+}
+
+/**
+ * Legacy elapsed-time adapter retained for deterministic pose sampling. Live
+ * gameplay advances `PopUpBodyState` with `advancePopUpBodyTransition`.
+ */
+export function evaluatePopUpTransition(
+  elapsedSeconds: number,
+  stamina: number,
+  foreAftFootPlacement = 0,
+): PopUpTransitionReading {
+  const staminaRatio = clampValue(stamina / 100, 0, 1);
+  const duration = .9 - staminaRatio * .24;
+  const linearProgress = clampValue(
+    Math.max(0, elapsedSeconds) / duration,
+    0,
+    1,
+  );
+  const progress = linearProgress * linearProgress * (3 - 2 * linearProgress);
+  return evaluatePopUpTransitionAtProgress(
+    progress,
+    stamina,
+    foreAftFootPlacement,
+  );
 }
 
 /**
@@ -4295,6 +4416,7 @@ export type GameStats = {
   takeoffAlignment: number;
   takeoffQuality: number;
   takeoffCommitProgress: number;
+  popUpMovementAuthority: number;
   waveCapture: number;
   prompt: string;
 };
@@ -4421,6 +4543,7 @@ export const INITIAL_STATS: GameStats = {
   takeoffAlignment: 0,
   takeoffQuality: 0,
   takeoffCommitProgress: 0,
+  popUpMovementAuthority: 0,
   waveCapture: 0,
   prompt: "Walk toward the water · or find the van",
 };

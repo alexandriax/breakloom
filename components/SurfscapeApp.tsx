@@ -3083,6 +3083,7 @@ export default function SurfscapeApp() {
   const ridingOut = stats.phase === "riding" && stats.rideOutProgress > .02;
   const standingOnBoard = stats.phase === "riding" && !stats.waveEngaged;
   const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
+  const popUpBodyRate = Math.round(stats.popUpMovementAuthority * 100);
   const popUpPressure = stats.stance > .14
     ? `NOSE ${Math.round(stats.stance * 100)}%`
     : stats.stance < -.14
@@ -3215,29 +3216,29 @@ export default function SurfscapeApp() {
             ? stats.takeoffCommitProgress < .2
               ? {
                   cue: "LAST STROKE · HANDS IN",
-                  detail: "The body transition now finishes independently of wave capture.",
+                  detail: `${popUpBodyRate}% body drive · stamina and live board load set the movement rate; wave capture does not.`,
                   rotation: -90,
                   tone: "ready",
                 }
               : stats.takeoffCommitProgress < .5
                 ? {
                     cue: "HANDS UNDER RIBS",
-                    detail: "Keep the shoulders square; hand pressure is loading the nose and sinking the hull.",
+                    detail: `${popUpBodyRate}% body drive · keep the shoulders square while hand pressure loads the nose.`,
                     rotation: 90,
                     tone: "balance",
                   }
                 : stats.takeoffCommitProgress < .74
                   ? {
                       cue: "REAR FOOT UNDER HIPS",
-                      detail: `${gamepadConnected ? "Stick fore/aft" : "W/S"} places board pressure · currently ${popUpPressure} · ${counterweightCue} toward the roll target.`,
+                      detail: `${popUpBodyRate}% body drive · ${gamepadConnected ? "stick fore/aft" : "W/S"} sets ${popUpPressure} pressure · ${counterweightCue} toward the roll target.`,
                       rotation: rollSide === "RIGHT" ? 180 : 0,
                       tone: "balance",
                     }
                   : {
                       cue: "FRONT FOOT LANDING",
                       detail: stats.waveCapture > .1
-                        ? `${Math.round(stats.waveCapture * 100)}% sustained hull engagement · ${popUpPressure} pressure and the live board attitude carry into standing.`
-                        : `No hull engagement · ${popUpPressure} pressure still carries into still-water balance.`,
+                        ? `${popUpBodyRate}% body drive · ${Math.round(stats.waveCapture * 100)}% hull engagement · live pressure carries into standing.`
+                        : `${popUpBodyRate}% body drive · no hull engagement; ${popUpPressure} pressure carries into still-water balance.`,
                       rotation: -90,
                       tone: "ready",
                     }
@@ -3537,7 +3538,7 @@ export default function SurfscapeApp() {
                     : stats.takeoffCommitProgress < .74
                       ? "REAR FOOT IN"
                       : "FRONT FOOT DOWN",
-                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body transition · ${popUpPressure} foot pressure · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% hull engagement` : "no hull engagement"}`,
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body position · ${popUpBodyRate}% movement rate · ${popUpPressure} pressure · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% hull engagement` : "no hull engagement"}`,
               }
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }

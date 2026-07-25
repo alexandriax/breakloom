@@ -4,6 +4,7 @@ import {
   advanceBoardRollDynamics,
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
+  advancePopUpBodyTransition,
   advanceProneBoardAttitude,
   advanceReturnProneTransition,
   advanceSurferCompression,
@@ -2187,6 +2188,53 @@ const loadedPopUpEffort = integratedPopUpEffort(60, {
   rollCapsizeRisk: .62,
   pitchOverRisk: .38,
 });
+function dynamicPopUp(hz, load = {}) {
+  let state = {
+    progress: 0,
+    velocity: 0,
+  };
+  let reading = null;
+  let elapsed = 0;
+  while (state.progress < 1 && elapsed < 3) {
+    reading = advancePopUpBodyTransition(state, {
+      deltaSeconds: 1 / hz,
+      stamina: load.stamina ?? 100,
+      rollAngle: load.rollAngle ?? 0,
+      rollRate: load.rollRate ?? 0,
+      pitchAngle: load.pitchAngle ?? 0,
+      pitchRate: load.pitchRate ?? 0,
+      crossWaveLoad: load.crossWaveLoad ?? 0,
+      balanceError: load.balanceError ?? 0,
+      waterContact: load.waterContact ?? 1,
+    });
+    state = {
+      progress: reading.progress,
+      velocity: reading.velocity,
+    };
+    elapsed += 1 / hz;
+  }
+  return {
+    ...reading,
+    elapsed,
+  };
+}
+const quietDynamicPopUp60 = dynamicPopUp(60);
+const quietDynamicPopUp120 = dynamicPopUp(120);
+const tiredDynamicPopUp = dynamicPopUp(60, {
+  stamina: 8,
+});
+const loadedDynamicPopUp = dynamicPopUp(60, {
+  rollAngle: .36,
+  rollRate: 1.35,
+  pitchAngle: -.25,
+  pitchRate: -.9,
+  crossWaveLoad: .92,
+  balanceError: .62,
+  waterContact: .88,
+});
+const dryDynamicPopUp = dynamicPopUp(60, {
+  waterContact: 0,
+});
 if (
   popUpStart.progress !== 0
   || popUpHandPlant.handLoad < .45
@@ -2217,8 +2265,20 @@ if (
   || quietPopUpEffort60 < .45
   || Math.abs(quietPopUpEffort60 - quietPopUpEffort120) > .004
   || loadedPopUpEffort <= quietPopUpEffort60 * 1.2
+  || quietDynamicPopUp60.progress < 1
+  || quietDynamicPopUp60.elapsed < .68
+  || quietDynamicPopUp60.elapsed > 1
+  || Math.abs(
+    quietDynamicPopUp60.elapsed - quietDynamicPopUp120.elapsed,
+  ) > 1 / 60 + 1e-9
+  || tiredDynamicPopUp.elapsed <= quietDynamicPopUp60.elapsed * 1.25
+  || loadedDynamicPopUp.elapsed <= quietDynamicPopUp60.elapsed * 1.18
+  || loadedDynamicPopUp.movementAuthority
+    >= quietDynamicPopUp60.movementAuthority
+  || dryDynamicPopUp.progress < 1
+  || dryDynamicPopUp.elapsed > 1
 ) {
-  throw new Error("Pop-up body loads no longer drive continuous, frame-rate-stable placement and muscular effort");
+  throw new Error("Pop-up body loads no longer drive continuous, frame-rate-stable movement, placement, and muscular effort");
 }
 function proneForFrames(frameCount, sample = proneSample) {
   let state = {
@@ -3465,6 +3525,11 @@ console.log(JSON.stringify({
     quietPopUpEffort60,
     quietPopUpEffort120,
     loadedPopUpEffort,
+    quietDynamicPopUpSeconds60Hz: quietDynamicPopUp60.elapsed,
+    quietDynamicPopUpSeconds120Hz: quietDynamicPopUp120.elapsed,
+    tiredDynamicPopUpSeconds: tiredDynamicPopUp.elapsed,
+    loadedDynamicPopUpSeconds: loadedDynamicPopUp.elapsed,
+    loadedDynamicPopUpAuthority: loadedDynamicPopUp.movementAuthority,
     returnProneSeconds60Hz: returnProne60.elapsed,
     returnProneSeconds120Hz: returnProne120.elapsed,
     returnPronePeakHandSupport: returnProne60.peakHandSupport,
