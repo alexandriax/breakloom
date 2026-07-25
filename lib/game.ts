@@ -1135,7 +1135,7 @@ export const BOARD_SPECS: Record<BoardType, {
 };
 
 export const SURFSCAPE_RELEASE = {
-  version: 234,
+  version: 235,
   channel: "STABLE RC",
 } as const;
 
@@ -2652,6 +2652,37 @@ export type PaddleHeadingTargetReading = {
 };
 
 /**
+ * Stabilizes a relative HUD bearing without losing the shortest path through
+ * the ±180° seam. Small polygon-normal changes stay inside a deadband while
+ * legitimate direction changes remain responsive and step-limited.
+ */
+export function stabilizeHeadingGuideDegrees(
+  currentDegrees: number,
+  targetDegrees: number,
+  response = .42,
+  maximumStepDegrees = 28,
+  deadbandDegrees = 1.5,
+) {
+  const radians = Math.PI / 180;
+  const deltaDegrees = Math.atan2(
+    Math.sin(
+      (targetDegrees - currentDegrees) * radians,
+    ),
+    Math.cos(
+      (targetDegrees - currentDegrees) * radians,
+    ),
+  ) / radians;
+  if (Math.abs(deltaDegrees) <= deadbandDegrees) {
+    return currentDegrees;
+  }
+  return currentDegrees + clampValue(
+    deltaDegrees * clampValue(response, .05, 1),
+    -Math.max(1, maximumStepDegrees),
+    Math.max(1, maximumStepDegrees),
+  );
+}
+
+/**
  * Converts a desired ground track into the board heading required through
  * moving water. The HUD arrow therefore teaches current compensation instead
  * of pointing at a geometric bearing the paddler would drift away from.
@@ -2960,6 +2991,7 @@ export type PaddleboardDynamicsReading = PaddleboardDynamicsState & {
   lateralSpeed: number;
   strokeForce: number;
   strokeYawAcceleration: number;
+  scullYawAcceleration: number;
   paddleHandLever: number;
 };
 
@@ -3017,8 +3049,31 @@ export function advancePaddleboardDynamics(
     * appliedStrokeForce
     * turn
     / yawRadiusSquared;
+  // A surfer can sweep one hand beside the rail while nearly stationary.
+  // That produces a mostly rotational reaction without inventing forward
+  // thrust, and fades as ordinary alternating strokes gain authority.
+  const lowSpeedScull = 1 - smoothstep(
+    .35,
+    2.25,
+    speed,
+  );
+  const scullForce = Math.abs(steer)
+    * (1.25 + paddleEfficiency * .55)
+    * (.32 + lowSpeedScull * .68)
+    * hullContact
+    * (1 - submersion);
+  const scullLever = .24 + safeWidth * .2;
+  const scullYawAcceleration = -steer
+    * scullForce
+    * scullLever
+    * turn
+    * turningAuthority
+    / yawRadiusSquared;
   let yawRate = state.yawRate
-    + strokeYawAcceleration * delta;
+    + (
+      strokeYawAcceleration
+        + scullYawAcceleration
+    ) * delta;
   yawRate *= Math.exp(
     -delta * (
       .08 + hullContact * (
@@ -3089,6 +3144,7 @@ export function advancePaddleboardDynamics(
     lateralSpeed,
     strokeForce: appliedStrokeForce,
     strokeYawAcceleration,
+    scullYawAcceleration,
     paddleHandLever,
   };
 }
@@ -4257,7 +4313,7 @@ export function advanceSeparatedSurferRecovery(
   const leashTension = clampValue(sample.leashTension, 0, 1.5);
   const maximumHoldSeconds = clampValue(
     sample.maximumHoldSeconds,
-    2.2,
+    1.35,
     12,
   );
   const minimumImpactSeconds = clampValue(
@@ -5006,7 +5062,9 @@ export function advanceSurfboardDynamics(
     boardTurn: turn,
   });
   const activeRailPressureResistance =
-    1 - Math.abs(railInput) * grip * planing * .45;
+    1 - Math.abs(railInput)
+      * grip
+      * (.28 + planing * .42);
   yawRate = clampValue(
     yawRate
       + wavePressure.yawAcceleration

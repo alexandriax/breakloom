@@ -62,6 +62,7 @@ import {
   reachedSurfTrainingStep,
   resolvePaddleHeadingTarget,
   settingsFromConditions,
+  stabilizeHeadingGuideDegrees,
   SURF_ASSIST_PROFILES,
   SURFSCAPE_RELEASE,
   thermalKitForConditions,
@@ -897,6 +898,9 @@ export default function SurfscapeApp() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
+  const [paddleGuideDegrees, setPaddleGuideDegrees] =
+    useState(0);
+  const paddleGuideDegreesValue = useRef(0);
   const [trainingStep, setTrainingStep] = useState(0);
   const trainingStepValue = useRef(0);
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
@@ -3220,9 +3224,30 @@ export default function SurfscapeApp() {
       paddleHeadingTarget.currentCompensationDegrees,
     ),
   );
+  useEffect(() => {
+    const targetDegrees = stats.phase === "paddling"
+      ? paddleHeadingTarget.headingError
+        * 180 / Math.PI
+      : 0;
+    const nextDegrees = stabilizeHeadingGuideDegrees(
+      paddleGuideDegreesValue.current,
+      targetDegrees,
+    );
+    paddleGuideDegreesValue.current = nextDegrees;
+    setPaddleGuideDegrees((current) =>
+      Math.abs(current - nextDegrees) < .05
+        ? current
+        : nextDegrees
+    );
+  }, [
+    paddleHeadingTarget.headingError,
+    stats.phase,
+  ]);
+  const stablePaddleHeadingError =
+    paddleGuideDegrees * Math.PI / 180;
   const paddleTargetKind = stats.inLineup ? "WAVE" : "BREAK EXIT";
   const paddleTraining = readPaddleTrainingMechanics({
-    boardWaveAngle: paddleHeadingTarget.headingError,
+    boardWaveAngle: stablePaddleHeadingError,
     paddleStroke: stats.paddleStroke,
     paddleEffort: stats.paddleEffort,
     waterContact: stats.boardWaterContact,
@@ -3231,7 +3256,7 @@ export default function SurfscapeApp() {
   });
   const surfTrainingForces = readSurfTrainingForces({
     boardWaveAngle: stats.phase === "paddling" && !stats.inLineup
-      ? paddleHeadingTarget.headingError
+      ? stablePaddleHeadingError
       : stats.boardWaveAngle,
     waveLateralLoad: stats.wavePressureSideLoad,
     waterContact: stats.boardWaterContact,

@@ -4073,7 +4073,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   z-index: 3;
   width: 35px;
   color: var(--paddle-guide-color);
-  transition: transform .16s linear;
+  transition: transform .28s cubic-bezier(.22, .72, .2, 1);
 }
 .paddle-heading-dial > small {
   position: absolute;
@@ -5589,4 +5589,71 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
     font-size: 10px;
   }
   .surfscape .dive-button small { font-size: 8px; }
+}
+
+/* v235 launch containment: the center destination owns a flexible column,
+   while nonessential navigation copy collapses before it can clip the page. */
+.surfscape.is-launch .launch-header {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(42px, 1fr)
+    minmax(164px, 228px)
+    minmax(42px, 1fr);
+  gap: clamp(6px, 1.2vw, 16px);
+}
+.surfscape.is-launch .wordmark,
+.surfscape.is-launch .launch-nav {
+  min-width: 0;
+}
+.surfscape.is-launch .wordmark {
+  overflow: hidden;
+}
+.surfscape.is-launch .wordmark > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.surfscape.is-launch .header-beach-select {
+  width: 100%;
+  min-width: 0;
+}
+.surfscape.is-launch .launch-nav {
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+@media (max-width: 1399px) {
+  .surfscape.is-launch .launch-nav .live-chip,
+  .surfscape.is-launch .launch-nav .text-button {
+    display: none;
+  }
+  .surfscape.is-launch .install-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 0;
+  }
+  .surfscape.is-launch .install-button span {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .surfscape.is-launch .launch-header {
+    grid-template-columns:
+      38px
+      minmax(144px, 1fr)
+      auto;
+  }
+  .surfscape.is-launch .wordmark {
+    width: 38px;
+  }
+  .surfscape.is-launch .wordmark > span:nth-child(2),
+  .surfscape.is-launch .wordmark small {
+    display: none;
+  }
+  .surfscape.is-launch .wordmark-mark {
+    flex: 0 0 auto;
+  }
 }

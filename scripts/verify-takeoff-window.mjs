@@ -75,6 +75,7 @@ import {
   rideRailInputFromPaddleSteer,
   SHALLOW_DISMOUNT_Z,
   shorelineRideOutProgress,
+  stabilizeHeadingGuideDegrees,
   surfboardLandingSucceeded,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
@@ -2551,14 +2552,14 @@ for (let frame = 0; frame < 90; frame += 1) {
 const shallowSafetyRecovery =
   advanceSeparatedSurferRecovery(0, {
     deltaSeconds: 1 / 60,
-    elapsedSeconds: 2.4,
+    elapsedSeconds: 1.55,
     surfaceOffset: -.38,
     verticalVelocity: 0,
     waterRelativeSpeed: 2,
     angularSpeed: 3,
     washIntensity: .8,
     leashTension: .8,
-    maximumHoldSeconds: 2.4,
+    maximumHoldSeconds: 1.55,
     minimumImpactSeconds: .45,
     settleSeconds: .3,
     washReleaseThreshold: .38,
@@ -4733,6 +4734,29 @@ const coastingSteer = advancePaddleboardDynamics(
     steer: 1,
   },
 );
+function stationaryScullAfter(
+  hz,
+  seconds = 1.2,
+) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 0,
+    heading: 0,
+    yawRate: 0,
+  };
+  const frames = Math.round(hz * seconds);
+  for (let frame = 0; frame < frames; frame += 1) {
+    state = advancePaddleboardDynamics(state, {
+      ...paddlingSample,
+      deltaSeconds: 1 / hz,
+      stroke: 0,
+      steer: 1,
+    });
+  }
+  return state;
+}
+const stationaryScull60 = stationaryScullAfter(60);
+const stationaryScull120 = stationaryScullAfter(120);
 if (
   leftHandPull.yawRate <= 0
   || rightHandPull.yawRate >= 0
@@ -4743,9 +4767,21 @@ if (
   || Math.abs(wideLeftTurningPull.strokeYawAcceleration)
     <= Math.abs(leftHandPull.strokeYawAcceleration) * 3
   || coastingSteer.strokeYawAcceleration !== 0
-  || coastingSteer.yawRate !== 0
+  || coastingSteer.scullYawAcceleration >= -.1
+  || coastingSteer.yawRate >= 0
+  || Math.abs(stationaryScull60.heading) < .48
+  || Math.hypot(
+    stationaryScull60.velocityX,
+    stationaryScull60.velocityZ,
+  ) > .001
+  || Math.abs(
+    stationaryScull60.heading
+      - stationaryScull120.heading,
+  ) > .012
 ) {
-  throw new Error("Prone paddle yaw no longer comes exclusively from planted-hand leverage");
+  throw new Error(
+    "Prone paddle yaw no longer combines planted-hand leverage with low-speed sculling",
+  );
 }
 const rightTurnLeftPullGuide = readPaddleTrainingMechanics({
   boardWaveAngle: Math.PI / 3,
@@ -4807,6 +4843,15 @@ const compensatedGroundVelocityX =
 const compensatedGroundVelocityZ =
   crossCurrentHeadingTarget.targetDirectionZ
     * crossCurrentRequiredSpeed;
+const wrappedGuide = stabilizeHeadingGuideDegrees(
+  179,
+  -179,
+);
+const deadbandGuide =
+  stabilizeHeadingGuideDegrees(
+    12,
+    13.1,
+  );
 if (
   rightTurnLeftPullGuide.turnDirection !== "right"
   || rightTurnLeftPullGuide.turnDegrees !== 60
@@ -4833,6 +4878,9 @@ if (
     .currentCompensationDegrees < 10
   || Math.abs(compensatedGroundVelocityX) > 1e-9
   || Math.abs(compensatedGroundVelocityZ + 2.4) > 1e-9
+  || wrappedGuide < 179
+  || wrappedGuide > 181
+  || deadbandGuide !== 12
 ) {
   throw new Error("Physical paddle training guidance no longer matches ground track, current, hand cycle, or hull load");
 }
@@ -5451,8 +5499,10 @@ console.log(JSON.stringify({
     longboardTurnRadians: longboardPaddleTurn.heading,
     neutralPullLever: leftHandPull.paddleHandLever,
     turningPullLever: wideLeftTurningPull.paddleHandLever,
-    coastingSteerYawAcceleration:
-      coastingSteer.strokeYawAcceleration,
+    coastingScullYawAcceleration:
+      coastingSteer.scullYawAcceleration,
+    stationaryScullHeading:
+      stationaryScull60.heading,
     averageStrokeDrive,
     paddleWork60,
     paddleWork30,

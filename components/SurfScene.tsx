@@ -12682,6 +12682,21 @@ function Simulation({
         const proneForwardZ = Math.cos(paddleHeading.current);
         const proneRightX = Math.cos(paddleHeading.current);
         const proneRightZ = -Math.sin(paddleHeading.current);
+        const deliberatePaddleTurn = Math.abs(
+          steer * popUpPaddleAvailability,
+        );
+        const lateralPressureRelief = 1 - Math.min(
+          .5,
+          deliberatePaddleTurn
+            * assistProfile.paddleTurnAuthority
+            * .36,
+        );
+        const yawPressureRelief = 1 - Math.min(
+          .68,
+          deliberatePaddleTurn
+            * assistProfile.paddleTurnAuthority
+            * .49,
+        );
         const pressureForward =
           proneWavePressure.accelerationX * proneForwardX
             + proneWavePressure.accelerationZ * proneForwardZ;
@@ -12689,7 +12704,9 @@ function Simulation({
           (
             proneWavePressure.accelerationX * proneRightX
               + proneWavePressure.accelerationZ * proneRightZ
-          ) * assistProfile.proneLateralLoad;
+          )
+          * assistProfile.proneLateralLoad
+          * lateralPressureRelief;
         paddleVelocity.current.x += (
           proneForwardX * pressureForward
             + proneRightX * pressureLateral
@@ -12702,6 +12719,7 @@ function Simulation({
           paddleYawRate.current
             + proneWavePressure.yawAcceleration
               * assistProfile.proneLateralLoad
+              * yawPressureRelief
               * pronePressureStep,
           -4.8,
           4.8,
@@ -15607,7 +15625,6 @@ function Simulation({
         }
       } else if (currentPhase === "wipeout") {
         const elapsed = Math.max(0, t - wipeoutAt.current);
-        const duration = Math.max(1.2, wipeoutDuration.current);
         const waveTransport = primaryWaveVelocityAt(
           position.current.x,
           position.current.z,
@@ -15656,6 +15673,16 @@ function Simulation({
             -18,
             0,
           );
+        const impactZoneRecovery =
+          THREE.MathUtils.smoothstep(
+            wipeoutBreakCoastalZ,
+            -72,
+            -8,
+          );
+        const recoveryRelief = Math.max(
+          shallowRecovery,
+          impactZoneRecovery * .8,
+        );
         const breakingWash =
           resolveSeparatedSurferBreakingWash({
             crestDistance,
@@ -15739,9 +15766,9 @@ function Simulation({
             projectedArea:
               bodyHydrodynamics.projectedArea,
             maximumDepth: THREE.MathUtils.lerp(
-              1.8,
-              .38,
-              shallowRecovery,
+              1.55,
+              .32,
+              recoveryRelief,
             ),
           },
         );
@@ -15829,25 +15856,25 @@ function Simulation({
             washIntensity: residualWash,
             leashTension: leash.tension,
             minimumImpactSeconds: THREE.MathUtils.lerp(
-              .9,
-              .45,
-              shallowRecovery,
+              .78,
+              .35,
+              recoveryRelief,
             ),
             settleSeconds: THREE.MathUtils.lerp(
               .55,
-              .3,
-              shallowRecovery,
+              .25,
+              recoveryRelief,
             ),
             washReleaseThreshold:
               THREE.MathUtils.lerp(
                 .18,
-                .38,
-                shallowRecovery,
+                .42,
+                recoveryRelief,
               ),
             maximumHoldSeconds: THREE.MathUtils.lerp(
-              Math.max(6.4, duration + 2.8),
-              2.4,
-              shallowRecovery,
+              2.9 + wipeoutPower.current * .5,
+              1.55,
+              recoveryRelief,
             ),
           },
         );
@@ -15866,9 +15893,9 @@ function Simulation({
               + (1 - recovery.readiness) * .55,
             0,
             THREE.MathUtils.lerp(
-              8,
-              2.5,
-              shallowRecovery,
+              4.5,
+              1.5,
+              recoveryRelief,
             ),
           );
         position.current.z = THREE.MathUtils.clamp(
