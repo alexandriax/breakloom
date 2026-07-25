@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -3613,7 +3613,6 @@ function PremiumSurfboard({
           + Math.abs(state.rail) * .008
           + Math.max(0, -state.acceleration) * .011
           + Math.abs(state.lateralForce) * .006
-          + state.takeoff * .012
           + state.impact * .036
         ) * waterContact
         : paddling
@@ -4331,7 +4330,7 @@ function SurferModel({
     const baseBoardRotationX = carrying
       ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth)
       : riding
-        ? state.stance * -.05 + state.facePosition * -.085 + state.barrel * .025 + state.takeoff * .09 + state.maneuverLift * .2 + rideSettle * .025 - state.acceleration * .028 + foamChatter * .018
+        ? state.stance * -.05 + state.facePosition * -.085 + state.barrel * .025 + state.maneuverLift * .2 + rideSettle * .025 - state.acceleration * .028 + foamChatter * .018
         : paddle
           ? state.duckDive * .3 - state.shorebreak * .035 + takeoffPlant * .065
           : 0;
@@ -12451,7 +12450,6 @@ function Simulation({
           takeoffCommitAt.current = -1;
           takeoffCommitProgress = 0;
           motion.current.takeoff = 1;
-          motion.current.impact = .58 + committedQuality * .42;
           paddleVelocity.current.set(0, 0);
         };
 
@@ -12586,13 +12584,26 @@ function Simulation({
             },
           );
           waveEngagement.current = popUpWaveEngagement.engagement;
-          stamina.current = Math.max(
+          const popUpBalanceError = Math.abs(
+            balanceInput * popUpTransition.counterweightScale
+              - balanceTarget,
+          );
+          stamina.current = THREE.MathUtils.clamp(
+            stamina.current + popUpStaminaDelta({
+              deltaSeconds: delta,
+              handLoad: popUpTransition.handLoad,
+              rearFootLoad: popUpTransition.rearFootLoad,
+              frontFootLoad: popUpTransition.frontFootLoad,
+              footImpact: popUpTransition.footImpact,
+              centerOfMassHeight: popUpTransition.centerOfMassHeight,
+              balanceError: popUpBalanceError,
+              crossWaveLoad: caughtInteraction.crossWaveLoad
+                * boardWaterContact,
+              rollCapsizeRisk,
+              pitchOverRisk,
+            }),
             0,
-            stamina.current - delta * (
-              .62
-                + (1 - takeoffCommitProgress)
-                  * (.72 + setState.crestEnergy * .46)
-            ),
+            100,
           );
           takeoffQuality = THREE.MathUtils.clamp(
             takeoffCommitQuality.current * .5
@@ -12684,7 +12695,6 @@ function Simulation({
               pitchOverRisk,
             ) * 1.25;
             balanceTarget = popReading.balanceTarget;
-            stamina.current = Math.max(0, stamina.current - (engaged ? 2.4 : .6));
             takeoffCommitAt.current = t;
             popUpStartStamina.current = stamina.current;
             stance.current = 0;
@@ -12702,12 +12712,6 @@ function Simulation({
             );
             rideWavePhase.current = Math.PI * .5
               + Math.round((popPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-            motion.current.impact = Math.max(
-              motion.current.impact,
-              .12
-                + committedQuality * .2
-                + popReading.crossWaveLoad * .18,
-            );
             prompt = engaged
               ? "Last stroke — plant the hands as the face lifts"
               : "Hands moving under the ribs — the board keeps its own momentum";
@@ -13533,11 +13537,6 @@ function Simulation({
             rideStartScore.current = score.current;
             rideManeuverStart.current = maneuverCount.current;
             score.current += Math.round(45 + catchQuality.current * 310);
-            motion.current.takeoff = Math.max(motion.current.takeoff, .72);
-            motion.current.impact = Math.max(
-              motion.current.impact,
-              .34 + standingReading.capture * .34,
-            );
             prompt = standingReleased
               ? `${activeManeuver.current?.name ?? "Board release"} — live lip geometry lifted the hull`
               : "The face has the board — set a rail into the open shoulder";

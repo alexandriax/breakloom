@@ -21,6 +21,7 @@ import {
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
   paddlingStaminaDelta,
+  popUpStaminaDelta,
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
@@ -1992,6 +1993,40 @@ function controlledPopUpFootPlacement(hz, input) {
 }
 const forwardPopUpPlacement60 = controlledPopUpFootPlacement(60, 1);
 const forwardPopUpPlacement120 = controlledPopUpFootPlacement(120, 1);
+function integratedPopUpEffort(hz, load = {}) {
+  const duration = evaluatePopUpTransition(0, 100).duration;
+  let elapsed = 0;
+  let effort = 0;
+  while (elapsed < duration - 1e-9) {
+    const deltaSeconds = Math.min(1 / hz, duration - elapsed);
+    const transition = evaluatePopUpTransition(
+      elapsed + deltaSeconds * .5,
+      100,
+    );
+    effort -= popUpStaminaDelta({
+      deltaSeconds,
+      handLoad: transition.handLoad,
+      rearFootLoad: transition.rearFootLoad,
+      frontFootLoad: transition.frontFootLoad,
+      footImpact: transition.footImpact,
+      centerOfMassHeight: transition.centerOfMassHeight,
+      balanceError: load.balanceError ?? .08,
+      crossWaveLoad: load.crossWaveLoad ?? 0,
+      rollCapsizeRisk: load.rollCapsizeRisk ?? .02,
+      pitchOverRisk: load.pitchOverRisk ?? .02,
+    });
+    elapsed += deltaSeconds;
+  }
+  return effort;
+}
+const quietPopUpEffort60 = integratedPopUpEffort(60);
+const quietPopUpEffort120 = integratedPopUpEffort(120);
+const loadedPopUpEffort = integratedPopUpEffort(60, {
+  balanceError: .72,
+  crossWaveLoad: 1.1,
+  rollCapsizeRisk: .62,
+  pitchOverRisk: .38,
+});
 if (
   popUpStart.progress !== 0
   || popUpHandPlant.handLoad < .45
@@ -2007,8 +2042,23 @@ if (
   ) > .012
   || popUpStanding.stabilityScale >= popUpStart.stabilityScale
   || tiredPopUp.progress >= popUpStanding.progress
+  || popUpStaminaDelta({
+    deltaSeconds: 0,
+    handLoad: 1,
+    rearFootLoad: 1,
+    frontFootLoad: 1,
+    footImpact: 1,
+    centerOfMassHeight: 1,
+    balanceError: 2,
+    crossWaveLoad: 1.5,
+    rollCapsizeRisk: 1,
+    pitchOverRisk: 1,
+  }) !== 0
+  || quietPopUpEffort60 < .45
+  || Math.abs(quietPopUpEffort60 - quietPopUpEffort120) > .004
+  || loadedPopUpEffort <= quietPopUpEffort60 * 1.2
 ) {
-  throw new Error("Pop-up body loads no longer move from hands into physical fore-aft foot pressure");
+  throw new Error("Pop-up body loads no longer drive continuous, frame-rate-stable placement and muscular effort");
 }
 function proneForFrames(frameCount, sample = proneSample) {
   let state = {
@@ -3085,6 +3135,9 @@ console.log(JSON.stringify({
     standingPassiveCompression,
     engagedPassiveCompression,
     quietPassiveCompression,
+    quietPopUpEffort60,
+    quietPopUpEffort120,
+    loadedPopUpEffort,
     returnProneSeconds60Hz: returnProne60.elapsed,
     returnProneSeconds120Hz: returnProne120.elapsed,
     returnPronePeakHandSupport: returnProne60.peakHandSupport,

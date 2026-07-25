@@ -1936,6 +1936,40 @@ export type PopUpTransitionReading = {
   verticalLoadAcceleration: number;
 };
 
+export type PopUpEffortSample = {
+  deltaSeconds: number;
+  handLoad: number;
+  rearFootLoad: number;
+  frontFootLoad: number;
+  footImpact: number;
+  centerOfMassHeight: number;
+  balanceError: number;
+  crossWaveLoad: number;
+  rollCapsizeRisk: number;
+  pitchOverRisk: number;
+};
+
+/**
+ * Converts the continuous body transition and measured board loads into
+ * muscular fatigue. Wave capture is deliberately absent: popping up costs the
+ * same in identical body and water states, whether or not a ride is scored.
+ */
+export function popUpStaminaDelta(sample: PopUpEffortSample) {
+  const delta = clampValue(sample.deltaSeconds, 0, .25);
+  const supportWork = clampValue(sample.handLoad, 0, 1) * .78
+    + clampValue(sample.rearFootLoad, 0, 1) * .22
+    + clampValue(sample.frontFootLoad, 0, 1) * .34
+    + clampValue(sample.footImpact, 0, 1) * .38
+    + clampValue(sample.centerOfMassHeight, 0, 1) * .24;
+  const correctiveWork = clampValue(sample.balanceError, 0, 2) * .18
+    + clampValue(sample.crossWaveLoad, 0, 1.5) * .22
+    + Math.max(
+      clampValue(sample.rollCapsizeRisk, 0, 1),
+      clampValue(sample.pitchOverRisk, 0, 1),
+    ) * .28;
+  return -delta * (.35 + supportWork + correctiveWork);
+}
+
 /**
  * Advances the surfer's body transition independently from wave capture.
  * Hands load the forward half, the rear foot arrives first, then the front
