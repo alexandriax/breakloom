@@ -50,6 +50,7 @@ import {
 import {
   BOARD_SPECS,
   compassDirection,
+  deepWaterWavelengthForPeriod,
   formatClock,
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
@@ -4702,7 +4703,7 @@ export default function SurfscapeApp() {
                     <i><b style={{ width: `${surfRadarFill}%` }} /></i>
                     <small>{surfRadarDetail}</small>
                   </article>
-                  <article><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s period</small></article>
+                  <article><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s · {(deepWaterWavelengthForPeriod(settings.wavePeriod) / settings.wavePeriod).toFixed(1)} m/s deep crest</small></article>
                   <article><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)} m</strong><small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small></article>
                   <article><span>BREAK / TIDE</span><strong>{activeLine}</strong><small>{tideResponse.label}</small></article>
                   <article><span>WIND</span><strong>{settings.windSpeed.toFixed(0)} km/h</strong><small>{degrees(settings.windDirection)}</small></article>

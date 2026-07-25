@@ -22,6 +22,7 @@ import {
   advanceWaveEngagement,
   boardRailContactFrame,
   duckDiveSubmersionAt,
+  deepWaterWavelengthForPeriod,
   evaluateBoardWaterInteraction,
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
@@ -185,6 +186,38 @@ const character = {
   variability: .32,
   length: 1,
 };
+const fiveSecondWavelength = deepWaterWavelengthForPeriod(5);
+const tenSecondWavelength = deepWaterWavelengthForPeriod(10);
+const twentySecondWavelength = deepWaterWavelengthForPeriod(20);
+const shortPeriodTransport = primaryWaveVelocityAt(
+  0,
+  -180,
+  10,
+  { ...settings, wavePeriod: 5 },
+  character,
+);
+const longPeriodTransport = primaryWaveVelocityAt(
+  0,
+  -180,
+  10,
+  { ...settings, wavePeriod: 20 },
+  character,
+);
+if (
+  Math.abs(fiveSecondWavelength - 39.03275) > .001
+  || Math.abs(
+    tenSecondWavelength / fiveSecondWavelength - 4,
+  ) > .000001
+  || Math.abs(
+    twentySecondWavelength / tenSecondWavelength - 4,
+  ) > .000001
+  || longPeriodTransport.speed
+    <= shortPeriodTransport.speed * 3.95
+) {
+  throw new Error(
+    "Wave period no longer controls wavelength and crest celerity through deep-water dispersion",
+  );
+}
 
 const centerBreakCoordinate = waveBreakingCoordinateAt(
   0,
@@ -4863,6 +4896,13 @@ if (
 }
 
 console.log(JSON.stringify({
+  waveCalibration: {
+    fiveSecondWavelength,
+    tenSecondWavelength,
+    twentySecondWavelength,
+    shortPeriodCrestSpeed: shortPeriodTransport.speed,
+    longPeriodCrestSpeed: longPeriodTransport.speed,
+  },
   breakGeometry: {
     centerBreakCoordinate,
     peelingBreakCoordinate,

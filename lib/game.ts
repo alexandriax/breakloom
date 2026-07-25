@@ -6114,7 +6114,9 @@ export function waveHeightAt(
   const normalizedSwellX = swellDirectionX / swellDirectionLength;
   const normalizedSwellZ = swellDirectionZ / swellDirectionLength;
   const swellPeriod = Math.max(4, settings.swellPeriod);
-  const swellWavelength = Math.max(64, Math.min(520, 1.56 * swellPeriod * swellPeriod));
+  const swellWavelength = deepWaterWavelengthForPeriod(
+    swellPeriod,
+  );
   const swellPhase = (
     x * normalizedSwellX + coastalZ * normalizedSwellZ
   ) * (Math.PI * 2 / swellWavelength) - elapsed * (Math.PI * 2 / swellPeriod) + 1.7;
@@ -6353,8 +6355,18 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
   };
 }
 
+/**
+ * Deep-water gravity-wave dispersion: L = gT² / 2π. Keeping this relation
+ * intact makes long-period groundswell travel faster and farther apart than
+ * short-period wind swell before the shared shoaling compression is applied.
+ */
+export function deepWaterWavelengthForPeriod(period: number) {
+  const safePeriod = clampValue(period, 4, 24);
+  return 9.81 * safePeriod * safePeriod / (Math.PI * 2);
+}
+
 function primaryWaveWavelength(period: number, compression: number) {
-  return Math.max(48, Math.min(320, 1.56 * period * period)) * compression;
+  return deepWaterWavelengthForPeriod(period) * compression;
 }
 
 export function primaryWavePhaseAt(
