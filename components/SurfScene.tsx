@@ -11667,6 +11667,8 @@ function Simulation({
     let physicalHoldDownSeconds = 0;
     let duckDiveReady = false;
     let duckDiveActive = false;
+    let duckDiveAlignment = 1;
+    let duckDiveHeadingError = 0;
     let takeoffAlignment = 0;
     let takeoffQuality = 0;
     let maneuverProgress = 0;
@@ -12203,6 +12205,19 @@ function Simulation({
           / Math.max(.001, localWaveTransport.speed);
         const shorebreakWaveNormalZ = localWaveTransport.z
           / Math.max(.001, localWaveTransport.speed);
+        const duckDiveTargetX = -shorebreakWaveNormalX;
+        const duckDiveTargetZ = -shorebreakWaveNormalZ;
+        duckDiveAlignment = THREE.MathUtils.clamp(
+          paddleForwardX * duckDiveTargetX
+            + paddleForwardZ * duckDiveTargetZ,
+          -1,
+          1,
+        );
+        duckDiveHeadingError = Math.atan2(
+          duckDiveTargetX * paddleForwardZ
+            - duckDiveTargetZ * paddleForwardX,
+          duckDiveAlignment,
+        );
         const boardNormalSpeed = paddleVelocity.current.x
           * shorebreakWaveNormalX
           + paddleVelocity.current.y * shorebreakWaveNormalZ;
@@ -12284,8 +12299,9 @@ function Simulation({
             secondsToImpact: shorebreakSeconds,
             shorebreakPower,
             stamina: stamina.current,
+            noseIntoWallAlignment: duckDiveAlignment,
           });
-          duckDiveQuality.current = diveInitiation.timingQuality;
+          duckDiveQuality.current = diveInitiation.quality;
           duckDiveUntil.current = t + diveInitiation.duration;
           duckDiveActive = true;
           duckDiveReady = false;
@@ -17349,6 +17365,8 @@ function Simulation({
         duckDiveReady,
         duckDiveActive,
         duckDiveQuality: duckDiveQuality.current,
+        duckDiveAlignment,
+        duckDiveHeadingError,
         submersion: motion.current.submersion,
         wipeoutPower: motion.current.wipeoutPower,
         holdDownSeconds: phase.current === "wipeout"

@@ -3949,16 +3949,25 @@ const optimalDiveInitiation = resolveDuckDiveInitiation({
   secondsToImpact: .3,
   shorebreakPower: .82,
   stamina: 88,
+  noseIntoWallAlignment: 1,
 });
 const earlyDiveInitiation = resolveDuckDiveInitiation({
   secondsToImpact: 1.4,
   shorebreakPower: .82,
   stamina: 88,
+  noseIntoWallAlignment: 1,
 });
 const flatWaterDiveInitiation = resolveDuckDiveInitiation({
   secondsToImpact: 0,
   shorebreakPower: 0,
   stamina: 88,
+  noseIntoWallAlignment: 1,
+});
+const broadsideDiveInitiation = resolveDuckDiveInitiation({
+  secondsToImpact: .3,
+  shorebreakPower: .82,
+  stamina: 88,
+  noseIntoWallAlignment: 0,
 });
 const lateDiveSubmersion = duckDiveSubmersionAt(.02);
 const timedDiveSubmersion = duckDiveSubmersionAt(.3);
@@ -4022,6 +4031,10 @@ const zeroShorebreakResponse =
   );
 if (
   optimalDiveInitiation.timingQuality < .99
+  || optimalDiveInitiation.quality < .99
+  || broadsideDiveInitiation.timingQuality < .99
+  || broadsideDiveInitiation.orientationQuality !== 0
+  || broadsideDiveInitiation.quality !== 0
   || earlyDiveInitiation.timingQuality !== 0
   || flatWaterDiveInitiation.timingQuality !== 0
   || flatWaterDiveInitiation.effortCost <= 0
@@ -5185,6 +5198,8 @@ console.log(JSON.stringify({
   },
   duckDiveDynamics: {
     optimalTiming: optimalDiveInitiation.timingQuality,
+    optimalQuality: optimalDiveInitiation.quality,
+    broadsideQuality: broadsideDiveInitiation.quality,
     earlyTiming: earlyDiveInitiation.timingQuality,
     idleEffortCost: flatWaterDiveInitiation.effortCost,
     lateSubmersion: lateDiveSubmersion,

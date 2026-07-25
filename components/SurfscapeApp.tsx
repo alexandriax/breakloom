@@ -3116,6 +3116,12 @@ export default function SurfscapeApp() {
       : "CENTERED";
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
+  const duckDiveHeadingDegrees = Math.round(
+    stats.duckDiveHeadingError * 180 / Math.PI,
+  );
+  const duckDiveTurn = duckDiveHeadingDegrees >= 0
+    ? "RIGHT"
+    : "LEFT";
   const crestTiming = readCrestTimingMechanics(
     stats.crestOvertake,
     stats.crestAhead,
@@ -3263,17 +3269,24 @@ export default function SurfscapeApp() {
         ? stats.duckDiveActive
           ? {
               cue: `BOARD SUBMERGED ${Math.round(stats.submersion * 100)}%`,
-              detail: "Paddle thrust is gone underwater; keep the hull deep until the wall passes overhead.",
+              detail: `${Math.round(stats.duckDiveQuality * 100)}% timing-and-alignment quality · paddle thrust is gone underwater; keep the nose under the wall.`,
               rotation: 90,
               tone: "ready",
             }
           : stats.duckDiveReady
-          ? {
-              cue: "DIVE UNDER THE LIP",
-              detail: `${gamepadConnected ? "LB" : "SHIFT"} now · impact in ${stats.shorebreakSeconds.toFixed(1)}s · the same control also works before or after the cue`,
-              rotation: 90,
-              tone: "danger",
-            }
+          ? stats.duckDiveAlignment < .72
+            ? {
+                cue: `TURN ${duckDiveTurn} ${Math.abs(duckDiveHeadingDegrees)}° INTO WALL`,
+                detail: `${Math.round(Math.max(0, stats.duckDiveAlignment) * 100)}% nose alignment · a broadside dive leaves the rail exposed even with perfect timing.`,
+                rotation: duckDiveTurn === "RIGHT" ? 0 : 180,
+                tone: "danger",
+              }
+            : {
+                cue: "DIVE UNDER THE LIP",
+                detail: `${gamepadConnected ? "LB" : "SHIFT"} now · impact in ${stats.shorebreakSeconds.toFixed(1)}s · nose alignment ${Math.round(stats.duckDiveAlignment * 100)}%`,
+                rotation: 90,
+                tone: "danger",
+              }
           : stats.airborneHeight > .055
             ? {
                 cue: `PRONE HULL AIRBORNE ${airborneCentimeters} CM`,

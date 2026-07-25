@@ -88,10 +88,13 @@ export type DuckDiveInitiationSample = {
   secondsToImpact: number;
   shorebreakPower: number;
   stamina: number;
+  noseIntoWallAlignment: number;
 };
 
 export type DuckDiveInitiationReading = {
   timingQuality: number;
+  orientationQuality: number;
+  quality: number;
   duration: number;
   effortCost: number;
 };
@@ -107,6 +110,11 @@ export function resolveDuckDiveInitiation(
   const secondsToImpact = Math.max(0, sample.secondsToImpact);
   const shorebreakPower = clampValue(sample.shorebreakPower, 0, 1);
   const staminaRatio = clampValue(sample.stamina, 0, 100) / 100;
+  const orientationQuality = smoothstep(
+    .18,
+    .92,
+    clampValue(sample.noseIntoWallAlignment, -1, 1),
+  );
   const incomingWall = shorebreakPower > .06 && secondsToImpact > 0;
   const timingQuality = incomingWall
     ? clampValue(
@@ -119,6 +127,8 @@ export function resolveDuckDiveInitiation(
     : 0;
   return {
     timingQuality,
+    orientationQuality,
+    quality: timingQuality * orientationQuality,
     duration: 1.12,
     effortCost: .65
       + shorebreakPower * .6
@@ -5502,6 +5512,8 @@ export type GameStats = {
   duckDiveReady: boolean;
   duckDiveActive: boolean;
   duckDiveQuality: number;
+  duckDiveAlignment: number;
+  duckDiveHeadingError: number;
   submersion: number;
   wipeoutPower: number;
   holdDownSeconds: number;
@@ -5642,6 +5654,8 @@ export const INITIAL_STATS: GameStats = {
   duckDiveReady: false,
   duckDiveActive: false,
   duckDiveQuality: 0,
+  duckDiveAlignment: 1,
+  duckDiveHeadingError: 0,
   submersion: 0,
   wipeoutPower: 0,
   holdDownSeconds: 0,
