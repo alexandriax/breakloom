@@ -916,7 +916,6 @@ export default function SurfscapeApp() {
   const [passportReady, setPassportReady] = useState(false);
   const [passportAward, setPassportAward] = useState<PassportAward | null>(null);
   const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
-  const [takeoffToast, setTakeoffToast] = useState<{ label: string; quality: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
   const [hudEventToast, setHudEventToast] = useState<HudEventToast | null>(null);
   const [hudEventVisible, setHudEventVisible] = useState(false);
@@ -2140,12 +2139,6 @@ export default function SurfscapeApp() {
     rideFrame.current = null;
     rideCard.current = null;
     requestRideFrame(.38 + stats.takeoffQuality * .18);
-    audio.current?.effect("catch");
-    haptic([14, 24, 28]);
-    const label = stats.takeoffQuality >= .8 ? "Clean entry" : stats.takeoffQuality >= .55 ? "Committed drop" : "Late takeoff";
-    setTakeoffToast({ label, quality: stats.takeoffQuality });
-    const timer = window.setTimeout(() => setTakeoffToast(null), 1700);
-    return () => window.clearTimeout(timer);
   }, [requestRideFrame, stats.takeoffQuality, stats.waveEngaged]);
 
   useEffect(() => {
@@ -3346,7 +3339,7 @@ export default function SurfscapeApp() {
           : stats.waveEngagement > .08
             ? {
                 cue: `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`,
-                detail: "Keep the nose aligned and maintain hull contact; pressure must build before the face fully carries the board.",
+                detail: "Keep the nose aligned and maintain hull contact; pressure changes continuously with the board and face.",
                 rotation: -90,
                 tone: "ready",
               }
@@ -3524,7 +3517,7 @@ export default function SurfscapeApp() {
             }
         : standingOnBoard
           ? stats.waveEngagement > .08
-            ? { title: "PRESSURE BUILDING", detail: `${Math.round(stats.waveEngagement * 100)}% continuous hull engagement · stay aligned` }
+            ? { title: "LIVE HULL LOAD", detail: `${Math.round(stats.waveEngagement * 100)}% measured wave pressure · stay aligned` }
           : stats.crossWaveLoad > .28
             ? { title: `TURN ${headingTurn}`, detail: `${Math.round(stats.crossWaveLoad * 100)}% cross-wave load · balance against the roll` }
             : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: "Balance with the slider · tap PRONE to reposition" }
@@ -3592,8 +3585,8 @@ export default function SurfscapeApp() {
         + Math.abs(stats.lateralForce) * .045,
     )
     : 0;
-  const cinemaBeat = rideToast?.result ?? (maneuverToast ? "maneuver" : takeoffToast ? "takeoff" : null);
-  const cinemaBeatKey = rideToast?.id ?? maneuverToast?.id ?? (takeoffToast ? Math.round(takeoffToast.quality * 100) : 0);
+  const cinemaBeat = rideToast?.result ?? (maneuverToast ? "maneuver" : null);
+  const cinemaBeatKey = rideToast?.id ?? maneuverToast?.id ?? 0;
   const landingMin = Math.max(-1, stats.landingTarget - stats.landingWindow);
   const landingMax = Math.min(1, stats.landingTarget + stats.landingWindow);
   const showPhysicalLandingGuide = stats.maneuverActive
@@ -3617,16 +3610,6 @@ export default function SurfscapeApp() {
         value: `+${maneuverToast.points.toLocaleString()}`,
       };
     }
-    if (takeoffToast) {
-      return {
-        key: `takeoff-${Math.round(takeoffToast.quality * 100)}-${takeoffToast.label}`,
-        kind: "takeoff",
-        tone: takeoffToast.quality >= .8 ? "clean" : "accent",
-        eyebrow: "TAKEOFF",
-        title: takeoffToast.label,
-        value: `${Math.round(takeoffToast.quality * 100)}%`,
-      };
-    }
     if (shorebreakToast) {
       const clean = shorebreakToast.result === "clean";
       return {
@@ -3639,7 +3622,7 @@ export default function SurfscapeApp() {
       };
     }
     return null;
-  }, [landingLabel, maneuverToast, rideToast, shorebreakToast, takeoffToast]);
+  }, [landingLabel, maneuverToast, rideToast, shorebreakToast]);
 
   useEffect(() => {
     if (hudEventTransitionTimer.current !== null) {
@@ -4897,7 +4880,7 @@ export default function SurfscapeApp() {
           </div>
 
           <div
-            className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""} ${stats.waveEngaged && stats.railGrip < .48 ? "is-grip-warning" : ""} ${(stats.phase === "riding" || stats.phase === "paddling") && (stats.maneuverActive ? balanceAccuracy < 58 : stats.rollEdgeRisk > .34 || stats.pitchOverRisk > .38 || stats.airborneHeight > .055) ? "is-balance-warning" : ""} ${stats.waveEngaged && stats.lineControl > .82 && stats.sectionPressure < .38 ? "is-pocket-locked" : ""}`}
+            className={`mobile-controls phase-${stats.phase} ${stats.catchReady ? "is-catch-ready" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""} ${stats.phase === "riding" && stats.railGrip < .48 ? "is-grip-warning" : ""} ${(stats.phase === "riding" || stats.phase === "paddling") && (stats.maneuverActive ? balanceAccuracy < 58 : stats.rollEdgeRisk > .34 || stats.pitchOverRisk > .38 || stats.airborneHeight > .055) ? "is-balance-warning" : ""} ${stats.phase === "riding" && stats.lineControl > .82 && stats.sectionPressure < .38 ? "is-pocket-locked" : ""}`}
             style={mobileControlStyle}
           >
             <div
@@ -5018,7 +5001,7 @@ export default function SurfscapeApp() {
               <span>{mobileActionLabel}</span>
               {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" || takeoffCommitted ? <Sparkles /> : <Waves />}
             </button>
-            {stats.phase === "riding" && stats.waveEngaged && (
+            {stats.phase === "riding" && (
               <div className={`touch-ride-telemetry ${stats.whitewaterPressure > .28 || stats.sectionPressure > .52 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Face ${faceLabel}. Line ${lineLabel}. Whitewater pressure ${Math.round(stats.whitewaterPressure * 100)} percent. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>
                 <span><small>STANCE</small><strong>{stanceLabel}</strong></span>
                 <span><small>FACE</small><strong>{faceLabel}</strong></span>
