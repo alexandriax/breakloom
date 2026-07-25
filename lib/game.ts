@@ -323,6 +323,60 @@ export function resolveWaveSectionPressure(
   };
 }
 
+export type WaveTubeSample = {
+  linePosition: number;
+  facePosition: number;
+  tideHollow: number;
+  tideSteepness: number;
+  waveEnergy: number;
+  offshoreGroom: number;
+  onshoreChop: number;
+  whitewater: number;
+};
+
+/**
+ * Measures geometric enclosure by the pocket and upper face. Ride state,
+ * scoring, and tutorial mode are absent so tube pressure can load the rail
+ * before the game has declared a captured ride.
+ */
+export function resolveWaveTubePressure(
+  sample: WaveTubeSample,
+) {
+  const tubePocket = 1 - smoothstep(
+    .34,
+    .92,
+    Math.abs(sample.linePosition + .18),
+  );
+  const tubeFace = smoothstep(
+    -.14,
+    .58,
+    clampValue(sample.facePosition, -1, 1),
+  );
+  const tubeShape = clampValue(
+    clampValue(sample.tideHollow, 0, 1.5) * .58
+      + clampValue(sample.tideSteepness, 0, 1.5) * .18
+      + clampValue(sample.waveEnergy, 0, 1) * .22
+      + clampValue(sample.offshoreGroom, 0, 1.5) * .06
+      - clampValue(sample.onshoreChop, 0, 1.5) * .2,
+    0,
+    1,
+  );
+  const tubePressure = clampValue(
+    tubePocket
+      * tubeFace
+      * smoothstep(.3, .88, tubeShape)
+      * (1 - clampValue(sample.whitewater, 0, 1) * .88),
+    0,
+    1,
+  );
+  return {
+    tubePocket,
+    tubeFace,
+    tubeShape,
+    tubePressure,
+  };
+}
+
 export type SurfboardTurbulenceSample = {
   elapsed: number;
   positionX: number;
@@ -676,6 +730,15 @@ export type SurfboardRailSlipReading = {
   sideslip: number;
   edgeSlip: number;
   target: number;
+};
+
+export type SurfboardRailDemandSample = {
+  railInput: number;
+  speed: number;
+  stance: number;
+  tideSteepness: number;
+  facePosition: number;
+  tubePressure: number;
 };
 
 export type SurfboardPlaningSample = {
@@ -1940,6 +2003,30 @@ export function resolveSurfboardRailGrip(
   );
 }
 
+export function resolveSurfboardRailDemand(
+  sample: SurfboardRailDemandSample,
+) {
+  const stance = clampValue(sample.stance, -1, 1);
+  const nosePressure = Math.max(0, stance);
+  const tailPressure = Math.max(0, -stance);
+  const highFace = Math.max(
+    0,
+    clampValue(sample.facePosition, -1, 1),
+  );
+  return Math.abs(clampValue(sample.railInput, -1, 1))
+    * (.72 + Math.max(0, sample.speed) * .035)
+    * (1 + nosePressure * .16 - tailPressure * .12)
+    * (
+      .92
+        + clampValue(sample.tideSteepness, 0, 1.5) * .1
+    )
+    * (
+      1
+        + highFace * .08
+        + clampValue(sample.tubePressure, 0, 1) * .1
+    );
+}
+
 /**
  * Resolves loss of rail authority from physical demand alone. Game mode is
  * intentionally absent: coaching may differ, but identical hull loads must
@@ -1961,6 +2048,23 @@ export function resolveSurfboardRailSlip(
     sideslip,
     edgeSlip,
     target: Math.max(gripSlip, sideslip, edgeSlip),
+  };
+}
+
+export function advanceSurfboardRailSlip(
+  currentSlip: number,
+  sample: SurfboardRailSlipSample,
+  deltaSeconds: number,
+) {
+  const reading = resolveSurfboardRailSlip(sample);
+  const current = clampValue(currentSlip, 0, 1);
+  const delta = clampValue(deltaSeconds, 0, .05);
+  const response = reading.target > current ? 8.2 : 3.2;
+  const railSlip = reading.target
+    + (current - reading.target) * Math.exp(-response * delta);
+  return {
+    ...reading,
+    railSlip: clampValue(railSlip, 0, 1),
   };
 }
 

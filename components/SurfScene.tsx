@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -12613,6 +12613,16 @@ function Simulation({
             onshoreChop,
           });
           const standingBrokenWater = standingSection.whitewaterPressure;
+          const standingTubePressure = resolveWaveTubePressure({
+            linePosition: standingSection.linePosition,
+            facePosition: standingPhysicalFacePosition,
+            tideHollow,
+            tideSteepness,
+            waveEnergy: setState.energy,
+            offshoreGroom,
+            onshoreChop,
+            whitewater: standingBrokenWater,
+          }).tubePressure;
           linePosition = standingSection.linePosition;
           lineControl = standingSection.lineControl;
           sectionPressure = standingSection.sectionPressure;
@@ -12756,6 +12766,22 @@ function Simulation({
           noseImmersion = standingPitch.noseImmersion;
           tailImmersion = standingPitch.tailImmersion;
           pitchOverRisk = standingPitch.pitchOverRisk;
+          const standingRailGrip = resolveSurfboardRailGrip({
+            baseGrip: settings.board === "performance"
+              ? .96
+              : settings.board === "longboard"
+                ? .9
+                : .82,
+            planing: standingPlaning,
+            waveContact: standingReading.waveContact,
+            crossWaveLoad: standingReading.crossWaveLoad,
+            railSlip: railSlip.current,
+            stance: stance.current,
+            facePosition: standingPhysicalFacePosition,
+            tubePressure: standingTubePressure,
+            whitewater: standingBrokenWater,
+            onshoreChop,
+          });
           const previousStandingVelocityX = rideVelocity.current.x;
           const previousStandingVelocityZ = rideVelocity.current.y;
           const standingDynamics = advanceSurfboardDynamics(
@@ -12777,22 +12803,7 @@ function Simulation({
               waterContact: boardWaterContact,
               railInput: standingRoll.effectiveRail,
               stance: stance.current,
-              railGrip: resolveSurfboardRailGrip({
-                baseGrip: settings.board === "performance"
-                  ? .96
-                  : settings.board === "longboard"
-                    ? .9
-                    : .82,
-                planing: standingPlaning,
-                waveContact: standingReading.waveContact,
-                crossWaveLoad: standingReading.crossWaveLoad,
-                railSlip: railSlip.current,
-                stance: stance.current,
-                facePosition: standingPhysicalFacePosition,
-                tubePressure: 0,
-                whitewater: standingBrokenWater,
-                onshoreChop,
-              }),
+              railGrip: standingRailGrip,
               whitewater: standingBrokenWater,
               noseImmersion: standingPitch.noseImmersion,
               tailImmersion: standingPitch.tailImmersion,
@@ -12882,18 +12893,25 @@ function Simulation({
                   - (rollEdgeRisk < .08 ? .48 : 0)
               ),
           );
-          railSlip.current = THREE.MathUtils.damp(
+          const standingRailDemand = resolveSurfboardRailDemand({
+            railInput: standingRoll.effectiveRail,
+            speed,
+            stance: stance.current,
+            tideSteepness,
+            facePosition: standingPhysicalFacePosition,
+            tubePressure: standingTubePressure,
+          });
+          const standingSlip = advanceSurfboardRailSlip(
             railSlip.current,
-            THREE.MathUtils.clamp(
-              standingReading.crossWaveLoad * .54
-                + rollEdgeRisk * .28
-                + standingDynamics.sideslip * .32,
-              0,
-              1,
-            ),
-            6.5,
+            {
+              railDemand: standingRailDemand,
+              railGrip: standingRailGrip,
+              sideslip: standingDynamics.sideslip,
+              edgeRisk: rollEdgeRisk,
+            },
             delta,
           );
+          railSlip.current = standingSlip.railSlip;
           railLoad = standingDynamics.railLoad;
           compression = THREE.MathUtils.clamp(
             standingBalanceError * .35
@@ -13143,35 +13161,18 @@ function Simulation({
         whitewaterPressure = sectionReading.whitewaterPressure;
         sectionPressure = sectionReading.sectionPressure;
         const shoulderStall = sectionReading.shoulderStall;
-        const tubePocket = 1 - THREE.MathUtils.smoothstep(
-          Math.abs(linePosition + .18),
-          .34,
-          .92,
-        );
-        const tubeFace = THREE.MathUtils.smoothstep(
-          physicalFacePosition,
-          -.14,
-          .58,
-        );
-        const tubeShape = THREE.MathUtils.clamp(
-          tideHollow * .58
-            + tideSteepness * .18
-            + setState.energy * .22
-            + offshoreGroom * .06
-            - onshoreChop * .2,
-          0,
-          1,
-        );
         const tubePressure = finishing
           ? 0
-          : THREE.MathUtils.clamp(
-            tubePocket
-              * tubeFace
-              * THREE.MathUtils.smoothstep(tubeShape, .3, .88)
-              * (1 - whitewaterPressure * .88),
-            0,
-            1,
-          );
+          : resolveWaveTubePressure({
+            linePosition,
+            facePosition: physicalFacePosition,
+            tideHollow,
+            tideSteepness,
+            waveEnergy: setState.energy,
+            offshoreGroom,
+            onshoreChop,
+            whitewater: whitewaterPressure,
+          }).tubePressure;
         speed = rideVelocity.current.length();
         stamina.current = Math.max(
           0,
@@ -13391,11 +13392,14 @@ function Simulation({
         tailImmersion = ridePitch.tailImmersion;
         pitchOverRisk = ridePitch.pitchOverRisk;
         const physicalRailInput = rideRoll.effectiveRail;
-        const railDemand = Math.abs(physicalRailInput)
-          * (.72 + speed * .035)
-          * (1 + nosePressure * .16 - tailPressure * .12)
-          * (.92 + tideSteepness * .1)
-          * (1 + highFace * .08 + tubePressure * .1);
+        const railDemand = resolveSurfboardRailDemand({
+          railInput: physicalRailInput,
+          speed,
+          stance: stance.current,
+          tideSteepness,
+          facePosition: physicalFacePosition,
+          tubePressure,
+        });
         const previousRideVelocityX = rideVelocity.current.x;
         const previousRideVelocityZ = rideVelocity.current.y;
         const dynamics = advanceSurfboardDynamics(
@@ -13454,19 +13458,17 @@ function Simulation({
           dynamics.tailStall * .42,
           ridePitch.tailStallRisk,
         );
-        const slipReading = resolveSurfboardRailSlip({
-          railDemand,
-          railGrip,
-          sideslip: dynamics.sideslip,
-          edgeRisk: rollEdgeRisk,
-        });
-        const slipTarget = slipReading.target;
-        railSlip.current = THREE.MathUtils.damp(
+        const slipReading = advanceSurfboardRailSlip(
           railSlip.current,
-          slipTarget,
-          slipTarget > railSlip.current ? 8.2 : 3.2,
+          {
+            railDemand,
+            railGrip,
+            sideslip: dynamics.sideslip,
+            edgeRisk: rollEdgeRisk,
+          },
           delta,
         );
+        railSlip.current = slipReading.railSlip;
         railLoad = dynamics.railLoad;
         compression = THREE.MathUtils.clamp(
           Math.abs(railLoad) * .52

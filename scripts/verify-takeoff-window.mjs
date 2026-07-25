@@ -6,6 +6,7 @@ import {
   advancePaddleStrokeCycle,
   advanceProneBoardAttitude,
   advanceSurfboardDynamics,
+  advanceSurfboardRailSlip,
   advanceSurfboardStance,
   advanceRideCaptureState,
   advanceWaveEngagement,
@@ -20,12 +21,14 @@ import {
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
   resolveSurfboardPlaning,
+  resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
+  resolveWaveTubePressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
@@ -569,6 +572,30 @@ if (
 ) {
   throw new Error("Water turbulence changed across ride engagement");
 }
+const sharedTubeSample = {
+  linePosition: -.12,
+  facePosition: .46,
+  tideHollow: .82,
+  tideSteepness: .76,
+  waveEnergy: .78,
+  offshoreGroom: .3,
+  onshoreChop: .08,
+  whitewater: .04,
+};
+const standingTube = resolveWaveTubePressure(sharedTubeSample);
+const engagedTube = resolveWaveTubePressure(sharedTubeSample);
+const washedTube = resolveWaveTubePressure({
+  ...sharedTubeSample,
+  whitewater: .92,
+});
+if (
+  standingTube.tubePressure !== engagedTube.tubePressure
+  || standingTube.tubePressure < .35
+  || washedTube.tubePressure
+    >= standingTube.tubePressure * .3
+) {
+  throw new Error("Geometric tube pressure changed across ride engagement");
+}
 
 const dynamicsSample = {
   deltaSeconds: 1 / 60,
@@ -1063,6 +1090,54 @@ if (
   || Math.abs(edgeRailSlip.target - .504) > .001
 ) {
   throw new Error("Mode-free rail slip no longer tracks clean contact, overload, sideslip, and edge risk");
+}
+const sharedRailDemandSample = {
+  railInput: .72,
+  speed: 8.4,
+  stance: .24,
+  tideSteepness: .82,
+  facePosition: .34,
+  tubePressure: .18,
+};
+const standingRailDemand = resolveSurfboardRailDemand(
+  sharedRailDemandSample,
+);
+const engagedRailDemand = resolveSurfboardRailDemand(
+  sharedRailDemandSample,
+);
+const tailRailDemand = resolveSurfboardRailDemand({
+  ...sharedRailDemandSample,
+  stance: -.8,
+});
+const noseRailDemand = resolveSurfboardRailDemand({
+  ...sharedRailDemandSample,
+  stance: .8,
+});
+function railSlipAfterOneSecond(hz) {
+  let railSlip = .04;
+  for (let frame = 0; frame < hz; frame += 1) {
+    railSlip = advanceSurfboardRailSlip(
+      railSlip,
+      {
+        railDemand: standingRailDemand,
+        railGrip: .62,
+        sideslip: .46,
+        edgeRisk: .58,
+      },
+      1 / hz,
+    ).railSlip;
+  }
+  return railSlip;
+}
+const standingRailSlip60 = railSlipAfterOneSecond(60);
+const engagedRailSlip120 = railSlipAfterOneSecond(120);
+if (
+  standingRailDemand !== engagedRailDemand
+  || noseRailDemand <= tailRailDemand
+  || Math.abs(standingRailSlip60 - engagedRailSlip120) > .002
+  || standingRailSlip60 < .44
+) {
+  throw new Error("Rail demand or slip integration changed across engagement");
 }
 
 const rollSample = {
@@ -1993,6 +2068,8 @@ console.log(JSON.stringify({
     brokenSectionPressure: deepSection.whitewaterPressure,
     sharedRollTurbulence: standingTurbulence.rollTorque,
     foamRollTurbulence: foamTurbulence.rollTorque,
+    standingTubePressure: standingTube.tubePressure,
+    engagedTubePressure: engagedTube.tubePressure,
     sharedPlaning: sharedPlaning.planing,
     flatHighSpeedPlaning: flatHighSpeedPlaning.planing,
     longboardPlaning: longboardPlaning.planing,
@@ -2024,6 +2101,10 @@ console.log(JSON.stringify({
     overloadedRailSlip: overloadedRailSlip.target,
     lateralRailSlip: lateralRailSlip.target,
     edgeRailSlip: edgeRailSlip.target,
+    standingRailDemand,
+    engagedRailDemand,
+    standingRailSlip60,
+    engagedRailSlip120,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,
