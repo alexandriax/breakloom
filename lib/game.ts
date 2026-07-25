@@ -68,6 +68,25 @@ export function paddlingStaminaDelta(
     * (.38 + normalizedEffort * .62);
 }
 
+export function surfingStaminaDelta(
+  tubePressure: number,
+  whitewaterPressure: number,
+  waveEnergy: number,
+  deltaSeconds: number,
+) {
+  const delta = Math.max(0, Math.min(.05, deltaSeconds));
+  const tube = clampValue(tubePressure, 0, 1);
+  const whitewater = clampValue(whitewaterPressure, 0, 1);
+  const energy = clampValue(waveEnergy, 0, 1);
+  const tubeCost = tube * SURF_PHYSICS_TUNING.tubeFatigue;
+  const foamCost = whitewater > .12
+    ? whitewater
+      * (5.8 + energy * 4.5)
+      * SURF_PHYSICS_TUNING.foamFatigue
+    : 0;
+  return delta * (6.5 - tubeCost - foamCost);
+}
+
 export type DuckDiveInitiationSample = {
   secondsToImpact: number;
   shorebreakPower: number;
@@ -335,6 +354,26 @@ export function waveCrestDistanceAtPhase(
 ) {
   const waveNumber = Math.PI * 2 / Math.max(.1, wavelength);
   return crestPhaseError / waveNumber;
+}
+
+/**
+ * Follows the nearest polygon crest while the hull is detached, then preserves
+ * that crest's identity as soon as hydrodynamic pressure begins to build.
+ * A scoring or ride-state flag is deliberately absent.
+ */
+export function resolveWaveCrestPhaseIdentity(
+  surfacePhase: number,
+  trackedCrestPhase: number,
+  hullEngagement: number,
+) {
+  const nearestCrestPhase = Math.PI * .5
+    + Math.round(
+      (surfacePhase - Math.PI * .5) / (Math.PI * 2),
+    ) * Math.PI * 2;
+  return !Number.isFinite(trackedCrestPhase)
+    || clampValue(hullEngagement, 0, 1) < .06
+    ? nearestCrestPhase
+    : trackedCrestPhase;
 }
 
 export type WaveWallApproachSample = {
@@ -3985,6 +4024,14 @@ export function waveEnergyForPhase(phase: number) {
   const easedBlend = blend * blend * (3 - 2 * blend);
   const lowerEnergy = crestEnergy(lowerCrest);
   return lowerEnergy + (crestEnergy(lowerCrest + 1) - lowerEnergy) * easedBlend;
+}
+
+export function waveCrestPropertiesAtPhase(crestPhase: number) {
+  const energy = waveEnergyForPhase(crestPhase);
+  return {
+    energy,
+    surfable: energy >= SURFABLE_CREST_ENERGY,
+  };
 }
 
 function waveReadStateForPhase(phase: number, wavePeriod: number) {

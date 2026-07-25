@@ -35,6 +35,7 @@ import {
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
   resolveSurfboardWipeout,
+  resolveWaveCrestPhaseIdentity,
   resolveWaveLineSide,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
@@ -49,7 +50,9 @@ import {
   surfboardReleaseYawImpulse,
   surfboardWipeoutTriggered,
   surfboardLipLaunchSupport,
+  surfingStaminaDelta,
   waveCrestDistanceAtPhase,
+  waveCrestPropertiesAtPhase,
   waveFacePositionAtPhase,
   waveHeightAt,
   waveSetStateAt,
@@ -514,6 +517,34 @@ if (
   || waveCrestDistanceAtPhase(-.2, 320) >= 0
 ) {
   throw new Error("Crest phase no longer preserves signed physical distance on long waves");
+}
+const trackedCrestPhase = Math.PI * .5 - Math.PI * 2 * 2;
+const nextSurfacePhase = trackedCrestPhase - Math.PI * 2 + .2;
+const detachedCrestPhase = resolveWaveCrestPhaseIdentity(
+  nextSurfacePhase,
+  trackedCrestPhase,
+  .02,
+);
+const pressureLockedCrestPhase = resolveWaveCrestPhaseIdentity(
+  nextSurfacePhase,
+  trackedCrestPhase,
+  .2,
+);
+const trackedCrestProperties = waveCrestPropertiesAtPhase(
+  pressureLockedCrestPhase,
+);
+const calmSurfStaminaDelta = surfingStaminaDelta(0, 0, .8, 1 / 60);
+const loadedSurfStaminaDelta = surfingStaminaDelta(.9, .8, .8, 1 / 60);
+if (
+  Math.abs(
+    detachedCrestPhase - (trackedCrestPhase - Math.PI * 2),
+  ) > 1e-9
+  || pressureLockedCrestPhase !== trackedCrestPhase
+  || !Number.isFinite(trackedCrestProperties.energy)
+  || calmSurfStaminaDelta <= 0
+  || loadedSurfStaminaDelta >= 0
+) {
+  throw new Error("Hull engagement no longer preserves crest identity and water-load fatigue across ride classification");
 }
 const offshoreWallApproach = resolveWaveWallApproach({
   crestPhaseError: .3,
@@ -2761,6 +2792,11 @@ console.log(JSON.stringify({
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
     facePhaseSweep,
     longPeriodCrestDistance,
+    detachedCrestPhase,
+    pressureLockedCrestPhase,
+    trackedCrestEnergy: trackedCrestProperties.energy,
+    calmSurfStaminaDelta,
+    loadedSurfStaminaDelta,
     offshoreWallSeconds: offshoreWallApproach.secondsToImpact,
     offshoreWallClosingSpeed: offshoreWallApproach.relativeNormalSpeed,
     crossedWall: crossedWall.crossedCrest,
