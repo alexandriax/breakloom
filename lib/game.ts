@@ -68,6 +68,60 @@ export function paddlingStaminaDelta(
     * (.38 + normalizedEffort * .62);
 }
 
+export type DuckDiveInitiationSample = {
+  secondsToImpact: number;
+  shorebreakPower: number;
+  stamina: number;
+};
+
+export type DuckDiveInitiationReading = {
+  timingQuality: number;
+  duration: number;
+  effortCost: number;
+};
+
+/**
+ * Starts a duck dive whenever the surfer asks. This reports timing relative to
+ * the incoming wall but never gates the action; actual success also requires
+ * the board to have reached useful submersion when the wall arrives.
+ */
+export function resolveDuckDiveInitiation(
+  sample: DuckDiveInitiationSample,
+): DuckDiveInitiationReading {
+  const secondsToImpact = Math.max(0, sample.secondsToImpact);
+  const shorebreakPower = clampValue(sample.shorebreakPower, 0, 1);
+  const staminaRatio = clampValue(sample.stamina, 0, 100) / 100;
+  const incomingWall = shorebreakPower > .06 && secondsToImpact > 0;
+  const timingQuality = incomingWall
+    ? clampValue(
+        1
+          - Math.abs(secondsToImpact - .3)
+            / SURF_PHYSICS_TUNING.duckDiveTimingWindow,
+        0,
+        1,
+      )
+    : 0;
+  return {
+    timingQuality,
+    duration: 1.12,
+    effortCost: .65
+      + shorebreakPower * .6
+      + (1 - staminaRatio) * .18,
+  };
+}
+
+export function duckDiveSubmersionAt(
+  elapsedSeconds: number,
+  duration = 1.12,
+) {
+  const progress = clampValue(
+    Math.max(0, elapsedSeconds) / Math.max(.1, duration),
+    0,
+    1,
+  );
+  return Math.sin(progress * Math.PI);
+}
+
 export function rideRailInputFromPaddleSteer(paddleSteer: number) {
   // The paddle heading frame and wave-tangent frame have opposite handedness.
   // Converting once here keeps left/right screen intent consistent in both.
@@ -1983,6 +2037,7 @@ export type PaddleboardDynamicsSample = {
   strokeSide?: number;
   steer: number;
   waterContact?: number;
+  submersion?: number;
   surfaceSlopeX: number;
   surfaceSlopeZ: number;
   waveVelocityX: number;
@@ -2020,6 +2075,7 @@ export function advancePaddleboardDynamics(
   );
   const steer = Math.max(-1, Math.min(1, sample.steer));
   const hullContact = clampValue(sample.waterContact ?? 1, 0, 1);
+  const submersion = clampValue(sample.submersion ?? 0, 0, 1);
   const safeLength = Math.max(1.6, sample.boardLength);
   const safeWidth = Math.max(.24, sample.boardWidth);
   const turn = Math.max(.45, sample.boardTurn);
@@ -2052,7 +2108,9 @@ export function advancePaddleboardDynamics(
   yawRate *= Math.exp(
     -delta * (
       .08 + hullContact * (
-        .64 + (Math.abs(steer) < .04 ? 1.2 : 0)
+        .64
+          + (Math.abs(steer) < .04 ? 1.2 : 0)
+          + submersion * 2.2
       )
     ),
   );
@@ -2074,7 +2132,9 @@ export function advancePaddleboardDynamics(
   const strokeForce = stroke >= 0
     ? stroke * (4.8 + paddleEfficiency * 2.1)
     : stroke * 1.45;
-  const appliedStrokeForce = strokeForce * hullContact;
+  const appliedStrokeForce = strokeForce
+    * hullContact
+    * (1 - submersion * .94);
   const lengthDragScale = Math.pow(2.5 / safeLength, .62);
   const widthDragScale = Math.pow(safeWidth / .34, .42);
   const forwardDrag = -forwardSpeed
@@ -2082,12 +2142,14 @@ export function advancePaddleboardDynamics(
     * .31
     * lengthDragScale
     * widthDragScale
-    * hullContact;
+    * hullContact
+    * (1 + submersion * 2.8);
   const lateralDrag = -lateralSpeed
     * Math.abs(lateralSpeed)
     * .82
     * widthDragScale
-    * hullContact;
+    * hullContact
+    * (1 + submersion * 1.8);
   const slopeMagnitudeSquared = sample.surfaceSlopeX * sample.surfaceSlopeX
     + sample.surfaceSlopeZ * sample.surfaceSlopeZ;
   const slopeGravity = 9.81

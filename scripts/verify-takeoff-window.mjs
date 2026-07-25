@@ -14,6 +14,7 @@ import {
   advanceRideCaptureState,
   advanceWaveEngagement,
   boardRailContactFrame,
+  duckDiveSubmersionAt,
   evaluateBoardWaterInteraction,
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
@@ -25,6 +26,7 @@ import {
   recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
   resolveSurfboardPlaning,
+  resolveDuckDiveInitiation,
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
@@ -2201,6 +2203,33 @@ const paddlingSample = {
   boardTurn: 1,
   paddleEfficiency: 1,
 };
+const optimalDiveInitiation = resolveDuckDiveInitiation({
+  secondsToImpact: .3,
+  shorebreakPower: .82,
+  stamina: 88,
+});
+const earlyDiveInitiation = resolveDuckDiveInitiation({
+  secondsToImpact: 1.4,
+  shorebreakPower: .82,
+  stamina: 88,
+});
+const flatWaterDiveInitiation = resolveDuckDiveInitiation({
+  secondsToImpact: 0,
+  shorebreakPower: 0,
+  stamina: 88,
+});
+const lateDiveSubmersion = duckDiveSubmersionAt(.02);
+const timedDiveSubmersion = duckDiveSubmersionAt(.3);
+if (
+  optimalDiveInitiation.timingQuality < .99
+  || earlyDiveInitiation.timingQuality !== 0
+  || flatWaterDiveInitiation.timingQuality !== 0
+  || flatWaterDiveInitiation.effortCost <= 0
+  || lateDiveSubmersion >= .1
+  || timedDiveSubmersion < .7
+) {
+  throw new Error("Duck diving no longer separates physical action from wall timing and achieved depth");
+}
 function paddleForFrames(frameCount, sample = paddlingSample) {
   let state = {
     velocityX: 0,
@@ -2284,6 +2313,36 @@ const fullyWetProne = advancePaddleboardDynamics(
     waterContact: 1,
   },
 );
+const surfaceStrokeAtSpeed = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 2, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: 1,
+    submersion: 0,
+  },
+);
+const submergedStrokeAtSpeed = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 2, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: 1,
+    submersion: 1,
+  },
+);
+function submergedCoastAfterOneSecond(hz) {
+  let state = { velocityX: 0, velocityZ: 2, heading: 0, yawRate: 0 };
+  for (let frame = 0; frame < hz; frame += 1) {
+    state = advancePaddleboardDynamics(state, {
+      ...paddlingSample,
+      deltaSeconds: 1 / hz,
+      stroke: 0,
+      submersion: .8,
+    });
+  }
+  return state;
+}
+const submergedCoast60 = submergedCoastAfterOneSecond(60);
+const submergedCoast120 = submergedCoastAfterOneSecond(120);
 function dryProneAfterOneSecond(hz) {
   let state = dryProneState;
   for (let frame = 0; frame < hz; frame += 1) {
@@ -2311,6 +2370,12 @@ if (
   || dryProne.yawRate < dryProneState.yawRate * .995
   || halfWetProne.strokeForce <= 0
   || halfWetProne.strokeForce >= fullyWetProne.strokeForce
+  || submergedStrokeAtSpeed.strokeForce
+    >= surfaceStrokeAtSpeed.strokeForce * .1
+  || submergedStrokeAtSpeed.accelerationZ >= 0
+  || Math.abs(
+    submergedCoast60.velocityZ - submergedCoast120.velocityZ,
+  ) > .035
   || Math.abs(dryProne60.velocityX - dryProneState.velocityX) > .001
   || Math.abs(dryProne60.velocityZ - dryProneState.velocityZ) > .001
   || Math.abs(dryProne60.yawRate - dryProne120.yawRate) > .001
@@ -2736,6 +2801,17 @@ console.log(JSON.stringify({
       fullCompression120.release.extensionPotentialSpeed,
     fatiguedExtensionPotential:
       fatiguedCompression.release.extensionPotentialSpeed,
+  },
+  duckDiveDynamics: {
+    optimalTiming: optimalDiveInitiation.timingQuality,
+    earlyTiming: earlyDiveInitiation.timingQuality,
+    idleEffortCost: flatWaterDiveInitiation.effortCost,
+    lateSubmersion: lateDiveSubmersion,
+    timedSubmersion: timedDiveSubmersion,
+    surfaceStrokeForce: surfaceStrokeAtSpeed.strokeForce,
+    submergedStrokeForce: submergedStrokeAtSpeed.strokeForce,
+    submergedCoast60Hz: submergedCoast60.velocityZ,
+    submergedCoast120Hz: submergedCoast120.velocityZ,
   },
   rollDynamics: {
     performanceRailAngle: loadedPerformanceRail.rollAngle,

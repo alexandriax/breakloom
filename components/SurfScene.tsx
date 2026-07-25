@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11587,6 +11587,13 @@ function Simulation({
       } else if (currentPhase === "paddling") {
         landVelocity.current.set(0, 0);
         const takeoffCommitting = takeoffCommitAt.current >= 0;
+        duckDiveActive = t < duckDiveUntil.current;
+        const proneDiveElapsed = duckDiveActive
+          ? Math.max(0, 1.12 - (duckDiveUntil.current - t))
+          : 0;
+        const proneDiveEnvelope = duckDiveActive
+          ? duckDiveSubmersionAt(proneDiveElapsed)
+          : 0;
         const popUpTransition = evaluatePopUpTransition(
           takeoffCommitting
             ? Math.max(0, t - takeoffCommitAt.current)
@@ -11601,7 +11608,9 @@ function Simulation({
           .08,
           .34,
         );
-        paddleEffort = Math.max(0, move) * popUpPaddleAvailability;
+        paddleEffort = Math.max(0, move)
+          * popUpPaddleAvailability
+          * (duckDiveActive ? 0 : 1);
         stamina.current = THREE.MathUtils.clamp(
           stamina.current + paddlingStaminaDelta(
             paddleEffort,
@@ -11652,6 +11661,7 @@ function Simulation({
             strokeSide: paddleStroke.strokeSide,
             steer: steer * popUpPaddleAvailability,
             waterContact: boardWaterContact,
+            submersion: proneDiveEnvelope,
             surfaceSlopeX: paddleSurface.slopeX,
             surfaceSlopeZ: paddleSurface.slopeZ,
             waveVelocityX: localWaveTransport.x,
@@ -11695,7 +11705,6 @@ function Simulation({
         shorebreakSeconds = !inLineup ? Math.max(0, nextShorebreakAt.current - t) : 0;
         const shorebreakApproach = 1 - THREE.MathUtils.smoothstep(shorebreakSeconds, .06, 2.45);
         shorebreakIntensity = shorebreakPower * shorebreakApproach;
-        duckDiveActive = t < duckDiveUntil.current;
         if (
           inLineup
           || shorebreakSeconds <= .02
@@ -11711,23 +11720,31 @@ function Simulation({
           duckDiveWindowOpen.current = true;
         }
         duckDiveReady = duckDiveWindowOpen.current && !duckDiveActive;
-        if (divePressed && duckDiveReady) {
-          duckDiveQuality.current = THREE.MathUtils.clamp(
-            1
-              - Math.abs(shorebreakSeconds - .3)
-                / SURF_PHYSICS_TUNING.duckDiveTimingWindow,
-            0,
-            1,
-          );
-          duckDiveUntil.current = t + 1.12;
+        if (divePressed && !duckDiveActive && !takeoffCommitting) {
+          const diveInitiation = resolveDuckDiveInitiation({
+            secondsToImpact: shorebreakSeconds,
+            shorebreakPower,
+            stamina: stamina.current,
+          });
+          duckDiveQuality.current = diveInitiation.timingQuality;
+          duckDiveUntil.current = t + diveInitiation.duration;
           duckDiveActive = true;
+          duckDiveReady = false;
           duckDiveWindowOpen.current = false;
-          stamina.current = Math.max(0, stamina.current - (.8 + shorebreakPower * .7));
+          stamina.current = Math.max(
+            0,
+            stamina.current - diveInitiation.effortCost,
+          );
         }
         if (!inLineup && t >= nextShorebreakAt.current) {
           if (!duckDiveActive) duckDiveQuality.current = 0;
+          const effectiveDiveQuality = duckDiveActive
+            ? duckDiveQuality.current
+              * THREE.MathUtils.smoothstep(proneDiveEnvelope, .28, .72)
+            : 0;
+          duckDiveQuality.current = effectiveDiveQuality;
           const diveThreshold = SURF_PHYSICS_TUNING.duckDiveThreshold;
-          const cleanDive = duckDiveActive && duckDiveQuality.current >= diveThreshold;
+          const cleanDive = effectiveDiveQuality >= diveThreshold;
           shorebreakResult.current = cleanDive ? "clean" : "hit";
           duckDiveWindowOpen.current = false;
           shorebreakId.current += 1;
@@ -11862,14 +11879,6 @@ function Simulation({
         );
         const proneSlopeAlong = takeoffSurface.slopeX * paddleForwardX
           + takeoffSurface.slopeZ * paddleForwardZ;
-        const proneDiveProgress = THREE.MathUtils.clamp(
-          1 - (duckDiveUntil.current - t) / 1.12,
-          0,
-          1,
-        );
-        const proneDiveEnvelope = duckDiveActive
-          ? Math.sin(proneDiveProgress * Math.PI)
-          : 0;
         if (
           !waterRide.current.engaged
           || Math.abs(
@@ -12420,8 +12429,10 @@ function Simulation({
             );
           }
         } else {
-          prompt = duckDiveReady
-            ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SHIFT now`
+          prompt = duckDiveActive
+            ? `Board submerged ${Math.round(proneDiveEnvelope * 100)}% · keep the nose driving under the wall`
+            : duckDiveReady
+              ? `Wall arriving ${shorebreakSeconds.toFixed(1)}s · DIVE / SHIFT now`
             : rollCapsizeRisk > .46
               ? `Broadside load is rolling the prone board ${Math.round(Math.abs(physicalRollAngle) * 180 / Math.PI)}° · point the nose and counterweight`
             : pitchOverRisk > .4
@@ -15260,8 +15271,12 @@ function Simulation({
     motion.current.shorebreak = THREE.MathUtils.damp(motion.current.shorebreak, shorebreakIntensity, shorebreakIntensity > motion.current.shorebreak ? 9 : 5, delta);
     motion.current.shorebreakPower = THREE.MathUtils.damp(motion.current.shorebreakPower, shorebreakPower, 5, delta);
     motion.current.shorebreakSeconds = shorebreakSeconds;
-    const diveProgress = THREE.MathUtils.clamp(1 - (duckDiveUntil.current - t) / 1.12, 0, 1);
-    const diveEnvelope = t < duckDiveUntil.current ? Math.sin(diveProgress * Math.PI) : 0;
+    const diveElapsed = t < duckDiveUntil.current
+      ? Math.max(0, 1.12 - (duckDiveUntil.current - t))
+      : 0;
+    const diveEnvelope = t < duckDiveUntil.current
+      ? duckDiveSubmersionAt(diveElapsed)
+      : 0;
     motion.current.duckDive = THREE.MathUtils.damp(motion.current.duckDive, diveEnvelope, diveEnvelope > motion.current.duckDive ? 14 : 9, delta);
     const wipeoutSubmersion = phase.current === "wipeout"
       ? THREE.MathUtils.smootherstep(motion.current.wipeoutProgress, .01, .14)

@@ -3146,7 +3146,8 @@ export default function SurfscapeApp() {
     && stats.phase === "paddling"
     && trainingStep <= 4
     && !takeoffCommitted
-    && !stats.duckDiveReady;
+    && !stats.duckDiveReady
+    && !stats.duckDiveActive;
   const paddleAimCue = !stats.inLineup
     ? paddleTraining.turnDirection === "hold"
       ? "NOSE AIMED OFFSHORE"
@@ -3177,10 +3178,17 @@ export default function SurfscapeApp() {
           tone: "paddle",
         }
       : stats.phase === "paddling"
-        ? stats.duckDiveReady
+        ? stats.duckDiveActive
+          ? {
+              cue: `BOARD SUBMERGED ${Math.round(stats.submersion * 100)}%`,
+              detail: "Paddle thrust is gone underwater; keep the hull deep until the wall passes overhead.",
+              rotation: 90,
+              tone: "ready",
+            }
+          : stats.duckDiveReady
           ? {
               cue: "DIVE UNDER THE LIP",
-              detail: `${gamepadConnected ? "LB" : "SHIFT"} now · impact in ${stats.shorebreakSeconds.toFixed(1)}s`,
+              detail: `${gamepadConnected ? "LB" : "SHIFT"} now · impact in ${stats.shorebreakSeconds.toFixed(1)}s · the same control also works before or after the cue`,
               rotation: 90,
               tone: "danger",
             }
@@ -3518,7 +3526,7 @@ export default function SurfscapeApp() {
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
                 ? { title: "READ THE LINEUP", detail: `${surfRadarValue} · turn shoreward as a surfable wall approaches` }
-                : { title: "PADDLE OUT", detail: "Push the stick forward for strokes · steer through whitewater · POP is always available" }
+                : { title: "PADDLE OUT", detail: "Push forward for strokes · DIVE submerges anytime · POP starts the body transition anytime" }
           : stats.phase === "wipeout"
             ? {
                 title: stats.holdDownSeconds > .7 ? "HOLD-DOWN" : "RESURFACING",
@@ -4612,7 +4620,7 @@ export default function SurfscapeApp() {
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
                     <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Compress, then release against a live lip" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
-                    {stats.phase === "paddling" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive when the lip cue appears</strong></p>}
+                    {stats.phase === "paddling" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
                   </div>
@@ -4849,7 +4857,7 @@ export default function SurfscapeApp() {
                   </>
                 )}
                 <span><kbd>SPACE</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "compress · release at live lip" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
-                {stats.phase === "paddling" && <span><kbd>SHIFT</kbd> duck dive on lip cue</span>}
+                {stats.phase === "paddling" && <span><kbd>SHIFT</kbd> duck dive anytime · cue marks timing</span>}
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{stats.phase === "riding" || stats.phase === "paddling" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
               </>
@@ -4929,19 +4937,26 @@ export default function SurfscapeApp() {
                 </div>
               )}
             </div>
-            {stats.phase === "paddling" && stats.duckDiveReady && (
+            {stats.phase === "paddling" && !takeoffCommitted && (
               <button
                 type="button"
-                className="dive-button"
-                aria-label={`Duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds.`}
+                className={`dive-button ${stats.duckDiveReady ? "is-ready" : ""} ${stats.duckDiveActive ? "is-active" : ""}`}
+                aria-label={stats.duckDiveReady
+                  ? `Duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds.`
+                  : "Duck dive now. Timing and board depth determine whether an incoming wall passes overhead."}
                 onPointerDown={(event) => beginControl(event, "sprint")}
                 onPointerUp={endMobileDive}
                 onPointerCancel={endMobileDive}
                 onLostPointerCapture={() => setControl("sprint", false)}
+                aria-disabled={stats.duckDiveActive}
               >
                 <Waves />
-                <span>DIVE</span>
-                <small>{stats.shorebreakSeconds.toFixed(1)}s</small>
+                <span>{stats.duckDiveActive ? "UNDER" : "DIVE"}</span>
+                <small>{stats.duckDiveActive
+                  ? `${Math.round(stats.submersion * 100)}%`
+                  : stats.duckDiveReady
+                    ? `${stats.shorebreakSeconds.toFixed(1)}s`
+                    : "ANYTIME"}</small>
               </button>
             )}
             <button
