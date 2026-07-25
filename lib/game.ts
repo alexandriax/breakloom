@@ -1051,6 +1051,11 @@ export const BOARD_SPECS: Record<BoardType, {
   },
 };
 
+export const SURFSCAPE_RELEASE = {
+  version: 227,
+  channel: "QA",
+} as const;
+
 export type SessionSettings = {
   mode: GameMode;
   board: BoardType;

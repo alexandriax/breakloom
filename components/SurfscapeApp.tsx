@@ -60,6 +60,7 @@ import {
   reachedSurfTrainingStep,
   resolvePaddleHeadingTarget,
   settingsFromConditions,
+  SURFSCAPE_RELEASE,
   thermalKitForConditions,
   tideResponseForBreak,
   type BoardType,
@@ -4523,7 +4524,7 @@ export default function SurfscapeApp() {
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
-              <div><strong>SURFSCAPE</strong><span>{zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
+              <div><strong>SURFSCAPE</strong><span>v{SURFSCAPE_RELEASE.version} {SURFSCAPE_RELEASE.channel} · {zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
             </div>
             <div className={`game-objective ${sessionFormat === "heat" ? "is-heat" : settings.mode === "training" ? "is-training" : ""} ${settings.mode === "training" && trainingComplete ? "is-complete" : ""}`}>
               <span>
