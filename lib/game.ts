@@ -3508,6 +3508,80 @@ export function resolveSurfboardFailureRelease(
   };
 }
 
+export type SeparatedSurferVerticalState = {
+  surfaceOffset: number;
+  verticalVelocity: number;
+};
+
+export type SeparatedSurferVerticalSample = {
+  deltaSeconds: number;
+  downwardWaterVelocity: number;
+};
+
+export type SeparatedSurferVerticalReading =
+  SeparatedSurferVerticalState & {
+    immersion: number;
+    depth: number;
+  };
+
+/**
+ * Integrates the separated body relative to the local water surface. Gravity
+ * acts while airborne; once the body crosses the surface, quadratic drag
+ * couples it to the measured downward wash velocity and modest human buoyancy
+ * brings it back up as that wash releases. Fixed wipeout animation timing is
+ * absent from this solver.
+ */
+export function advanceSeparatedSurferVerticalDynamics(
+  state: SeparatedSurferVerticalState,
+  sample: SeparatedSurferVerticalSample,
+): SeparatedSurferVerticalReading {
+  let surfaceOffset = clampValue(state.surfaceOffset, -1.8, 1.35);
+  let verticalVelocity = clampValue(state.verticalVelocity, -9, 7);
+  const downwardWaterVelocity = clampValue(
+    sample.downwardWaterVelocity,
+    -4.5,
+    .5,
+  );
+  let remaining = clampValue(sample.deltaSeconds, 0, .05);
+  const maxStep = 1 / 240;
+
+  while (remaining > 1e-9) {
+    const step = Math.min(maxStep, remaining);
+    const immersion = smoothstep(-.08, .5, -surfaceOffset);
+    const waterRelativeVelocity =
+      verticalVelocity - downwardWaterVelocity;
+    const waterDragAcceleration = -waterRelativeVelocity
+      * Math.abs(waterRelativeVelocity)
+      * (1.05 + immersion * 1.85)
+      * immersion;
+    const gravityAcceleration = -9.81 * (1 - immersion);
+    const buoyancyAcceleration = immersion
+      * (1.15 + Math.max(0, -surfaceOffset) * .48);
+    const acceleration = gravityAcceleration
+      + buoyancyAcceleration
+      + waterDragAcceleration;
+    verticalVelocity = clampValue(
+      verticalVelocity + acceleration * step,
+      -9,
+      7,
+    );
+    surfaceOffset = clampValue(
+      surfaceOffset + verticalVelocity * step,
+      -1.8,
+      1.35,
+    );
+    remaining -= step;
+  }
+
+  const immersion = smoothstep(-.08, .5, -surfaceOffset);
+  return {
+    surfaceOffset,
+    verticalVelocity,
+    immersion,
+    depth: Math.max(0, -surfaceOffset),
+  };
+}
+
 export type SurfboardSurfaceManeuverSample = {
   durationSeconds: number;
   startFacePosition: number;

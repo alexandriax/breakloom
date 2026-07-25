@@ -7,6 +7,7 @@ import {
   advancePopUpBodyTransition,
   advanceProneBoardAttitude,
   advanceReturnProneTransition,
+  advanceSeparatedSurferVerticalDynamics,
   advanceSurferCompression,
   advanceSurferCounterweightDynamics,
   advanceSurfboardDynamics,
@@ -1789,6 +1790,75 @@ if (
   || pearlingFailureRelease.cause !== "buried nose"
 ) {
   throw new Error("Surfer release no longer inherits board COM and angular edge velocity");
+}
+function simulateSeparatedBody(
+  hz,
+  surfaceOffset,
+  verticalVelocity,
+  seconds = 3.2,
+) {
+  let body = { surfaceOffset, verticalVelocity };
+  let entryAt = null;
+  let minimumOffset = surfaceOffset;
+  let minimumAt = 0;
+  for (let frame = 0; frame < Math.round(seconds * hz); frame += 1) {
+    const elapsed = frame / hz;
+    const washEnvelope = elapsed < .18
+      ? elapsed / .18
+      : elapsed < 1.45
+        ? 1
+        : Math.max(0, 1 - (elapsed - 1.45) / .75);
+    body = advanceSeparatedSurferVerticalDynamics(body, {
+      deltaSeconds: 1 / hz,
+      downwardWaterVelocity: -2.35 * washEnvelope,
+    });
+    if (entryAt === null && body.immersion > .18) {
+      entryAt = elapsed + 1 / hz;
+    }
+    if (body.surfaceOffset < minimumOffset) {
+      minimumOffset = body.surfaceOffset;
+      minimumAt = elapsed + 1 / hz;
+    }
+  }
+  return {
+    ...body,
+    entryAt,
+    minimumOffset,
+    minimumAt,
+  };
+}
+const standingBodyFall60 = simulateSeparatedBody(
+  60,
+  .98,
+  standingFailureRelease.verticalVelocity,
+);
+const standingBodyFall120 = simulateSeparatedBody(
+  120,
+  .98,
+  standingFailureRelease.verticalVelocity,
+);
+const proneBodyFall = simulateSeparatedBody(
+  60,
+  .32,
+  proneFailureRelease.verticalVelocity,
+);
+if (
+  standingBodyFall60.entryAt === null
+  || proneBodyFall.entryAt === null
+  || standingBodyFall60.entryAt <= proneBodyFall.entryAt + .18
+  || standingBodyFall60.minimumOffset > -.45
+  || standingBodyFall60.minimumAt >= 2.65
+  || standingBodyFall60.surfaceOffset
+    <= standingBodyFall60.minimumOffset + .16
+  || Math.abs(
+    standingBodyFall60.surfaceOffset - standingBodyFall120.surfaceOffset,
+  ) > .025
+  || Math.abs(
+    standingBodyFall60.verticalVelocity
+      - standingBodyFall120.verticalVelocity,
+  ) > .035
+) {
+  throw new Error("Separated body fall no longer follows gravity, moving water, buoyancy, or frame rate");
 }
 const surfaceObservation = {
   durationSeconds: .82,
@@ -3657,6 +3727,9 @@ console.log(JSON.stringify({
     pearlingBodyRelease: pearlingFailureRelease,
     proneBodyRelease: proneFailureRelease,
     unsupportedBodyRelease: unsupportedFailureRelease,
+    standingBodyFall60,
+    standingBodyFall120,
+    proneBodyFall,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,

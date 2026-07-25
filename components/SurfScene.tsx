@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -366,6 +366,9 @@ type MotionState = {
   wipeoutRollRate: number;
   wipeoutPitchRate: number;
   wipeoutYawRate: number;
+  wipeoutBodySurfaceOffset: number;
+  wipeoutBodyVerticalVelocity: number;
+  wipeoutBodyImmersion: number;
   breath: number;
   maneuver: number;
   maneuverSide: number;
@@ -432,6 +435,8 @@ type ReplayRestoreState = {
   wipeoutRotation: THREE.Vector3;
   wipeoutAngularVelocity: THREE.Vector3;
   wipeoutTumbleSide: number;
+  wipeoutBodySurfaceOffset: number;
+  wipeoutBodyVerticalVelocity: number;
   phase: GamePhase;
   playerHeading: number;
   paddleHeading: number;
@@ -4280,7 +4285,7 @@ function SurferModel({
         : paddle
           ? -state.duckDive * .42 + state.shorebreak * .055 + takeoffPlant * .08
         : wipeout
-          ? -.18 - state.submersion * (.42 + state.wipeoutPower * .26)
+          ? state.wipeoutBodySurfaceOffset * .52 - .42
           : 0;
 
     const standingBodyRotationX =
@@ -4316,7 +4321,7 @@ function SurferModel({
       - rideCompression * .15
       + state.maneuverLift * .05
       + rideSettle * .08;
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? THREE.MathUtils.lerp(standingBodyY, .44, returnProne) : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? THREE.MathUtils.lerp(standingBodyY, .44, returnProne) : wipeout ? .42 : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 * (1 - returnProne) : 0, 7, delta);
     rig.current.rotation.x = dampAngle(rig.current.rotation.x, bodyRigPitch, wipeout ? 18 : 9, delta);
     rig.current.rotation.z = dampAngle(rig.current.rotation.z, bodyRigRoll, wipeout ? 18 : 9, delta);
@@ -10814,6 +10819,10 @@ function Simulation({
   const wipeoutAngularVelocity = useRef(new THREE.Vector3());
   const wipeoutTumbleSide = useRef(1);
   const wipeoutCause = useRef("Loss of board support");
+  const wipeoutBodyVertical = useRef({
+    surfaceOffset: .2,
+    verticalVelocity: 0,
+  });
   const breath = useRef(100);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
@@ -10861,6 +10870,9 @@ function Simulation({
     wipeoutRollRate: 0,
     wipeoutPitchRate: 0,
     wipeoutYawRate: 0,
+    wipeoutBodySurfaceOffset: .2,
+    wipeoutBodyVerticalVelocity: 0,
+    wipeoutBodyImmersion: 0,
     breath: 100,
     maneuver: 0,
     maneuverSide: 0,
@@ -11026,6 +11038,10 @@ function Simulation({
         wipeoutRotation.current.copy(restore.wipeoutRotation);
         wipeoutAngularVelocity.current.copy(restore.wipeoutAngularVelocity);
         wipeoutTumbleSide.current = restore.wipeoutTumbleSide;
+        wipeoutBodyVertical.current.surfaceOffset =
+          restore.wipeoutBodySurfaceOffset;
+        wipeoutBodyVertical.current.verticalVelocity =
+          restore.wipeoutBodyVerticalVelocity;
         phase.current = restore.phase;
         previousShorebreakPhaseError.current = Number.NaN;
         playerHeading.current = restore.playerHeading;
@@ -11122,6 +11138,10 @@ function Simulation({
           wipeoutRotation: wipeoutRotation.current.clone(),
           wipeoutAngularVelocity: wipeoutAngularVelocity.current.clone(),
           wipeoutTumbleSide: wipeoutTumbleSide.current,
+          wipeoutBodySurfaceOffset:
+            wipeoutBodyVertical.current.surfaceOffset,
+          wipeoutBodyVerticalVelocity:
+            wipeoutBodyVertical.current.verticalVelocity,
           phase: phase.current,
           playerHeading: playerHeading.current,
           paddleHeading: paddleHeading.current,
@@ -12874,6 +12894,8 @@ function Simulation({
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
           });
+          const proneCenterOfMassHeight =
+            .18 + popUpTransition.centerOfMassHeight * .62;
           const proneRelease = resolveSurfboardFailureRelease({
             velocityX: paddleVelocity.current.x,
             velocityZ: paddleVelocity.current.y,
@@ -12882,8 +12904,7 @@ function Simulation({
             rollRate: proneTumble.rollRate,
             pitchRate: proneTumble.pitchRate,
             yawRate: proneTumble.yawRate,
-            centerOfMassHeight:
-              .18 + popUpTransition.centerOfMassHeight * .62,
+            centerOfMassHeight: proneCenterOfMassHeight,
             lateralOffset: physicalBalance * boardSpec.width * .32,
             longitudinalOffset:
               popUpTransition.trim * boardSpec.length * .16,
@@ -12897,6 +12918,10 @@ function Simulation({
             proneRelease.velocityX,
             proneRelease.velocityZ,
           );
+          wipeoutBodyVertical.current.surfaceOffset =
+            proneCenterOfMassHeight + .12;
+          wipeoutBodyVertical.current.verticalVelocity =
+            proneRelease.verticalVelocity - verticalVelocity;
           wipeoutCause.current = proneRelease.cause === "rail edge"
             ? `Rail-edge rotation threw the body ${proneRelease.direction}`
             : proneRelease.cause === "buried nose"
@@ -12931,6 +12956,11 @@ function Simulation({
           motion.current.wipeoutRollRate = proneTumble.rollRate;
           motion.current.wipeoutPitchRate = proneTumble.pitchRate;
           motion.current.wipeoutYawRate = proneTumble.yawRate;
+          motion.current.wipeoutBodySurfaceOffset =
+            wipeoutBodyVertical.current.surfaceOffset;
+          motion.current.wipeoutBodyVerticalVelocity =
+            wipeoutBodyVertical.current.verticalVelocity;
+          motion.current.wipeoutBodyImmersion = 0;
           motion.current.impact = Math.max(
             motion.current.impact,
             .68 + proneFailure.power * .32,
@@ -13760,6 +13790,8 @@ function Simulation({
                 boardLength: boardSpec.length,
                 boardWidth: boardSpec.width,
               });
+              const standingCenterOfMassHeight =
+                .2 + (1 - returnProne.bodyLowering) * .68;
               const standingRelease = resolveSurfboardFailureRelease({
                 velocityX: rideVelocity.current.x,
                 velocityZ: rideVelocity.current.y,
@@ -13768,8 +13800,7 @@ function Simulation({
                 rollRate: standingTumble.rollRate,
                 pitchRate: standingTumble.pitchRate,
                 yawRate: standingTumble.yawRate,
-                centerOfMassHeight:
-                  .2 + (1 - returnProne.bodyLowering) * .68,
+                centerOfMassHeight: standingCenterOfMassHeight,
                 lateralOffset:
                   standingCounterweight * boardSpec.width * .36,
                 longitudinalOffset:
@@ -13784,6 +13815,10 @@ function Simulation({
                 standingRelease.velocityX,
                 standingRelease.velocityZ,
               );
+              wipeoutBodyVertical.current.surfaceOffset =
+                standingCenterOfMassHeight + .12;
+              wipeoutBodyVertical.current.verticalVelocity =
+                standingRelease.verticalVelocity - verticalVelocity;
               wipeoutCause.current = standingRelease.cause === "rail edge"
                 ? `Rail-edge rotation threw the body ${standingRelease.direction}`
                 : standingRelease.cause === "buried nose"
@@ -13821,6 +13856,11 @@ function Simulation({
               motion.current.wipeoutRollRate = standingTumble.rollRate;
               motion.current.wipeoutPitchRate = standingTumble.pitchRate;
               motion.current.wipeoutYawRate = standingTumble.yawRate;
+              motion.current.wipeoutBodySurfaceOffset =
+                wipeoutBodyVertical.current.surfaceOffset;
+              motion.current.wipeoutBodyVerticalVelocity =
+                wipeoutBodyVertical.current.verticalVelocity;
+              motion.current.wipeoutBodyImmersion = 0;
               motion.current.impact = .72 + tumblePower * .28;
               prompt = "The wave hit the rail broadside — protect your head";
             } else if (bodyCompression.current > .05) {
@@ -14997,6 +15037,8 @@ function Simulation({
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
           });
+          const rideCenterOfMassHeight =
+            .2 + (1 - returnProne.bodyLowering) * .68;
           const rideRelease = resolveSurfboardFailureRelease({
             velocityX: rideVelocity.current.x,
             velocityZ: rideVelocity.current.y,
@@ -15005,8 +15047,7 @@ function Simulation({
             rollRate: rideTumble.rollRate,
             pitchRate: rideTumble.pitchRate,
             yawRate: rideTumble.yawRate,
-            centerOfMassHeight:
-              .2 + (1 - returnProne.bodyLowering) * .68,
+            centerOfMassHeight: rideCenterOfMassHeight,
             lateralOffset: rideCounterweight * boardSpec.width * .36,
             longitudinalOffset:
               stance.current * boardSpec.length * .14,
@@ -15020,6 +15061,10 @@ function Simulation({
             rideRelease.velocityX,
             rideRelease.velocityZ,
           );
+          wipeoutBodyVertical.current.surfaceOffset =
+            rideCenterOfMassHeight + .12;
+          wipeoutBodyVertical.current.verticalVelocity =
+            rideRelease.verticalVelocity - verticalVelocity;
           wipeoutCause.current = rideRelease.cause === "rail edge"
             ? `Rail-edge rotation threw the body ${rideRelease.direction}`
             : rideRelease.cause === "buried nose"
@@ -15051,6 +15096,11 @@ function Simulation({
           motion.current.wipeoutRollRate = rideTumble.rollRate;
           motion.current.wipeoutPitchRate = rideTumble.pitchRate;
           motion.current.wipeoutYawRate = rideTumble.yawRate;
+          motion.current.wipeoutBodySurfaceOffset =
+            wipeoutBodyVertical.current.surfaceOffset;
+          motion.current.wipeoutBodyVerticalVelocity =
+            wipeoutBodyVertical.current.verticalVelocity;
+          motion.current.wipeoutBodyImmersion = 0;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
           rideResult.current = "wipeout";
@@ -15103,6 +15153,18 @@ function Simulation({
         const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
         const currentSpeed = settings.currentStrength / 3.6;
         const residualWash = wipeoutPower.current * turbulence;
+        const bodyVertical = advanceSeparatedSurferVerticalDynamics(
+          wipeoutBodyVertical.current,
+          {
+            deltaSeconds: delta,
+            downwardWaterVelocity: -residualWash
+              * (1.45 + wipeoutPower.current * 1.35),
+          },
+        );
+        wipeoutBodyVertical.current.surfaceOffset =
+          bodyVertical.surfaceOffset;
+        wipeoutBodyVertical.current.verticalVelocity =
+          bodyVertical.verticalVelocity;
         wipeoutVelocity.current.x += (
           waveNormalX * residualWash * .42
             + Math.sin(currentAngle) * currentSpeed * .18
@@ -15152,14 +15214,19 @@ function Simulation({
         stamina.current = Math.min(100, stamina.current + delta * (5 + progress * 7));
         breath.current = Math.max(
           24,
-          breath.current - delta * turbulence * (5.4 + wipeoutPower.current * 7.8),
+          breath.current - delta
+            * turbulence
+            * bodyVertical.immersion
+            * (5.4 + wipeoutPower.current * 7.8),
         );
         speed = wipeoutVelocity.current.length();
         const remaining = Math.max(0, duration - elapsed);
-        prompt = progress < .16
+        prompt = bodyVertical.immersion < .14
           ? `${wipeoutCause.current} · protect your head`
-          : progress < .72
-            ? `Hold-down · ${remaining.toFixed(1)}s to surface`
+          : progress < .72 || bodyVertical.depth > .12
+            ? remaining > 0
+              ? `Body ${bodyVertical.depth.toFixed(1)}m underwater · ${remaining.toFixed(1)}s of breaking wash`
+              : `Body ${bodyVertical.depth.toFixed(1)}m underwater · wash released, follow the leash up`
             : "Follow the leash — rising through the foam";
         motion.current.wipeout = Math.min(1.8, elapsed);
         motion.current.wipeoutProgress = progress;
@@ -15170,8 +15237,19 @@ function Simulation({
         motion.current.wipeoutRollRate = tumble.rollRate;
         motion.current.wipeoutPitchRate = tumble.pitchRate;
         motion.current.wipeoutYawRate = tumble.yawRate;
+        motion.current.wipeoutBodySurfaceOffset =
+          bodyVertical.surfaceOffset;
+        motion.current.wipeoutBodyVerticalVelocity =
+          bodyVertical.verticalVelocity;
+        motion.current.wipeoutBodyImmersion = bodyVertical.immersion;
         motion.current.breath = breath.current;
-        if (progress >= 1) {
+        if (
+          progress >= 1
+          && (
+            bodyVertical.surfaceOffset > -.08
+            || elapsed >= duration + 1.4
+          )
+        ) {
           if (position.current.z > 1 + tideShift) {
             phase.current = "wading";
             playerHeading.current = Math.atan2(waveNormalX, waveNormalZ);
@@ -15194,6 +15272,11 @@ function Simulation({
           motion.current.wipeoutRollRate = 0;
           motion.current.wipeoutPitchRate = 0;
           motion.current.wipeoutYawRate = 0;
+          motion.current.wipeoutBodySurfaceOffset = .2;
+          motion.current.wipeoutBodyVerticalVelocity = 0;
+          motion.current.wipeoutBodyImmersion = 0;
+          wipeoutBodyVertical.current.surfaceOffset = .2;
+          wipeoutBodyVertical.current.verticalVelocity = 0;
         }
       }
     }
@@ -15796,15 +15879,7 @@ function Simulation({
       : 0;
     motion.current.duckDive = THREE.MathUtils.damp(motion.current.duckDive, diveEnvelope, diveEnvelope > motion.current.duckDive ? 14 : 9, delta);
     const wipeoutSubmersion = phase.current === "wipeout"
-      ? THREE.MathUtils.smootherstep(motion.current.wipeoutProgress, .01, .14)
-        * (1 - THREE.MathUtils.smoothstep(motion.current.wipeoutProgress, .67, 1))
-        * THREE.MathUtils.clamp(
-          .66
-            + motion.current.wipeoutPower * .3
-            + Math.sin(t * (5.2 + motion.current.wipeoutPower * 2.4)) * motion.current.wipeoutPower * .045,
-          .58,
-          1,
-        )
+      ? motion.current.wipeoutBodyImmersion
       : 0;
     const submersionTarget = Math.max(motion.current.duckDive * .86, wipeoutSubmersion);
     motion.current.submersion = THREE.MathUtils.damp(
