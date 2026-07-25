@@ -805,6 +805,11 @@ export function resolveSurfboardTurbulence(
   };
 }
 
+/**
+ * Integrates the board's continuous relation to a tracked crest. Wave support
+ * comes from measured hull contact and crest energy, never ride classification,
+ * so an overtaking lip exists before capture and decays away in quiet water.
+ */
 export function advanceRideCaptureState(
   current: RideCaptureState,
   sample: {
@@ -814,17 +819,21 @@ export function advanceRideCaptureState(
     waveSpeed: number;
     facePhaseSpan: number;
     gravityPlaning: number;
+    waveSupport: number;
   },
 ) {
   const delta = Math.max(0, Math.min(.25, sample.deltaSeconds));
   const speedDeficit = Math.max(0, sample.waveSpeed - sample.normalSpeed);
+  const waveSupport = clampValue(sample.waveSupport, 0, 1);
   const lipOvertake = smoothstep(-.02, .72, -sample.crestPhaseError)
-    * smoothstep(.05, Math.max(.051, sample.waveSpeed * .3), speedDeficit);
+    * smoothstep(.05, Math.max(.051, sample.waveSpeed * .3), speedDeficit)
+    * waveSupport;
   const flatShoulder = smoothstep(
     sample.facePhaseSpan * 1.35,
     sample.facePhaseSpan * 2.25,
     sample.crestPhaseError,
-  ) * (1 - Math.max(0, Math.min(1, sample.gravityPlaning)));
+  ) * (1 - Math.max(0, Math.min(1, sample.gravityPlaning)))
+    * waveSupport;
   return {
     overtaken: Math.max(
       0,

@@ -206,6 +206,7 @@ for (let frame = 0; frame < 180; frame += 1) {
     waveSpeed: 6,
     facePhaseSpan: .9,
     gravityPlaning: .18,
+    waveSupport: 1,
   });
 }
 if (overtakenCapture.overtaken < .9) {
@@ -221,10 +222,34 @@ for (let frame = 0; frame < 100; frame += 1) {
     waveSpeed: 6,
     facePhaseSpan: .9,
     gravityPlaning: 0,
+    waveSupport: 1,
   });
 }
 if (shoulderCapture.ahead < .86) {
   throw new Error(`A board beyond the power failed to lose the wave: ${shoulderCapture.ahead.toFixed(2)}`);
+}
+
+let unsupportedCrestRelation = { overtaken: .9, ahead: .8 };
+for (let frame = 0; frame < 180; frame += 1) {
+  unsupportedCrestRelation = advanceRideCaptureState(
+    unsupportedCrestRelation,
+    {
+      deltaSeconds: 1 / 60,
+      crestPhaseError: -.38,
+      normalSpeed: 0,
+      waveSpeed: 6,
+      facePhaseSpan: .9,
+      gravityPlaning: 0,
+      waveSupport: 0,
+    },
+  );
+}
+if (
+  unsupportedCrestRelation.lipOvertake !== 0
+  || unsupportedCrestRelation.overtaken > .01
+  || unsupportedCrestRelation.ahead > .01
+) {
+  throw new Error("Unsupported crest geometry created lip or shoulder forces in quiet water");
 }
 
 function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
@@ -2912,6 +2937,9 @@ console.log(JSON.stringify({
   captureLoss: {
     overtaken: overtakenCapture.overtaken,
     ahead: shoulderCapture.ahead,
+    unsupportedLipOvertake: unsupportedCrestRelation.lipOvertake,
+    unsupportedOvertaken: unsupportedCrestRelation.overtaken,
+    unsupportedAhead: unsupportedCrestRelation.ahead,
   },
   waveEngagement: {
     sustained: sustainedEngagement.engagement,

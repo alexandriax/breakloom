@@ -13052,7 +13052,39 @@ function Simulation({
             tideVariability,
             onshoreChop,
           });
-          const standingBrokenWater = standingSection.whitewaterPressure;
+          const standingNormalSpeed = rideVelocity.current.x
+            * standingWaveNormalX
+            + rideVelocity.current.y * standingWaveNormalZ;
+          const standingCrestRelation = advanceRideCaptureState(
+            rideCapture.current,
+            {
+              deltaSeconds: delta,
+              crestPhaseError: standingCrestPhaseError,
+              normalSpeed: standingNormalSpeed,
+              waveSpeed: standingTransport.speed,
+              facePhaseSpan: standingFacePhaseSpan,
+              gravityPlaning: standingPlaning,
+              waveSupport: THREE.MathUtils.clamp(
+                standingReading.waveContact
+                  * boardWaterContact
+                  * (.35 + boardCrestEnergy * .65),
+                0,
+                1,
+              ),
+            },
+          );
+          rideCapture.current.overtaken = standingCrestRelation.overtaken;
+          rideCapture.current.ahead = standingCrestRelation.ahead;
+          const standingBrokenWater = Math.max(
+            standingSection.whitewaterPressure,
+            standingCrestRelation.lipOvertake * .7
+              + standingCrestRelation.overtaken * .32,
+          );
+          if (standingCrestRelation.overtaken > .42) {
+            unstableFor.current += delta
+              * SURF_PHYSICS_TUNING.lipOvertakeFailure
+              * standingCrestRelation.overtaken;
+          }
           const standingTubePressure = resolveWaveTubePressure({
             linePosition: standingSection.linePosition,
             facePosition: standingPhysicalFacePosition,
@@ -13488,8 +13520,6 @@ function Simulation({
             rideResult.current = "";
             cleanFinish.current = false;
             finishAt.current = -1;
-            rideCapture.current.overtaken = 0;
-            rideCapture.current.ahead = 0;
             catchQuality.current = THREE.MathUtils.clamp(
               .18
                 + standingReading.capture * .5
@@ -13785,39 +13815,6 @@ function Simulation({
         whitewaterPressure = sectionReading.whitewaterPressure;
         sectionPressure = sectionReading.sectionPressure;
         const shoulderStall = sectionReading.shoulderStall;
-        const tubePressure = resolveWaveTubePressure({
-          linePosition,
-          facePosition: physicalFacePosition,
-          tideHollow,
-          tideSteepness,
-          waveEnergy: boardCrestEnergy,
-          offshoreGroom,
-          onshoreChop,
-          whitewater: whitewaterPressure,
-        }).tubePressure;
-        speed = rideVelocity.current.length();
-        stamina.current = THREE.MathUtils.clamp(
-          stamina.current + surfingStaminaDelta(
-            tubePressure,
-            whitewaterPressure,
-            boardCrestEnergy,
-            delta,
-          ),
-          0,
-          100,
-        );
-        const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const rideTurbulence = resolveSurfboardTurbulence({
-          elapsed: t,
-          positionX: position.current.x,
-          positionZ: position.current.z,
-          windSpeed: settings.windSpeed,
-          onshoreChop,
-          waveEnergy: boardCrestEnergy,
-          waveSpeed: waveTransport.speed,
-          lineSide: rideLineSide.current,
-          whitewater: whitewaterPressure,
-        });
         const rideCurrentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
         const rideCurrentSpeed = settings.currentStrength / 3.6;
         const rideCurrentX = Math.sin(rideCurrentAngle) * rideCurrentSpeed;
@@ -13867,6 +13864,68 @@ function Simulation({
           boardLength: boardSpec.length,
           boardWidth: boardSpec.width,
         }).planing;
+        const rideNormalSpeed = rideVelocity.current.x * waveNormalX
+          + rideVelocity.current.y * waveNormalZ;
+        const crestRelation = advanceRideCaptureState(rideCapture.current, {
+          deltaSeconds: delta,
+          crestPhaseError,
+          normalSpeed: rideNormalSpeed,
+          waveSpeed: waveTransport.speed,
+          facePhaseSpan,
+          gravityPlaning: ridePlaning,
+          waveSupport: THREE.MathUtils.clamp(
+            rideInteraction.waveContact
+              * boardWaterContact
+              * (.35 + boardCrestEnergy * .65),
+            0,
+            1,
+          ),
+        });
+        rideCapture.current.overtaken = crestRelation.overtaken;
+        rideCapture.current.ahead = crestRelation.ahead;
+        whitewaterPressure = Math.max(
+          whitewaterPressure,
+          crestRelation.lipOvertake * .7
+            + crestRelation.overtaken * .32,
+        );
+        if (crestRelation.overtaken > .42) {
+          unstableFor.current += delta
+            * SURF_PHYSICS_TUNING.lipOvertakeFailure
+            * crestRelation.overtaken;
+        }
+        const tubePressure = resolveWaveTubePressure({
+          linePosition,
+          facePosition: physicalFacePosition,
+          tideHollow,
+          tideSteepness,
+          waveEnergy: boardCrestEnergy,
+          offshoreGroom,
+          onshoreChop,
+          whitewater: whitewaterPressure,
+        }).tubePressure;
+        speed = rideVelocity.current.length();
+        stamina.current = THREE.MathUtils.clamp(
+          stamina.current + surfingStaminaDelta(
+            tubePressure,
+            whitewaterPressure,
+            boardCrestEnergy,
+            delta,
+          ),
+          0,
+          100,
+        );
+        const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
+        const rideTurbulence = resolveSurfboardTurbulence({
+          elapsed: t,
+          positionX: position.current.x,
+          positionZ: position.current.z,
+          windSpeed: settings.windSpeed,
+          onshoreChop,
+          waveEnergy: boardCrestEnergy,
+          waveSpeed: waveTransport.speed,
+          lineSide: rideLineSide.current,
+          whitewater: whitewaterPressure,
+        });
         const railGrip = resolveSurfboardRailGrip({
           baseGrip: gripBase,
           planing: ridePlaning,
@@ -14137,21 +14196,8 @@ function Simulation({
         const shorewardVelocity = rideVelocity.current.y;
         position.current.x += lateralVelocity * delta;
         position.current.z += shorewardVelocity * delta;
-        // Capture is earned through planing speed and the physical face. We do
-        // not project the board back to a target phase or inject crest speed:
-        // a slow board is overtaken by the lip, while one that outruns the
-        // energy glides onto the shoulder and loses the wave.
-        const integratedWavePhase = primaryWavePhaseAt(
-          position.current.x,
-          position.current.z,
-          t,
-          settings,
-          character,
-        );
-        const integratedCrestError = Math.atan2(
-          Math.sin(integratedWavePhase - rideWavePhase.current),
-          Math.cos(integratedWavePhase - rideWavePhase.current),
-        );
+        // The board keeps the velocity produced by the hull-force integration;
+        // no crest speed or target phase is injected after the position step.
         const integratedNormalSpeed = rideVelocity.current.x * waveNormalX
           + rideVelocity.current.y * waveNormalZ;
         boardAlignment = THREE.MathUtils.clamp(
@@ -14177,27 +14223,6 @@ function Simulation({
             1.5,
           ) * boardWaterContact,
         );
-        let lipOvertake = 0;
-        const captureReading = advanceRideCaptureState(rideCapture.current, {
-          deltaSeconds: delta,
-          crestPhaseError: integratedCrestError,
-          normalSpeed: integratedNormalSpeed,
-          waveSpeed: waveTransport.speed,
-          facePhaseSpan,
-          gravityPlaning: ridePlaning,
-        });
-        rideCapture.current.overtaken = captureReading.overtaken;
-        rideCapture.current.ahead = captureReading.ahead;
-        lipOvertake = captureReading.lipOvertake;
-        whitewaterPressure = Math.max(
-          whitewaterPressure,
-          lipOvertake * .7 + rideCapture.current.overtaken * .32,
-        );
-        if (rideCapture.current.overtaken > .42) {
-          unstableFor.current += delta
-            * SURF_PHYSICS_TUNING.lipOvertakeFailure
-            * rideCapture.current.overtaken;
-        }
         const rideStep = Math.hypot(lateralVelocity, shorewardVelocity) * delta;
         speed = rideStep / Math.max(.001, delta);
         rideDistance.current += rideStep;
