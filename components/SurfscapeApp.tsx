@@ -3019,6 +3019,8 @@ export default function SurfscapeApp() {
       ? `WHITEWATER ${Math.round(stats.whitewaterPressure * 100)}%`
     : stats.barrelIntensity > .25
       ? `TUBE PRESSURE ${Math.round(stats.barrelIntensity * 100)}%`
+    : stats.waveEngagement > .08 && stats.waveEngagement < .72
+      ? `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`
     : Math.abs(stats.lateralForce) > .52
       ? `${stats.lateralForce > 0 ? "RIGHT" : "LEFT"} RAIL LOADED`
       : Math.max(0, stats.acceleration) > .48
@@ -3047,6 +3049,8 @@ export default function SurfscapeApp() {
       ? `${rollSide} RAIL ${rollDegrees}°`
       : stats.crossWaveLoad > .28
         ? `CROSS-WAVE LOAD ${Math.round(stats.crossWaveLoad * 100)}%`
+        : stats.waveEngagement > .08
+          ? `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`
         : stats.speed > .6
           ? "SURFACE GLIDE · NO CAPTURE"
           : "NO WAVE POWER";
@@ -3217,6 +3221,13 @@ export default function SurfscapeApp() {
                   rotation: rollSide === "RIGHT" ? 180 : 0,
                   tone: "align",
                 }
+          : stats.waveEngagement > .08
+            ? {
+                cue: `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`,
+                detail: "Keep the nose aligned and maintain hull contact; pressure must build before the face fully carries the board.",
+                rotation: -90,
+                tone: "ready",
+              }
           : stats.pearlingRisk > .32
             ? {
                 cue: "NOSE BURYING · SHIFT BACK",
@@ -3387,7 +3398,9 @@ export default function SurfscapeApp() {
                 : "Settling onto the board beyond the foam",
             }
         : standingOnBoard
-          ? stats.crossWaveLoad > .28
+          ? stats.waveEngagement > .08
+            ? { title: "PRESSURE BUILDING", detail: `${Math.round(stats.waveEngagement * 100)}% sustained capture · stay aligned` }
+          : stats.crossWaveLoad > .28
             ? { title: `TURN ${headingTurn}`, detail: `${Math.round(stats.crossWaveLoad * 100)}% cross-wave load · balance against the roll` }
             : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: "Balance with the slider · tap PRONE to reposition" }
         : stats.phase === "paddling"

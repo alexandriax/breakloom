@@ -7,6 +7,7 @@ import {
   advanceProneBoardAttitude,
   advanceSurfboardDynamics,
   advanceRideCaptureState,
+  advanceWaveEngagement,
   advanceWaveTakeoffCapture,
   boardRailContactFrame,
   evaluateBoardWaterInteraction,
@@ -23,6 +24,69 @@ import {
   waveSetStateAt,
   waveSurfaceFrameAt,
 } from "../lib/game.ts";
+
+function engagementFor(seconds, sample, hz = 60, initial = 0) {
+  let engagement = initial;
+  let reading = null;
+  const frames = Math.round(seconds * hz);
+  for (let frame = 0; frame < frames; frame += 1) {
+    reading = advanceWaveEngagement(engagement, {
+      ...sample,
+      deltaSeconds: 1 / hz,
+    });
+    engagement = reading.engagement;
+  }
+  return reading;
+}
+
+const alignedEngagementSample = {
+  capture: .86,
+  waveContact: .82,
+  waterContact: .96,
+  headingAlignment: .92,
+  planing: .72,
+  crossWaveLoad: .08,
+};
+const sustainedEngagement = engagementFor(
+  1.1,
+  alignedEngagementSample,
+);
+const sustainedEngagement120 = engagementFor(
+  1.1,
+  alignedEngagementSample,
+  120,
+);
+const misalignedEngagement = engagementFor(1.1, {
+  ...alignedEngagementSample,
+  headingAlignment: -.45,
+  crossWaveLoad: .92,
+});
+const releasedEngagement = engagementFor(
+  2.4,
+  {
+    ...alignedEngagementSample,
+    capture: 0,
+    waveContact: .03,
+    waterContact: .42,
+    headingAlignment: -.3,
+    planing: .08,
+    crossWaveLoad: .72,
+  },
+  60,
+  sustainedEngagement.engagement,
+);
+if (
+  sustainedEngagement.engagement < .54
+  || Math.abs(
+    sustainedEngagement.engagement
+      - sustainedEngagement120.engagement
+  ) > .012
+  || misalignedEngagement.engagement > .04
+  || releasedEngagement.engagement
+    >= sustainedEngagement.engagement * .36
+) {
+  throw new Error("Wave engagement no longer builds from sustained aligned pressure and releases continuously");
+}
 
 const settings = {
   mode: "training",
@@ -1251,6 +1315,12 @@ console.log(JSON.stringify({
   captureLoss: {
     overtaken: overtakenCapture.overtaken,
     ahead: shoulderCapture.ahead,
+  },
+  waveEngagement: {
+    sustained: sustainedEngagement.engagement,
+    sustained120Hz: sustainedEngagement120.engagement,
+    misaligned: misalignedEngagement.engagement,
+    released: releasedEngagement.engagement,
   },
   boardWater: {
     alignedCapture: alignedBoard.capture,

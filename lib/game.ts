@@ -37,6 +37,72 @@ export function rideRailInputFromPaddleSteer(paddleSteer: number) {
   return -Math.max(-1, Math.min(1, paddleSteer));
 }
 
+export type WaveEngagementSample = {
+  deltaSeconds: number;
+  capture: number;
+  waveContact: number;
+  waterContact: number;
+  headingAlignment: number;
+  planing: number;
+  crossWaveLoad: number;
+};
+
+export type WaveEngagementReading = {
+  engagement: number;
+  pressure: number;
+  gainRate: number;
+  releaseRate: number;
+};
+
+/**
+ * Accumulates hydrodynamic wave engagement from sustained pressure instead of
+ * flipping a ride state at a single capture threshold. Misalignment, rail
+ * loading, and lost hull contact bleed pressure back out continuously.
+ */
+export function advanceWaveEngagement(
+  engagement: number,
+  sample: WaveEngagementSample,
+): WaveEngagementReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const current = Math.max(0, Math.min(1, engagement));
+  const capture = Math.max(0, Math.min(1, sample.capture));
+  const waveContact = Math.max(0, Math.min(1, sample.waveContact));
+  const waterContact = Math.max(0, Math.min(1, sample.waterContact));
+  const planing = Math.max(0, Math.min(1, sample.planing));
+  const crossWaveLoad = Math.max(0, Math.min(1.5, sample.crossWaveLoad));
+  const headingSupport = smoothstep(-.12, .58, sample.headingAlignment);
+  const pressure = Math.max(
+    0,
+    Math.min(
+      1,
+      capture
+        * (.42 + waveContact * .58)
+        * (.15 + waterContact * .85)
+        * (.72 + planing * .28)
+        * headingSupport,
+    ),
+  );
+  const gainRate = pressure
+    * (.88 + pressure * .82)
+    * (1 - current);
+  const releaseRate = (1 - pressure)
+    * (
+      .34
+        + crossWaveLoad * .22
+        + (1 - waterContact) * .72
+    )
+    * current;
+  return {
+    engagement: Math.max(
+      0,
+      Math.min(1, current + (gainRate - releaseRate) * delta),
+    ),
+    pressure,
+    gainRate,
+    releaseRate,
+  };
+}
+
 export type RideCaptureState = {
   overtaken: number;
   ahead: number;
@@ -1930,6 +1996,7 @@ export type GameStats = {
   balance: number;
   balanceTarget: number;
   waveEngaged: boolean;
+  waveEngagement: number;
   boardAlignment: number;
   boardWaveAngle: number;
   crossWaveLoad: number;
@@ -2048,6 +2115,7 @@ export const INITIAL_STATS: GameStats = {
   balance: 0,
   balanceTarget: 0,
   waveEngaged: false,
+  waveEngagement: 0,
   boardAlignment: 1,
   boardWaveAngle: 0,
   crossWaveLoad: 0,
