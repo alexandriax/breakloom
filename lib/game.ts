@@ -246,6 +246,62 @@ export function resolveWavePocketFrame(
   };
 }
 
+export type WaveLineSideSample = {
+  surferAlong: number;
+  tangentSpeed: number;
+  leftPocketAlong: number;
+  rightPocketAlong: number;
+  currentSide: number;
+  switchHysteresis: number;
+};
+
+/**
+ * Selects which side of an A-frame the board physically occupies. Near the
+ * peak, tangential momentum breaks a geometric tie; once a side is occupied,
+ * the opposite pocket must become meaningfully closer before the identity can
+ * switch. One-way point and reef breaks bypass this resolver at the caller.
+ */
+export function resolveWaveLineSide(
+  sample: WaveLineSideSample,
+) {
+  const currentSide = sample.currentSide < 0 ? -1 : 1;
+  const leftDistance = Math.abs(
+    sample.surferAlong - sample.leftPocketAlong,
+  );
+  const rightDistance = Math.abs(
+    sample.surferAlong - sample.rightPocketAlong,
+  );
+  const hysteresis = Math.max(0, sample.switchHysteresis);
+  const distanceDifference = Math.abs(leftDistance - rightDistance);
+  const momentumSide = Math.abs(sample.tangentSpeed) > .32
+    ? sample.tangentSpeed < 0 ? -1 : 1
+    : 0;
+  let lineSide = currentSide;
+  if (distanceDifference <= hysteresis && momentumSide !== 0) {
+    lineSide = momentumSide;
+  } else {
+    const candidateSide = leftDistance < rightDistance ? -1 : 1;
+    const currentDistance = currentSide < 0
+      ? leftDistance
+      : rightDistance;
+    const candidateDistance = candidateSide < 0
+      ? leftDistance
+      : rightDistance;
+    if (
+      candidateSide !== currentSide
+      && candidateDistance + hysteresis < currentDistance
+    ) {
+      lineSide = candidateSide;
+    }
+  }
+  return {
+    lineSide,
+    leftDistance,
+    rightDistance,
+    momentumSide,
+  };
+}
+
 export type WaveSectionSample = {
   surferAlong: number;
   pocketAlong: number;

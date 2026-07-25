@@ -29,6 +29,7 @@ import {
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
   resolveSurfboardWipeout,
+  resolveWaveLineSide,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
   resolveWaveTubePressure,
@@ -498,6 +499,10 @@ const sharedPocketSample = {
   variability: .28,
 };
 const absolutePocket = resolveWavePocketFrame(sharedPocketSample);
+const oppositePocket = resolveWavePocketFrame({
+  ...sharedPocketSample,
+  lineSide: -1,
+});
 const repeatedPocket = resolveWavePocketFrame(sharedPocketSample);
 const laterPocket = resolveWavePocketFrame({
   ...sharedPocketSample,
@@ -513,6 +518,41 @@ if (
   || absolutePocket.peelRate <= 0
 ) {
   throw new Error("Wave pocket no longer follows crest age independently of capture time");
+}
+const rightPocketSelection = resolveWaveLineSide({
+  surferAlong: absolutePocket.pocketAlong + .18,
+  tangentSpeed: .9,
+  leftPocketAlong: oppositePocket.pocketAlong,
+  rightPocketAlong: absolutePocket.pocketAlong,
+  currentSide: -1,
+  switchHysteresis: .72,
+});
+const peakMomentumSelection = resolveWaveLineSide({
+  surferAlong: (
+    oppositePocket.pocketAlong + absolutePocket.pocketAlong
+  ) * .5,
+  tangentSpeed: -.74,
+  leftPocketAlong: oppositePocket.pocketAlong,
+  rightPocketAlong: absolutePocket.pocketAlong,
+  currentSide: 1,
+  switchHysteresis: .72,
+});
+const peakHysteresisSelection = resolveWaveLineSide({
+  surferAlong: (
+    oppositePocket.pocketAlong + absolutePocket.pocketAlong
+  ) * .5 + .12,
+  tangentSpeed: .05,
+  leftPocketAlong: oppositePocket.pocketAlong,
+  rightPocketAlong: absolutePocket.pocketAlong,
+  currentSide: -1,
+  switchHysteresis: .72,
+});
+if (
+  rightPocketSelection.lineSide !== 1
+  || peakMomentumSelection.lineSide !== -1
+  || peakHysteresisSelection.lineSide !== -1
+) {
+  throw new Error("A-frame line side no longer follows board position, tangent momentum, and peak hysteresis");
 }
 const pocketSection = resolveWaveSectionPressure({
   surferAlong: absolutePocket.pocketAlong,
