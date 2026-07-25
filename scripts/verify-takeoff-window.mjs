@@ -3012,6 +3012,7 @@ const rollSample = {
   speed: 5,
   planing: .82,
   boardWidth: .32,
+  boardMass: 3.2,
   boardStability: .9,
   whitewater: 0,
 };
@@ -3037,13 +3038,14 @@ const loadedLongboardRail = rollForFrames(60, {
   ...rollSample,
   railInput: .8,
   boardWidth: .43,
+  boardMass: 7.2,
   boardStability: 1.28,
 });
 if (
   loadedPerformanceRail.effectiveRail < .32
   || loadedLongboardRail.rollAngle >= loadedPerformanceRail.rollAngle * .84
 ) {
-  throw new Error("Board width and stability no longer produce distinct roll inertia");
+  throw new Error("Board width, mass, and stability no longer produce distinct roll inertia");
 }
 const recoveredRail = rollForFrames(
   150,

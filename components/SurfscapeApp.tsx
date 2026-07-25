@@ -3994,7 +3994,7 @@ export default function SurfscapeApp() {
                         >
                           <i className={`board-shape is-${boardId}`} />
                           <span><small>{board.profile}</small><strong>{board.name}</strong></span>
-                          <em>SPD {Math.round(board.speed * 10)} · TURN {Math.round(board.turn * 10)} · STAB {Math.round(board.stability * 10)}</em>
+                          <em>{board.mass.toFixed(1)} KG · SPD {Math.round(board.speed * 10)} · TURN {Math.round(board.turn * 10)} · STAB {Math.round(board.stability * 10)}</em>
                         </button>
                       );
                     })}

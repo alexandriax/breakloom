@@ -12588,6 +12588,7 @@ function Simulation({
             wavePatchContact: proneFaceSupport.patchContact,
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
+            boardMass: boardSpec.mass,
             boardStability: boardSpec.stability,
             whitewater: Math.max(
               shorebreakIntensity,
@@ -13739,6 +13740,7 @@ function Simulation({
               speed: rideVelocity.current.length(),
               planing: standingPlaning,
               boardWidth: boardSpec.width,
+              boardMass: boardSpec.mass,
               boardStability: boardSpec.stability,
               riderHeight: (
                 .92 - bodyCompression.current * .52
@@ -14613,6 +14615,7 @@ function Simulation({
             speed,
             planing: ridePlaning,
             boardWidth: boardSpec.width,
+            boardMass: boardSpec.mass,
             boardStability: boardSpec.stability,
             riderHeight: (
               .92 - bodyCompression.current * .52

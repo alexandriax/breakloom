@@ -1320,6 +1320,7 @@ export type BoardRollSample = {
   speed: number;
   planing: number;
   boardWidth: number;
+  boardMass?: number;
   boardStability: number;
   riderHeight?: number;
   whitewater: number;
@@ -1353,6 +1354,7 @@ export function advanceBoardRollDynamics(
   const planing = Math.max(0, Math.min(1, sample.planing));
   const riderHeight = clampValue(sample.riderHeight ?? 0, 0, 1);
   const whitewater = Math.max(0, Math.min(1, sample.whitewater));
+  const boardMass = clampValue(sample.boardMass ?? 3.2, 2.4, 10);
   const waterContact = Math.max(
     0,
     Math.min(1, sample.waterContact ?? 1),
@@ -1360,7 +1362,9 @@ export function advanceBoardRollDynamics(
   const crossWaveLoad = Math.max(0, Math.min(1.5, sample.crossWaveLoad));
   const crossWaveSide = Math.sign(sample.crossWaveSide) || 1;
   const speedAuthority = smoothstep(.45, 5.2, Math.max(0, sample.speed));
-  const inertia = Math.pow(widthScale, .86) * Math.sqrt(stability);
+  const inertia = Math.pow(widthScale, .86)
+    * Math.sqrt(stability)
+    * Math.pow(boardMass / 3.2, .55);
 
   const surfaceTorque = sample.crossSlope * 4.4 * waterContact;
   const accelerationTorque = -sample.lateralAcceleration * .21;
@@ -1382,8 +1386,7 @@ export function advanceBoardRollDynamics(
   );
 
   const riderRailTorque = railInput
-    * (1.12 + speedAuthority * 2.35)
-    / inertia;
+    * (1.12 + speedAuthority * 2.35);
   // A standing surfer raises the combined center of mass and reduces the
   // static metacentric margin. Crouching restores part of that margin; once
   // planing, rail lift supplies more of the righting force.
@@ -2107,6 +2110,7 @@ export type ProneBoardAttitudeSample = {
   wavePatchContact?: number;
   boardLength: number;
   boardWidth: number;
+  boardMass?: number;
   boardStability: number;
   whitewater: number;
   surfaceHeight: number;
@@ -2408,6 +2412,7 @@ export function advanceProneBoardAttitude(
     speed: sample.speed,
     planing: sample.planing,
     boardWidth: sample.boardWidth,
+    boardMass: sample.boardMass,
     boardStability: proneStability,
     whitewater: sample.whitewater,
     waterContact: contact,
