@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -4257,11 +4257,10 @@ function SurferModel({
         : 0;
     const bodyRigLift = riding
       ? state.maneuverLift
-      : paddle
-        ? -state.duckDive * .42 + state.shorebreak * .055 + takeoffPlant * .08
+        : paddle
+          ? -state.duckDive * .42 + state.shorebreak * .055 + takeoffPlant * .08
         : wipeout
           ? -.18 - state.submersion * (.42 + state.wipeoutPower * .26)
-            + Math.sin(clock.elapsedTime * (3.4 + state.wipeoutPower * 2.2)) * (.045 + state.wipeoutPower * .055)
           : 0;
 
     const bodyRotationX = paddle
@@ -4282,7 +4281,7 @@ function SurferModel({
       9,
       delta,
     );
-    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? .84 - state.takeoff * .34 - rideCompression * .15 + rebound * .08 + state.maneuverLift * .05 + rideSettle * .08 : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) + Math.sin(clock.elapsedTime * (4.1 + state.wipeoutPower * 1.8)) * (.035 + state.wipeoutPower * .035) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
+    body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? .84 - state.takeoff * .34 - rideCompression * .15 + rebound * .08 + state.maneuverLift * .05 + rideSettle * .08 : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
     body.current.position.z = THREE.MathUtils.damp(body.current.position.z, riding ? state.stance * 0.46 : 0, 7, delta);
     rig.current.rotation.x = dampAngle(rig.current.rotation.x, bodyRigPitch, wipeout ? 18 : 9, delta);
     rig.current.rotation.z = dampAngle(rig.current.rotation.z, bodyRigRoll, wipeout ? 18 : 9, delta);
@@ -4319,8 +4318,13 @@ function SurferModel({
     const dynamics = boardDynamics.current;
 
     if (wipeout && !dynamics.active) {
-      const throwSide = Math.sign(state.roll || state.lineSide || state.rail || 1);
-      const throwPower = 1 + state.impact * .78 + state.slip * .42 + state.wipeoutPower * .58;
+      const separation = resolveSurfboardSeparationRelease({
+        rollRate: state.wipeoutRollRate,
+        pitchRate: state.wipeoutPitchRate,
+        yawRate: state.wipeoutYawRate,
+        boardLength: spec.length,
+        boardWidth: spec.width,
+      });
       dynamics.active = true;
       dynamics.offset.set(
         board.current.position.x,
@@ -4328,9 +4332,9 @@ function SurferModel({
         board.current.position.z,
       );
       dynamics.velocity.set(
-        -throwSide * (1.28 + throwPower * .68),
-        .52 + throwPower * .34,
-        .42 + throwPower * .36,
+        separation.lateralVelocity,
+        separation.verticalVelocity,
+        separation.longitudinalVelocity,
       );
       dynamics.rotation.set(
         board.current.rotation.x,
@@ -4346,27 +4350,23 @@ function SurferModel({
 
     if (wipeout) {
       const step = Math.min(delta, .034);
-      const recovery = THREE.MathUtils.smoothstep(state.wipeout, 1.22, 1.8);
-      const drag = Math.exp(-step * THREE.MathUtils.lerp(1.08, 4.6, recovery));
-      const angularDrag = Math.exp(-step * THREE.MathUtils.lerp(1.28, 5.4, recovery));
-      dynamics.velocity.x += (
-        Math.sin(clock.elapsedTime * 2.7 + state.lineSide) * .18
-        - dynamics.offset.x * (1.45 + recovery * 17)
-      ) * step;
+      const waterDrag = THREE.MathUtils.clamp(
+        .28 + state.submersion * .52 + state.leashTension * .18,
+        0,
+        1,
+      );
+      const drag = Math.exp(-step * (.76 + waterDrag * 1.65));
+      const angularDrag = Math.exp(-step * (.64 + waterDrag * 1.85));
       dynamics.velocity.y += (
-        -dynamics.offset.y * (7.8 + recovery * 18)
+        -dynamics.offset.y * (6.2 + waterDrag * 4.6)
         - .28
-      ) * step;
-      dynamics.velocity.z += (
-        Math.cos(clock.elapsedTime * 2.15 + .7) * .13
-        - dynamics.offset.z * (1.18 + recovery * 16)
       ) * step;
       dynamics.velocity.multiplyScalar(drag);
       dynamics.offset.addScaledVector(dynamics.velocity, step);
 
-      dynamics.angularVelocity.x += (-Math.sin(dynamics.rotation.x) * 1.35 - dynamics.rotation.x * recovery * 8.2) * step;
-      dynamics.angularVelocity.y += (-dynamics.rotation.y * recovery * 7.4) * step;
-      dynamics.angularVelocity.z += (-Math.sin(dynamics.rotation.z) * 1.52 - dynamics.rotation.z * recovery * 8.8) * step;
+      const surfaceRighting = 1 - state.submersion * .72;
+      dynamics.angularVelocity.x += -Math.sin(dynamics.rotation.x * 2) * 1.12 * surfaceRighting * step;
+      dynamics.angularVelocity.z += -Math.sin(dynamics.rotation.z * 2) * 1.34 * surfaceRighting * step;
       dynamics.angularVelocity.multiplyScalar(angularDrag);
       dynamics.rotation.addScaledVector(dynamics.angularVelocity, step);
 
@@ -4405,7 +4405,10 @@ function SurferModel({
         if (stretch > 0.001) {
           dynamics.pull.multiplyScalar(1 / Math.max(.001, leashDistance));
           dynamics.offset.addScaledVector(dynamics.pull, -stretch * .28);
-          dynamics.velocity.addScaledVector(dynamics.pull, -stretch * (10 + recovery * 9) * step);
+          dynamics.velocity.addScaledVector(
+            dynamics.pull,
+            -stretch * (10 + state.leashTension * 9) * step,
+          );
         }
       }
     } else {

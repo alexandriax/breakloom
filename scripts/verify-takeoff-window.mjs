@@ -29,6 +29,7 @@ import {
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
+  resolveSurfboardSeparationRelease,
   resolveSurfboardTumbleRelease,
   resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
@@ -1361,6 +1362,36 @@ if (
 ) {
   throw new Error("Separated board tumble is no longer physical or frame-rate stable");
 }
+const broadsideSeparation = resolveSurfboardSeparationRelease({
+  rollRate: broadsideTumble.rollRate,
+  pitchRate: broadsideTumble.pitchRate,
+  yawRate: broadsideTumble.yawRate,
+  boardLength: 2.1,
+  boardWidth: .5,
+});
+const alignedSeparation = resolveSurfboardSeparationRelease({
+  rollRate: alignedTumble.rollRate,
+  pitchRate: alignedTumble.pitchRate,
+  yawRate: alignedTumble.yawRate,
+  boardLength: 2.1,
+  boardWidth: .5,
+});
+const oppositeSeparation = resolveSurfboardSeparationRelease({
+  rollRate: oppositeBroadsideTumble.rollRate,
+  pitchRate: oppositeBroadsideTumble.pitchRate,
+  yawRate: oppositeBroadsideTumble.yawRate,
+  boardLength: 2.1,
+  boardWidth: .5,
+});
+if (
+  broadsideSeparation.lateralVelocity
+    > alignedSeparation.lateralVelocity - .8
+  || oppositeSeparation.lateralVelocity < .8
+  || broadsideSeparation.verticalVelocity
+    < alignedSeparation.verticalVelocity + .35
+) {
+  throw new Error("Board separation no longer follows measured rail edge speed and side");
+}
 const surfaceObservation = {
   durationSeconds: .82,
   startFacePosition: .02,
@@ -2604,6 +2635,8 @@ console.log(JSON.stringify({
     pearlingTumblePitchRate: pearlingTumble.pitchRate,
     tumbleRoll60Hz: tumble60.roll,
     tumbleRoll120Hz: tumble120.roll,
+    broadsideBoardRelease: broadsideSeparation,
+    alignedBoardRelease: alignedSeparation,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,
