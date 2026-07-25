@@ -57,6 +57,7 @@ import {
   readCrestTimingMechanics,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  reachedSurfTrainingStep,
   resolvePaddleHeadingTarget,
   settingsFromConditions,
   thermalKitForConditions,
@@ -519,39 +520,14 @@ const TRAINING_STEPS = [
   { title: "Paddle with intent", detail: "Hold W until both hands complete real in-water pulls. A/D biases the outside hand to rotate the board; release W to coast." },
   { title: "Reach the lineup", detail: "Keep the nose aimed offshore and paddle beyond the breaking water." },
   { title: "Turn for shore", detail: "Rotate until the live wave arrow overlaps the fixed board-nose reference." },
-  { title: "Choose when to stand", detail: "Space always stands. Flat water stalls; a matched face captures; a broadside wall tumbles you." },
+  { title: "Match the face", detail: "Paddle until board speed along the wave normal reaches at least 66% of the live face target." },
+  { title: "Stand on support", detail: "Space always stands, but this lesson advances only when real polygon pressure supports the landing." },
   { title: "Track the pocket", detail: "Set a rail and shift nose/tail pressure; the resulting speed and turn carry the board across the face." },
   { title: "Set the rail", detail: "Turns are read from your actual board path. Compress and release only when a live lip can redirect momentum." },
   { title: "Finish clean", detail: "Stay composed through the inside section." },
 ] as const;
 
 const PADDLE_WORK_LESSON_TARGET = .28;
-
-function reachedTrainingStep(stats: GameStats) {
-  const waterPhase = stats.phase === "wading" || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout";
-  const hasStood = stats.phase === "riding" || stats.rideDistance > 0 || stats.rideResult !== "";
-  const hasRidden = stats.waveEngaged || stats.rideDistance > 0 || stats.rideResult === "clean";
-  const paddleLessonComplete =
-    stats.paddleLeftWork >= PADDLE_WORK_LESSON_TARGET
-    && stats.paddleRightWork >= PADDLE_WORK_LESSON_TARGET;
-  let reached = 0;
-  if (waterPhase) reached = 1;
-  if (paddleLessonComplete) reached = 2;
-  if (paddleLessonComplete && (stats.inLineup || hasRidden)) reached = 3;
-  if (
-    reached >= 3
-    && (
-      stats.takeoffAlignment > .72
-      || hasRidden
-    )
-  ) reached = 4;
-  if (reached >= 4 && hasStood) reached = 5;
-  const hasTrackedPocket = stats.pocketDistance >= 15;
-  if (reached >= 5 && hasTrackedPocket) reached = 6;
-  if (reached >= 6 && stats.maneuverCount > 0) reached = 7;
-  if (reached >= 7 && stats.rideResult === "clean") reached = 8;
-  return reached;
-}
 
 const EMPTY_CONTROLS: ControlState = {
   forward: false,
@@ -2956,7 +2932,10 @@ export default function SurfscapeApp() {
   const handleSceneReady = useCallback(() => setSceneReady(true), []);
   const handleStats = useCallback((next: GameStats) => {
     if (settings.mode === "training") {
-      const reached = reachedTrainingStep(next);
+      const reached = reachedSurfTrainingStep(
+        next,
+        PADDLE_WORK_LESSON_TARGET,
+      );
       if (reached > trainingStepValue.current) {
         trainingStepValue.current = reached;
         setTrainingStep(reached);

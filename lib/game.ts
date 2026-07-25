@@ -5695,6 +5695,58 @@ export const INITIAL_STATS: GameStats = {
   prompt: "Walk toward the water · or find the van",
 };
 
+/**
+ * Advances training from demonstrated physical states rather than zones or
+ * button presses. The same thresholds are used by the HUD and deterministic
+ * verification so tutorial progress cannot drift away from the live solver.
+ */
+export function reachedSurfTrainingStep(
+  stats: GameStats,
+  paddleWorkTarget = .28,
+) {
+  const waterPhase = stats.phase === "wading"
+    || stats.phase === "paddling"
+    || stats.phase === "riding"
+    || stats.phase === "wipeout";
+  const paddleLessonComplete =
+    stats.paddleLeftWork >= paddleWorkTarget
+    && stats.paddleRightWork >= paddleWorkTarget;
+  const hasRidden = stats.waveEngaged
+    || stats.rideDistance > 0
+    || stats.rideResult !== "";
+  const supportedStand = (
+    stats.phase === "riding"
+      && stats.rideTakeoffQuality > .18
+      && Math.max(
+        stats.waveEngagement,
+        stats.wavePressure,
+        stats.hullPatchContact,
+      ) > .12
+  ) || hasRidden;
+  const matchedLiveFace = (
+    stats.takeoffSpeedMatch >= .66
+      && stats.takeoffOpportunity >= .1
+  ) || supportedStand;
+  let reached = 0;
+  if (waterPhase) reached = 1;
+  if (paddleLessonComplete) reached = 2;
+  if (paddleLessonComplete && (stats.inLineup || hasRidden)) {
+    reached = 3;
+  }
+  if (
+    reached >= 3
+    && (stats.takeoffAlignment > .72 || supportedStand)
+  ) {
+    reached = 4;
+  }
+  if (reached >= 4 && matchedLiveFace) reached = 5;
+  if (reached >= 5 && supportedStand) reached = 6;
+  if (reached >= 6 && stats.pocketDistance >= 15) reached = 7;
+  if (reached >= 7 && stats.maneuverCount > 0) reached = 8;
+  if (reached >= 8 && stats.rideResult === "clean") reached = 9;
+  return reached;
+}
+
 function positiveModulo(value: number, divisor: number) {
   return ((value % divisor) + divisor) % divisor;
 }

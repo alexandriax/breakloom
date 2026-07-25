@@ -27,6 +27,7 @@ import {
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
+  INITIAL_STATS,
   paddleStrokeWorkDelta,
   paddlingStaminaDelta,
   popUpStaminaDelta,
@@ -34,6 +35,7 @@ import {
   readCrestTimingMechanics,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  reachedSurfTrainingStep,
   resolveBoardTakeoffOpportunity,
   resolvePaddleHeadingTarget,
   recognizeSurfboardLipManeuver,
@@ -153,6 +155,49 @@ if (
     >= sustainedEngagement.engagement * .36
 ) {
   throw new Error("Wave engagement no longer builds from sustained aligned pressure and releases continuously");
+}
+
+const alignedTrainingState = {
+  ...INITIAL_STATS,
+  phase: "paddling",
+  paddleLeftWork: .3,
+  paddleRightWork: .3,
+  inLineup: true,
+  takeoffAlignment: .82,
+};
+const matchedWithoutFace = {
+  ...alignedTrainingState,
+  takeoffSpeedMatch: .72,
+  takeoffOpportunity: 0,
+};
+const matchedLiveFaceTraining = {
+  ...matchedWithoutFace,
+  takeoffOpportunity: .24,
+};
+const unsupportedStandingTraining = {
+  ...matchedLiveFaceTraining,
+  phase: "riding",
+  rideTakeoffQuality: .12,
+  waveEngagement: 0,
+  wavePressure: 0,
+  hullPatchContact: 0,
+};
+const supportedStandingTraining = {
+  ...unsupportedStandingTraining,
+  rideTakeoffQuality: .72,
+  wavePressure: .34,
+  hullPatchContact: .48,
+};
+if (
+  reachedSurfTrainingStep(alignedTrainingState) !== 4
+  || reachedSurfTrainingStep(matchedWithoutFace) !== 4
+  || reachedSurfTrainingStep(matchedLiveFaceTraining) !== 5
+  || reachedSurfTrainingStep(unsupportedStandingTraining) !== 5
+  || reachedSurfTrainingStep(supportedStandingTraining) !== 6
+) {
+  throw new Error(
+    "Training progression no longer requires demonstrated alignment, live speed match, and supported standing",
+  );
 }
 
 const settings = {
@@ -4926,6 +4971,17 @@ if (
 }
 
 console.log(JSON.stringify({
+  trainingProgression: {
+    aligned: reachedSurfTrainingStep(alignedTrainingState),
+    speedWithoutFace:
+      reachedSurfTrainingStep(matchedWithoutFace),
+    matchedLiveFace:
+      reachedSurfTrainingStep(matchedLiveFaceTraining),
+    unsupportedStanding:
+      reachedSurfTrainingStep(unsupportedStandingTraining),
+    supportedStanding:
+      reachedSurfTrainingStep(supportedStandingTraining),
+  },
   waveCalibration: {
     fiveSecondWavelength,
     tenSecondWavelength,
