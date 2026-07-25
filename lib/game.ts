@@ -3689,6 +3689,111 @@ export function resolveSurfboardLeashReaction(
   };
 }
 
+export type SurfboardLeashTorqueSample = {
+  force: number;
+  directionX: number;
+  directionY: number;
+  directionZ: number;
+  surferMass: number;
+  boardMass: number;
+  boardLength: number;
+  boardWidth: number;
+};
+
+export type SurfboardLeashTorqueReading = {
+  boardPitchAcceleration: number;
+  boardYawAcceleration: number;
+  boardRollAcceleration: number;
+  surferPitchAcceleration: number;
+  surferRollAcceleration: number;
+};
+
+/**
+ * Converts leash force into angular acceleration at its real attachment
+ * points: the tail plug below the board's center and the ankle below the
+ * surfer's center of mass. The board and surfer therefore rotate from the same
+ * cord pull instead of receiving an animation-only twist.
+ */
+export function resolveSurfboardLeashTorque(
+  sample: SurfboardLeashTorqueSample,
+): SurfboardLeashTorqueReading {
+  const force = clampValue(sample.force, 0, 320);
+  const directionMagnitude = Math.hypot(
+    sample.directionX,
+    sample.directionY,
+    sample.directionZ,
+  );
+  if (force <= 0 || directionMagnitude <= 1e-6) {
+    return {
+      boardPitchAcceleration: 0,
+      boardYawAcceleration: 0,
+      boardRollAcceleration: 0,
+      surferPitchAcceleration: 0,
+      surferRollAcceleration: 0,
+    };
+  }
+  const directionX = sample.directionX / directionMagnitude;
+  const directionY = sample.directionY / directionMagnitude;
+  const directionZ = sample.directionZ / directionMagnitude;
+  const boardMass = clampValue(sample.boardMass, 2.4, 10);
+  const surferMass = clampValue(sample.surferMass, 45, 130);
+  const boardLength = clampValue(sample.boardLength, 1.6, 3.6);
+  const boardWidth = clampValue(sample.boardWidth, .28, .72);
+  const tailOffset = boardLength * .43;
+  const plugHeight = .13;
+  const boardForceX = -force * directionX;
+  const boardForceY = -force * directionY;
+  const boardForceZ = -force * directionZ;
+  const boardPitchTorque = plugHeight * boardForceZ
+    + tailOffset * boardForceY;
+  const boardYawTorque = -tailOffset * boardForceX;
+  const boardRollTorque = -plugHeight * boardForceX;
+  const boardPitchInertia = boardMass
+    * (boardLength * boardLength + .018)
+    / 12;
+  const boardYawInertia = boardMass
+    * (
+      boardLength * boardLength
+        + boardWidth * boardWidth
+    )
+    / 12;
+  const boardRollInertia = boardMass
+    * (boardWidth * boardWidth + .018)
+    / 12;
+  const ankleLever = .52;
+  const surferPitchTorque = -ankleLever * force * directionZ;
+  const surferRollTorque = ankleLever * force * directionX;
+  const surferAngularInertia = surferMass * .18;
+
+  return {
+    boardPitchAcceleration: clampValue(
+      boardPitchTorque / boardPitchInertia,
+      -28,
+      28,
+    ),
+    boardYawAcceleration: clampValue(
+      boardYawTorque / boardYawInertia,
+      -22,
+      22,
+    ),
+    boardRollAcceleration: clampValue(
+      boardRollTorque / boardRollInertia,
+      -34,
+      34,
+    ),
+    surferPitchAcceleration: clampValue(
+      surferPitchTorque / surferAngularInertia,
+      -12,
+      12,
+    ),
+    surferRollAcceleration: clampValue(
+      surferRollTorque / surferAngularInertia,
+      -12,
+      12,
+    ),
+  };
+}
+
 export type SurfboardSurfaceManeuverSample = {
   durationSeconds: number;
   startFacePosition: number;

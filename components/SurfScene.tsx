@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -415,6 +415,8 @@ type LeashReactionFeedback = {
   directionY: number;
   directionZ: number;
   surferAcceleration: number;
+  surferPitchAcceleration: number;
+  surferRollAcceleration: number;
 };
 
 type ReplayFrame = {
@@ -4454,6 +4456,16 @@ function SurferModel({
           surferMass: 76,
           boardMass: spec.mass,
         });
+        const leashTorque = resolveSurfboardLeashTorque({
+          force: leashReaction.force,
+          directionX: dynamics.pull.x,
+          directionY: dynamics.pull.y,
+          directionZ: dynamics.pull.z,
+          surferMass: 76,
+          boardMass: spec.mass,
+          boardLength: spec.length,
+          boardWidth: spec.width,
+        });
         const displayedTension = THREE.MathUtils.damp(
           state.leashTension,
           leashReaction.tension,
@@ -4466,12 +4478,22 @@ function SurferModel({
           directionY: dynamics.pull.y,
           directionZ: dynamics.pull.z,
           surferAcceleration: leashReaction.surferAcceleration,
+          surferPitchAcceleration:
+            leashTorque.surferPitchAcceleration,
+          surferRollAcceleration:
+            leashTorque.surferRollAcceleration,
         });
         if (leashReaction.force > 0) {
           dynamics.velocity.addScaledVector(
             dynamics.pull,
             -leashReaction.relativeAcceleration * step,
           );
+          dynamics.angularVelocity.x +=
+            leashTorque.boardPitchAcceleration * step;
+          dynamics.angularVelocity.y +=
+            leashTorque.boardYawAcceleration * step;
+          dynamics.angularVelocity.z +=
+            leashTorque.boardRollAcceleration * step;
         }
       } else {
         onLeashReaction({
@@ -4480,6 +4502,8 @@ function SurferModel({
           directionY: 0,
           directionZ: 0,
           surferAcceleration: 0,
+          surferPitchAcceleration: 0,
+          surferRollAcceleration: 0,
         });
       }
     } else {
@@ -4498,6 +4522,8 @@ function SurferModel({
         directionY: 0,
         directionZ: 0,
         surferAcceleration: 0,
+        surferPitchAcceleration: 0,
+        surferRollAcceleration: 0,
       });
       board.current.position.x = THREE.MathUtils.damp(board.current.position.x, baseBoardX, 8, delta);
       board.current.position.y = THREE.MathUtils.damp(board.current.position.y, baseBoardY, 8, delta);
@@ -10978,6 +11004,8 @@ function Simulation({
     directionY: 0,
     directionZ: 0,
     surferAcceleration: 0,
+    surferPitchAcceleration: 0,
+    surferRollAcceleration: 0,
   });
   const setLeashReaction = useCallback((
     feedback: LeashReactionFeedback,
@@ -15242,6 +15270,12 @@ function Simulation({
         wipeoutBodyVertical.current.verticalVelocity +=
           leash.directionY
           * leash.surferAcceleration
+          * delta;
+        wipeoutAngularVelocity.current.x +=
+          leash.surferPitchAcceleration
+          * delta;
+        wipeoutAngularVelocity.current.z +=
+          leash.surferRollAcceleration
           * delta;
         const bodyVertical = advanceSeparatedSurferVerticalDynamics(
           wipeoutBodyVertical.current,

@@ -36,6 +36,7 @@ import {
   resolveDuckDiveInitiation,
   resolveSurfboardFailureRelease,
   resolveSurfboardLeashReaction,
+  resolveSurfboardLeashTorque,
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
@@ -1980,6 +1981,112 @@ if (
 ) {
   throw new Error("Leash reaction no longer applies equal force from stretch, damping, and mass");
 }
+const slackLeashTorque = resolveSurfboardLeashTorque({
+  force: 0,
+  directionX: 1,
+  directionY: 0,
+  directionZ: 0,
+  surferMass: 76,
+  boardMass: 3.2,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const lateralLeashTorque = resolveSurfboardLeashTorque({
+  force: 30,
+  directionX: 1,
+  directionY: 0,
+  directionZ: 0,
+  surferMass: 76,
+  boardMass: 3.2,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const oppositeLateralLeashTorque = resolveSurfboardLeashTorque({
+  force: 30,
+  directionX: -1,
+  directionY: 0,
+  directionZ: 0,
+  surferMass: 76,
+  boardMass: 3.2,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const longitudinalLeashTorque = resolveSurfboardLeashTorque({
+  force: 30,
+  directionX: 0,
+  directionY: 0,
+  directionZ: 1,
+  surferMass: 76,
+  boardMass: 3.2,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const verticalLeashTorque = resolveSurfboardLeashTorque({
+  force: 30,
+  directionX: 0,
+  directionY: 1,
+  directionZ: 0,
+  surferMass: 76,
+  boardMass: 3.2,
+  boardLength: 2.5,
+  boardWidth: .32,
+});
+const longboardLeashTorque = resolveSurfboardLeashTorque({
+  force: 30,
+  directionX: 1,
+  directionY: 0,
+  directionZ: 0,
+  surferMass: 76,
+  boardMass: 7.2,
+  boardLength: 3.35,
+  boardWidth: .58,
+});
+const longboardLongitudinalLeashTorque =
+  resolveSurfboardLeashTorque({
+    force: 30,
+    directionX: 0,
+    directionY: 0,
+    directionZ: 1,
+    surferMass: 76,
+    boardMass: 7.2,
+    boardLength: 3.35,
+    boardWidth: .58,
+  });
+if (
+  Object.values(slackLeashTorque).some((value) => value !== 0)
+  || lateralLeashTorque.boardYawAcceleration === 0
+  || lateralLeashTorque.boardRollAcceleration === 0
+  || lateralLeashTorque.surferRollAcceleration === 0
+  || lateralLeashTorque.surferPitchAcceleration !== 0
+  || Math.abs(
+    lateralLeashTorque.boardYawAcceleration
+      + oppositeLateralLeashTorque.boardYawAcceleration,
+  ) > 1e-9
+  || Math.abs(
+    lateralLeashTorque.boardRollAcceleration
+      + oppositeLateralLeashTorque.boardRollAcceleration,
+  ) > 1e-9
+  || Math.abs(
+    lateralLeashTorque.surferRollAcceleration
+      + oppositeLateralLeashTorque.surferRollAcceleration,
+  ) > 1e-9
+  || longitudinalLeashTorque.boardPitchAcceleration === 0
+  || longitudinalLeashTorque.surferPitchAcceleration === 0
+  || longitudinalLeashTorque.boardRollAcceleration !== 0
+  || longitudinalLeashTorque.surferRollAcceleration !== 0
+  || verticalLeashTorque.boardPitchAcceleration === 0
+  || verticalLeashTorque.surferPitchAcceleration !== 0
+  || verticalLeashTorque.surferRollAcceleration !== 0
+  || Math.abs(longboardLeashTorque.boardYawAcceleration)
+    >= Math.abs(lateralLeashTorque.boardYawAcceleration)
+  || Math.abs(
+    longboardLongitudinalLeashTorque.boardPitchAcceleration,
+  ) >= Math.abs(
+    longitudinalLeashTorque.boardPitchAcceleration,
+  )
+) {
+  throw new Error("Offset leash no longer rotates each body from attachment geometry and inertia");
+}
 function simulateLeashCoupling(hz) {
   const surferMass = 76;
   const boardMass = 3.2;
@@ -3923,6 +4030,11 @@ console.log(JSON.stringify({
     separatedHorizontal120,
     stretchedLeash,
     longboardLeash,
+    lateralLeashTorque,
+    longitudinalLeashTorque,
+    verticalLeashTorque,
+    longboardLeashTorque,
+    longboardLongitudinalLeashTorque,
     leashCoupling60,
     leashCoupling120,
   },
