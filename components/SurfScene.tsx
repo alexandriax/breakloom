@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -369,6 +369,9 @@ type MotionState = {
   wipeoutBodySurfaceOffset: number;
   wipeoutBodyVerticalVelocity: number;
   wipeoutBodyImmersion: number;
+  wipeoutBoardLateralVelocity: number;
+  wipeoutBoardVerticalVelocity: number;
+  wipeoutBoardLongitudinalVelocity: number;
   breath: number;
   maneuver: number;
   maneuverSide: number;
@@ -4358,13 +4361,6 @@ function SurferModel({
     const dynamics = boardDynamics.current;
 
     if (wipeout && !dynamics.active) {
-      const separation = resolveSurfboardSeparationRelease({
-        rollRate: state.wipeoutRollRate,
-        pitchRate: state.wipeoutPitchRate,
-        yawRate: state.wipeoutYawRate,
-        boardLength: spec.length,
-        boardWidth: spec.width,
-      });
       dynamics.active = true;
       dynamics.offset.set(
         board.current.position.x,
@@ -4372,9 +4368,9 @@ function SurferModel({
         board.current.position.z,
       );
       dynamics.velocity.set(
-        separation.lateralVelocity,
-        separation.verticalVelocity,
-        separation.longitudinalVelocity,
+        state.wipeoutBoardLateralVelocity,
+        state.wipeoutBoardVerticalVelocity,
+        state.wipeoutBoardLongitudinalVelocity,
       );
       dynamics.rotation.set(
         board.current.rotation.x,
@@ -10873,6 +10869,9 @@ function Simulation({
     wipeoutBodySurfaceOffset: .2,
     wipeoutBodyVerticalVelocity: 0,
     wipeoutBodyImmersion: 0,
+    wipeoutBoardLateralVelocity: 0,
+    wipeoutBoardVerticalVelocity: 0,
+    wipeoutBoardLongitudinalVelocity: 0,
     breath: 100,
     maneuver: 0,
     maneuverSide: 0,
@@ -12961,6 +12960,12 @@ function Simulation({
           motion.current.wipeoutBodyVerticalVelocity =
             wipeoutBodyVertical.current.verticalVelocity;
           motion.current.wipeoutBodyImmersion = 0;
+          motion.current.wipeoutBoardLateralVelocity =
+            proneRelease.boardRelativeLateralVelocity;
+          motion.current.wipeoutBoardVerticalVelocity =
+            proneRelease.boardRelativeVerticalVelocity;
+          motion.current.wipeoutBoardLongitudinalVelocity =
+            proneRelease.boardRelativeLongitudinalVelocity;
           motion.current.impact = Math.max(
             motion.current.impact,
             .68 + proneFailure.power * .32,
@@ -13861,6 +13866,12 @@ function Simulation({
               motion.current.wipeoutBodyVerticalVelocity =
                 wipeoutBodyVertical.current.verticalVelocity;
               motion.current.wipeoutBodyImmersion = 0;
+              motion.current.wipeoutBoardLateralVelocity =
+                standingRelease.boardRelativeLateralVelocity;
+              motion.current.wipeoutBoardVerticalVelocity =
+                standingRelease.boardRelativeVerticalVelocity;
+              motion.current.wipeoutBoardLongitudinalVelocity =
+                standingRelease.boardRelativeLongitudinalVelocity;
               motion.current.impact = .72 + tumblePower * .28;
               prompt = "The wave hit the rail broadside — protect your head";
             } else if (bodyCompression.current > .05) {
@@ -15101,6 +15112,12 @@ function Simulation({
           motion.current.wipeoutBodyVerticalVelocity =
             wipeoutBodyVertical.current.verticalVelocity;
           motion.current.wipeoutBodyImmersion = 0;
+          motion.current.wipeoutBoardLateralVelocity =
+            rideRelease.boardRelativeLateralVelocity;
+          motion.current.wipeoutBoardVerticalVelocity =
+            rideRelease.boardRelativeVerticalVelocity;
+          motion.current.wipeoutBoardLongitudinalVelocity =
+            rideRelease.boardRelativeLongitudinalVelocity;
           rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
           rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
           rideResult.current = "wipeout";
@@ -15278,6 +15295,9 @@ function Simulation({
           motion.current.wipeoutBodySurfaceOffset = .2;
           motion.current.wipeoutBodyVerticalVelocity = 0;
           motion.current.wipeoutBodyImmersion = 0;
+          motion.current.wipeoutBoardLateralVelocity = 0;
+          motion.current.wipeoutBoardVerticalVelocity = 0;
+          motion.current.wipeoutBoardLongitudinalVelocity = 0;
           wipeoutBodyVertical.current.surfaceOffset = .2;
           wipeoutBodyVertical.current.verticalVelocity = 0;
         }

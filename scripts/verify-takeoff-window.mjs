@@ -37,7 +37,6 @@ import {
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
-  resolveSurfboardSeparationRelease,
   resolveSurfboardContactPatchOffsets,
   resolveSurferPassiveCompression,
   resolveSurfboardTumbleRelease,
@@ -1665,50 +1664,6 @@ if (
 ) {
   throw new Error("Separated board tumble is no longer physical or frame-rate stable");
 }
-const broadsideSeparation = resolveSurfboardSeparationRelease({
-  rollRate: broadsideTumble.rollRate,
-  pitchRate: broadsideTumble.pitchRate,
-  yawRate: broadsideTumble.yawRate,
-  boardLength: 2.1,
-  boardWidth: .5,
-});
-const alignedSeparation = resolveSurfboardSeparationRelease({
-  rollRate: alignedTumble.rollRate,
-  pitchRate: alignedTumble.pitchRate,
-  yawRate: alignedTumble.yawRate,
-  boardLength: 2.1,
-  boardWidth: .5,
-});
-const oppositeSeparation = resolveSurfboardSeparationRelease({
-  rollRate: oppositeBroadsideTumble.rollRate,
-  pitchRate: oppositeBroadsideTumble.pitchRate,
-  yawRate: oppositeBroadsideTumble.yawRate,
-  boardLength: 2.1,
-  boardWidth: .5,
-});
-if (
-  broadsideSeparation.lateralVelocity
-    > alignedSeparation.lateralVelocity - .8
-  || oppositeSeparation.lateralVelocity < .8
-  || broadsideSeparation.verticalVelocity
-    < alignedSeparation.verticalVelocity + .35
-) {
-  throw new Error("Board separation no longer follows measured rail edge speed and side");
-}
-const stillBoardSeparation = resolveSurfboardSeparationRelease({
-  rollRate: 0,
-  pitchRate: 0,
-  yawRate: 0,
-  boardLength: 2.1,
-  boardWidth: .5,
-});
-if (
-  stillBoardSeparation.lateralVelocity !== 0
-  || stillBoardSeparation.verticalVelocity !== 0
-  || stillBoardSeparation.longitudinalVelocity !== 0
-) {
-  throw new Error("A motionless board still receives a hidden separation kick");
-}
 const sharedFailureRelease = {
   velocityX: 1.4,
   velocityZ: 6.2,
@@ -1785,6 +1740,28 @@ if (
     >= Math.abs(standingFailureRelease.lateralVelocity) * .36
   || unsupportedFailureRelease.velocityX !== 1.4
   || unsupportedFailureRelease.velocityZ !== 6.2
+  || Math.abs(
+    standingFailureRelease.velocityX
+      + standingFailureRelease.boardRelativeLateralVelocity
+      - sharedFailureRelease.velocityX,
+  ) > 1e-9
+  || Math.abs(
+    standingFailureRelease.velocityZ
+      + standingFailureRelease.boardRelativeLongitudinalVelocity
+      - sharedFailureRelease.velocityZ,
+  ) > 1e-9
+  || Math.abs(
+    standingFailureRelease.verticalVelocity
+      + standingFailureRelease.boardRelativeVerticalVelocity
+      - sharedFailureRelease.heaveVelocity,
+  ) > 1e-9
+  || Math.abs(
+    oppositeFailureRelease.boardRelativeLateralVelocity
+      + standingFailureRelease.boardRelativeLateralVelocity,
+  ) > .12
+  || unsupportedFailureRelease.boardRelativeLateralVelocity !== 0
+  || unsupportedFailureRelease.boardRelativeVerticalVelocity !== 0
+  || unsupportedFailureRelease.boardRelativeLongitudinalVelocity !== 0
   || unsupportedFailureRelease.cause !== "loss of support"
   || standingFailureRelease.cause !== "rail edge"
   || pearlingFailureRelease.cause !== "buried nose"
@@ -3775,8 +3752,6 @@ console.log(JSON.stringify({
     pearlingTumblePitchRate: pearlingTumble.pitchRate,
     tumbleRoll60Hz: tumble60.roll,
     tumbleRoll120Hz: tumble120.roll,
-    broadsideBoardRelease: broadsideSeparation,
-    alignedBoardRelease: alignedSeparation,
     broadsideBodyRelease: standingFailureRelease,
     alignedBodyRelease: alignedFailureRelease,
     pearlingBodyRelease: pearlingFailureRelease,

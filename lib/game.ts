@@ -3337,44 +3337,6 @@ export function advanceSurfboardTumble(
   };
 }
 
-export type SurfboardSeparationReleaseSample = {
-  rollRate: number;
-  pitchRate: number;
-  yawRate: number;
-  boardLength: number;
-  boardWidth: number;
-};
-
-/**
- * Resolves the board's velocity relative to the surfer at separation from the
- * measured angular motion of its rails, nose, and tail. This replaces a fixed
- * wipeout throw with the edge speeds already produced by the capsize.
- */
-export function resolveSurfboardSeparationRelease(
-  sample: SurfboardSeparationReleaseSample,
-) {
-  const boardWidth = clampValue(sample.boardWidth, .38, .72);
-  const boardLength = clampValue(sample.boardLength, 1.6, 3.6);
-  const rollRate = clampValue(sample.rollRate, -7.4, 7.4);
-  const pitchRate = clampValue(sample.pitchRate, -5.8, 5.8);
-  const yawRate = clampValue(sample.yawRate, -4.8, 4.8);
-  const railEdgeSpeed = Math.abs(rollRate) * boardWidth * .5;
-  const noseTailSpeed = Math.abs(pitchRate) * boardLength * .43;
-  const yawEdgeSpeed = Math.abs(yawRate) * boardWidth * .5;
-
-  return {
-    lateralVelocity: -rollRate * boardWidth * .5 * 1.24
-      - yawRate * boardWidth * .5 * .18,
-    verticalVelocity:
-      + railEdgeSpeed * .52
-      + noseTailSpeed * .22,
-    longitudinalVelocity: pitchRate * boardLength * .43 * .3
-      - yawRate * boardWidth * .5 * .16,
-    railEdgeSpeed,
-    noseTailSpeed,
-  };
-}
-
 export type SurfboardFailureReleaseSample = {
   velocityX: number;
   velocityZ: number;
@@ -3399,6 +3361,9 @@ export type SurfboardFailureReleaseReading = {
   verticalVelocity: number;
   lateralVelocity: number;
   longitudinalVelocity: number;
+  boardRelativeLateralVelocity: number;
+  boardRelativeVerticalVelocity: number;
+  boardRelativeLongitudinalVelocity: number;
   railTangentialSpeed: number;
   noseTangentialSpeed: number;
   cause: "rail edge" | "buried nose" | "rotation" | "loss of support";
@@ -3501,6 +3466,10 @@ export function resolveSurfboardFailureRelease(
     verticalVelocity,
     lateralVelocity,
     longitudinalVelocity,
+    boardRelativeLateralVelocity: -lateralVelocity,
+    boardRelativeVerticalVelocity:
+      sample.heaveVelocity - verticalVelocity,
+    boardRelativeLongitudinalVelocity: -longitudinalVelocity,
     railTangentialSpeed,
     noseTangentialSpeed,
     cause,
