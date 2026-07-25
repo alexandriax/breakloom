@@ -2654,9 +2654,8 @@ export function advancePaddleStrokeCycle(
 }
 
 export type PaddleStrokeWorkSample = {
-  paddleStroke: number;
-  waterContact: number;
-  submersion: number;
+  strokeForce: number;
+  strokeSide: number;
   deltaSeconds: number;
 };
 
@@ -2667,25 +2666,22 @@ export type PaddleStrokeWorkReading = {
 };
 
 /**
- * Accumulates only propulsive pull work that actually reaches the water.
- * Arm recovery, airborne hands, and a submerged duck-dive stroke cannot
- * satisfy a tutorial lesson by merely holding the input.
+ * Converts resolved hydrodynamic pull force into normalized per-hand impulse.
+ * Contact, submersion, board efficiency, stamina, and pull phase have already
+ * affected strokeForce, so tutorial progress cannot outrun the physics solve.
  */
 export function paddleStrokeWorkDelta(
   sample: PaddleStrokeWorkSample,
 ): PaddleStrokeWorkReading {
-  const stroke = clampValue(sample.paddleStroke, -1, 1);
-  const surfaceAccess = 1 - clampValue(
-    sample.submersion,
+  const strokeSide = clampValue(sample.strokeSide, -1, 1);
+  const effectiveWork = clampValue(
+    Math.max(0, sample.strokeForce) / 6.9,
     0,
-    1,
-  );
-  const effectiveWork = Math.abs(stroke)
-    * clampValue(sample.waterContact, 0, 1)
-    * surfaceAccess
+    1.5,
+  )
     * clampValue(sample.deltaSeconds, 0, .05);
-  const leftWork = stroke < 0 ? effectiveWork : 0;
-  const rightWork = stroke > 0 ? effectiveWork : 0;
+  const leftWork = strokeSide < 0 ? effectiveWork : 0;
+  const rightWork = strokeSide > 0 ? effectiveWork : 0;
   return {
     leftWork,
     rightWork,

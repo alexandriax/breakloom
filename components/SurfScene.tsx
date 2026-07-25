@@ -12105,16 +12105,6 @@ function Simulation({
         paddleStrokeCycle.current.phase = paddleStroke.phase;
         physicalPaddleStroke = paddleStroke.strokeSide
           * paddleStroke.drive;
-        const strokeWork = paddleStrokeWorkDelta({
-          paddleStroke: physicalPaddleStroke,
-          waterContact: boardWaterContact,
-          submersion: proneDiveEnvelope,
-          deltaSeconds: delta,
-        });
-        paddleStrokeWork.current.left +=
-          strokeWork.leftWork;
-        paddleStrokeWork.current.right +=
-          strokeWork.rightWork;
         const paddleEfficiency = 0.58 + stamina.current * 0.0042;
         const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
         const currentSpeed = settings.currentStrength / 3.6;
@@ -12155,6 +12145,15 @@ function Simulation({
             paddleEfficiency: paddleEfficiency * boardSpec.paddle,
           },
         );
+        const strokeWork = paddleStrokeWorkDelta({
+          strokeForce: paddlingDynamics.strokeForce,
+          strokeSide: paddleStroke.strokeSide,
+          deltaSeconds: delta,
+        });
+        paddleStrokeWork.current.left +=
+          strokeWork.leftWork;
+        paddleStrokeWork.current.right +=
+          strokeWork.rightWork;
         paddleVelocity.current.set(
           paddlingDynamics.velocityX,
           paddlingDynamics.velocityZ,

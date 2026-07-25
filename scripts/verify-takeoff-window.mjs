@@ -4094,6 +4094,12 @@ if (
 }
 function accumulatedPaddleWork(hz, seconds = 2.5) {
   let workCycle = { phase: 0 };
+  let workState = {
+    velocityX: 0,
+    velocityZ: 0,
+    heading: 0,
+    yawRate: 0,
+  };
   let leftWork = 0;
   let rightWork = 0;
   const frames = Math.round(seconds * hz);
@@ -4105,10 +4111,16 @@ function accumulatedPaddleWork(hz, seconds = 2.5) {
       stamina: 82,
     });
     workCycle = cycle;
+    const dynamics = advancePaddleboardDynamics(workState, {
+      ...paddlingSample,
+      deltaSeconds: 1 / hz,
+      stroke: cycle.drive,
+      strokeSide: cycle.strokeSide,
+    });
+    workState = dynamics;
     const work = paddleStrokeWorkDelta({
-      paddleStroke: cycle.strokeSide * cycle.drive,
-      waterContact: 1,
-      submersion: 0,
+      strokeForce: dynamics.strokeForce,
+      strokeSide: cycle.strokeSide,
       deltaSeconds: 1 / hz,
     });
     leftWork += work.leftWork;
@@ -4123,15 +4135,41 @@ function accumulatedPaddleWork(hz, seconds = 2.5) {
 const paddleWork60 = accumulatedPaddleWork(60);
 const paddleWork120 = accumulatedPaddleWork(120);
 const airbornePaddleWork = paddleStrokeWorkDelta({
-  paddleStroke: -.8,
-  waterContact: 0,
-  submersion: 0,
+  strokeForce: dryProne.strokeForce,
+  strokeSide: -1,
   deltaSeconds: 1 / 60,
 });
 const submergedPaddleWork = paddleStrokeWorkDelta({
-  paddleStroke: .8,
-  waterContact: 1,
-  submersion: 1,
+  strokeForce: submergedStrokeAtSpeed.strokeForce,
+  strokeSide: 1,
+  deltaSeconds: 1 / 60,
+});
+const weakBoardStroke = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: .8,
+    strokeSide: -1,
+    paddleEfficiency: .55,
+  },
+);
+const strongBoardStroke = advancePaddleboardDynamics(
+  { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
+  {
+    ...paddlingSample,
+    stroke: .8,
+    strokeSide: -1,
+    paddleEfficiency: 1.3,
+  },
+);
+const weakBoardPaddleWork = paddleStrokeWorkDelta({
+  strokeForce: weakBoardStroke.strokeForce,
+  strokeSide: -1,
+  deltaSeconds: 1 / 60,
+});
+const strongBoardPaddleWork = paddleStrokeWorkDelta({
+  strokeForce: strongBoardStroke.strokeForce,
+  strokeSide: -1,
   deltaSeconds: 1 / 60,
 });
 if (
@@ -4141,8 +4179,19 @@ if (
   || Math.abs(paddleWork60.rightWork - paddleWork120.rightWork) > .015
   || airbornePaddleWork.totalWork !== 0
   || submergedPaddleWork.totalWork !== 0
+  || strongBoardPaddleWork.totalWork
+    <= weakBoardPaddleWork.totalWork * 1.2
 ) {
-  throw new Error("Tutorial paddle work no longer requires balanced, frame-rate-stable in-water pulls");
+  throw new Error(
+    `Tutorial paddle work no longer follows resolved, frame-rate-stable hydrodynamic pull force: ${JSON.stringify({
+      paddleWork60,
+      paddleWork120,
+      airbornePaddleWork: airbornePaddleWork.totalWork,
+      submergedPaddleWork: submergedPaddleWork.totalWork,
+      weakBoardPaddleWork: weakBoardPaddleWork.totalWork,
+      strongBoardPaddleWork: strongBoardPaddleWork.totalWork,
+    })}`,
+  );
 }
 let steeringCycle = { phase: 0 };
 let steeringLeftImpulse = 0;
@@ -4889,6 +4938,8 @@ console.log(JSON.stringify({
     paddleWork120,
     airbornePaddleWork: airbornePaddleWork.totalWork,
     submergedPaddleWork: submergedPaddleWork.totalWork,
+    weakBoardPaddleWork: weakBoardPaddleWork.totalWork,
+    strongBoardPaddleWork: strongBoardPaddleWork.totalWork,
     steeringImpulseDifference: steeringRightImpulse - steeringLeftImpulse,
     guideTurnDegrees: rightTurnLeftPullGuide.turnDegrees,
     guideActiveHand: rightTurnLeftPullGuide.activeHand,
