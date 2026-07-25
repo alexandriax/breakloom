@@ -9342,19 +9342,10 @@ function CoastZoneMarker({
     value.anisotropy = 4;
     return value;
   }, [current, label, note]);
-  const reverseTexture = useMemo(() => {
-    const value = texture.clone();
-    value.wrapS = THREE.RepeatWrapping;
-    value.repeat.x = -1;
-    value.offset.x = 1;
-    value.needsUpdate = true;
-    return value;
-  }, [texture]);
 
-  useEffect(() => () => {
-    texture.dispose();
-    reverseTexture.dispose();
-  }, [reverseTexture, texture]);
+  // The rear plane's world rotation already presents its UVs correctly to that viewer.
+  // Reuse the source texture: flipping it again mirrors every beach and zone label.
+  useEffect(() => () => texture.dispose(), [texture]);
 
   return (
     <group position={[offset, 0, 68.8]}>
@@ -9367,7 +9358,7 @@ function CoastZoneMarker({
       <mesh position={[0, 2.15, -.025]} rotation={[0, Math.PI, 0]} castShadow>
         <planeGeometry args={[5.25, 1.64]} />
         <meshStandardMaterial
-          map={reverseTexture}
+          map={texture}
           emissive={current ? "#195b55" : "#5f4b18"}
           emissiveIntensity={(1 - light) * .46 + .08}
           metalness={.08}

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import {
   Aperture,
   ArrowRight,
@@ -4212,7 +4213,16 @@ export default function SurfscapeApp() {
                       onClick={() => chooseBeach(destination)}
                       aria-pressed={destination.id === beach.id}
                     >
-                      <i>{String(index + 1).padStart(2, "0")}</i>
+                      <i className="destination-icon" aria-hidden="true">
+                        <Image
+                          src={`/icons/beaches/${destination.id}.webp`}
+                          alt=""
+                          width={256}
+                          height={256}
+                          sizes="56px"
+                        />
+                        <b>{String(index + 1).padStart(2, "0")}</b>
+                      </i>
                       <span>
                         <small>{destination.country}</small>
                         <strong>{destination.name}</strong>
