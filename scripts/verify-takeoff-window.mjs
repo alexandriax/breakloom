@@ -534,14 +534,31 @@ const pressureLockedCrestPhase = resolveWaveCrestPhaseIdentity(
 const trackedCrestProperties = waveCrestPropertiesAtPhase(
   pressureLockedCrestPhase,
 );
+const neighboringCrestProperties = waveCrestPropertiesAtPhase(
+  detachedCrestPhase,
+);
 const calmSurfStaminaDelta = surfingStaminaDelta(0, 0, .8, 1 / 60);
 const loadedSurfStaminaDelta = surfingStaminaDelta(.9, .8, .8, 1 / 60);
+const trackedCrestFoamDelta = surfingStaminaDelta(
+  .2,
+  .72,
+  trackedCrestProperties.energy,
+  1 / 60,
+);
+const neighboringCrestFoamDelta = surfingStaminaDelta(
+  .2,
+  .72,
+  neighboringCrestProperties.energy,
+  1 / 60,
+);
 if (
   Math.abs(
     detachedCrestPhase - (trackedCrestPhase - Math.PI * 2),
   ) > 1e-9
   || pressureLockedCrestPhase !== trackedCrestPhase
   || !Number.isFinite(trackedCrestProperties.energy)
+  || trackedCrestProperties.energy === neighboringCrestProperties.energy
+  || trackedCrestFoamDelta === neighboringCrestFoamDelta
   || calmSurfStaminaDelta <= 0
   || loadedSurfStaminaDelta >= 0
 ) {
@@ -2837,6 +2854,9 @@ console.log(JSON.stringify({
     detachedCrestPhase,
     pressureLockedCrestPhase,
     trackedCrestEnergy: trackedCrestProperties.energy,
+    neighboringCrestEnergy: neighboringCrestProperties.energy,
+    trackedCrestFoamDelta,
+    neighboringCrestFoamDelta,
     calmSurfStaminaDelta,
     loadedSurfStaminaDelta,
     offshoreWallSeconds: offshoreWallApproach.secondsToImpact,

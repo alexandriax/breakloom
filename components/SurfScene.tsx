@@ -11303,6 +11303,7 @@ function Simulation({
     let balanceTarget = 0;
     let prompt = "Read the water";
     let waveQuality = 0;
+    let boardCrestEnergy = setState.energy;
     let lipLaunchSupport = 0;
     let linePosition = 0;
     let lineControl = 1;
@@ -12327,6 +12328,10 @@ function Simulation({
             rideWavePhase.current,
             0,
           );
+          const capturedCrest = waveCrestPropertiesAtPhase(
+            rideWavePhase.current,
+          );
+          boardCrestEnergy = capturedCrest.energy;
           const capturedWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
           const capturedPhaseError = Math.atan2(
             Math.sin(capturedPhase - rideWavePhase.current),
@@ -12398,7 +12403,9 @@ function Simulation({
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
           if (engaged) {
-            score.current += Math.round(70 + committedQuality * 420 + setState.energy * 80);
+            score.current += Math.round(
+              70 + committedQuality * 420 + boardCrestEnergy * 80,
+            );
           }
           rideResult.current = "";
           cleanFinish.current = false;
@@ -12803,6 +12810,7 @@ function Simulation({
           const standingCrest = waveCrestPropertiesAtPhase(
             rideWavePhase.current,
           );
+          boardCrestEnergy = standingCrest.energy;
           const standingSteer = rideRailInputFromPaddleSteer(steer);
           stance.current = advanceSurfboardStance(
             stance.current,
@@ -12984,7 +12992,7 @@ function Simulation({
             pocketWidth: standingPocketWidth,
             lineSide: rideLineSide.current,
             facePosition: standingPhysicalFacePosition,
-            waveEnergy: setState.energy,
+            waveEnergy: boardCrestEnergy,
             tidePower,
             tideVariability,
             onshoreChop,
@@ -12995,7 +13003,7 @@ function Simulation({
             facePosition: standingPhysicalFacePosition,
             tideHollow,
             tideSteepness,
-            waveEnergy: setState.energy,
+            waveEnergy: boardCrestEnergy,
             offshoreGroom,
             onshoreChop,
             whitewater: standingBrokenWater,
@@ -13004,7 +13012,7 @@ function Simulation({
             stamina.current + surfingStaminaDelta(
               standingTubePressure,
               standingBrokenWater,
-              setState.energy,
+              boardCrestEnergy,
               delta,
             ),
             0,
@@ -13056,7 +13064,7 @@ function Simulation({
             positionZ: position.current.z,
             windSpeed: settings.windSpeed,
             onshoreChop,
-            waveEnergy: setState.energy,
+            waveEnergy: boardCrestEnergy,
             waveSpeed: standingTransport.speed,
             lineSide: rideLineSide.current,
             whitewater: standingBrokenWater,
@@ -13447,7 +13455,7 @@ function Simulation({
               const standingWipeoutReading = resolveSurfboardWipeout({
                 waveHeight: settings.waveHeight,
                 wavePeriod: settings.wavePeriod,
-                waveEnergy: setState.energy,
+                waveEnergy: boardCrestEnergy,
                 tidePower,
                 speed,
                 tubePressure: standingTubePressure,
@@ -13580,6 +13588,7 @@ function Simulation({
         const rideCrest = waveCrestPropertiesAtPhase(
           rideWavePhase.current,
         );
+        boardCrestEnergy = rideCrest.energy;
         // Face position is measured from the board's actual phase on the
         // polygon wave. W/S changes stance pressure below; it cannot move the
         // surfer through an invisible trough-to-lip lane.
@@ -13699,7 +13708,7 @@ function Simulation({
           pocketWidth,
           lineSide: rideLineSide.current,
           facePosition: physicalFacePosition,
-          waveEnergy: setState.energy,
+          waveEnergy: boardCrestEnergy,
           tidePower,
           tideVariability,
           onshoreChop,
@@ -13714,7 +13723,7 @@ function Simulation({
           facePosition: physicalFacePosition,
           tideHollow,
           tideSteepness,
-          waveEnergy: setState.energy,
+          waveEnergy: boardCrestEnergy,
           offshoreGroom,
           onshoreChop,
           whitewater: whitewaterPressure,
@@ -13724,7 +13733,7 @@ function Simulation({
           stamina.current + surfingStaminaDelta(
             tubePressure,
             whitewaterPressure,
-            setState.energy,
+            boardCrestEnergy,
             delta,
           ),
           0,
@@ -13737,7 +13746,7 @@ function Simulation({
           positionZ: position.current.z,
           windSpeed: settings.windSpeed,
           onshoreChop,
-          waveEnergy: setState.energy,
+          waveEnergy: boardCrestEnergy,
           waveSpeed: waveTransport.speed,
           lineSide: rideLineSide.current,
           whitewater: whitewaterPressure,
@@ -14091,7 +14100,7 @@ function Simulation({
             (1 - Math.abs(boardAlignment))
               * Math.max(0, waveTransport.speed - integratedNormalSpeed)
               / Math.max(1.2, waveTransport.speed * .54)
-              * (.38 + setState.energy * .28),
+              * (.38 + boardCrestEnergy * .28),
             0,
             1.5,
           ) * boardWaterContact,
@@ -14313,7 +14322,7 @@ function Simulation({
         const sectionQuality = 1 - tideVariability * (.12 + Math.abs(Math.sin(position.current.x * .11 + t * .17)) * .18);
         const windShape = (1 - onshoreChop * .17 + offshoreGroom * .055) * (.9 + tideResponse.quality * .1);
         waveQuality = THREE.MathUtils.clamp(
-          ((wavePhase + 1) * .3 + setState.energy * .12 + catchQuality.current * .08 + lineMatch * .1 + sectionQuality * .07 + lineControl * .23) * windShape,
+          ((wavePhase + 1) * .3 + boardCrestEnergy * .12 + catchQuality.current * .08 + lineMatch * .1 + sectionQuality * .07 + lineControl * .23) * windShape,
           0,
           1,
         );
@@ -14339,7 +14348,7 @@ function Simulation({
         if (!finishing) {
           const analysisStep = Math.min(delta, .05);
           const powerQuality = THREE.MathUtils.clamp(
-            setState.energy * .2
+            boardCrestEnergy * .2
               + waveQuality * .28
               + Math.min(1, speed / 18) * .24
               + Math.abs(railLoad) * .14
@@ -14514,7 +14523,7 @@ function Simulation({
                       : 520
                   : attempt.base
               );
-            const points = Math.round(resolvedBase * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + setState.energy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
+            const points = Math.round(resolvedBase * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + boardCrestEnergy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
             maxCombo.current = Math.max(maxCombo.current, combo.current);
@@ -14662,7 +14671,7 @@ function Simulation({
           const wipeoutReading = resolveSurfboardWipeout({
             waveHeight: settings.waveHeight,
             wavePeriod: settings.wavePeriod,
-            waveEnergy: setState.energy,
+            waveEnergy: boardCrestEnergy,
             tidePower,
             speed,
             tubePressure,
@@ -15073,7 +15082,7 @@ function Simulation({
             speed,
             waveContact: THREE.MathUtils.clamp(
               .12 + waveEngagement.current * (
-                .13 + boardPlaning * .45 + setState.energy * .3
+                .13 + boardPlaning * .45 + boardCrestEnergy * .3
               ),
               .12,
               1,
@@ -15337,7 +15346,9 @@ function Simulation({
       whitewaterPressure > motion.current.whitewater ? 10 : 4.8,
       delta,
     );
-    motion.current.setEnergy = setState.energy;
+    motion.current.setEnergy = phase.current === "riding"
+      ? boardCrestEnergy
+      : setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
     motion.current.trickCharge = THREE.MathUtils.damp(
       motion.current.trickCharge,
@@ -16260,7 +16271,9 @@ function Simulation({
         barrelTime: Number(barrelTime.current.toFixed(1)),
         barrelIntensity: motion.current.barrel,
         stamina: Math.round(stamina.current),
-        setEnergy: setState.energy,
+        setEnergy: phase.current === "riding"
+          ? boardCrestEnergy
+          : setState.energy,
         nextSetSeconds: setState.secondsToPeak,
         setWaveIndex: setState.setWaveIndex,
         setWaveCount: setState.waveCount,
