@@ -11278,6 +11278,8 @@ function Simulation({
     let runBlend = 0;
     let paddleEffort = 0;
     let physicalPaddleStroke = 0;
+    let wavePressureDrive = 0;
+    let wavePressureSideLoad = 0;
     let rideOutProgress = 0;
     let takeoffCommitProgress = 0;
     let boardAlignment = 1;
@@ -11947,6 +11949,8 @@ function Simulation({
           -4.8,
           4.8,
         );
+        wavePressureDrive = proneWavePressure.forwardDrive;
+        wavePressureSideLoad = proneWavePressure.lateralLoad;
         speed = paddleVelocity.current.length();
         crossWaveLoad = proneInteraction.crossWaveLoad * boardWaterContact;
         proneHeaveIntegrated = true;
@@ -12678,6 +12682,8 @@ function Simulation({
           );
           rideHeading.current = standingDynamics.heading;
           rideYawRate.current = standingDynamics.yawRate;
+          wavePressureDrive = standingDynamics.waveForwardDrive;
+          wavePressureSideLoad = standingDynamics.waveLateralLoad;
           pearlingRisk = Math.max(
             standingDynamics.pearlingRisk * .42,
             standingPitch.pearlingRisk,
@@ -13309,6 +13315,8 @@ function Simulation({
         );
         rideHeading.current = dynamics.heading;
         rideYawRate.current = dynamics.yawRate;
+        wavePressureDrive = dynamics.waveForwardDrive;
+        wavePressureSideLoad = dynamics.waveLateralLoad;
         pearlingRisk = Math.max(
           dynamics.pearlingRisk * .42,
           ridePitch.pearlingRisk,
@@ -15344,6 +15352,9 @@ function Simulation({
         acceleration: motion.current.acceleration,
         lateralForce: motion.current.lateralForce,
         paddleEffort: motion.current.paddleEffort,
+        paddleStroke: physicalPaddleStroke,
+        wavePressureDrive,
+        wavePressureSideLoad,
         balance: balanceInput,
         balanceTarget,
         waveEngaged: phase.current === "riding" && rideEngaged.current,

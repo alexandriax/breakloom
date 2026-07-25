@@ -337,6 +337,8 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   wavePressure: number;
   wavePressureCenter: number;
   waveYawAcceleration: number;
+  waveForwardDrive: number;
+  waveLateralLoad: number;
   pearlingRisk: number;
   tailStall: number;
 };
@@ -1178,6 +1180,25 @@ export type PaddleStrokeCycleReading = PaddleStrokeCycleState & {
   cadence: number;
 };
 
+export type PaddleTrainingSample = {
+  boardWaveAngle: number;
+  paddleStroke: number;
+  paddleEffort: number;
+  waterContact: number;
+  waveForwardDrive: number;
+  waveLateralLoad: number;
+};
+
+export type PaddleTrainingReading = {
+  targetRotationDegrees: number;
+  turnDirection: "left" | "right" | "hold";
+  turnDegrees: number;
+  activeHand: "left" | "right" | null;
+  strokePhase: "idle" | "pull" | "recovery";
+  strokeDrive: number;
+  pressureMode: "airborne" | "broadside" | "drive" | "neutral";
+};
+
 /**
  * Resolves alternating prone paddle strokes. Input expresses effort, while
  * force exists only through each hand's pull phase; recovery advances the arm
@@ -1218,6 +1239,59 @@ export function advancePaddleStrokeCycle(
     pull,
     strokeSide,
     cadence,
+  };
+}
+
+/**
+ * Translates live mechanics into an instructional reading without deciding
+ * whether a wave is "ready." The target arrow comes from angular error, hand
+ * feedback comes from the real alternating stroke oscillator, and pressure
+ * feedback comes from resolved hull forces.
+ */
+export function readPaddleTrainingMechanics(
+  sample: PaddleTrainingSample,
+): PaddleTrainingReading {
+  const angle = Math.atan2(
+    Math.sin(sample.boardWaveAngle),
+    Math.cos(sample.boardWaveAngle),
+  );
+  const targetRotationDegrees = angle * 180 / Math.PI;
+  const turnDegrees = Math.round(Math.abs(targetRotationDegrees));
+  const turnDirection = turnDegrees <= 6
+    ? "hold"
+    : targetRotationDegrees > 0
+      ? "right"
+      : "left";
+  const strokeDrive = clampValue(Math.abs(sample.paddleStroke), 0, 1);
+  const activeHand = strokeDrive <= .035
+    ? null
+    : sample.paddleStroke < 0
+      ? "left"
+      : "right";
+  const effort = clampValue(sample.paddleEffort, 0, 1);
+  const strokePhase = effort <= .04
+    ? "idle"
+    : activeHand
+      ? "pull"
+      : "recovery";
+  const waterContact = clampValue(sample.waterContact, 0, 1);
+  const forwardDrive = Math.max(0, sample.waveForwardDrive);
+  const lateralLoad = Math.abs(sample.waveLateralLoad);
+  const pressureMode = waterContact < .18
+    ? "airborne"
+    : lateralLoad > Math.max(.32, forwardDrive * 1.05)
+      ? "broadside"
+      : forwardDrive > .28
+        ? "drive"
+        : "neutral";
+  return {
+    targetRotationDegrees,
+    turnDirection,
+    turnDegrees,
+    activeHand,
+    strokePhase,
+    strokeDrive,
+    pressureMode,
   };
 }
 
@@ -1711,6 +1785,8 @@ export function advanceSurfboardDynamics(
     wavePressure: wavePressure.pressure,
     wavePressureCenter: wavePressure.centerOfPressure,
     waveYawAcceleration: wavePressure.yawAcceleration,
+    waveForwardDrive: wavePressure.forwardDrive,
+    waveLateralLoad: wavePressure.lateralLoad,
     pearlingRisk,
     tailStall,
   };
@@ -2144,6 +2220,9 @@ export type GameStats = {
   acceleration: number;
   lateralForce: number;
   paddleEffort: number;
+  paddleStroke: number;
+  wavePressureDrive: number;
+  wavePressureSideLoad: number;
   balance: number;
   balanceTarget: number;
   waveEngaged: boolean;
@@ -2263,6 +2342,9 @@ export const INITIAL_STATS: GameStats = {
   acceleration: 0,
   lateralForce: 0,
   paddleEffort: 0,
+  paddleStroke: 0,
+  wavePressureDrive: 0,
+  wavePressureSideLoad: 0,
   balance: 0,
   balanceTarget: 0,
   waveEngaged: false,

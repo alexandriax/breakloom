@@ -53,6 +53,7 @@ import {
   formatClock,
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
+  readPaddleTrainingMechanics,
   settingsFromConditions,
   thermalKitForConditions,
   tideResponseForBreak,
@@ -493,7 +494,7 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
     id: "training",
     name: "First Light",
     kicker: "Training",
-    description: "Assisted timing, forgiving balance, and prompts through every phase.",
+    description: "Live force coaching, forgiving balance recovery, and prompts through every phase.",
   },
   {
     id: "advanced",
@@ -513,7 +514,7 @@ const TRAINING_STEPS = [
   { title: "Enter the shallows", detail: "Move from the sand into the water." },
   { title: "Paddle with intent", detail: "Hold W for alternating pulls. A/D biases the outside hand to rotate the board; release W to coast." },
   { title: "Reach the lineup", detail: "Keep the nose aimed offshore and paddle beyond the breaking water." },
-  { title: "Turn for shore", detail: "Follow the heading arrow until the board points with the approaching wave." },
+  { title: "Turn for shore", detail: "Rotate until the live wave arrow overlaps the fixed board-nose reference." },
   { title: "Choose when to stand", detail: "Space always stands. Flat water stalls; a matched face captures; a broadside wall tumbles you." },
   { title: "Track the pocket", detail: "Once the wave engages, set a rail and use forward/back pressure to move across the face." },
   { title: "Set the rail", detail: "Build from a bottom turn, climb toward the lip, then load and release a maneuver." },
@@ -3090,6 +3091,35 @@ export default function SurfscapeApp() {
   const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
+  const paddleTraining = readPaddleTrainingMechanics({
+    boardWaveAngle: stats.boardWaveAngle,
+    paddleStroke: stats.paddleStroke,
+    paddleEffort: stats.paddleEffort,
+    waterContact: stats.boardWaterContact,
+    waveForwardDrive: stats.wavePressureDrive,
+    waveLateralLoad: stats.wavePressureSideLoad,
+  });
+  const paddleTrainerActive = settings.mode === "training"
+    && stats.phase === "paddling"
+    && trainingStep <= 4
+    && !takeoffCommitted
+    && !stats.duckDiveReady;
+  const paddleAimCue = !stats.inLineup
+    ? "PADDLE OUT"
+    : paddleTraining.turnDirection === "hold"
+      ? "NOSE ALIGNED"
+      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}°`;
+  const paddleForceCue = paddleTraining.pressureMode === "airborne"
+    ? "HANDS OUT OF WATER"
+    : paddleTraining.pressureMode === "broadside"
+      ? `SIDE LOAD ${Math.abs(stats.wavePressureSideLoad).toFixed(1)} M/S²`
+      : paddleTraining.pressureMode === "drive"
+        ? `FACE DRIVE ${Math.max(0, stats.wavePressureDrive).toFixed(1)} M/S²`
+        : paddleTraining.strokePhase === "pull"
+          ? `${paddleTraining.activeHand?.toUpperCase()} HAND PULLING`
+          : paddleTraining.strokePhase === "recovery"
+            ? "ARMS RECOVERING"
+            : "HOLD W TO STROKE";
   const mechanicsGuide = settings.mode !== "training"
     ? null
     : stats.phase === "wading"
@@ -3170,12 +3200,19 @@ export default function SurfscapeApp() {
                   cue: `TURN ${headingTurn} ${Math.abs(boardWaveAngleDegrees)}°`,
                   detail: "A/D rotates the board · align the nose with the wave before standing.",
                   rotation: headingTurn === "RIGHT" ? 0 : 180,
-                  tone: stats.catchReady ? "danger" : "align",
+                  tone: Math.abs(stats.wavePressureSideLoad) > .32 ? "danger" : "align",
                 }
-              : stats.catchReady
+              : paddleTraining.pressureMode === "broadside"
                 ? {
-                    cue: "TAIL LIFT · KEEP STROKING",
-                    detail: "Wave pressure is building. SPACE plants your hands; the live face keeps acting through the pop-up.",
+                    cue: `SIDE LOAD · TURN ${headingTurn}`,
+                    detail: `${Math.abs(stats.wavePressureSideLoad).toFixed(1)} m/s² is acting across the rail. Point the nose before the face rolls the hull.`,
+                    rotation: headingTurn === "RIGHT" ? 0 : 180,
+                    tone: "danger",
+                  }
+              : paddleTraining.pressureMode === "drive"
+                ? {
+                    cue: `FACE DRIVE ${Math.max(0, stats.wavePressureDrive).toFixed(1)} M/S²`,
+                    detail: "The live face is accelerating the hull. Keep the nose reference aligned; SPACE only begins the body transition.",
                     rotation: -90,
                     tone: "ready",
                   }
@@ -4403,6 +4440,42 @@ export default function SurfscapeApp() {
                 <span>LIVE BOARD COACH</span>
                 <strong>{mechanicsGuide.cue}</strong>
                 <small>{mechanicsGuide.detail}</small>
+              </div>
+            </div>
+          )}
+          {paddleTrainerActive && (
+            <div
+              className={`paddle-training-instrument is-${paddleTraining.pressureMode} ${stats.inLineup ? "has-wave-aim" : ""}`}
+              role="img"
+              aria-label={`${paddleAimCue}. ${paddleForceCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
+            >
+              <div className="paddle-heading-dial" aria-hidden="true">
+                <span className="paddle-board-nose"><ArrowRight /></span>
+                {stats.inLineup && (
+                  <i
+                    className="paddle-wave-target"
+                    style={{ transform: `rotate(${paddleTraining.targetRotationDegrees - 90}deg)` }}
+                  >
+                    <ArrowRight />
+                  </i>
+                )}
+                <small>BOARD<br />NOSE</small>
+              </div>
+              <div className="paddle-training-readout">
+                <span>PHYSICAL TAKEOFF GUIDE</span>
+                <strong>{paddleAimCue}</strong>
+                <small>{paddleForceCue}</small>
+                <div className="paddle-hand-cycle" aria-hidden="true">
+                  <i className={paddleTraining.activeHand === "left" ? "is-pulling" : ""}>
+                    <b>L</b>
+                    <em>{paddleTraining.activeHand === "left" ? "PULL" : "RECOVER"}</em>
+                  </i>
+                  <span style={{ "--stroke-drive": paddleTraining.strokeDrive } as CSSProperties}><b /></span>
+                  <i className={paddleTraining.activeHand === "right" ? "is-pulling" : ""}>
+                    <b>R</b>
+                    <em>{paddleTraining.activeHand === "right" ? "PULL" : "RECOVER"}</em>
+                  </i>
+                </div>
               </div>
             </div>
           )}

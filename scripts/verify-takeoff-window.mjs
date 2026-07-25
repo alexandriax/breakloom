@@ -17,6 +17,7 @@ import {
   initialWavePopUpCapture,
   paddlingStaminaDelta,
   primaryWaveVelocityAt,
+  readPaddleTrainingMechanics,
   resolveSurfboardWavePressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
@@ -1429,6 +1430,53 @@ const rightHandPull = advancePaddleboardDynamics(
 if (leftHandPull.yawRate <= 0 || rightHandPull.yawRate >= 0) {
   throw new Error("Paddle-side torque is rotating the board toward the pulling hand");
 }
+const rightTurnLeftPullGuide = readPaddleTrainingMechanics({
+  boardWaveAngle: Math.PI / 3,
+  paddleStroke: -.72,
+  paddleEffort: 1,
+  waterContact: 1,
+  waveForwardDrive: 1.4,
+  waveLateralLoad: .2,
+});
+const leftTurnBroadsideGuide = readPaddleTrainingMechanics({
+  boardWaveAngle: -Math.PI / 2,
+  paddleStroke: .64,
+  paddleEffort: 1,
+  waterContact: 1,
+  waveForwardDrive: .18,
+  waveLateralLoad: 1.2,
+});
+const alignedRecoveryGuide = readPaddleTrainingMechanics({
+  boardWaveAngle: .04,
+  paddleStroke: 0,
+  paddleEffort: 1,
+  waterContact: 1,
+  waveForwardDrive: 0,
+  waveLateralLoad: 0,
+});
+const airborneGuide = readPaddleTrainingMechanics({
+  boardWaveAngle: 0,
+  paddleStroke: -.8,
+  paddleEffort: 1,
+  waterContact: .04,
+  waveForwardDrive: 2,
+  waveLateralLoad: 0,
+});
+if (
+  rightTurnLeftPullGuide.turnDirection !== "right"
+  || rightTurnLeftPullGuide.turnDegrees !== 60
+  || rightTurnLeftPullGuide.activeHand !== "left"
+  || rightTurnLeftPullGuide.strokePhase !== "pull"
+  || rightTurnLeftPullGuide.pressureMode !== "drive"
+  || leftTurnBroadsideGuide.turnDirection !== "left"
+  || leftTurnBroadsideGuide.activeHand !== "right"
+  || leftTurnBroadsideGuide.pressureMode !== "broadside"
+  || alignedRecoveryGuide.turnDirection !== "hold"
+  || alignedRecoveryGuide.strokePhase !== "recovery"
+  || airborneGuide.pressureMode !== "airborne"
+) {
+  throw new Error("Physical paddle training guidance no longer matches heading, hand cycle, or hull load");
+}
 
 const marginalCaptureStart = .22 + marginalTraining.averageQuality * .22;
 let marginalCapture = marginalCaptureStart;
@@ -1525,6 +1573,9 @@ console.log(JSON.stringify({
     longboardTurnRadians: longboardPaddleTurn.heading,
     averageStrokeDrive,
     steeringImpulseDifference: steeringRightImpulse - steeringLeftImpulse,
+    guideTurnDegrees: rightTurnLeftPullGuide.turnDegrees,
+    guideActiveHand: rightTurnLeftPullGuide.activeHand,
+    guideBroadsideMode: leftTurnBroadsideGuide.pressureMode,
   },
   rollDynamics: {
     performanceRailAngle: loadedPerformanceRail.rollAngle,
