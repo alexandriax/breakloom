@@ -4260,6 +4260,7 @@ export type SurfboardLeashReactionSample = {
   separationRate: number;
   surferMass: number;
   boardMass: number;
+  restLength?: number;
   springStiffness?: number;
   damping?: number;
   maximumForce?: number;
@@ -4286,12 +4287,14 @@ export function resolveSurfboardLeashReaction(
   const separationRate = Math.max(0, sample.separationRate);
   const surferMass = clampValue(sample.surferMass, 45, 130);
   const boardMass = clampValue(sample.boardMass, 2.4, 10);
+  const restLength = clampValue(sample.restLength ?? 2.2, 1.6, 3.6);
   const springStiffness = clampValue(
-    sample.springStiffness ?? 82,
+    sample.springStiffness ?? 82 * 2.2 / restLength,
     30,
     140,
   );
-  const damping = clampValue(sample.damping ?? 12,
+  const damping = clampValue(
+    sample.damping ?? 12 * Math.sqrt(2.2 / restLength),
     4,
     24,
   );

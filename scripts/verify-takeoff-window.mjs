@@ -2683,6 +2683,13 @@ const longboardLeash = resolveSurfboardLeashReaction({
   surferMass: 76,
   boardMass: 7.2,
 });
+const longLeashMaterial = resolveSurfboardLeashReaction({
+  stretch: .62,
+  separationRate: 2.4,
+  surferMass: 76,
+  boardMass: 7.2,
+  restLength: 3.04,
+});
 if (
   stretchedLeash.force <= closingLeash.force
   || slackLeash.force !== 0
@@ -2699,6 +2706,7 @@ if (
     !== stretchedLeash.surferAcceleration
   || longboardLeash.boardAcceleration
     >= stretchedLeash.boardAcceleration
+  || longLeashMaterial.force >= longboardLeash.force
 ) {
   throw new Error("Leash reaction no longer applies equal force from stretch, damping, and mass");
 }
@@ -5105,6 +5113,7 @@ console.log(JSON.stringify({
     spatialWashPassage120,
     stretchedLeash,
     longboardLeash,
+    longLeashMaterial,
     lateralLeashTorque,
     longitudinalLeashTorque,
     verticalLeashTorque,

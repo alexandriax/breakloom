@@ -4624,6 +4624,7 @@ function SurferModel({
           separationRate,
           surferMass: 76,
           boardMass: spec.mass,
+          restLength: leashLength,
         });
         const leashTorque = resolveSurfboardLeashTorque({
           force: leashReaction.force,
