@@ -12675,7 +12675,20 @@ function Simulation({
         }
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
-        if (!rideEngaged.current) {
+        if (divePressed) {
+          phase.current = "paddling";
+          rideEngaged.current = false;
+          paddleHeading.current = rideHeading.current;
+          paddleYawRate.current = rideYawRate.current;
+          paddleStrokeCycle.current.phase = 0;
+          paddleVelocity.current.copy(rideVelocity.current);
+          rideVelocity.current.set(0, 0);
+          previousShorebreakPhaseError.current = Number.NaN;
+          stance.current = 0;
+          bodyCompression.current = 0;
+          bodyCompressionVelocity.current = 0;
+          prompt = "Back prone — the hull keeps its momentum and wave pressure";
+        } else if (!rideEngaged.current) {
           const standingTransport = primaryWaveVelocityAt(
             position.current.x,
             position.current.z,
@@ -13215,6 +13228,7 @@ function Simulation({
             0,
             1,
           );
+          const standingCompressionBeforeStep = bodyCompression.current;
           const standingCompression = advanceSurferCompression(
             {
               compression: bodyCompression.current,
@@ -13222,16 +13236,35 @@ function Simulation({
             },
             {
               deltaSeconds: delta,
-              crouchIntent: 0,
+              crouchIntent: state.action ? 1 : 0,
               stamina: stamina.current,
             },
           );
           bodyCompression.current = standingCompression.compression;
           bodyCompressionVelocity.current = standingCompression.velocity;
+          releaseCompression = actionReleased
+            ? Math.max(
+                standingCompressionBeforeStep,
+                standingCompression.compression,
+              )
+            : standingCompression.compression;
+          bodyExtensionSpeed = standingCompression.extensionSpeed;
+          releaseExtensionSpeed = actionReleased
+            ? standingCompression.extensionPotentialSpeed
+            : standingCompression.extensionSpeed;
           compression = Math.max(
             compression,
             standingCompression.compression,
           );
+          if (standingCompression.muscularEffort > .02) {
+            stamina.current = Math.max(
+              0,
+              stamina.current
+                - delta
+                * (.25 + standingCompression.muscularEffort * 1.6),
+            );
+          }
+          if (state.action) maneuverPhase = "load";
           waveQuality = standingReading.waveContact * .36;
           sectionPressure = Math.max(
             sectionPressure,
@@ -13363,16 +13396,10 @@ function Simulation({
               motion.current.wipeoutYawRate = standingTumble.yawRate;
               motion.current.impact = .72 + tumblePower * .28;
               prompt = "The wave hit the rail broadside — protect your head";
-            } else if (actionPressed) {
-              phase.current = "paddling";
-              rideEngaged.current = false;
-              paddleHeading.current = rideHeading.current;
-              paddleYawRate.current = rideYawRate.current;
-              paddleVelocity.current.copy(rideVelocity.current);
-              rideVelocity.current.set(0, 0);
-              previousShorebreakPhaseError.current = Number.NaN;
-              stance.current = 0;
-              prompt = "Back prone — paddle to reposition";
+            } else if (bodyCompression.current > .05) {
+              prompt = state.action
+                ? `Crouched ${Math.round(bodyCompression.current * 100)}% — the board will release only if live water supports the extension`
+                : `Body extending at ${bodyExtensionSpeed.toFixed(1)} body-lengths/s — flat water cannot create a launch`;
             } else if (waveEngagement.current > .08) {
               prompt = `Wave pressure ${Math.round(waveEngagement.current * 100)}% — stay aligned and let the hull accelerate`;
             } else if (standingReading.waveContact > .18) {
@@ -13388,7 +13415,7 @@ function Simulation({
             } else if (speed > .65) {
               prompt = "Coasting on the surface — momentum is bleeding away";
             } else {
-              prompt = "Standing in still water — counterweight the chop · SPACE returns prone";
+              prompt = "Standing in still water — counterweight the chop · SHIFT returns prone";
             }
           }
         } else {
