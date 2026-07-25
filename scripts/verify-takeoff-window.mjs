@@ -8,6 +8,7 @@ import {
   advanceProneBoardAttitude,
   advanceReturnProneTransition,
   advanceSeparatedSurferHorizontalDynamics,
+  advanceSeparatedSurferRecovery,
   advanceSeparatedSurferVerticalDynamics,
   advanceSurferCompression,
   advanceSurferCounterweightDynamics,
@@ -1937,6 +1938,83 @@ if (
   ) > .025
 ) {
   throw new Error("Separated horizontal motion no longer retains air momentum or couples to occupied water");
+}
+function simulateSettledRecovery(hz) {
+  let readiness = 0;
+  let readyAt = null;
+  let reading = null;
+  for (let frame = 0; frame < hz; frame += 1) {
+    reading = advanceSeparatedSurferRecovery(readiness, {
+      deltaSeconds: 1 / hz,
+      elapsedSeconds: 2 + frame / hz,
+      surfaceOffset: -.04,
+      verticalVelocity: .24,
+      waterRelativeSpeed: .55,
+      angularSpeed: .72,
+      washIntensity: .06,
+      leashTension: .18,
+      maximumHoldSeconds: 7.5,
+    });
+    readiness = reading.readiness;
+    if (reading.ready && readyAt === null) {
+      readyAt = (frame + 1) / hz;
+    }
+  }
+  return { ...reading, readyAt };
+}
+const settledRecovery60 = simulateSettledRecovery(60);
+const settledRecovery120 = simulateSettledRecovery(120);
+const submergedRecovery = advanceSeparatedSurferRecovery(.9, {
+  deltaSeconds: .05,
+  elapsedSeconds: 4,
+  surfaceOffset: -.7,
+  verticalVelocity: .2,
+  waterRelativeSpeed: .4,
+  angularSpeed: .3,
+  washIntensity: 0,
+  leashTension: 0,
+  maximumHoldSeconds: 7.5,
+});
+const violentSurfaceRecovery = advanceSeparatedSurferRecovery(.9, {
+  deltaSeconds: .05,
+  elapsedSeconds: 3,
+  surfaceOffset: .02,
+  verticalVelocity: .2,
+  waterRelativeSpeed: .4,
+  angularSpeed: 3.4,
+  washIntensity: .62,
+  leashTension: .8,
+  maximumHoldSeconds: 7.5,
+});
+const safetyRecovery = advanceSeparatedSurferRecovery(0, {
+  deltaSeconds: 1 / 60,
+  elapsedSeconds: 7.5,
+  surfaceOffset: -1.2,
+  verticalVelocity: -2,
+  waterRelativeSpeed: 5,
+  angularSpeed: 4,
+  washIntensity: 1,
+  leashTension: 1,
+  maximumHoldSeconds: 7.5,
+});
+if (
+  settledRecovery60.readyAt === null
+  || settledRecovery120.readyAt === null
+  || Math.abs(
+    settledRecovery60.readyAt - settledRecovery120.readyAt,
+  ) > .02
+  || settledRecovery60.readyAt < .5
+  || settledRecovery60.readyAt > .58
+  || submergedRecovery.ready
+  || submergedRecovery.limitingFactor !== "submerged"
+  || submergedRecovery.readiness >= .9
+  || violentSurfaceRecovery.ready
+  || violentSurfaceRecovery.limitingFactor !== "wash"
+  || !safetyRecovery.ready
+  || !safetyRecovery.safetyRelease
+  || safetyRecovery.limitingFactor !== "safety"
+) {
+  throw new Error("Wipeout recovery no longer waits for stable physical resurfacing");
 }
 const stretchedLeash = resolveSurfboardLeashReaction({
   stretch: .62,
@@ -4028,6 +4106,10 @@ console.log(JSON.stringify({
     coupledTumble120,
     separatedHorizontal60,
     separatedHorizontal120,
+    settledRecovery60,
+    settledRecovery120,
+    submergedRecovery,
+    violentSurfaceRecovery,
     stretchedLeash,
     longboardLeash,
     lateralLeashTorque,

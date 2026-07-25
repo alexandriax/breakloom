@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -450,6 +450,7 @@ type ReplayRestoreState = {
   wipeoutTumbleSide: number;
   wipeoutBodySurfaceOffset: number;
   wipeoutBodyVerticalVelocity: number;
+  wipeoutRecovery: number;
   phase: GamePhase;
   playerHeading: number;
   paddleHeading: number;
@@ -10891,6 +10892,7 @@ function Simulation({
     surfaceOffset: .2,
     verticalVelocity: 0,
   });
+  const wipeoutRecovery = useRef(0);
   const breath = useRef(100);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
@@ -11125,6 +11127,7 @@ function Simulation({
           restore.wipeoutBodySurfaceOffset;
         wipeoutBodyVertical.current.verticalVelocity =
           restore.wipeoutBodyVerticalVelocity;
+        wipeoutRecovery.current = restore.wipeoutRecovery;
         phase.current = restore.phase;
         previousShorebreakPhaseError.current = Number.NaN;
         playerHeading.current = restore.playerHeading;
@@ -11225,6 +11228,7 @@ function Simulation({
             wipeoutBodyVertical.current.surfaceOffset,
           wipeoutBodyVerticalVelocity:
             wipeoutBodyVertical.current.verticalVelocity,
+          wipeoutRecovery: wipeoutRecovery.current,
           phase: phase.current,
           playerHeading: playerHeading.current,
           paddleHeading: paddleHeading.current,
@@ -12955,6 +12959,7 @@ function Simulation({
           popUpBody.current.velocity = 0;
           takeoffCommitProgress = 0;
           wipeoutAt.current = t;
+          wipeoutRecovery.current = 0;
           wipeoutPower.current = proneFailure.power;
           wipeoutDuration.current = THREE.MathUtils.lerp(
             1.2,
@@ -13843,6 +13848,7 @@ function Simulation({
               finishAt.current = -1;
               rideOutProgress = 0;
               wipeoutAt.current = t;
+              wipeoutRecovery.current = 0;
               const standingWipeoutReading = resolveSurfboardWipeout({
                 waveHeight: settings.waveHeight,
                 wavePeriod: settings.wavePeriod,
@@ -15096,6 +15102,7 @@ function Simulation({
           finishAt.current = -1;
           rideOutProgress = 0;
           wipeoutAt.current = t;
+          wipeoutRecovery.current = 0;
           const wipeoutReading = resolveSurfboardWipeout({
             waveHeight: settings.waveHeight,
             wavePeriod: settings.wavePeriod,
@@ -15291,6 +15298,12 @@ function Simulation({
           bodyVertical.verticalVelocity;
         const breakingWaterSpeed = residualWash
           * (1.1 + wipeoutPower.current * 1.6);
+        const surroundingWaterVelocityX =
+          waveNormalX * breakingWaterSpeed
+            + Math.sin(currentAngle) * currentSpeed;
+        const surroundingWaterVelocityZ =
+          waveNormalZ * breakingWaterSpeed
+            - Math.cos(currentAngle) * currentSpeed;
         const bodyHorizontal =
           advanceSeparatedSurferHorizontalDynamics(
             {
@@ -15300,10 +15313,8 @@ function Simulation({
             {
               deltaSeconds: delta,
               immersion: bodyVertical.immersion,
-              waterVelocityX: waveNormalX * breakingWaterSpeed
-                + Math.sin(currentAngle) * currentSpeed,
-              waterVelocityZ: waveNormalZ * breakingWaterSpeed
-                - Math.cos(currentAngle) * currentSpeed,
+              waterVelocityX: surroundingWaterVelocityX,
+              waterVelocityZ: surroundingWaterVelocityZ,
               turbulence,
             },
           );
@@ -15346,6 +15357,33 @@ function Simulation({
           tumble.yawRate,
           tumble.rollRate,
         );
+        const recovery = advanceSeparatedSurferRecovery(
+          wipeoutRecovery.current,
+          {
+            deltaSeconds: delta,
+            elapsedSeconds: elapsed,
+            surfaceOffset: bodyVertical.surfaceOffset,
+            verticalVelocity: bodyVertical.verticalVelocity,
+            waterRelativeSpeed: Math.hypot(
+              bodyHorizontal.velocityX
+                - surroundingWaterVelocityX,
+              bodyHorizontal.velocityZ
+                - surroundingWaterVelocityZ,
+            ),
+            angularSpeed: Math.hypot(
+              tumble.pitchRate,
+              tumble.yawRate,
+              tumble.rollRate,
+            ),
+            washIntensity: residualWash,
+            leashTension: leash.tension,
+            maximumHoldSeconds: Math.max(
+              7.5,
+              duration + 4,
+            ),
+          },
+        );
+        wipeoutRecovery.current = recovery.readiness;
         position.current.z = THREE.MathUtils.clamp(
           position.current.z,
           OUTER_PADDLE_LIMIT_Z + tideShift,
@@ -15361,13 +15399,23 @@ function Simulation({
         );
         speed = wipeoutVelocity.current.length();
         const remaining = Math.max(0, duration - elapsed);
-        prompt = bodyVertical.immersion < .14
+        prompt = recovery.limitingFactor === "impact"
           ? `${wipeoutCause.current} · protect your head`
-          : progress < .72 || bodyVertical.depth > .12
+          : recovery.limitingFactor === "submerged"
             ? remaining > 0
               ? `Body ${bodyVertical.depth.toFixed(1)}m underwater · ${remaining.toFixed(1)}s of breaking wash`
               : `Body ${bodyVertical.depth.toFixed(1)}m underwater · wash released, follow the leash up`
-            : "Follow the leash — rising through the foam";
+            : recovery.limitingFactor === "rising"
+              ? "Breaking the surface — keep protecting your head"
+              : recovery.limitingFactor === "wash"
+                ? "Foam still loading the body — stay loose and follow the flow"
+                : recovery.limitingFactor === "tumble"
+                  ? "At the surface, but rotation is still carrying the body"
+                  : recovery.limitingFactor === "drift"
+                    ? "Surface flow is still carrying you faster than the water"
+                    : recovery.limitingFactor === "leash"
+                      ? "Leash is still loaded — let the board and body converge"
+                      : "Resurfaced and settled — locate the board";
         motion.current.wipeout = Math.min(1.8, elapsed);
         motion.current.wipeoutProgress = progress;
         motion.current.wipeoutPower = wipeoutPower.current;
@@ -15383,13 +15431,7 @@ function Simulation({
           bodyVertical.verticalVelocity;
         motion.current.wipeoutBodyImmersion = bodyVertical.immersion;
         motion.current.breath = breath.current;
-        if (
-          progress >= 1
-          && (
-            bodyVertical.surfaceOffset > -.08
-            || elapsed >= duration + 1.4
-          )
-        ) {
+        if (recovery.ready) {
           if (position.current.z > 1 + tideShift) {
             phase.current = "wading";
             playerHeading.current = Math.atan2(waveNormalX, waveNormalZ);
@@ -15420,6 +15462,7 @@ function Simulation({
           motion.current.wipeoutBoardLongitudinalVelocity = 0;
           wipeoutBodyVertical.current.surfaceOffset = .2;
           wipeoutBodyVertical.current.verticalVelocity = 0;
+          wipeoutRecovery.current = 0;
         }
       }
     }

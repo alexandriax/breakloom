@@ -3555,6 +3555,101 @@ export function advanceSeparatedSurferVerticalDynamics(
   };
 }
 
+export type SeparatedSurferRecoverySample = {
+  deltaSeconds: number;
+  elapsedSeconds: number;
+  surfaceOffset: number;
+  verticalVelocity: number;
+  waterRelativeSpeed: number;
+  angularSpeed: number;
+  washIntensity: number;
+  leashTension: number;
+  maximumHoldSeconds: number;
+};
+
+export type SeparatedSurferRecoveryReading = {
+  readiness: number;
+  physicallySettled: boolean;
+  safetyRelease: boolean;
+  ready: boolean;
+  limitingFactor:
+    | "impact"
+    | "submerged"
+    | "rising"
+    | "wash"
+    | "tumble"
+    | "drift"
+    | "leash"
+    | "settled"
+    | "safety";
+};
+
+/**
+ * Requires a separated surfer to resurface and remain dynamically settled
+ * before control returns. The short readiness dwell filters one-frame surface
+ * crossings; the long safety ceiling is only a failsafe for pathological
+ * geometry or numerical states, not the normal recovery trigger.
+ */
+export function advanceSeparatedSurferRecovery(
+  currentReadiness: number,
+  sample: SeparatedSurferRecoverySample,
+): SeparatedSurferRecoveryReading {
+  const delta = clampValue(sample.deltaSeconds, 0, .05);
+  const elapsed = Math.max(0, sample.elapsedSeconds);
+  const surfaceOffset = clampValue(sample.surfaceOffset, -2, 1.5);
+  const verticalSpeed = Math.abs(sample.verticalVelocity);
+  const waterRelativeSpeed = Math.max(0, sample.waterRelativeSpeed);
+  const angularSpeed = Math.max(0, sample.angularSpeed);
+  const washIntensity = clampValue(sample.washIntensity, 0, 1.5);
+  const leashTension = clampValue(sample.leashTension, 0, 1.5);
+  const maximumHoldSeconds = clampValue(
+    sample.maximumHoldSeconds,
+    5,
+    12,
+  );
+  const safetyRelease = elapsed >= maximumHoldSeconds;
+  let limitingFactor:
+    SeparatedSurferRecoveryReading["limitingFactor"] = "settled";
+
+  if (elapsed < .9) {
+    limitingFactor = "impact";
+  } else if (surfaceOffset < -.1) {
+    limitingFactor = "submerged";
+  } else if (verticalSpeed > 1.05) {
+    limitingFactor = "rising";
+  } else if (washIntensity > .18) {
+    limitingFactor = "wash";
+  } else if (angularSpeed > 2.2) {
+    limitingFactor = "tumble";
+  } else if (waterRelativeSpeed > 1.85) {
+    limitingFactor = "drift";
+  } else if (leashTension > .62) {
+    limitingFactor = "leash";
+  }
+
+  const physicallySettled = limitingFactor === "settled";
+  const readiness = clampValue(
+    currentReadiness
+      + delta * (
+        physicallySettled
+          ? 1 / .55
+          : -1 / .2
+      ),
+    0,
+    1,
+  );
+
+  return {
+    readiness,
+    physicallySettled,
+    safetyRelease,
+    ready: readiness >= 1 || safetyRelease,
+    limitingFactor: safetyRelease
+      ? "safety"
+      : limitingFactor,
+  };
+}
+
 export type SeparatedSurferHorizontalState = {
   velocityX: number;
   velocityZ: number;
