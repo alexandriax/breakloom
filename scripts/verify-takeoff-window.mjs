@@ -22,6 +22,7 @@ import {
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
+  recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
   resolveSurfboardPlaning,
   resolveSurfboardRailDemand,
@@ -1346,6 +1347,55 @@ if (
 ) {
   throw new Error("Surface maneuver recognition no longer follows the board's measured path and contact");
 }
+const lipObservation = {
+  durationSeconds: .72,
+  startFacePosition: .64,
+  endFacePosition: .24,
+  launchVelocity: 1.42,
+  accumulatedYaw: .52,
+  peakAirborne: .14,
+  peakRailLoad: .62,
+  peakTailPressure: .58,
+  minimumWaterContact: .32,
+  endWaterContact: .86,
+  endPlaning: .72,
+  endWaveContact: .68,
+};
+const observedLipSnap = recognizeSurfboardLipManeuver(
+  lipObservation,
+);
+const observedTailRelease = recognizeSurfboardLipManeuver({
+  ...lipObservation,
+  accumulatedYaw: .14,
+  peakRailLoad: .32,
+  peakTailPressure: .74,
+});
+const observedFoamFloater = recognizeSurfboardLipManeuver({
+  ...lipObservation,
+  endFacePosition: .34,
+  accumulatedYaw: .12,
+  peakAirborne: .02,
+  peakRailLoad: .24,
+  minimumWaterContact: .7,
+});
+const missedLipReconnection = recognizeSurfboardLipManeuver({
+  ...lipObservation,
+  endWaterContact: .24,
+  endPlaning: .12,
+});
+const flatWaterRelease = recognizeSurfboardLipManeuver({
+  ...lipObservation,
+  startFacePosition: .04,
+});
+if (
+  observedLipSnap?.name !== "Lip Snap"
+  || observedTailRelease?.name !== "Tail Release"
+  || observedFoamFloater?.name !== "Foam Floater"
+  || missedLipReconnection !== null
+  || flatWaterRelease !== null
+) {
+  throw new Error("Lip maneuver recognition no longer follows release trajectory and reconnection");
+}
 const stableAirLanding = surfboardLandingSucceeded({
   airborneManeuver: true,
   physicalAirLanding: true,
@@ -2443,6 +2493,13 @@ console.log(JSON.stringify({
     longboardNoseRide: observedLongboardNoseRide.name,
     untracedTurn,
     disconnectedTurn,
+  },
+  lipManeuvers: {
+    snap: observedLipSnap.name,
+    tailRelease: observedTailRelease.name,
+    floater: observedFoamFloater.name,
+    missedReconnection: missedLipReconnection,
+    flatWaterRelease,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,

@@ -2463,6 +2463,102 @@ export function recognizeSurfboardSurfaceManeuver(
   };
 }
 
+export type SurfboardLipManeuverSample = {
+  durationSeconds: number;
+  startFacePosition: number;
+  endFacePosition: number;
+  launchVelocity: number;
+  accumulatedYaw: number;
+  peakAirborne: number;
+  peakRailLoad: number;
+  peakTailPressure: number;
+  minimumWaterContact: number;
+  endWaterContact: number;
+  endPlaning: number;
+  endWaveContact: number;
+};
+
+export type SurfboardLipManeuverReading = {
+  name: "Foam Floater" | "Lip Snap" | "Tail Release" | "Lip Re-entry";
+  base: number;
+  strength: number;
+};
+
+/**
+ * Classifies a lip maneuver from the path the hull actually took after a
+ * physical ramp release. A live lip, separation or lip traversal, and a
+ * controlled reconnection are required; the input gesture does not choose the
+ * result in advance.
+ */
+export function recognizeSurfboardLipManeuver(
+  sample: SurfboardLipManeuverSample,
+): SurfboardLipManeuverReading | null {
+  const duration = Math.max(0, sample.durationSeconds);
+  const peakAirborne = Math.max(0, sample.peakAirborne);
+  const minimumWaterContact = clampValue(
+    sample.minimumWaterContact,
+    0,
+    1,
+  );
+  const reconnected = clampValue(sample.endWaterContact, 0, 1) > .58
+    && clampValue(sample.endPlaning, 0, 1) > .24
+    && clampValue(sample.endWaveContact, 0, 1) > .2;
+  if (
+    duration < .28
+    || sample.startFacePosition < .18
+    || sample.launchVelocity < .08
+    || !reconnected
+  ) {
+    return null;
+  }
+
+  const yaw = Math.abs(sample.accumulatedYaw);
+  const rail = Math.abs(sample.peakRailLoad);
+  const tail = clampValue(sample.peakTailPressure, 0, 1);
+  const separated = peakAirborne > .055 || minimumWaterContact < .5;
+  const stayedOnLip = !separated
+    && sample.startFacePosition > .42
+    && sample.endFacePosition > .12;
+  const strength = clampValue(
+    peakAirborne / .32 * .32
+      + yaw / .9 * .28
+      + rail * .18
+      + tail * .12
+      + Math.max(0, sample.startFacePosition) * .1,
+    0,
+    1,
+  );
+  if (stayedOnLip) {
+    return {
+      name: "Foam Floater",
+      base: 305,
+      strength,
+    };
+  }
+  if (separated && yaw > .32 && rail > .36) {
+    return {
+      name: "Lip Snap",
+      base: 360,
+      strength,
+    };
+  }
+  if (separated && tail > .46) {
+    return {
+      name: "Tail Release",
+      base: 390,
+      strength,
+    };
+  }
+  if (separated) {
+    return {
+      name: "Lip Re-entry",
+      base: 330,
+      strength,
+    };
+  }
+  return null;
+}
+
 export type SurfboardLandingSample = {
   airborneManeuver: boolean;
   physicalAirLanding: boolean;

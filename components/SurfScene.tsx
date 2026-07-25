@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -697,6 +697,7 @@ type ManeuverAttempt = {
   startLinePosition: number;
   peakYawRate: number;
   peakRailLoad: number;
+  peakTailPressure: number;
   nosePressureSeconds: number;
   minimumWaterContact: number;
 };
@@ -13718,6 +13719,7 @@ function Simulation({
             startLinePosition: linePosition,
             peakYawRate: Math.abs(rideYawRate.current),
             peakRailLoad: Math.abs(railLoad),
+            peakTailPressure: tailPressure,
             nosePressureSeconds: noseRideCandidate ? delta : 0,
             minimumWaterContact: boardWaterContact,
           };
@@ -13764,6 +13766,10 @@ function Simulation({
           attempt.peakRailLoad = Math.max(
             attempt.peakRailLoad,
             Math.abs(railLoad),
+          );
+          attempt.peakTailPressure = Math.max(
+            attempt.peakTailPressure,
+            tailPressure,
           );
           if (nosePressure > noseRidePressure) {
             attempt.nosePressureSeconds += delta;
@@ -13898,25 +13904,29 @@ function Simulation({
           maxCombo.current = Math.max(maxCombo.current, combo.current);
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
         }
-        const physicalAirLanding = Boolean(
+        const physicalLaunchLanding = Boolean(
           attempt
-            && attempt.family === "air"
+            && (attempt.family === "air" || attempt.family === "lip")
             && attempt.becameAirborne
             && airborneHeight < .045
             && boardWaterContact > .62
             && t - attempt.startedAt > .26,
         );
-        const maneuverTimedOut = Boolean(
+        const physicalAirLanding = physicalLaunchLanding
+          && attempt?.family === "air";
+        const launchTimedOut = Boolean(
           attempt
-            && attempt.family === "air"
+            && (attempt.family === "air" || attempt.family === "lip")
             && t - attempt.startedAt > attempt.duration + .78,
         );
         const maneuverResolved = Boolean(
           attempt
             && (
               attempt.family === "air"
-                ? physicalAirLanding || maneuverTimedOut
-                : maneuverProgress >= 1
+                ? physicalLaunchLanding || launchTimedOut
+                : attempt.family === "lip" && attempt.becameAirborne
+                  ? physicalLaunchLanding || launchTimedOut
+                  : maneuverProgress >= 1
             ),
         );
         const recognizedSurfaceManeuver = attempt
@@ -13935,6 +13945,22 @@ function Simulation({
               endPlaning: boardPlaning,
               endWaveContact: rideInteraction.waveContact,
               boardLength: boardSpec.length,
+            })
+          : null;
+        const recognizedLipManeuver = attempt?.family === "lip"
+          ? recognizeSurfboardLipManeuver({
+              durationSeconds: t - attempt.startedAt,
+              startFacePosition: attempt.startFacePosition,
+              endFacePosition: physicalFacePosition,
+              launchVelocity: attempt.launchVelocity,
+              accumulatedYaw: attempt.accumulatedYaw,
+              peakAirborne: attempt.peakAirborne,
+              peakRailLoad: attempt.peakRailLoad,
+              peakTailPressure: attempt.peakTailPressure,
+              minimumWaterContact: attempt.minimumWaterContact,
+              endWaterContact: boardWaterContact,
+              endPlaning: boardPlaning,
+              endWaveContact: rideInteraction.waveContact,
             })
           : null;
         if (attempt && maneuverResolved) {
@@ -13977,10 +14003,20 @@ function Simulation({
             pitchOverRisk,
           });
           const landed = physicalLandingSucceeded
-            && (!observingSurfaceMotion || recognizedSurfaceManeuver !== null);
+            && (
+              observingSurfaceMotion
+                ? recognizedSurfaceManeuver !== null
+                : attempt.family === "lip"
+                  ? recognizedLipManeuver !== null
+                  : true
+            );
           if (landed) {
             const landingControl = THREE.MathUtils.clamp(1 - landingError / landingWindow, 0, 1);
-            const setupQuality = .52 + attempt.charge * .48;
+            const observedStrength = recognizedSurfaceManeuver?.strength
+              ?? recognizedLipManeuver?.strength;
+            const setupQuality = observedStrength === undefined
+              ? .52 + attempt.charge * .48
+              : .52 + observedStrength * .48;
             const quality = THREE.MathUtils.clamp(
               .12
                 + landingControl * .54
@@ -13993,6 +14029,7 @@ function Simulation({
             );
             const observedYaw = Math.abs(attempt.accumulatedYaw);
             const resolvedName = recognizedSurfaceManeuver?.name
+              ?? recognizedLipManeuver?.name
               ?? (
                 attempt.family === "air"
                   ? observedYaw >= Math.PI * 1.55
@@ -14003,6 +14040,7 @@ function Simulation({
                   : attempt.name
               );
             const resolvedBase = recognizedSurfaceManeuver?.base
+              ?? recognizedLipManeuver?.base
               ?? (
                 attempt.family === "air"
                   ? observedYaw >= Math.PI * 1.55
@@ -14052,21 +14090,13 @@ function Simulation({
             family = "air";
             name = "Aerial Release";
             base = 520;
-          } else if (tailPressure > .56 && rail > .42 && lipLaunchSupport > .42 && physicalFacePosition > .2) {
+          } else if (
+            lipLaunchSupport > .42
+            && physicalFacePosition > .2
+            && (tailPressure > .28 || rail > .28)
+          ) {
             family = "lip";
-            name = charge > .68 ? "Layback Release" : "Tail Release";
-            base = charge > .68 ? 470 : 390;
-            rotation = .64 + charge * .34;
-          } else if (lipLaunchSupport > .56 && rail > .42 && physicalFacePosition > .3) {
-            family = "lip";
-            name = "Lip Snap";
-            base = 360;
-            rotation = .58 + charge * .42;
-          } else if (lipLaunchSupport > .5 && physicalFacePosition > .46) {
-            family = "lip";
-            name = "Foam Floater";
-            base = 305;
-            rotation = .26;
+            name = "Lip Release";
           }
           if (family) {
             const releaseVelocity = surfboardReleaseVerticalImpulse({
@@ -14110,9 +14140,7 @@ function Simulation({
               || (balanceInput >= 0 ? 1 : -1);
             const baseDuration = family === "air"
               ? 1.04
-              : name === "Foam Floater"
-                ? .8
-                : .7;
+              : .78;
             activeManeuver.current = {
               name,
               family,
@@ -14133,6 +14161,7 @@ function Simulation({
               startLinePosition: linePosition,
               peakYawRate: Math.abs(rideYawRate.current),
               peakRailLoad: Math.abs(railLoad),
+              peakTailPressure: tailPressure,
               nosePressureSeconds: nosePressure > noseRidePressure ? delta : 0,
               minimumWaterContact: boardWaterContact,
             };
