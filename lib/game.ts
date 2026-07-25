@@ -1021,6 +1021,8 @@ export type SurfboardDynamicsSample = {
   tailImmersion?: number;
   noseSurfaceOffset?: number;
   tailSurfaceOffset?: number;
+  rightRailSurfaceOffset?: number;
+  leftRailSurfaceOffset?: number;
   turbulenceX?: number;
   turbulenceZ?: number;
   boardLength: number;
@@ -1061,7 +1063,10 @@ export type SurfboardWavePressureSample = {
   pearlingRisk?: number;
   noseSurfaceOffset?: number;
   tailSurfaceOffset?: number;
+  rightRailSurfaceOffset?: number;
+  leftRailSurfaceOffset?: number;
   boardLength?: number;
+  boardWidth?: number;
   boardTurn?: number;
 };
 
@@ -1074,9 +1079,12 @@ export type SurfboardWavePressureReading = {
   waveDeficit: number;
   headingAlignment: number;
   centerOfPressure: number;
+  lateralCenterOfPressure: number;
   yawAcceleration: number;
   noseContact: number;
   tailContact: number;
+  rightRailContact: number;
+  leftRailContact: number;
 };
 
 export type SurfboardRailGripSample = {
@@ -1855,6 +1863,24 @@ export type BoardRailContactFrame = {
   leftOffset: number;
 };
 
+export type SurfboardContactPatchSample = {
+  noseSurfaceOffset: number;
+  tailSurfaceOffset: number;
+  rightRailSurfaceOffset: number;
+  leftRailSurfaceOffset: number;
+  pitchAngle: number;
+  rollAngle: number;
+  halfLength: number;
+  halfWidth: number;
+};
+
+export type SurfboardContactPatchReading = {
+  noseSurfaceOffset: number;
+  tailSurfaceOffset: number;
+  rightRailSurfaceOffset: number;
+  leftRailSurfaceOffset: number;
+};
+
 /**
  * Resolves the lateral contact plane from explicit rail samples. Rail warp is
  * the shared rise or drop that a center tangent cannot represent, such as a
@@ -1872,6 +1898,35 @@ export function boardRailContactFrame(
     railWarp: (rightRailHeight + leftRailHeight) * .5 - centerHeight,
     rightOffset: rightRailHeight - centerHeight,
     leftOffset: leftRailHeight - centerHeight,
+  };
+}
+
+/**
+ * Measures the four sampled water patches relative to the board's current
+ * underside rather than a motionless center tangent. A board that has rolled
+ * and pitched to match a planar surface settles toward even contact; a late
+ * rail or nose remains exposed to extra pressure until the hull rotates.
+ */
+export function resolveSurfboardContactPatchOffsets(
+  sample: SurfboardContactPatchSample,
+): SurfboardContactPatchReading {
+  const halfLength = Math.max(.8, Math.abs(sample.halfLength));
+  const halfWidth = Math.max(.08, Math.abs(sample.halfWidth));
+  const pitchRise = Math.sin(clampValue(
+    sample.pitchAngle,
+    -Math.PI * .49,
+    Math.PI * .49,
+  )) * halfLength;
+  const rollRise = Math.sin(clampValue(
+    sample.rollAngle,
+    -Math.PI * .49,
+    Math.PI * .49,
+  )) * halfWidth;
+  return {
+    noseSurfaceOffset: sample.noseSurfaceOffset + pitchRise,
+    tailSurfaceOffset: sample.tailSurfaceOffset - pitchRise,
+    rightRailSurfaceOffset: sample.rightRailSurfaceOffset - rollRise,
+    leftRailSurfaceOffset: sample.leftRailSurfaceOffset + rollRise,
   };
 }
 
@@ -2507,11 +2562,13 @@ export function advancePaddleboardDynamics(
 }
 
 /**
- * Resolves the breaking face's horizontal pressure on a contacting hull.
- * The force always follows the live wave normal: a board pointed with the
- * wave receives useful longitudinal drive, while a broadside board receives
- * the same event mostly as lateral load. This is shared by prone takeoff and
- * standing surf dynamics so changing body phase cannot grant crest speed.
+ * Resolves the breaking face's horizontal pressure across the nose, tail, and
+ * both rail contact patches. The force always follows the live wave normal:
+ * a board pointed with the wave receives useful longitudinal drive, while a
+ * broadside board receives the same event mostly as lateral load. Off-center
+ * patches apply their force through the measured longitudinal and lateral
+ * centers of pressure. This is shared by prone takeoff and standing surf
+ * dynamics so changing body phase cannot grant crest speed.
  */
 export function resolveSurfboardWavePressure(
   sample: SurfboardWavePressureSample,
@@ -2532,9 +2589,12 @@ export function resolveSurfboardWavePressure(
       waveDeficit: Math.max(0, waveSpeed),
       headingAlignment: 0,
       centerOfPressure: 0,
+      lateralCenterOfPressure: 0,
       yawAcceleration: 0,
       noseContact: 0,
       tailContact: 0,
+      rightRailContact: 0,
+      leftRailContact: 0,
     };
   }
 
@@ -2557,6 +2617,7 @@ export function resolveSurfboardWavePressure(
   const nosePressure = Math.max(0, stance);
   const pearlingRisk = clampValue(sample.pearlingRisk ?? 0, 0, 1);
   const safeLength = Math.max(1.6, sample.boardLength ?? 2.5);
+  const safeWidth = Math.max(.24, sample.boardWidth ?? .34);
   const turn = Math.max(.45, sample.boardTurn ?? 1);
   const contactRelief = .055 + Math.max(.25, sample.waveHeight) * .035;
   const noseContact = clampValue(
@@ -2573,8 +2634,27 @@ export function resolveSurfboardWavePressure(
     0,
     1,
   );
+  const rightRailContact = clampValue(
+    contact * (
+      1 + (sample.rightRailSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  );
+  const leftRailContact = clampValue(
+    contact * (
+      1 + (sample.leftRailSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  );
   const distributedContact = clampValue(
-    contact * .5 + noseContact * .25 + tailContact * .25,
+    (
+      noseContact
+        + tailContact
+        + rightRailContact
+        + leftRailContact
+    ) * .25,
     0,
     1,
   );
@@ -2588,13 +2668,23 @@ export function resolveSurfboardWavePressure(
   const accelerationZ = waveNormalZ * pressure;
   const forwardDrive = accelerationX * forwardX + accelerationZ * forwardZ;
   const lateralLoad = accelerationX * rightX + accelerationZ * rightZ;
+  const contactSum = Math.max(
+    .001,
+    noseContact + tailContact + rightRailContact + leftRailContact,
+  );
   const centerOfPressure = (
     noseContact - tailContact
-  ) / Math.max(.001, noseContact + tailContact + contact * 2)
+  ) / contactSum
     * safeLength
     * .5;
-  const yawAcceleration = centerOfPressure
-    * lateralLoad
+  const lateralCenterOfPressure = (
+    rightRailContact - leftRailContact
+  ) / contactSum
+    * safeWidth
+    * .5;
+  const pressureYawMoment = centerOfPressure * lateralLoad
+    - lateralCenterOfPressure * forwardDrive;
+  const yawAcceleration = pressureYawMoment
     * 5.4
     * turn
     / (safeLength * safeLength);
@@ -2607,9 +2697,12 @@ export function resolveSurfboardWavePressure(
     waveDeficit,
     headingAlignment,
     centerOfPressure,
+    lateralCenterOfPressure,
     yawAcceleration,
     noseContact,
     tailContact,
+    rightRailContact,
+    leftRailContact,
   };
 }
 
@@ -3448,7 +3541,10 @@ export function advanceSurfboardDynamics(
     pearlingRisk,
     noseSurfaceOffset: sample.noseSurfaceOffset,
     tailSurfaceOffset: sample.tailSurfaceOffset,
+    rightRailSurfaceOffset: sample.rightRailSurfaceOffset,
+    leftRailSurfaceOffset: sample.leftRailSurfaceOffset,
     boardLength: safeLength,
+    boardWidth: safeWidth,
     boardTurn: turn,
   });
   yawRate = clampValue(

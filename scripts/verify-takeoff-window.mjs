@@ -34,6 +34,7 @@ import {
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
   resolveSurfboardSeparationRelease,
+  resolveSurfboardContactPatchOffsets,
   resolveSurferPassiveCompression,
   resolveSurfboardTumbleRelease,
   resolveSurfboardTurbulence,
@@ -959,6 +960,78 @@ const tailLoadedDiagonalPressure = resolveSurfboardWavePressure({
   boardLength: 2.5,
   boardTurn: 1,
 });
+const symmetricFourPatchPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: .08,
+  tailSurfaceOffset: .08,
+  rightRailSurfaceOffset: .08,
+  leftRailSurfaceOffset: .08,
+  boardLength: 2.5,
+  boardWidth: .34,
+  boardTurn: 1,
+});
+const rightRailLoadedPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: .02,
+  tailSurfaceOffset: .02,
+  rightRailSurfaceOffset: .12,
+  leftRailSurfaceOffset: -.08,
+  boardLength: 2.5,
+  boardWidth: .34,
+  boardTurn: 1,
+});
+const leftRailLoadedPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: .02,
+  tailSurfaceOffset: .02,
+  rightRailSurfaceOffset: -.08,
+  leftRailSurfaceOffset: .12,
+  boardLength: 2.5,
+  boardWidth: .34,
+  boardTurn: 1,
+});
+const detachedFourPatchPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: 0,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 0,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: .12,
+  tailSurfaceOffset: -.08,
+  rightRailSurfaceOffset: .12,
+  leftRailSurfaceOffset: -.08,
+  boardLength: 2.5,
+  boardWidth: .34,
+  boardTurn: 1,
+});
 if (
   alignedWavePressure.forwardDrive < 3
   || Math.abs(alignedWavePressure.lateralLoad) > .001
@@ -977,6 +1050,67 @@ if (
   || tailLoadedDiagonalPressure.yawAcceleration <= .08
 ) {
   throw new Error("Nose and tail polygon contact is not producing symmetric and directional pressure torque");
+}
+if (
+  Math.abs(symmetricFourPatchPressure.centerOfPressure) > .001
+  || Math.abs(symmetricFourPatchPressure.lateralCenterOfPressure) > .001
+  || Math.abs(symmetricFourPatchPressure.yawAcceleration) > .001
+  || rightRailLoadedPressure.lateralCenterOfPressure <= .025
+  || rightRailLoadedPressure.yawAcceleration >= -.08
+  || leftRailLoadedPressure.lateralCenterOfPressure >= -.025
+  || leftRailLoadedPressure.yawAcceleration <= .08
+  || Math.abs(
+    rightRailLoadedPressure.pressure - leftRailLoadedPressure.pressure
+  ) > 1e-9
+  || detachedFourPatchPressure.pressure !== 0
+  || detachedFourPatchPressure.rightRailContact !== 0
+  || detachedFourPatchPressure.leftRailContact !== 0
+) {
+  throw new Error("Four-patch polygon pressure is not resolving mirrored rail contact, yaw moment, and detachment");
+}
+function railPressureTurnAfterOneSecond(hz) {
+  const deltaSeconds = 1 / hz;
+  let state = {
+    velocityX: 0,
+    velocityZ: 2,
+    heading: 0,
+    yawRate: 0,
+  };
+  for (let frame = 0; frame < hz; frame += 1) {
+    const pressure = resolveSurfboardWavePressure({
+      velocityX: state.velocityX,
+      velocityZ: state.velocityZ,
+      heading: state.heading,
+      waveVelocityX: 0,
+      waveVelocityZ: 6,
+      waveContact: .8,
+      waterContact: 1,
+      waveHeight: 2,
+      stance: 0,
+      noseSurfaceOffset: .02,
+      tailSurfaceOffset: .02,
+      rightRailSurfaceOffset: .12,
+      leftRailSurfaceOffset: -.08,
+      boardLength: 2.5,
+      boardWidth: .34,
+      boardTurn: 1,
+    });
+    state.velocityX += pressure.accelerationX * deltaSeconds;
+    state.velocityZ += pressure.accelerationZ * deltaSeconds;
+    state.yawRate += pressure.yawAcceleration * deltaSeconds;
+    state.heading += state.yawRate * deltaSeconds;
+  }
+  return state;
+}
+const railPressureTurn60 = railPressureTurnAfterOneSecond(60);
+const railPressureTurn120 = railPressureTurnAfterOneSecond(120);
+if (
+  railPressureTurn60.heading >= -.03
+  || Math.abs(
+    railPressureTurn60.heading - railPressureTurn120.heading
+  ) > .002
+) {
+  throw new Error("Off-center rail pressure is not producing frame-stable yaw");
 }
 function pressureCatchAfterOneSecond(hz) {
   const deltaSeconds = 1 / hz;
@@ -1961,13 +2095,38 @@ const proneSample = {
 };
 const tiltedRailContact = boardRailContactFrame(0, .1, -.1, .25);
 const crownedRailContact = boardRailContactFrame(0, .06, .06, .25);
+const matchedPoseContact = resolveSurfboardContactPatchOffsets({
+  noseSurfaceOffset: .1,
+  tailSurfaceOffset: -.1,
+  rightRailSurfaceOffset: .1,
+  leftRailSurfaceOffset: -.1,
+  pitchAngle: -Math.asin(.1),
+  rollAngle: Math.asin(.4),
+  halfLength: 1,
+  halfWidth: .25,
+});
+const leanedFlatContact = resolveSurfboardContactPatchOffsets({
+  noseSurfaceOffset: 0,
+  tailSurfaceOffset: 0,
+  rightRailSurfaceOffset: 0,
+  leftRailSurfaceOffset: 0,
+  pitchAngle: 0,
+  rollAngle: Math.asin(.4),
+  halfLength: 1,
+  halfWidth: .25,
+});
 if (
   Math.abs(tiltedRailContact.crossSlope - .4) > 1e-9
   || Math.abs(tiltedRailContact.railWarp) > 1e-9
   || Math.abs(crownedRailContact.crossSlope) > 1e-9
   || Math.abs(crownedRailContact.railWarp - .06) > 1e-9
+  || Object.values(matchedPoseContact).some((offset) => (
+    Math.abs(offset) > 1e-9
+  ))
+  || Math.abs(leanedFlatContact.rightRailSurfaceOffset + .1) > 1e-9
+  || Math.abs(leanedFlatContact.leftRailSurfaceOffset - .1) > 1e-9
 ) {
-  throw new Error("Explicit left/right rail samples no longer resolve slope and vertical polygon warp independently");
+  throw new Error("Hull patches no longer resolve polygon slope, warp, and current board pose independently");
 }
 const popUpStart = evaluatePopUpTransition(0, 100);
 const popUpHandPlant = evaluatePopUpTransition(.25, 100);
@@ -3026,6 +3185,8 @@ console.log(JSON.stringify({
     proneCatchSpeed120Hz: pressureCatch120.velocityZ,
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
+    railPressureTurn60Hz: railPressureTurn60.heading,
+    railPressureTurn120Hz: railPressureTurn120.heading,
     facePhaseSweep,
     longPeriodCrestDistance,
     detachedCrestPhase,
