@@ -4251,7 +4251,6 @@ function SurferModel({
       : 0;
     const waterDepth = THREE.MathUtils.clamp(state.waterDepth, 0, 1);
     const carryBlend = carrying ? 1 - waterDepth : 0;
-    const rebound = Math.sin((1 - state.impact) * Math.PI) * state.impact;
     const foamChatter = riding
       ? Math.sin(clock.elapsedTime * 17.4 + state.linePosition * 2.8) * state.whitewater
       : 0;
@@ -4312,7 +4311,6 @@ function SurferModel({
     const standingBodyY = .84
       - state.takeoff * .34
       - rideCompression * .15
-      + rebound * .08
       + state.maneuverLift * .05
       + rideSettle * .08;
     body.current.position.y = THREE.MathUtils.damp(body.current.position.y, paddle ? .44 - state.duckDive * .16 + takeoffPlant * .055 : riding ? THREE.MathUtils.lerp(standingBodyY, .44, returnProne) : wipeout ? .42 - state.submersion * (.28 + state.wipeoutPower * .18) : wading ? 1.02 - waterDepth * .045 + Math.sin(clock.elapsedTime * 2.1) * .012 * waterDepth : 1.02, 8, delta);
@@ -4328,12 +4326,12 @@ function SurferModel({
       : paddle
         ? .16 - state.duckDive * .12 + takeoffPlant * .025 + rig.current.position.y
         : riding
-          ? .16 - Math.abs(state.rail) * .035 * (1 - rideSettle) - rideCompression * .025 + rebound * .09 + foamChatter * .022 + rig.current.position.y
+          ? .16 - Math.abs(state.rail) * .035 * (1 - rideSettle) - rideCompression * .025 + foamChatter * .022 + rig.current.position.y
           : .13 + Math.sin(clock.elapsedTime * 3.5) * .025;
     const baseBoardRotationX = carrying
       ? THREE.MathUtils.lerp(Math.PI / 2 - .08, Math.sin(clock.elapsedTime * 2.1) * .012, waterDepth)
       : riding
-        ? state.stance * -.05 + state.facePosition * -.085 + state.barrel * .025 + rebound * .06 + state.takeoff * .09 + state.maneuverLift * .2 + rideSettle * .025 - state.acceleration * .028 + foamChatter * .018
+        ? state.stance * -.05 + state.facePosition * -.085 + state.barrel * .025 + state.takeoff * .09 + state.maneuverLift * .2 + rideSettle * .025 - state.acceleration * .028 + foamChatter * .018
         : paddle
           ? state.duckDive * .3 - state.shorebreak * .035 + takeoffPlant * .065
           : 0;
@@ -15114,7 +15112,6 @@ function Simulation({
       railLoad = 0;
       compression = 0;
     }
-    const rebound = Math.sin((1 - motion.current.impact) * Math.PI) * motion.current.impact;
     const buoyancy = waterRide.current;
     let playerY = 0;
     if (isWater) {
@@ -15173,9 +15170,10 @@ function Simulation({
             boardWidth: boardSpec.width,
             boardStability: boardSpec.stability,
             whitewater: whitewaterPressure,
+            // Camera/particle impact feedback may be scored or emphasized for
+            // readability; it must never become a force on the hull.
             verticalWaterAcceleration: railVerticalLoad
               + returnProneVerticalLoad
-              + rebound * 4.2
               + Math.sin(t * 7.3 + position.current.x * .1) * whitewaterPressure * 2.1,
           },
         );
