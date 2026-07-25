@@ -1709,6 +1709,7 @@ export type PaddleTrainingReading = {
   targetRotationDegrees: number;
   turnDirection: "left" | "right" | "hold";
   turnDegrees: number;
+  recommendedHand: "left" | "right" | null;
   activeHand: "left" | "right" | null;
   strokePhase: "idle" | "pull" | "recovery";
   strokeDrive: number;
@@ -1797,6 +1798,11 @@ export function readPaddleTrainingMechanics(
     : targetRotationDegrees > 0
       ? "right"
       : "left";
+  const recommendedHand = turnDirection === "hold"
+    ? null
+    : turnDirection === "right"
+      ? "left"
+      : "right";
   const strokeDrive = clampValue(Math.abs(sample.paddleStroke), 0, 1);
   const activeHand = strokeDrive <= .035
     ? null
@@ -1823,6 +1829,7 @@ export function readPaddleTrainingMechanics(
     targetRotationDegrees,
     turnDirection,
     turnDegrees,
+    recommendedHand,
     activeHand,
     strokePhase,
     strokeDrive,
@@ -3511,6 +3518,7 @@ export type GameStats = {
   offshoreDistance: number;
   coastDistance: number;
   cameraHeading: number;
+  paddleHeading: number;
   speed: number;
   acceleration: number;
   lateralForce: number;
@@ -3633,6 +3641,7 @@ export const INITIAL_STATS: GameStats = {
   offshoreDistance: 0,
   coastDistance: 0,
   cameraHeading: 0,
+  paddleHeading: 0,
   speed: 0,
   acceleration: 0,
   lateralForce: 0,

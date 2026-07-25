@@ -2437,13 +2437,16 @@ const airborneGuide = readPaddleTrainingMechanics({
 if (
   rightTurnLeftPullGuide.turnDirection !== "right"
   || rightTurnLeftPullGuide.turnDegrees !== 60
+  || rightTurnLeftPullGuide.recommendedHand !== "left"
   || rightTurnLeftPullGuide.activeHand !== "left"
   || rightTurnLeftPullGuide.strokePhase !== "pull"
   || rightTurnLeftPullGuide.pressureMode !== "drive"
   || leftTurnBroadsideGuide.turnDirection !== "left"
+  || leftTurnBroadsideGuide.recommendedHand !== "right"
   || leftTurnBroadsideGuide.activeHand !== "right"
   || leftTurnBroadsideGuide.pressureMode !== "broadside"
   || alignedRecoveryGuide.turnDirection !== "hold"
+  || alignedRecoveryGuide.recommendedHand !== null
   || alignedRecoveryGuide.strokePhase !== "recovery"
   || airborneGuide.pressureMode !== "airborne"
 ) {

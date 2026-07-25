@@ -15933,6 +15933,7 @@ function Simulation({
         ).toFixed(1)),
         coastDistance: Number((phase.current === "driving" ? vanPosition.current.x : position.current.x).toFixed(1)),
         cameraHeading,
+        paddleHeading: paddleHeading.current,
         speed: Math.max(0, speed),
         acceleration: motion.current.acceleration,
         lateralForce: motion.current.lateralForce,

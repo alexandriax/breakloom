@@ -3092,8 +3092,15 @@ export default function SurfscapeApp() {
   const takeoffCommitted = stats.phase === "paddling" && stats.takeoffCommitProgress > .02;
   const boardWaveAngleDegrees = Math.round(stats.boardWaveAngle * 180 / Math.PI);
   const headingTurn = boardWaveAngleDegrees >= 0 ? "RIGHT" : "LEFT";
+  const offshoreHeadingError = Math.atan2(
+    Math.sin(Math.PI - stats.paddleHeading),
+    Math.cos(Math.PI - stats.paddleHeading),
+  );
+  const paddleTargetKind = stats.inLineup ? "WAVE" : "OFFSHORE";
   const paddleTraining = readPaddleTrainingMechanics({
-    boardWaveAngle: stats.boardWaveAngle,
+    boardWaveAngle: stats.inLineup
+      ? stats.boardWaveAngle
+      : offshoreHeadingError,
     paddleStroke: stats.paddleStroke,
     paddleEffort: stats.paddleEffort,
     waterContact: stats.boardWaterContact,
@@ -3101,7 +3108,9 @@ export default function SurfscapeApp() {
     waveLateralLoad: stats.wavePressureSideLoad,
   });
   const surfTrainingForces = readSurfTrainingForces({
-    boardWaveAngle: stats.boardWaveAngle,
+    boardWaveAngle: stats.phase === "paddling" && !stats.inLineup
+      ? offshoreHeadingError
+      : stats.boardWaveAngle,
     waveLateralLoad: stats.wavePressureSideLoad,
     waterContact: stats.boardWaterContact,
     balance: stats.balance,
@@ -3139,7 +3148,9 @@ export default function SurfscapeApp() {
     && !takeoffCommitted
     && !stats.duckDiveReady;
   const paddleAimCue = !stats.inLineup
-    ? "PADDLE OUT"
+    ? paddleTraining.turnDirection === "hold"
+      ? "NOSE AIMED OFFSHORE"
+      : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° OFFSHORE`
     : paddleTraining.turnDirection === "hold"
       ? "NOSE ALIGNED"
       : `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}°`;
@@ -3149,6 +3160,8 @@ export default function SurfscapeApp() {
       ? `SIDE LOAD ${Math.abs(stats.wavePressureSideLoad).toFixed(1)} M/S²`
       : paddleTraining.pressureMode === "drive"
         ? `FACE DRIVE ${Math.max(0, stats.wavePressureDrive).toFixed(1)} M/S²`
+        : paddleTraining.recommendedHand
+          ? `BIAS ${paddleTraining.recommendedHand.toUpperCase()} HAND PULL`
         : paddleTraining.strokePhase === "pull"
           ? `${paddleTraining.activeHand?.toUpperCase()} HAND PULLING`
           : paddleTraining.strokePhase === "recovery"
@@ -3223,12 +3236,19 @@ export default function SurfscapeApp() {
                       tone: "ready",
                     }
           : !stats.inLineup
-            ? {
-                cue: "PADDLE OUT",
-                detail: "Hold W for left/right pull-and-recovery cycles · A/D shifts force between hands.",
-                rotation: -90,
-                tone: "paddle",
-              }
+            ? paddleTraining.turnDirection === "hold"
+              ? {
+                  cue: "NOSE OFFSHORE · PADDLE",
+                  detail: "Hold W for alternating pulls. Release W to coast; the board keeps the momentum each hand produced.",
+                  rotation: -90,
+                  tone: "paddle",
+                }
+              : {
+                  cue: `TURN ${paddleTraining.turnDirection.toUpperCase()} ${paddleTraining.turnDegrees}° TO PADDLE OUT`,
+                  detail: `A/D biases the ${paddleTraining.recommendedHand?.toUpperCase()} pull, whose off-center force rotates the nose toward the offshore arrow.`,
+                  rotation: paddleTraining.turnDirection === "right" ? 0 : 180,
+                  tone: "align",
+                }
             : Math.abs(boardWaveAngleDegrees) > 24
               ? {
                   cue: `TURN ${headingTurn} ${Math.abs(boardWaveAngleDegrees)}°`,
@@ -4496,21 +4516,19 @@ export default function SurfscapeApp() {
           )}
           {paddleTrainerActive && (
             <div
-              className={`paddle-training-instrument is-${paddleTraining.pressureMode} ${stats.inLineup ? "has-wave-aim" : ""}`}
+              className={`paddle-training-instrument is-${paddleTraining.pressureMode} has-direction-aim`}
               role="img"
-              aria-label={`${paddleAimCue}. ${paddleForceCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
+              aria-label={`${paddleTargetKind} target. ${paddleAimCue}. ${paddleForceCue}. ${paddleTraining.activeHand ? `${paddleTraining.activeHand} hand pulling.` : paddleTraining.strokePhase === "idle" ? "Paddling idle." : "Paddle stroke recovery."}`}
             >
               <div className="paddle-heading-dial" aria-hidden="true">
                 <span className="paddle-board-nose"><ArrowRight /></span>
-                {stats.inLineup && (
-                  <i
-                    className="paddle-wave-target"
-                    style={{ transform: `rotate(${paddleTraining.targetRotationDegrees - 90}deg)` }}
-                  >
-                    <ArrowRight />
-                  </i>
-                )}
-                <small>BOARD<br />NOSE</small>
+                <i
+                  className="paddle-wave-target"
+                  style={{ transform: `rotate(${paddleTraining.targetRotationDegrees - 90}deg)` }}
+                >
+                  <ArrowRight />
+                </i>
+                <small>{paddleTargetKind}<br />TARGET</small>
               </div>
               <div className="paddle-training-readout">
                 <span>PHYSICAL TAKEOFF GUIDE</span>
