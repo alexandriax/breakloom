@@ -10735,6 +10735,7 @@ function Simulation({
   const activeManeuver = useRef<ManeuverAttempt | null>(null);
   const trickCharge = useRef(0);
   const lastManeuverAt = useRef(-10);
+  const lastSurfaceObservationAt = useRef(-10);
   const catchQuality = useRef(0.5);
   const unstableFor = useRef(0);
   const railSlip = useRef(0);
@@ -13692,7 +13693,7 @@ function Simulation({
           && !activeManeuver.current
           && !state.action
           && !actionReleased
-          && t - lastManeuverAt.current > .72
+          && t - lastSurfaceObservationAt.current > .72
           && speed > 2.4
           && boardPlaning > .3
           && rideInteraction.waveContact > .25
@@ -13723,10 +13724,15 @@ function Simulation({
             nosePressureSeconds: noseRideCandidate ? delta : 0,
             minimumWaterContact: boardWaterContact,
           };
-          lastManeuverAt.current = t;
         }
         const attempt = activeManeuver.current;
-        const loadAvailable = !attempt
+        const surfaceObservationActive = Boolean(
+          attempt
+            && (attempt.family === "trim" || attempt.family === "carve"),
+        );
+        const surfaceObservationInterrupted = surfaceObservationActive
+          && (state.action || actionReleased);
+        const loadAvailable = (!attempt || surfaceObservationActive)
           && t - lastManeuverAt.current > .72
           && stamina.current > 5
           && railSlip.current < .8;
@@ -13737,7 +13743,7 @@ function Simulation({
           stamina.current = Math.max(0, stamina.current - delta * (2.2 + trickCharge.current * 3.2));
           compression = Math.max(compression, .28 + trickCharge.current * .72);
           maneuverPhase = "load";
-        } else if (!attempt && !state.action && !actionReleased) {
+        } else if ((!attempt || surfaceObservationActive) && !state.action && !actionReleased) {
           trickCharge.current = THREE.MathUtils.damp(trickCharge.current, 0, 8, delta);
         }
         if (attempt) {
@@ -13926,7 +13932,7 @@ function Simulation({
                 ? physicalLaunchLanding || launchTimedOut
                 : attempt.family === "lip" && attempt.becameAirborne
                   ? physicalLaunchLanding || launchTimedOut
-                  : maneuverProgress >= 1
+                  : surfaceObservationInterrupted || maneuverProgress >= 1
             ),
         );
         const recognizedSurfaceManeuver = attempt
@@ -13964,8 +13970,6 @@ function Simulation({
             })
           : null;
         if (attempt && maneuverResolved) {
-          const observingSurfaceMotion = attempt.family === "trim"
-            || attempt.family === "carve";
           const landingError = Math.abs(balanceInput - landingTarget);
           const reconnectLoad = attempt.family === "air"
             ? motion.current.landingImpact
@@ -14004,7 +14008,7 @@ function Simulation({
           });
           const landed = physicalLandingSucceeded
             && (
-              observingSurfaceMotion
+              surfaceObservationActive
                 ? recognizedSurfaceManeuver !== null
                 : attempt.family === "lip"
                   ? recognizedLipManeuver !== null
@@ -14061,13 +14065,19 @@ function Simulation({
             maneuverId.current += 1;
             motion.current.impact = .72 + quality * .28;
             motion.current.maneuver = 1;
-          } else if (!observingSurfaceMotion) {
+          } else if (!surfaceObservationActive) {
             maneuverQuality.current = 0;
             motion.current.impact = .62;
           }
           activeManeuver.current = null;
-          trickCharge.current = 0;
-          lastManeuverAt.current = t;
+          if (surfaceObservationActive) {
+            if (!surfaceObservationInterrupted) {
+              lastSurfaceObservationAt.current = t;
+            }
+          } else {
+            trickCharge.current = 0;
+            lastManeuverAt.current = t;
+          }
         }
         if (!finishing) rideMaxCombo.current = Math.max(rideMaxCombo.current, combo.current);
         const lipLaunchSupport = surfboardLipLaunchSupport({
@@ -14078,7 +14088,8 @@ function Simulation({
           planing: boardPlaning,
           waterContact: boardWaterContact,
         });
-        const wantsRelease = !attempt && actionReleased;
+        const wantsRelease = (!attempt || surfaceObservationActive)
+          && actionReleased;
         if (wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
           const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
           const rail = Math.abs(physicalRailInput);
@@ -14232,7 +14243,7 @@ function Simulation({
           : physicalFacePosition < -.58
             ? "Bottom turn — set the rail and drive back toward the lip"
           : steer
-            ? "Hold the rail · hold TRICK / SPACE to load, then release"
+            ? "Hold the rail — turns are read from the board's actual path"
             : move > .08
               ? "Nose pressure · trim and carry the board's existing momentum"
               : move < -0.08
@@ -15778,7 +15789,11 @@ function Simulation({
         maneuverQuality: maneuverQuality.current,
         maneuverId: maneuverId.current,
         maneuverCount: maneuverCount.current,
-        maneuverActive: activeManeuver.current !== null,
+        maneuverActive: Boolean(
+          activeManeuver.current
+            && activeManeuver.current.family !== "trim"
+            && activeManeuver.current.family !== "carve",
+        ),
         maneuverProgress,
         maneuverPhase,
         maneuverLaunchVelocity: activeManeuver.current?.launchVelocity ?? 0,

@@ -495,13 +495,13 @@ const MODES: Array<{ id: GameMode; name: string; kicker: string; description: st
     id: "training",
     name: "First Light",
     kicker: "Training",
-    description: "Live force coaching, forgiving balance recovery, and prompts through every phase.",
+    description: "The full ocean physics with live force arrows, paddle-hand timing, and causal prompts.",
   },
   {
     id: "advanced",
     name: "Raw Ocean",
     kicker: "Advanced",
-    description: "Manual catches, reactive rails, narrower balance windows, bigger multipliers.",
+    description: "The same board-and-water solver with sparse coaching and an unobstructed line.",
   },
   {
     id: "playground",
@@ -517,8 +517,8 @@ const TRAINING_STEPS = [
   { title: "Reach the lineup", detail: "Keep the nose aimed offshore and paddle beyond the breaking water." },
   { title: "Turn for shore", detail: "Rotate until the live wave arrow overlaps the fixed board-nose reference." },
   { title: "Choose when to stand", detail: "Space always stands. Flat water stalls; a matched face captures; a broadside wall tumbles you." },
-  { title: "Track the pocket", detail: "Once the wave engages, set a rail and use forward/back pressure to move across the face." },
-  { title: "Set the rail", detail: "Build from a bottom turn, climb toward the lip, then load and release a maneuver." },
+  { title: "Track the pocket", detail: "Set a rail and shift nose/tail pressure; the resulting speed and turn carry the board across the face." },
+  { title: "Set the rail", detail: "Turns are read from your actual board path. Compress and release only when a live lip can redirect momentum." },
   { title: "Finish clean", detail: "Stay composed through the inside section." },
 ] as const;
 
@@ -3331,7 +3331,7 @@ export default function SurfscapeApp() {
               ? {
                   cue: `HULL AIRBORNE ${airborneCentimeters} CM · LEVEL`,
                   detail: stats.maneuverActive && stats.maneuverRotationTarget > .1
-                    ? `${Math.round(Math.abs(stats.maneuverRotation) * 180 / Math.PI)}° / ${Math.round(Math.abs(stats.maneuverRotationTarget) * 180 / Math.PI)}° rotation · neutralize roll and pitch before contact.`
+                    ? `${Math.round(Math.abs(stats.maneuverRotation) * 180 / Math.PI)}° measured yaw · ${Math.round(Math.abs(stats.maneuverRotationTarget) * 180 / Math.PI)}° projected from release momentum · neutralize roll and pitch before contact.`
                     : `${hullContactPercent}% water contact · neutralize roll and pitch before the polygon catches up.`,
                   rotation: 90,
                   tone: "danger",
@@ -3345,8 +3345,8 @@ export default function SurfscapeApp() {
                   }
               : stats.maneuverActive && stats.maneuverPhase === "release"
                 ? {
-                    cue: `TAIL RELEASE ${stats.maneuverLaunchVelocity.toFixed(1)} M/S`,
-                    detail: `${stats.maneuverLaunchYawRate.toFixed(1)} rad/s yaw impulse · the board now keeps that angular momentum in flight.`,
+                    cue: `RAMP RELEASE ${stats.maneuverLaunchVelocity.toFixed(1)} M/S`,
+                    detail: `${stats.maneuverLaunchYawRate.toFixed(1)} rad/s measured yaw impulse · separation, face path, and reconnection will name the result.`,
                     rotation: -90,
                     tone: "ready",
                   }
@@ -3445,7 +3445,7 @@ export default function SurfscapeApp() {
         ? !stats.waveEngaged
           ? "PRONE"
           : stats.maneuverActive
-          ? stats.maneuverPhase === "air" ? "SPOT IT" : "LAND"
+          ? stats.maneuverPhase === "air" ? "LEVEL" : "SETTLE"
           : stats.trickCharge > .04 ? `RELEASE ${Math.round(stats.trickCharge * 100)}` : "HOLD TRICK"
         : stats.phase === "paddling"
             ? "POP"
@@ -3538,6 +3538,12 @@ export default function SurfscapeApp() {
   const cinemaBeatKey = rideToast?.id ?? maneuverToast?.id ?? (takeoffToast ? Math.round(takeoffToast.quality * 100) : 0);
   const landingMin = Math.max(-1, stats.landingTarget - stats.landingWindow);
   const landingMax = Math.min(1, stats.landingTarget + stats.landingWindow);
+  const showPhysicalLandingGuide = stats.maneuverActive
+    && (
+      stats.maneuverAirborne
+      || stats.airborneHeight > .055
+      || stats.landingImpact > .08
+    );
   const landingLabel = maneuverToast
     ? maneuverToast.quality >= .82 ? "STOMPED" : maneuverToast.quality >= .48 ? "LANDED" : "RECOVERED"
     : "LANDED";
@@ -4587,7 +4593,7 @@ export default function SurfscapeApp() {
                     <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
-                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Hold to load, release to trick" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{standingOnBoard ? "Return prone" : stats.phase === "riding" ? "Compress, then release against a live lip" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
                     {stats.phase === "paddling" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive when the lip cue appears</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
@@ -4733,13 +4739,13 @@ export default function SurfscapeApp() {
             </div>
           )}
 
-          <div className={`balance-instrument ${stats.phase === "riding" || stats.phase === "paddling" ? "is-active" : ""} ${stats.phase === "paddling" ? "is-prone" : ""} ${standingOnBoard ? "is-standing" : ""} ${ridingOut ? "is-exit" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
+          <div className={`balance-instrument ${stats.phase === "riding" || stats.phase === "paddling" ? "is-active" : ""} ${stats.phase === "paddling" ? "is-prone" : ""} ${standingOnBoard ? "is-standing" : ""} ${ridingOut ? "is-exit" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
-              <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "TRICK LOAD" : rollInstrumentTitle} <em className={stats.maneuverActive ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuver} · ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE TO COMMIT` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
+              <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "BODY COMPRESSION" : rollInstrumentTitle} <em className={showPhysicalLandingGuide ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuverPhase === "air" ? "AIRBORNE" : "HULL RELEASED"} · ${Math.round(stats.maneuverProgress * 100)}% OBSERVED` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% · RELEASE ONLY AT A LIVE LIP` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
               <strong>{stats.maneuverActive ? `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%` : `${attitudeDegrees}°`}</strong>
             </div>
             <div className="balance-track">
-              {stats.maneuverActive && <i className="landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
+              {showPhysicalLandingGuide && <i className="landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
               <i className="balance-safe" style={{ left: `${(stats.balanceTarget + 1) * 50}%` }} />
               <b style={{ left: `${(stats.balance + 1) * 50}%` }} />
             </div>
@@ -4755,7 +4761,7 @@ export default function SurfscapeApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{stats.phase === "paddling" ? "The nose, tail, and both rails sample the live polygon surface · Q/E shifts prone body weight toward the marker" : standingOnBoard ? "A/D applies roll torque · Q/E counterweights toward the marker · SPACE returns prone" : ridingOut ? "Keep steering and counterweighting · wave pressure and wipeout risk remain live until the shallow dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Spot the landing, then reconnect inside the illuminated zone" : "Reconnect inside the illuminated landing zone" : stats.trickCharge > .04 ? "Keep the rail set while the board loads · release Space / Trick to launch" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D creates board roll · W/S shifts nose-to-tail pressure · Q/E arrests unwanted roll"}</small>
+            <small>{stats.phase === "paddling" ? "The nose, tail, and both rails sample the live polygon surface · Q/E shifts prone body weight toward the marker" : standingOnBoard ? "A/D applies roll torque · Q/E counterweights toward the marker · SPACE returns prone" : ridingOut ? "Keep steering and counterweighting · wave pressure and wipeout risk remain live until the shallow dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Counter unwanted roll and pitch; rail authority returns only when the hull reconnects with water" : "The board is tracing its own lip path; separation and reconnection will name the result" : stats.trickCharge > .04 ? "Compression adds launch energy only when the loaded tail can push against a live lip" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D creates board roll · W/S shifts nose-to-tail pressure · Q/E arrests unwanted roll"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -4821,10 +4827,10 @@ export default function SurfscapeApp() {
                 ) : (
                   <>
                     <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "apply roll torque" : stats.phase === "paddling" ? "bias paddle side / pivot" : "roll onto rail"}</span>
-                    <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard ? "shift nose / tail" : stats.phase === "riding" ? "climb / drop wave face" : "paddle / brake"}</span>
+                    <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : "paddle / brake"}</span>
                   </>
                 )}
-                <span><kbd>SPACE</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "hold to load · release trick" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                <span><kbd>SPACE</kbd> {standingOnBoard ? "return prone" : stats.phase === "riding" ? "compress · release at live lip" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
                 {stats.phase === "paddling" && <span><kbd>SHIFT</kbd> duck dive on lip cue</span>}
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{stats.phase === "riding" || stats.phase === "paddling" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
@@ -4867,7 +4873,7 @@ export default function SurfscapeApp() {
               )}
               {(stats.phase === "riding" || stats.phase === "paddling") ? (
                 <div
-                  className={`touch-balance ${motionBalanceActive ? "is-motion" : ""} ${stats.maneuverActive ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
+                  className={`touch-balance ${motionBalanceActive ? "is-motion" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
                   role={motionBalanceActive ? "meter" : "slider"}
                   aria-label={motionBalanceActive ? "Motion counterweight. Tilt against the measured board roll toward the glowing counter-torque target." : "Surf counterweight. Move the white thumb marker toward the glowing counter-torque target to arrest board roll."}
                   aria-valuemin={-100}
@@ -4889,7 +4895,7 @@ export default function SurfscapeApp() {
                     <em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `LOADED ${Math.round(stats.trickCharge * 100)}%` : motionBalanceActive ? "TILT TO COUNTER ROLL" : "COUNTER BOARD ROLL"}</em>
                     <strong>{stats.maneuverActive ? `${balanceAccuracy}%` : `${rollDegrees}°`}</strong>
                   </span>
-                  {stats.maneuverActive && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
+                  {showPhysicalLandingGuide && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}
                   <i
                     className={`touch-rail-pressure ${stats.railLoad < 0 ? "is-left" : "is-right"}`}
                     style={{ width: `${Math.min(48, Math.abs(stats.railLoad) * 48)}%` }}
