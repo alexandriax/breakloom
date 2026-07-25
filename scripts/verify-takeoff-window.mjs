@@ -33,7 +33,10 @@ import {
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
   resolveWaveTubePressure,
+  RIDE_RESULT_LINE_Z,
   rideRailInputFromPaddleSteer,
+  SHALLOW_DISMOUNT_Z,
+  shorelineRideOutProgress,
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
   surfboardWipeoutTriggered,
@@ -164,6 +167,20 @@ if (fiveMinutePaddleReserve < 40) {
 }
 if (rideRailInputFromPaddleSteer(1) !== -1 || rideRailInputFromPaddleSteer(-1) !== 1) {
   throw new Error("Ride rail conversion no longer preserves paddle steering intent");
+}
+const shallowMidpoint = (
+  RIDE_RESULT_LINE_Z + SHALLOW_DISMOUNT_Z
+) * .5;
+const shallowMidpointProgress = shorelineRideOutProgress(
+  shallowMidpoint,
+);
+if (
+  shorelineRideOutProgress(RIDE_RESULT_LINE_Z) !== 0
+  || !Number.isFinite(shallowMidpointProgress)
+  || Math.abs(shallowMidpointProgress - .5) > .000001
+  || shorelineRideOutProgress(SHALLOW_DISMOUNT_Z) !== 1
+) {
+  throw new Error("Shallow ride-out progress no longer follows coastal position");
 }
 
 let overtakenCapture = { overtaken: 0, ahead: 0 };

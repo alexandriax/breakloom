@@ -6,6 +6,8 @@ export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" |
 export type SessionGrade = "C" | "B" | "A" | "S";
 export type BoardType = "performance" | "fish" | "longboard";
 export const SHORELINE_REFERENCE_Z = 8;
+export const RIDE_RESULT_LINE_Z = SHORELINE_REFERENCE_Z - 9.2;
+export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z - 1.2;
 export const OUTER_PADDLE_LIMIT_Z = -900;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
 const WAVE_ENERGY_SEQUENCE = [
@@ -3035,6 +3037,19 @@ const TIDE_SHORELINE_TRAVEL = 3;
 
 export function shorelineShiftForTide(tide: number) {
   return Math.max(-1.5, Math.min(1.8, tide)) * TIDE_SHORELINE_TRAVEL;
+}
+
+/**
+ * Reports actual travel through the shallow exit corridor. The value depends
+ * only on coastal position, never on how long a score/result overlay has been
+ * visible.
+ */
+export function shorelineRideOutProgress(coastalZ: number) {
+  return smoothstep(
+    RIDE_RESULT_LINE_Z,
+    SHALLOW_DISMOUNT_Z,
+    coastalZ,
+  );
 }
 
 export type GameStats = {

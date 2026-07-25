@@ -2307,11 +2307,6 @@ input:focus-visible {
 .balance-instrument.is-landing { border-color: rgba(240, 187, 119, .38); box-shadow: 0 18px 50px rgba(0, 0, 0, .33), inset 0 -2px rgba(233, 169, 104, .72); }
 .balance-instrument.is-charging { border-color: rgba(105, 232, 209, .34); box-shadow: 0 18px 50px rgba(0, 0, 0, .33), inset 0 -2px rgba(83, 222, 197, .62); }
 .balance-instrument.is-exit { border-color: rgba(147, 242, 209, .38); box-shadow: 0 18px 50px rgba(0, 0, 0, .33), inset 0 -2px rgba(121, 232, 194, .7); }
-.balance-instrument.is-exit .balance-track,
-.balance-instrument.is-exit .stance-track,
-.balance-instrument.is-exit .face-track,
-.balance-instrument.is-exit .line-track,
-.balance-instrument.is-exit .grip-track { opacity: .28; filter: saturate(.55); }
 .balance-instrument.is-exit .balance-label em { border-color: rgba(147, 242, 209, .42); color: #baffdb; }
 .stance-track { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; margin-top: 10px; }
 .stance-track > span { color: rgba(255, 255, 255, 0.42); font-size: 5px; letter-spacing: 0.09em; }
