@@ -25,6 +25,7 @@ import {
   readSurfTrainingForces,
   recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
+  resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
   resolveSurfboardRailDemand,
@@ -2244,6 +2245,47 @@ if (
 ) {
   throw new Error("Tail-release yaw impulse no longer respects contact and board inertia");
 }
+const sharedBodyReleaseSample = {
+  compression: .92,
+  extensionSpeed: 1.6,
+  tailPressure: .62,
+  lipSupport: liveLipSupport,
+  speed: 12.4,
+  planing: .88,
+  waterContact: .94,
+  boardLength: 2.1,
+  railInput: .68,
+  facePosition: .54,
+  linePosition: .1,
+  boardTurn: 1.15,
+};
+const standingBodyRelease = resolveSurfboardBodyRelease(
+  sharedBodyReleaseSample,
+);
+const engagedBodyRelease = resolveSurfboardBodyRelease(
+  sharedBodyReleaseSample,
+);
+const flatBodyRelease = resolveSurfboardBodyRelease({
+  ...sharedBodyReleaseSample,
+  lipSupport: flatLipSupport,
+  facePosition: -.1,
+});
+const disconnectedBodyRelease = resolveSurfboardBodyRelease({
+  ...sharedBodyReleaseSample,
+  lipSupport: disconnectedLipSupport,
+  waterContact: 0,
+});
+if (
+  !standingBodyRelease
+  || JSON.stringify(standingBodyRelease) !== JSON.stringify(engagedBodyRelease)
+  || standingBodyRelease.family !== "air"
+  || Math.abs(standingBodyRelease.verticalImpulse - lipReleaseImpulse) > 1e-9
+  || Math.abs(standingBodyRelease.yawImpulse - performanceYawRelease) > 1e-9
+  || flatBodyRelease !== null
+  || disconnectedBodyRelease !== null
+) {
+  throw new Error("Physical board release is no longer identical across engagement classification or geometry-gated");
+}
 function simulateAirYaw(hz, seconds = 52 / 60) {
   let state = {
     velocityX: 0,
@@ -2869,6 +2911,9 @@ console.log(JSON.stringify({
     floater: observedFoamFloater.name,
     missedReconnection: missedLipReconnection,
     flatWaterRelease,
+    preEngagementRelease: standingBodyRelease.family,
+    engagedRelease: engagedBodyRelease.family,
+    sharedReleaseImpulse: standingBodyRelease.verticalImpulse,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,

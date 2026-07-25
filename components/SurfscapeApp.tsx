@@ -3328,8 +3328,8 @@ export default function SurfscapeApp() {
           : stats.trickCharge > .04
             ? {
                 cue: `BODY COMPRESSED ${Math.round(stats.trickCharge * 100)}%`,
-                detail: stats.waveEngagement > .08
-                  ? "Extend through live water; the board releases only if the tail still has geometric lip support."
+                detail: stats.lipLaunchSupport > .42
+                  ? `Live lip support ${Math.round(stats.lipLaunchSupport * 100)}%; extend now and let the measured face redirect the tail.`
                   : "No wave power is supporting the tail; extension changes body load but cannot create speed or lift.",
                 rotation: 90,
                 tone: "balance",
@@ -4780,7 +4780,7 @@ export default function SurfscapeApp() {
 
           <div className={`balance-instrument ${stats.phase === "riding" || stats.phase === "paddling" ? "is-active" : ""} ${stats.phase === "paddling" ? "is-prone" : ""} ${standingOnBoard ? "is-standing" : ""} ${ridingOut ? "is-exit" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
-              <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard && stats.trickCharge <= .04 ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "BODY COMPRESSION" : rollInstrumentTitle} <em className={showPhysicalLandingGuide ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard && stats.trickCharge <= .04 ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuverPhase === "air" ? "AIRBORNE" : "HULL RELEASED"} · ${Math.round(stats.maneuverProgress * 100)}% OBSERVED` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% CROUCH · ${stats.waveEngagement > .08 ? "EXTEND THROUGH LIVE WATER" : "NO LIP SUPPORT"}` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
+              <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard && stats.trickCharge <= .04 ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "BODY COMPRESSION" : rollInstrumentTitle} <em className={showPhysicalLandingGuide ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard && stats.trickCharge <= .04 ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuverPhase === "air" ? "AIRBORNE" : "HULL RELEASED"} · ${Math.round(stats.maneuverProgress * 100)}% OBSERVED` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% CROUCH · ${stats.lipLaunchSupport > .42 ? `LIP SUPPORT ${Math.round(stats.lipLaunchSupport * 100)}%` : "NO LIP SUPPORT"}` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
               <strong>{stats.maneuverActive ? `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%` : `${attitudeDegrees}°`}</strong>
             </div>
             <div className="balance-track">

@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurfboardBodyRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11303,6 +11303,7 @@ function Simulation({
     let balanceTarget = 0;
     let prompt = "Read the water";
     let waveQuality = 0;
+    let lipLaunchSupport = 0;
     let linePosition = 0;
     let lineControl = 1;
     let sectionPressure = 0;
@@ -11390,6 +11391,86 @@ function Simulation({
     const diveDown = state.sprint || state.gamepadSprint;
     const divePressed = diveDown && !diveLatch.current;
     diveLatch.current = diveDown;
+    const beginPhysicalBoardRelease = (sample: {
+      compression: number;
+      extensionSpeed: number;
+      tailPressure: number;
+      lipSupport: number;
+      speed: number;
+      planing: number;
+      waterContact: number;
+      railInput: number;
+      facePosition: number;
+      linePosition: number;
+      peakRailLoad: number;
+      nosePressureSeconds: number;
+    }) => {
+      const release = resolveSurfboardBodyRelease({
+        ...sample,
+        boardLength: boardSpec.length,
+        boardTurn: boardSpec.turn,
+      });
+      if (!release) return false;
+
+      stamina.current = Math.max(
+        0,
+        stamina.current
+          - (
+            3
+            + release.verticalImpulse * 2.4
+            + Math.abs(release.yawImpulse) * .48
+          ),
+      );
+      maneuver.current = release.name;
+      maneuverScore.current = 0;
+      maneuverQuality.current = 0;
+      lastManeuverAt.current = t;
+      const side = Math.sign(release.yawImpulse)
+        || Math.sign(sample.railInput)
+        || (balanceInput >= 0 ? 1 : -1);
+      const baseDuration = release.family === "air" ? 1.04 : .78;
+      activeManeuver.current = {
+        name: release.name,
+        family: release.family,
+        base: release.base,
+        side,
+        charge: release.charge,
+        launchVelocity: release.verticalImpulse,
+        launchYawRate: release.yawImpulse,
+        rotation: release.rotation,
+        startedAt: t,
+        duration: (baseDuration + release.charge * .12)
+          * SURF_PHYSICS_TUNING.maneuverTiming,
+        becameAirborne: false,
+        peakAirborne: 0,
+        previousHeading: rideHeading.current,
+        accumulatedYaw: 0,
+        startFacePosition: sample.facePosition,
+        startLinePosition: sample.linePosition,
+        peakYawRate: Math.abs(rideYawRate.current),
+        peakRailLoad: Math.abs(sample.peakRailLoad),
+        peakTailPressure: sample.tailPressure,
+        nosePressureSeconds: sample.nosePressureSeconds,
+        minimumWaterContact: sample.waterContact,
+      };
+      if (release.verticalImpulse > .05) {
+        waterRide.current.velocity = THREE.MathUtils.clamp(
+          waterRide.current.velocity + release.verticalImpulse,
+          -8.5,
+          8.5,
+        );
+        boardPitchRate.current -= release.verticalImpulse
+          * (release.family === "air" ? .12 : .045)
+          * (.65 + sample.tailPressure * .35);
+      }
+      if (Math.abs(release.yawImpulse) > .05) {
+        rideYawRate.current += release.yawImpulse;
+      }
+      motion.current.maneuver = .16;
+      motion.current.maneuverSide = side;
+      motion.current.impact = .35;
+      return true;
+    };
 
     if (!active) {
       landVelocity.current.x = THREE.MathUtils.damp(landVelocity.current.x, 0, 12, delta);
@@ -13270,15 +13351,62 @@ function Simulation({
             sectionPressure,
             standingReading.crossWaveLoad,
           );
-
-          const captureNow = waveEngagement.current >= .46
-            && standingWaveEngagement.pressure >= .16
-            && standingReading.headingAlignment > .08
-            && boardWaterContact > .34;
+          const standingFaceDownhillSlope = Math.max(
+            0,
+            -(
+              standingSurface.slopeX * standingWaveNormalX
+                + standingSurface.slopeZ * standingWaveNormalZ
+            ),
+          );
+          lipLaunchSupport = surfboardLipLaunchSupport({
+            facePosition: standingPhysicalFacePosition,
+            faceSlope: standingFaceDownhillSlope,
+            surfaceRise: standingRise,
+            waveContact: standingReading.waveContact,
+            planing: standingPlaning,
+            waterContact: boardWaterContact,
+          });
+          const standingTailPressure = Math.max(0, -stance.current);
+          const standingNosePressure = Math.max(0, stance.current);
+          const standingNoseRidePressure = settings.board === "longboard"
+            ? .42
+            : .62;
           const standingWipeout = surfboardWipeoutTriggered(
             unstableFor.current,
             rollCapsizeRisk,
             pitchOverRisk,
+          );
+          const standingReleased = Boolean(
+            !standingWipeout
+              && !activeManeuver.current
+              && actionReleased
+              && t - lastManeuverAt.current > .72
+              && stamina.current > 4
+              && standingBalanceError < standingFailThreshold * .94
+              && railSlip.current < .78
+              && beginPhysicalBoardRelease({
+                compression: releaseCompression,
+                extensionSpeed: releaseExtensionSpeed,
+                tailPressure: standingTailPressure,
+                lipSupport: lipLaunchSupport,
+                speed,
+                planing: standingPlaning,
+                waterContact: boardWaterContact,
+                railInput: standingRoll.effectiveRail,
+                facePosition: standingPhysicalFacePosition,
+                linePosition,
+                peakRailLoad: railLoad,
+                nosePressureSeconds: standingNosePressure
+                  > standingNoseRidePressure
+                  ? delta
+                  : 0,
+              }),
+          );
+          const captureNow = standingReleased || (
+            waveEngagement.current >= .46
+              && standingWaveEngagement.pressure >= .16
+              && standingReading.headingAlignment > .08
+              && boardWaterContact > .34
           );
           if (captureNow && !standingWipeout) {
             rideEngaged.current = true;
@@ -13306,7 +13434,9 @@ function Simulation({
               motion.current.impact,
               .34 + standingReading.capture * .34,
             );
-            prompt = "The face has the board — set a rail into the open shoulder";
+            prompt = standingReleased
+              ? `${activeManeuver.current?.name ?? "Board release"} — live lip geometry lifted the hull`
+              : "The face has the board — set a rail into the open shoulder";
           } else {
             if (standingWipeout) {
               phase.current = "wipeout";
@@ -14409,7 +14539,7 @@ function Simulation({
           }
         }
         if (!finishing) rideMaxCombo.current = Math.max(rideMaxCombo.current, combo.current);
-        const lipLaunchSupport = surfboardLipLaunchSupport({
+        lipLaunchSupport = surfboardLipLaunchSupport({
           facePosition: physicalFacePosition,
           faceSlope: faceDownhillSlope,
           surfaceRise: rideSurfaceRise,
@@ -14419,118 +14549,27 @@ function Simulation({
         });
         const wantsRelease = (!attempt || surfaceObservationActive)
           && actionReleased;
-        if (wantsRelease && t - lastManeuverAt.current > .72 && releaseCompression >= .055 && releaseExtensionSpeed > .15 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
-          const charge = THREE.MathUtils.clamp(releaseCompression, .06, 1);
-          const rail = Math.abs(physicalRailInput);
-          let name = "";
-          let family: ManeuverAttempt["family"] | null = null;
-          let base = 0;
-          let rotation = 0;
-          if (charge > .56 && releaseExtensionSpeed > .65 && tailPressure > .34 && rail > .38 && lipLaunchSupport > .64 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
-            family = "air";
-            name = "Aerial Release";
-            base = 520;
-          } else if (
-            lipLaunchSupport > .42
-            && physicalFacePosition > .2
-            && (tailPressure > .28 || rail > .28)
-          ) {
-            family = "lip";
-            name = "Lip Release";
-          }
-          if (family) {
-            const releaseVelocity = surfboardReleaseVerticalImpulse({
-              compression: charge,
-              extensionSpeed: releaseExtensionSpeed,
-              tailPressure,
-              lipSupport: lipLaunchSupport,
-              speed,
-              planing: boardPlaning,
-              waterContact: boardWaterContact,
-              boardLength: boardSpec.length,
-            }) * (family === "air" ? 1 : .48);
-            const releaseYawRate = family === "air"
-              ? surfboardReleaseYawImpulse({
-                  railInput: physicalRailInput,
-                  tailPressure,
-                  lipSupport: lipLaunchSupport,
-                  speed,
-                  verticalImpulse: releaseVelocity,
-                  charge,
-                  waterContact: boardWaterContact,
-                  boardLength: boardSpec.length,
-                  boardTurn: boardSpec.turn,
-                })
-              : 0;
-            if (family === "air") {
-              const ballisticFlightSeconds = THREE.MathUtils.clamp(
-                releaseVelocity * 2 / 9.81,
-                .28,
-                1.18,
-              );
-              rotation = Math.abs(releaseYawRate)
-                * ballisticFlightSeconds;
-            }
-            stamina.current = Math.max(
-              0,
-              stamina.current
-                - (
-                  3
-                  + releaseVelocity * 2.4
-                  + Math.abs(releaseYawRate) * .48
-                ),
-            );
-            maneuver.current = name;
-            maneuverScore.current = 0;
-            maneuverQuality.current = 0;
-            lastManeuverAt.current = t;
-            const side = Math.sign(releaseYawRate)
-              || Math.sign(physicalRailInput)
-              || (balanceInput >= 0 ? 1 : -1);
-            const baseDuration = family === "air"
-              ? 1.04
-              : .78;
-            activeManeuver.current = {
-              name,
-              family,
-              base,
-              side,
-              charge,
-              launchVelocity: releaseVelocity,
-              launchYawRate: releaseYawRate,
-              rotation,
-              startedAt: t,
-              duration: (baseDuration + charge * .12)
-                * SURF_PHYSICS_TUNING.maneuverTiming,
-              becameAirborne: false,
-              peakAirborne: 0,
-              previousHeading: rideHeading.current,
-              accumulatedYaw: 0,
-              startFacePosition: physicalFacePosition,
-              startLinePosition: linePosition,
-              peakYawRate: Math.abs(rideYawRate.current),
-              peakRailLoad: Math.abs(railLoad),
-              peakTailPressure: tailPressure,
-              nosePressureSeconds: nosePressure > noseRidePressure ? delta : 0,
-              minimumWaterContact: boardWaterContact,
-            };
-            if (releaseVelocity > .05) {
-              waterRide.current.velocity = THREE.MathUtils.clamp(
-                waterRide.current.velocity + releaseVelocity,
-                -8.5,
-                8.5,
-              );
-              boardPitchRate.current -= releaseVelocity
-                * (family === "air" ? .12 : .045)
-                * (.65 + tailPressure * .35);
-            }
-            if (Math.abs(releaseYawRate) > .05) {
-              rideYawRate.current += releaseYawRate;
-            }
-            motion.current.maneuver = .16;
-            motion.current.maneuverSide = side;
-            motion.current.impact = .35;
-          }
+        if (
+          wantsRelease
+          && t - lastManeuverAt.current > .72
+          && stamina.current > 4
+          && balanceError < failThreshold * .94
+          && railSlip.current < .78
+        ) {
+          beginPhysicalBoardRelease({
+            compression: releaseCompression,
+            extensionSpeed: releaseExtensionSpeed,
+            tailPressure,
+            lipSupport: lipLaunchSupport,
+            speed,
+            planing: boardPlaning,
+            waterContact: boardWaterContact,
+            railInput: physicalRailInput,
+            facePosition: physicalFacePosition,
+            linePosition,
+            peakRailLoad: railLoad,
+            nosePressureSeconds: nosePressure > noseRidePressure ? delta : 0,
+          });
         }
         prompt = rideCapture.current.overtaken > .44
           ? "The lip is overtaking you — point down the face and regain planing speed"
@@ -16185,6 +16224,9 @@ function Simulation({
           || phase.current === "paddling"
         )
           ? waveEngagement.current
+          : 0,
+        lipLaunchSupport: phase.current === "riding"
+          ? lipLaunchSupport
           : 0,
         boardAlignment,
         boardWaveAngle,

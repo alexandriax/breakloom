@@ -1558,6 +1558,100 @@ export function surfboardReleaseYawImpulse(
   );
 }
 
+export type SurfboardBodyReleaseSample = SurfboardReleaseSample & {
+  railInput: number;
+  facePosition: number;
+  linePosition: number;
+  boardTurn: number;
+};
+
+export type SurfboardBodyReleaseReading = {
+  family: "lip" | "air";
+  name: "Lip Release" | "Aerial Release";
+  base: number;
+  charge: number;
+  verticalImpulse: number;
+  yawImpulse: number;
+  rotation: number;
+};
+
+/**
+ * Resolves a surfer's leg extension against the board and live wave geometry.
+ * Engagement, scoring, game mode, and requested trick names do not participate:
+ * the same measured hull/body state produces the same release before and after
+ * the ride classifier considers the board fully captured.
+ */
+export function resolveSurfboardBodyRelease(
+  sample: SurfboardBodyReleaseSample,
+): SurfboardBodyReleaseReading | null {
+  const charge = clampValue(sample.compression, 0, 1);
+  const extensionSpeed = Math.max(0, sample.extensionSpeed);
+  const tailPressure = clampValue(sample.tailPressure, 0, 1);
+  const rail = Math.abs(clampValue(sample.railInput, -1, 1));
+  const lipSupport = clampValue(sample.lipSupport, 0, 1);
+  const speed = Math.max(0, sample.speed);
+  const facePosition = clampValue(sample.facePosition, -1, 1);
+  const linePosition = clampValue(sample.linePosition, -1, 1);
+  if (charge < .055 || extensionSpeed <= .15) return null;
+
+  let family: SurfboardBodyReleaseReading["family"] | null = null;
+  if (
+    charge > .56
+    && extensionSpeed > .65
+    && tailPressure > .34
+    && rail > .38
+    && lipSupport > .64
+    && speed > 10.2
+    && linePosition < .5
+    && facePosition > .38
+  ) {
+    family = "air";
+  } else if (
+    lipSupport > .42
+    && facePosition > .2
+    && (tailPressure > .28 || rail > .28)
+  ) {
+    family = "lip";
+  }
+  if (!family) return null;
+
+  const verticalImpulse = surfboardReleaseVerticalImpulse({
+    compression: charge,
+    extensionSpeed,
+    tailPressure,
+    lipSupport,
+    speed,
+    planing: sample.planing,
+    waterContact: sample.waterContact,
+    boardLength: sample.boardLength,
+  }) * (family === "air" ? 1 : .48);
+  const yawImpulse = family === "air"
+    ? surfboardReleaseYawImpulse({
+        railInput: sample.railInput,
+        tailPressure,
+        lipSupport,
+        speed,
+        verticalImpulse,
+        charge,
+        waterContact: sample.waterContact,
+        boardLength: sample.boardLength,
+        boardTurn: sample.boardTurn,
+      })
+    : 0;
+  const ballisticFlightSeconds = family === "air"
+    ? clampValue(verticalImpulse * 2 / 9.81, .28, 1.18)
+    : 0;
+  return {
+    family,
+    name: family === "air" ? "Aerial Release" : "Lip Release",
+    base: family === "air" ? 520 : 0,
+    charge,
+    verticalImpulse,
+    yawImpulse,
+    rotation: Math.abs(yawImpulse) * ballisticFlightSeconds,
+  };
+}
+
 /**
  * Integrates vertical board motion against a moving polygon surface. Buoyancy
  * and hydrodynamic damping exist only while the hull is immersed; otherwise
@@ -3778,6 +3872,7 @@ export type GameStats = {
   balanceTarget: number;
   waveEngaged: boolean;
   waveEngagement: number;
+  lipLaunchSupport: number;
   boardAlignment: number;
   boardWaveAngle: number;
   crossWaveLoad: number;
@@ -3901,6 +3996,7 @@ export const INITIAL_STATS: GameStats = {
   balanceTarget: 0,
   waveEngaged: false,
   waveEngagement: 0,
+  lipLaunchSupport: 0,
   boardAlignment: 1,
   boardWaveAngle: 0,
   crossWaveLoad: 0,
