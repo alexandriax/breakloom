@@ -24,6 +24,8 @@ export const SURF_PHYSICS_TUNING = {
   paddleRecovery: 1.55,
   paddleStrokeDrain: .19,
   shorebreakLead: 2.55,
+  duckDiveWarningLead: 2.35,
+  duckDiveCueLead: .78,
   duckDiveTimingWindow: .78,
   duckDiveThreshold: .34,
   takeoffWindPenalty: .055,
@@ -98,6 +100,31 @@ export type DuckDiveInitiationReading = {
   duration: number;
   effortCost: number;
 };
+
+export type DuckDiveCuePhase =
+  | "clear"
+  | "prepare"
+  | "dive";
+
+/**
+ * Separates the time needed to spot and square up to a wall from the shorter
+ * interval in which beginning the dive can put the board under the lip.
+ */
+export function readDuckDiveCue(
+  secondsToImpact: number,
+  shorebreakPower: number,
+): DuckDiveCuePhase {
+  const seconds = Math.max(0, secondsToImpact);
+  const power = clampValue(shorebreakPower, 0, 1);
+  if (
+    power < .08
+    || seconds <= .02
+    || seconds > SURF_PHYSICS_TUNING.duckDiveWarningLead
+  ) return "clear";
+  return seconds <= SURF_PHYSICS_TUNING.duckDiveCueLead
+    ? "dive"
+    : "prepare";
+}
 
 /**
  * Starts a duck dive whenever the surfer asks. This reports timing relative to
@@ -1052,7 +1079,7 @@ export const BOARD_SPECS: Record<BoardType, {
 };
 
 export const SURFSCAPE_RELEASE = {
-  version: 230,
+  version: 231,
   channel: "STABLE RC",
 } as const;
 
@@ -5537,6 +5564,7 @@ export type GameStats = {
   lineupDirectionZ: number;
   takeoffOpportunity: number;
   shorebreakIntensity: number;
+  shorebreakPower: number;
   shorebreakSeconds: number;
   duckDiveReady: boolean;
   duckDiveActive: boolean;
@@ -5679,6 +5707,7 @@ export const INITIAL_STATS: GameStats = {
   lineupDirectionZ: -1,
   takeoffOpportunity: 0,
   shorebreakIntensity: 0,
+  shorebreakPower: 0,
   shorebreakSeconds: 0,
   duckDiveReady: false,
   duckDiveActive: false,

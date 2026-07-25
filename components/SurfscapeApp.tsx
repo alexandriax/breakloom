@@ -55,6 +55,7 @@ import {
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
   readCrestTimingMechanics,
+  readDuckDiveCue,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
   reachedSurfTrainingStep,
@@ -3102,6 +3103,12 @@ export default function SurfscapeApp() {
   const duckDiveTurn = duckDiveHeadingDegrees >= 0
     ? "RIGHT"
     : "LEFT";
+  const duckDiveCuePhase = readDuckDiveCue(
+    stats.shorebreakSeconds,
+    stats.shorebreakPower,
+  );
+  const duckDiveApproaching =
+    duckDiveCuePhase === "prepare";
   const crestTiming = readCrestTimingMechanics(
     stats.crestOvertake,
     stats.crestAhead,
@@ -3189,6 +3196,7 @@ export default function SurfscapeApp() {
     && stats.phase === "paddling"
     && trainingStep <= 4
     && !takeoffCommitted
+    && duckDiveCuePhase === "clear"
     && !stats.duckDiveReady
     && !stats.duckDiveActive;
   const currentCompensationCue =
@@ -3267,6 +3275,20 @@ export default function SurfscapeApp() {
                 rotation: 90,
                 tone: "danger",
               }
+          : duckDiveApproaching
+            ? stats.duckDiveAlignment < .72
+              ? {
+                  cue: `WALL IN ${stats.shorebreakSeconds.toFixed(1)}S · TURN ${duckDiveTurn} ${Math.abs(duckDiveHeadingDegrees)}°`,
+                  detail: `Aim the nose directly into the wall now. Keep paddling; tap ${gamepadConnected ? "LB" : "SHIFT"} only when DIVE NOW appears so the board reaches depth at impact.`,
+                  rotation: duckDiveTurn === "RIGHT" ? 0 : 180,
+                  tone: "danger",
+                }
+              : {
+                  cue: `WALL IN ${stats.shorebreakSeconds.toFixed(1)}S · GET READY`,
+                  detail: `Hold W to carry speed into the wall. Tap ${gamepadConnected ? "LB" : "SHIFT"} when DIVE NOW appears; diving during this prepare phase brings the board back up too early.`,
+                  rotation: 90,
+                  tone: "ready",
+                }
           : stats.airborneHeight > .055
             ? {
                 cue: `PRONE HULL AIRBORNE ${airborneCentimeters} CM`,
@@ -3647,6 +3669,8 @@ export default function SurfscapeApp() {
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
             : stats.duckDiveReady
               ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · use the separate DIVE control and punch through` }
+            : duckDiveApproaching
+              ? { title: `WALL IN ${stats.shorebreakSeconds.toFixed(1)}S`, detail: "Aim into it · keep paddling · tap DIVE when the button flashes" }
             : stats.takeoffOpportunity > .02
             ? { title: `TAKEOFF SUPPORT ${takeoffOpportunityPercent}%`, detail: `${stats.takeoffNormalSpeed.toFixed(1)} / ${stats.takeoffMatchSpeed.toFixed(1)} m/s · ${takeoffSpeedMatchPercent}% speed match · paddle or POP` }
             : stats.inLineup && stats.takeoffAlignment < .3
@@ -4642,6 +4666,25 @@ export default function SurfscapeApp() {
               </div>
             </div>
           )}
+          {stats.phase === "paddling" && !stats.inLineup && (
+            <div
+              className={`paddle-out-controls ${duckDiveApproaching ? "is-warning" : ""} ${stats.duckDiveReady ? "is-dive-ready" : ""}`}
+              aria-label={`${gamepadConnected ? "Left stick" : "W"} paddles. ${gamepadConnected ? "Left stick" : "A and D"} aims the board. ${gamepadConnected ? "Left bumper" : "Shift"} duck dives.${stats.duckDiveReady ? " Dive now." : duckDiveApproaching ? ` Incoming wall in ${stats.shorebreakSeconds.toFixed(1)} seconds.` : ""}`}
+            >
+              <span><kbd>{gamepadConnected ? "LS" : "W"}</kbd><b>PADDLE</b></span>
+              <span><kbd>{gamepadConnected ? "LS" : "A/D"}</kbd><b>AIM NOSE</b></span>
+              <span className="is-dive-control">
+                <kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd>
+                <b>{stats.duckDiveActive
+                  ? "UNDER"
+                  : stats.duckDiveReady
+                    ? "DIVE NOW"
+                    : duckDiveApproaching
+                      ? `READY ${stats.shorebreakSeconds.toFixed(1)}S`
+                      : "DUCK DIVE"}</b>
+              </span>
+            </div>
+          )}
           {paddleTrainerActive && (
             <div
               className={`paddle-training-instrument is-${paddleTraining.pressureMode} has-direction-aim`}
@@ -5075,13 +5118,15 @@ export default function SurfscapeApp() {
             ) && (
               <button
                 type="button"
-                className={`dive-button ${stats.phase === "riding" ? "is-prone" : ""} ${stats.duckDiveReady ? "is-ready" : ""} ${stats.duckDiveActive || stats.proneTransition > .01 ? "is-active" : ""}`}
+                className={`dive-button ${stats.phase === "riding" ? "is-prone" : ""} ${duckDiveApproaching ? "is-warning" : ""} ${stats.duckDiveReady ? "is-ready" : ""} ${stats.duckDiveActive || stats.proneTransition > .01 ? "is-active" : ""}`}
                 aria-label={stats.phase === "riding"
                   ? stats.proneTransition > .01
                     ? `Returning prone. ${Math.round(stats.proneTransition * 100)} percent complete.`
                     : "Return prone now while preserving the board's momentum and water state."
                   : stats.duckDiveReady
                     ? `Duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds.`
+                    : duckDiveApproaching
+                      ? `Prepare to duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds. Aim the nose into the wall and tap when this control flashes.`
                     : "Duck dive now. Timing and board depth determine whether an incoming wall passes overhead."}
                 onPointerDown={(event) => beginControl(event, "sprint")}
                 onPointerUp={endMobileDive}
@@ -5101,6 +5146,8 @@ export default function SurfscapeApp() {
                     ? `${Math.round(stats.submersion * 100)}%`
                     : stats.duckDiveReady
                       ? `${stats.shorebreakSeconds.toFixed(1)}s`
+                      : duckDiveApproaching
+                        ? `READY ${stats.shorebreakSeconds.toFixed(1)}`
                       : "ANYTIME"}</small>
               </button>
             )}

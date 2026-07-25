@@ -33,6 +33,7 @@ import {
   popUpStaminaDelta,
   primaryWaveVelocityAt,
   readCrestTimingMechanics,
+  readDuckDiveCue,
   readPaddleTrainingMechanics,
   readSurfTrainingForces,
   reachedSurfTrainingStep,
@@ -4046,6 +4047,16 @@ const broadsideDiveInitiation = resolveDuckDiveInitiation({
   stamina: 88,
   noseIntoWallAlignment: 0,
 });
+const prepareDiveCue = readDuckDiveCue(.79, .82);
+const actionableDiveCue = readDuckDiveCue(.78, .82);
+const weakWallDiveCue = readDuckDiveCue(.6, .04);
+const cueReactionDive = resolveDuckDiveInitiation({
+  secondsToImpact: .58,
+  shorebreakPower: .82,
+  stamina: 88,
+  noseIntoWallAlignment: 1,
+});
+const cueReactionSubmersion = duckDiveSubmersionAt(.58);
 const lateDiveSubmersion = duckDiveSubmersionAt(.02);
 const timedDiveSubmersion = duckDiveSubmersionAt(.3);
 function shorebreakPass(hz, submersion, diveQuality) {
@@ -4112,6 +4123,11 @@ if (
   || broadsideDiveInitiation.timingQuality < .99
   || broadsideDiveInitiation.orientationQuality !== 0
   || broadsideDiveInitiation.quality !== 0
+  || prepareDiveCue !== "prepare"
+  || actionableDiveCue !== "dive"
+  || weakWallDiveCue !== "clear"
+  || cueReactionDive.quality < .6
+  || cueReactionSubmersion < .99
   || earlyDiveInitiation.timingQuality !== 0
   || flatWaterDiveInitiation.timingQuality !== 0
   || flatWaterDiveInitiation.effortCost <= 0
