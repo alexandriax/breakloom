@@ -11688,6 +11688,7 @@ function Simulation({
     let boardAlignment = 1;
     let boardWaveAngle = 0;
     let crossWaveLoad = 0;
+    let crossWaveSpeed = 0;
     let boardPlaning = 0;
     let railVerticalLoad = 0;
     let pearlingRisk = 0;
@@ -12419,6 +12420,8 @@ function Simulation({
           crestEnergy: proneCrest.energy,
           crestSurfable: proneCrest.surfable,
           boardStability: boardSpec.stability,
+          boardLength: boardSpec.length,
+          boardWidth: boardSpec.width,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
         });
         const proneRelativeForwardSpeed = (
@@ -12663,6 +12666,8 @@ function Simulation({
         hullPatchContact = proneWavePressure.patchContact;
         speed = paddleVelocity.current.length();
         crossWaveLoad = proneInteraction.crossWaveLoad * boardWaterContact;
+        crossWaveSpeed = proneInteraction.crossFlowSpeed
+          * boardWaterContact;
         popUpMeasuredLoad.current.crossWaveLoad = crossWaveLoad;
         popUpMeasuredLoad.current.balanceTarget = balanceTarget;
         proneHeaveIntegrated = true;
@@ -12993,6 +12998,8 @@ function Simulation({
             crestEnergy: proneCrest.energy,
             crestSurfable: proneCrest.surfable,
             boardStability: boardSpec.stability,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
             waveHeight: settings.waveHeight * tideResponse.faceScale,
           });
           const captureStrength = THREE.MathUtils.clamp(
@@ -13446,6 +13453,8 @@ function Simulation({
             crestEnergy: standingCrest.energy,
             crestSurfable: standingCrest.surfable,
             boardStability: boardSpec.stability,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
             waveHeight: settings.waveHeight * tideResponse.faceScale,
           });
           const standingCurrentAngle = THREE.MathUtils.degToRad(
@@ -13472,6 +13481,8 @@ function Simulation({
             boardWidth: boardSpec.width,
           }).planing;
           crossWaveLoad = standingReading.crossWaveLoad
+            * boardWaterContact;
+          crossWaveSpeed = standingReading.crossFlowSpeed
             * boardWaterContact;
           const standingWaveEngagement = advanceWaveEngagement(
             waveEngagement.current,
@@ -14433,6 +14444,8 @@ function Simulation({
           crestEnergy: rideCrest.energy,
           crestSurfable: rideCrest.surfable,
           boardStability: boardSpec.stability,
+          boardLength: boardSpec.length,
+          boardWidth: boardSpec.width,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
         });
         const planingForwardX = Math.sin(rideHeading.current);
@@ -14451,6 +14464,8 @@ function Simulation({
           boardWidth: boardSpec.width,
         }).planing;
         crossWaveLoad = rideInteraction.crossWaveLoad
+          * boardWaterContact;
+        crossWaveSpeed = rideInteraction.crossFlowSpeed
           * boardWaterContact;
         const rideNormalSpeed = rideVelocity.current.x * waveNormalX
           + rideVelocity.current.y * waveNormalZ;
@@ -17204,6 +17219,7 @@ function Simulation({
         boardAlignment,
         boardWaveAngle,
         crossWaveLoad,
+        crossWaveSpeed,
         planing: boardPlaning,
         rollAngle: physicalRollAngle,
         rollRate: physicalRollRate,

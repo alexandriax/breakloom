@@ -771,6 +771,17 @@ for (let index = 1; index < angleSweep.length; index += 1) {
     throw new Error(`Cross-wave load fell while rotating broadside: ${previous.degrees}° to ${current.degrees}°`);
   }
 }
+const diagonalCrossFlow = angleSweep.find(
+  ({ degrees }) => degrees === 45,
+).reading.crossFlowSpeed;
+if (
+  Math.abs(diagonalCrossFlow - (6 - 3.4) * Math.SQRT1_2) > .001
+  || broadsideBoard.crossFlowSpeed < 5.99
+) {
+  throw new Error(
+    "Cross-wave load no longer follows projected relative flow speed",
+  );
+}
 if (angleSweep.find(({ degrees }) => degrees === 75).reading.capture >= .2) {
   throw new Error("A board 75 degrees across the wave still acquired capture");
 }

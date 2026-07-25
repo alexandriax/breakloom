@@ -3359,7 +3359,7 @@ export default function SurfscapeApp() {
               : paddleTraining.pressureMode === "broadside"
                 ? {
                     cue: `SIDE LOAD · TURN ${headingTurn}`,
-                    detail: `${Math.abs(stats.wavePressureSideLoad).toFixed(1)} m/s² is acting across the rail. Point the nose before the face rolls the hull.`,
+                    detail: `${stats.crossWaveSpeed.toFixed(1)} m/s cross-flow is producing ${Math.abs(stats.wavePressureSideLoad).toFixed(1)} m/s² across the rail. Point the nose before the face rolls the hull.`,
                     rotation: headingTurn === "RIGHT" ? 0 : 180,
                     tone: "danger",
                   }
@@ -3535,7 +3535,7 @@ export default function SurfscapeApp() {
             : stats.crossWaveLoad > .48
               ? {
                   cue: `BOARD BROADSIDE · TURN ${headingTurn}`,
-                  detail: `${Math.round(stats.crossWaveLoad * 100)}% wall load · point the nose before the rail trips.`,
+                  detail: `${stats.crossWaveSpeed.toFixed(1)} m/s cross-flow · ${Math.round(stats.crossWaveLoad * 100)}% dynamic wall load · point the nose before the rail trips.`,
                   rotation: headingTurn === "RIGHT" ? 0 : 180,
                   tone: "danger",
                 }
@@ -3613,7 +3613,7 @@ export default function SurfscapeApp() {
           ? stats.hullPatchContact > .08
             ? { title: "LIVE HULL LOAD", detail: `${hullPatchContact}% nose/tail/rail face support · stay aligned` }
           : stats.crossWaveLoad > .28
-            ? { title: `TURN ${headingTurn}`, detail: `${Math.round(stats.crossWaveLoad * 100)}% cross-wave load · balance against the roll` }
+            ? { title: `TURN ${headingTurn}`, detail: `${stats.crossWaveSpeed.toFixed(1)} m/s cross-flow · ${Math.round(stats.crossWaveLoad * 100)}% load · balance against the roll` }
             : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: `${hullContactPercent}% flotation · ${hullPatchContact}% face support · balance or tap PRONE` }
         : stats.phase === "paddling"
           ? stats.airborneHeight > .055

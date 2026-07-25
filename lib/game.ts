@@ -1102,6 +1102,8 @@ export type BoardWaterSample = {
   crestEnergy: number;
   crestSurfable: boolean;
   boardStability: number;
+  boardLength?: number;
+  boardWidth?: number;
   waveHeight: number;
 };
 
@@ -1114,6 +1116,7 @@ export type BoardWaterReading = {
   headingError: number;
   broadside: number;
   crossWaveLoad: number;
+  crossFlowSpeed: number;
   crossWaveSide: number;
   relativeWaveSpeed: number;
   planing: number;
@@ -4923,7 +4926,14 @@ export function evaluateBoardWaterInteraction(
     waveNormalX * boardForwardZ - waveNormalZ * boardForwardX,
     headingAlignment,
   );
-  const broadside = 1 - Math.abs(headingAlignment);
+  // Project the wave-relative flow onto the board's lateral axis. Using the
+  // sine of the heading error preserves the useful flow seen on a diagonal
+  // takeoff; a linear 1 - |cos(theta)| model badly under-counts load until the
+  // board is nearly perpendicular to the wall.
+  const broadside = Math.sqrt(Math.max(
+    0,
+    1 - headingAlignment * headingAlignment,
+  ));
   const crossWaveSide = Math.sign(
     waveNormalX * boardForwardZ - waveNormalZ * boardForwardX,
   ) || 1;
@@ -4999,15 +5009,31 @@ export function evaluateBoardWaterInteraction(
     ),
   );
   const stability = Math.max(.62, Math.sqrt(Math.max(.35, sample.boardStability)));
+  const crossFlowSpeed = Math.max(0, relativeWaveSpeed) * broadside;
+  const planformScale = clampValue(
+    Math.sqrt(
+      (
+        Math.max(1.6, sample.boardLength ?? 2.5)
+          * Math.max(.24, sample.boardWidth ?? .34)
+      ) / (2.5 * .34),
+    ),
+    .82,
+    1.18,
+  );
+  // Hydrodynamic impact grows with dynamic pressure, so cross-flow speed is
+  // squared. Board planform changes the intercepted water area, while the
+  // board's stability remains the opposing righting term.
   const crossWaveLoad = Math.max(
     0,
     Math.min(
       1.5,
       waveContact
-        * broadside
-        * Math.max(0, relativeWaveSpeed)
-        / Math.max(1.2, waveSpeed * .54)
+        * Math.pow(
+          crossFlowSpeed / Math.max(1.2, waveSpeed * .54),
+          2,
+        )
         * (.78 + sample.crestEnergy * .42)
+        * planformScale
         / stability,
     ),
   );
@@ -5055,6 +5081,7 @@ export function evaluateBoardWaterInteraction(
     headingError,
     broadside,
     crossWaveLoad,
+    crossFlowSpeed,
     crossWaveSide,
     relativeWaveSpeed,
     planing,
@@ -5359,6 +5386,7 @@ export type GameStats = {
   boardAlignment: number;
   boardWaveAngle: number;
   crossWaveLoad: number;
+  crossWaveSpeed: number;
   planing: number;
   rollAngle: number;
   rollRate: number;
@@ -5497,6 +5525,7 @@ export const INITIAL_STATS: GameStats = {
   boardAlignment: 1,
   boardWaveAngle: 0,
   crossWaveLoad: 0,
+  crossWaveSpeed: 0,
   planing: 0,
   rollAngle: 0,
   rollRate: 0,
