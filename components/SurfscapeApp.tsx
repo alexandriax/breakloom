@@ -2993,6 +2993,7 @@ export default function SurfscapeApp() {
   const tailImmersionCentimeters = Math.round(stats.tailImmersion * 100);
   const airborneCentimeters = Math.round(stats.airborneHeight * 100);
   const hullContactPercent = Math.round(stats.boardWaterContact * 100);
+  const hullPatchContact = Math.round(stats.hullPatchContact * 100);
   const pitchHazardActive = stats.pitchOverRisk > .28 || stats.tailStall > .38;
   const attitudeDegrees = pitchHazardActive ? pitchDegrees : rollDegrees;
   const stanceLabel = stats.stance > 0.42 ? "NOSE PRESSURE" : stats.stance < -0.42 ? "TAIL PRESSURE" : "CENTERED";
@@ -3014,8 +3015,8 @@ export default function SurfscapeApp() {
       ? `WHITEWATER ${Math.round(stats.whitewaterPressure * 100)}%`
     : stats.barrelIntensity > .25
       ? `TUBE PRESSURE ${Math.round(stats.barrelIntensity * 100)}%`
-    : stats.waveEngagement > .08 && stats.waveEngagement < .72
-      ? `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`
+    : stats.hullPatchContact > .08
+      ? `FACE PATCH SUPPORT ${hullPatchContact}%`
     : Math.abs(stats.lateralForce) > .52
       ? `${stats.lateralForce > 0 ? "RIGHT" : "LEFT"} RAIL LOADED`
       : Math.max(0, stats.acceleration) > .48
@@ -3044,8 +3045,8 @@ export default function SurfscapeApp() {
       ? `${rollSide} RAIL ${rollDegrees}°`
       : stats.crossWaveLoad > .28
         ? `CROSS-WAVE LOAD ${Math.round(stats.crossWaveLoad * 100)}%`
-        : stats.waveEngagement > .08
-          ? `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`
+        : stats.hullPatchContact > .08
+          ? `FACE PATCH SUPPORT ${hullPatchContact}%`
         : stats.speed > .6
           ? "SURFACE GLIDE · NO CAPTURE"
           : "NO WAVE POWER";
@@ -3216,14 +3217,14 @@ export default function SurfscapeApp() {
             ? stats.takeoffCommitProgress < .2
               ? {
                   cue: "LAST STROKE · HANDS IN",
-                  detail: `${popUpBodyRate}% body drive · stamina and live board load set the movement rate; wave capture does not.`,
+                  detail: `${popUpBodyRate}% body drive · ${hullPatchContact}% four-patch water support · wave capture does not set either.`,
                   rotation: -90,
                   tone: "ready",
                 }
               : stats.takeoffCommitProgress < .5
                 ? {
                     cue: "HANDS UNDER RIBS",
-                    detail: `${popUpBodyRate}% body drive · keep the shoulders square while hand pressure loads the nose.`,
+                    detail: `${popUpBodyRate}% body drive · ${hullPatchContact}% nose/tail/rail support · keep the shoulders square.`,
                     rotation: 90,
                     tone: "balance",
                   }
@@ -3236,9 +3237,9 @@ export default function SurfscapeApp() {
                     }
                   : {
                       cue: "FRONT FOOT LANDING",
-                      detail: stats.waveCapture > .1
-                        ? `${popUpBodyRate}% body drive · ${Math.round(stats.waveCapture * 100)}% hull engagement · live pressure carries into standing.`
-                        : `${popUpBodyRate}% body drive · no hull engagement; ${popUpPressure} pressure carries into still-water balance.`,
+                      detail: hullPatchContact > 10
+                        ? `${popUpBodyRate}% body drive · ${hullPatchContact}% polygon support and ${popUpPressure} pressure carry into standing.`
+                        : `${popUpBodyRate}% body drive · no face-patch support; ${popUpPressure} pressure carries into still-water balance.`,
                       rotation: -90,
                       tone: "ready",
                     }
@@ -3273,7 +3274,7 @@ export default function SurfscapeApp() {
               : paddleTraining.pressureMode === "drive"
                 ? {
                     cue: `FACE DRIVE ${Math.max(0, stats.wavePressureDrive).toFixed(1)} M/S²`,
-                    detail: "The live face is accelerating the hull. Keep the nose reference aligned; SPACE only begins the body transition.",
+                    detail: `${hullPatchContact}% of the sampled nose/tail/rail face patches are supporting the hull. SPACE only moves the body.`,
                     rotation: -90,
                     tone: "ready",
                   }
@@ -3337,10 +3338,10 @@ export default function SurfscapeApp() {
                 rotation: 90,
                 tone: "balance",
               }
-          : stats.waveEngagement > .08
+          : stats.hullPatchContact > .08
             ? {
-                cue: `WAVE PRESSURE ${Math.round(stats.waveEngagement * 100)}%`,
-                detail: "Keep the nose aligned and maintain hull contact; pressure changes continuously with the board and face.",
+                cue: `FACE PATCH SUPPORT ${hullPatchContact}%`,
+                detail: "Nose, tail, and rail contact now set vertical lift directly. Keep the arrow aligned to turn that support into drive.",
                 rotation: -90,
                 tone: "ready",
               }
@@ -3517,8 +3518,8 @@ export default function SurfscapeApp() {
               detail: "Full board physics and controls remain active to the sand line",
             }
         : standingOnBoard
-          ? stats.waveEngagement > .08
-            ? { title: "LIVE HULL LOAD", detail: `${Math.round(stats.waveEngagement * 100)}% measured wave pressure · stay aligned` }
+          ? stats.hullPatchContact > .08
+            ? { title: "LIVE HULL LOAD", detail: `${hullPatchContact}% nose/tail/rail face support · stay aligned` }
           : stats.crossWaveLoad > .28
             ? { title: `TURN ${headingTurn}`, detail: `${Math.round(stats.crossWaveLoad * 100)}% cross-wave load · balance against the roll` }
             : { title: stats.speed > .6 ? "SURFACE GLIDE" : "STANDING STILL", detail: "Balance with the slider · tap PRONE to reposition" }
@@ -3538,14 +3539,14 @@ export default function SurfscapeApp() {
                     : stats.takeoffCommitProgress < .74
                       ? "REAR FOOT IN"
                       : "FRONT FOOT DOWN",
-                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body position · ${popUpBodyRate}% movement rate · ${popUpPressure} pressure · ${stats.waveCapture > .1 ? `${Math.round(stats.waveCapture * 100)}% hull engagement` : "no hull engagement"}`,
+                detail: `${Math.round(stats.takeoffCommitProgress * 100)}% body position · ${popUpBodyRate}% movement · ${hullPatchContact}% polygon contact · ${popUpPressure} pressure`,
               }
           : stats.duckDiveActive
             ? { title: "UNDER THE LIP", detail: `Drive through · ${Math.round(stats.duckDiveQuality * 100)}% timing` }
             : stats.duckDiveReady
               ? { title: "DIVE NOW", detail: `${stats.shorebreakSeconds.toFixed(1)}s · use the separate DIVE control and punch through` }
             : stats.catchReady
-            ? { title: "FACE SUPPORT", detail: `${Math.round(stats.takeoffQuality * 100)}% capture potential · keep paddling or tap POP` }
+            ? { title: "FACE SUPPORT", detail: `${hullPatchContact}% polygon contact · ${Math.round(stats.takeoffQuality * 100)}% capture potential · paddle or POP` }
             : stats.inLineup && stats.takeoffAlignment < .3
               ? { title: "TURN FOR SHORE", detail: "Left stick pivots the board into the wave" }
               : stats.inLineup
@@ -4676,8 +4677,8 @@ export default function SurfscapeApp() {
             {stats.phase === "paddling" && (
               <>
                 <div className={`takeoff-window ${stats.catchReady ? "is-open" : ""} ${stats.duckDiveReady ? "is-dive" : ""}`}>
-                  <span>{stats.duckDiveReady ? "LIP IMPACT" : "SURFACE SUPPORT"}</span>
-                  <i><b style={{ width: `${stats.duckDiveReady ? shorebreakTiming : Math.round(stats.takeoffQuality * 100)}%` }} /></i>
+                  <span>{stats.duckDiveReady ? "LIP IMPACT" : "FACE PATCH SUPPORT"}</span>
+                  <i><b style={{ width: `${stats.duckDiveReady ? shorebreakTiming : hullPatchContact}%` }} /></i>
                   <strong>{stats.duckDiveReady ? "DIVE" : "POP ANYTIME"}</strong>
                 </div>
                 <div className={`offshore-readout ${stats.inLineup ? "is-lineup" : ""}`}>

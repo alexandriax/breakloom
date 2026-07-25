@@ -1064,7 +1064,11 @@ if (
   || Math.abs(
     rightRailLoadedPressure.pressure - leftRailLoadedPressure.pressure
   ) > 1e-9
+  || symmetricFourPatchPressure.patchContact < .95
+  || rightRailLoadedPressure.patchContact
+    >= symmetricFourPatchPressure.patchContact
   || detachedFourPatchPressure.pressure !== 0
+  || detachedFourPatchPressure.patchContact !== 0
   || detachedFourPatchPressure.rightRailContact !== 0
   || detachedFourPatchPressure.leftRailContact !== 0
 ) {
@@ -1197,7 +1201,11 @@ if (Math.abs(flatDynamics.planing - resolveSurfboardPlaning({
 }).planing) > 1e-9) {
   throw new Error("Horizontal dynamics diverged from the shared planing resolver");
 }
-if (flatDynamics.velocityZ >= dynamicsState.velocityZ || flatDynamics.velocityZ < 1.9) {
+if (
+  flatDynamics.velocityZ >= dynamicsState.velocityZ
+  || flatDynamics.velocityZ < 1.9
+  || flatDynamics.wavePatchContact !== 0
+) {
   throw new Error(`Flat-water dynamics created thrust or excessive drag: ${JSON.stringify(flatDynamics)}`);
 }
 const downhillDynamics = advanceSurfboardDynamics(dynamicsState, {
@@ -1228,6 +1236,7 @@ if (
   Math.abs(airborneDynamics.gravityDrive) > .001
   || Math.abs(airborneDynamics.railLoad) > .001
   || Math.abs(airborneDynamics.wavePressure) > .001
+  || airborneDynamics.wavePatchContact !== 0
 ) {
   throw new Error("An airborne board is still receiving rail, slope, or wave pressure");
 }
@@ -2043,7 +2052,23 @@ const planingHeave = heaveForFrames(360, {
   speed: 6.2,
   waveContact: .82,
 });
-if (planingHeave.elevation <= staticHeave.elevation + .018) {
+const unsupportedPlaningHeave = heaveForFrames(360, {
+  ...heaveSample,
+  planing: .86,
+  speed: 6.2,
+  waveContact: detachedFourPatchPressure.patchContact,
+});
+const polygonSupportedHeave = heaveForFrames(360, {
+  ...heaveSample,
+  planing: .86,
+  speed: 6.2,
+  waveContact: symmetricFourPatchPressure.patchContact,
+});
+if (
+  planingHeave.elevation <= staticHeave.elevation + .018
+  || polygonSupportedHeave.elevation
+    <= unsupportedPlaningHeave.elevation + .008
+) {
   throw new Error("Planing pressure is not lifting the hull relative to static flotation");
 }
 const droppedSurface = advanceBoardHeaveDynamics(staticHeave, {
@@ -3382,6 +3407,12 @@ console.log(JSON.stringify({
     broadsideWipeoutRisk: broadsideBoard.wipeoutRisk,
     alignedWavePressure: alignedWavePressure.forwardDrive,
     broadsideWaveLoad: Math.abs(broadsideWavePressure.lateralLoad),
+    symmetricHullPatchContact:
+      symmetricFourPatchPressure.patchContact,
+    asymmetricHullPatchContact:
+      rightRailLoadedPressure.patchContact,
+    detachedHullPatchContact:
+      detachedFourPatchPressure.patchContact,
     proneCatchSpeed60Hz: pressureCatch60.velocityZ,
     proneCatchSpeed120Hz: pressureCatch120.velocityZ,
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
@@ -3567,6 +3598,8 @@ console.log(JSON.stringify({
   heaveDynamics: {
     staticElevation: staticHeave.elevation,
     planingElevation: planingHeave.elevation,
+    unsupportedPlaningElevation: unsupportedPlaningHeave.elevation,
+    polygonSupportedPlaningElevation: polygonSupportedHeave.elevation,
     droppedAirborneHeight: droppedSurface.airborneHeight,
     landingImpact: peakLandingImpact,
     risingAcceleration: risingSurface.verticalAcceleration,

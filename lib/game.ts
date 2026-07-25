@@ -1141,6 +1141,7 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   waveYawAcceleration: number;
   waveForwardDrive: number;
   waveLateralLoad: number;
+  wavePatchContact: number;
   pearlingRisk: number;
   tailStall: number;
 };
@@ -1180,6 +1181,7 @@ export type SurfboardWavePressureReading = {
   tailContact: number;
   rightRailContact: number;
   leftRailContact: number;
+  patchContact: number;
 };
 
 export type SurfboardRailGripSample = {
@@ -2811,6 +2813,7 @@ export function resolveSurfboardWavePressure(
       tailContact: 0,
       rightRailContact: 0,
       leftRailContact: 0,
+      patchContact: 0,
     };
   }
 
@@ -2874,8 +2877,8 @@ export function resolveSurfboardWavePressure(
     0,
     1,
   );
-  const pressure = distributedContact
-    * hullContact
+  const patchContact = distributedContact * hullContact;
+  const pressure = patchContact
     * waveDeficit
     * (.48 + Math.max(0, headingAlignment) * .72)
     * (.72 + Math.max(.25, sample.waveHeight) * .11)
@@ -2919,6 +2922,7 @@ export function resolveSurfboardWavePressure(
     tailContact,
     rightRailContact,
     leftRailContact,
+    patchContact,
   };
 }
 
@@ -3862,6 +3866,7 @@ export function advanceSurfboardDynamics(
     waveYawAcceleration: wavePressure.yawAcceleration,
     waveForwardDrive: wavePressure.forwardDrive,
     waveLateralLoad: wavePressure.lateralLoad,
+    wavePatchContact: wavePressure.patchContact,
     pearlingRisk,
     tailStall,
   };
@@ -4312,6 +4317,7 @@ export type GameStats = {
   paddleStroke: number;
   wavePressureDrive: number;
   wavePressureSideLoad: number;
+  hullPatchContact: number;
   balance: number;
   balanceIntent: number;
   balanceTarget: number;
@@ -4439,6 +4445,7 @@ export const INITIAL_STATS: GameStats = {
   paddleStroke: 0,
   wavePressureDrive: 0,
   wavePressureSideLoad: 0,
+  hullPatchContact: 0,
   balance: 0,
   balanceIntent: 0,
   balanceTarget: 0,

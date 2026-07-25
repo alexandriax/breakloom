@@ -11397,6 +11397,7 @@ function Simulation({
     let physicalPaddleStroke = 0;
     let wavePressureDrive = 0;
     let wavePressureSideLoad = 0;
+    let hullPatchContact = 0;
     let rideOutProgress = 0;
     let takeoffCommitProgress = 0;
     let popUpMovementAuthority = 0;
@@ -12315,6 +12316,7 @@ function Simulation({
         );
         wavePressureDrive = proneWavePressure.forwardDrive;
         wavePressureSideLoad = proneWavePressure.lateralLoad;
+        hullPatchContact = proneWavePressure.patchContact;
         speed = paddleVelocity.current.length();
         crossWaveLoad = proneInteraction.crossWaveLoad * boardWaterContact;
         popUpMeasuredLoad.current.crossWaveLoad = crossWaveLoad;
@@ -13460,6 +13462,7 @@ function Simulation({
           rideYawRate.current = standingDynamics.yawRate;
           wavePressureDrive = standingDynamics.waveForwardDrive;
           wavePressureSideLoad = standingDynamics.waveLateralLoad;
+          hullPatchContact = standingDynamics.wavePatchContact;
           pearlingRisk = Math.max(
             standingDynamics.pearlingRisk * .42,
             standingPitch.pearlingRisk,
@@ -14286,6 +14289,7 @@ function Simulation({
         rideYawRate.current = dynamics.yawRate;
         wavePressureDrive = dynamics.waveForwardDrive;
         wavePressureSideLoad = dynamics.waveLateralLoad;
+        hullPatchContact = dynamics.wavePatchContact;
         pearlingRisk = Math.max(
           dynamics.pearlingRisk * .42,
           ridePitch.pearlingRisk,
@@ -15336,13 +15340,10 @@ function Simulation({
             flotationOffset,
             planing: boardPlaning,
             speed,
-            waveContact: THREE.MathUtils.clamp(
-              .12 + waveEngagement.current * (
-                .13 + boardPlaning * .45 + boardCrestEnergy * .3
-              ),
-              .12,
-              1,
-            ),
+            // Vertical support comes from the same nose, tail, and rail
+            // polygon contacts that generated horizontal pressure this frame.
+            // The ride classifier cannot pin the hull to the face.
+            waveContact: hullPatchContact,
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
             boardStability: boardSpec.stability,
@@ -16503,6 +16504,7 @@ function Simulation({
         paddleStroke: physicalPaddleStroke,
         wavePressureDrive,
         wavePressureSideLoad,
+        hullPatchContact,
         balance: physicalBalance,
         balanceIntent: balanceInput,
         balanceTarget,
