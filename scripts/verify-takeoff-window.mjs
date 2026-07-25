@@ -4712,7 +4712,11 @@ if (
 ) {
   throw new Error("Surfer counterweight no longer has frame-stable body lag, fatigue, mirrored sway, and compression response");
 }
-function coupledStillWaterBalance(hz, followsTarget) {
+function coupledStillWaterBalance(
+  hz,
+  followsTarget,
+  riderHeight = .92,
+) {
   let roll = { rollAngle: .12, rollRate: 0 };
   let body = { counterweight: 0, velocity: 0 };
   let balanceTarget = 0;
@@ -4741,6 +4745,7 @@ function coupledStillWaterBalance(hz, followsTarget) {
       planing: 0,
       boardWidth: .34,
       boardStability: 1,
+      riderHeight,
       whitewater: 0,
       waterContact: 1,
     });
@@ -4750,12 +4755,19 @@ function coupledStillWaterBalance(hz, followsTarget) {
   return { roll, body, balanceTarget, maximumRoll };
 }
 const unattendedStillWaterBalance = coupledStillWaterBalance(60, false);
+const crouchedStillWaterBalance = coupledStillWaterBalance(
+  60,
+  false,
+  .4,
+);
 const correctedStillWaterBalance60 = coupledStillWaterBalance(60, true);
 const correctedStillWaterBalance120 = coupledStillWaterBalance(120, true);
 if (
   unattendedStillWaterBalance.maximumRoll < .45
+  || crouchedStillWaterBalance.maximumRoll
+    >= unattendedStillWaterBalance.maximumRoll * .9
   || correctedStillWaterBalance60.maximumRoll > .16
-  || Math.abs(correctedStillWaterBalance60.roll.rollAngle) > .05
+  || Math.abs(correctedStillWaterBalance60.roll.rollAngle) > .08
   || Math.abs(
     correctedStillWaterBalance60.roll.rollAngle
       - correctedStillWaterBalance120.roll.rollAngle
@@ -5109,6 +5121,8 @@ console.log(JSON.stringify({
     compressedBodyLag: compressedRolledCounterweight.counterweight,
     unattendedStillWaterRoll:
       unattendedStillWaterBalance.maximumRoll,
+    crouchedStillWaterRoll:
+      crouchedStillWaterBalance.maximumRoll,
     correctedStillWaterRoll60Hz:
       correctedStillWaterBalance60.maximumRoll,
     correctedStillWaterRoll120Hz:

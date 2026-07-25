@@ -3476,7 +3476,7 @@ export default function SurfscapeApp() {
               }
             : {
                 cue: stats.speed > .6 ? "BOARD GLIDING" : "STANDING · NO WAVE POWER",
-                detail: "Q/E requests a weight shift; the white body-COM marker moves with inertia toward the torque target. SPACE compresses without adding speed · SHIFT returns prone.",
+                detail: "Q/E shifts body weight toward the torque target. Hold SPACE to lower your center of mass and restore static righting margin without adding speed · SHIFT returns prone.",
                 rotation: 90,
                 tone: "balance",
               }

@@ -13740,6 +13740,9 @@ function Simulation({
               planing: standingPlaning,
               boardWidth: boardSpec.width,
               boardStability: boardSpec.stability,
+              riderHeight: (
+                .92 - bodyCompression.current * .52
+              ) * (1 - returnProne.bodyLowering * .76),
               whitewater: standingBrokenWater,
               waterContact: boardWaterContact,
             },
@@ -14611,6 +14614,9 @@ function Simulation({
             planing: ridePlaning,
             boardWidth: boardSpec.width,
             boardStability: boardSpec.stability,
+            riderHeight: (
+              .92 - bodyCompression.current * .52
+            ) * (1 - returnProne.bodyLowering * .76),
             whitewater: whitewaterPressure,
             waterContact: boardWaterContact,
           },

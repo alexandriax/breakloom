@@ -1321,6 +1321,7 @@ export type BoardRollSample = {
   planing: number;
   boardWidth: number;
   boardStability: number;
+  riderHeight?: number;
   whitewater: number;
   waterContact?: number;
 };
@@ -1350,6 +1351,7 @@ export function advanceBoardRollDynamics(
   const stability = Math.max(.55, sample.boardStability);
   const widthScale = Math.max(.7, sample.boardWidth / .34);
   const planing = Math.max(0, Math.min(1, sample.planing));
+  const riderHeight = clampValue(sample.riderHeight ?? 0, 0, 1);
   const whitewater = Math.max(0, Math.min(1, sample.whitewater));
   const waterContact = Math.max(
     0,
@@ -1382,10 +1384,17 @@ export function advanceBoardRollDynamics(
   const riderRailTorque = railInput
     * (1.12 + speedAuthority * 2.35)
     / inertia;
+  // A standing surfer raises the combined center of mass and reduces the
+  // static metacentric margin. Crouching restores part of that margin; once
+  // planing, rail lift supplies more of the righting force.
+  const riderHeightPenalty = 1 - riderHeight
+    * (.28 - planing * .12)
+    * waterContact;
   const rightingStiffness = (
     .92 * waterContact
       + planing * (3.1 + speedAuthority * 2.15)
-  ) * stability * Math.pow(widthScale, 1.18);
+  ) * stability * Math.pow(widthScale, 1.18)
+    * riderHeightPenalty;
   const rightingMoment = -state.rollAngle * rightingStiffness;
   const angularDamping = (
     .14 + waterContact * .91
@@ -1424,7 +1433,7 @@ export function advanceBoardRollDynamics(
       + Math.min(.12, (stability - .55) * .085)
       + planing * .13
       + Math.min(.08, (widthScale - .7) * .08)
-  );
+  ) - riderHeight * .035 * (1 - planing * .5);
   const edgeRisk = smoothstep(
     tipAngle * .62,
     tipAngle * 1.18,
