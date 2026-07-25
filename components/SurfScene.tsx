@@ -15188,11 +15188,14 @@ function Simulation({
           {
             deltaSeconds: delta,
             waterDrag: THREE.MathUtils.clamp(
-              .22 + turbulence * .64 + progress * .18,
+              .035 + bodyVertical.immersion
+                * (.24 + turbulence * .68),
               0,
               1,
             ),
-            washTorque: residualWash * 1.7,
+            washTorque: residualWash
+              * bodyVertical.immersion
+              * 1.7,
             washSide: wipeoutTumbleSide.current,
           },
         );

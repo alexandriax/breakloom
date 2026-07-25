@@ -1860,6 +1860,61 @@ if (
 ) {
   throw new Error("Separated body fall no longer follows gravity, moving water, buoyancy, or frame rate");
 }
+function simulateImmersionCoupledTumble(hz) {
+  let body = {
+    surfaceOffset: .98,
+    verticalVelocity: standingFailureRelease.verticalVelocity,
+  };
+  let tumble = broadsideTumble;
+  let entryRollRate = null;
+  let preEntryRollRate = broadsideTumble.rollRate;
+  for (let frame = 0; frame < Math.round(3.2 * hz); frame += 1) {
+    const elapsed = frame / hz;
+    const washEnvelope = elapsed < .18
+      ? elapsed / .18
+      : elapsed < 1.45
+        ? 1
+        : Math.max(0, 1 - (elapsed - 1.45) / .75);
+    const residualWash = washEnvelope;
+    body = advanceSeparatedSurferVerticalDynamics(body, {
+      deltaSeconds: 1 / hz,
+      downwardWaterVelocity: -2.35 * residualWash,
+    });
+    tumble = advanceSurfboardTumble(tumble, {
+      deltaSeconds: 1 / hz,
+      waterDrag: Math.min(
+        1,
+        .035 + body.immersion * (.24 + residualWash * .68),
+      ),
+      washTorque: residualWash * body.immersion * 1.7,
+      washSide: 1,
+    });
+    if (body.immersion < .08) {
+      preEntryRollRate = tumble.rollRate;
+    } else if (entryRollRate === null) {
+      entryRollRate = tumble.rollRate;
+    }
+  }
+  return {
+    ...tumble,
+    entryRollRate,
+    preEntryRollRate,
+    immersion: body.immersion,
+  };
+}
+const coupledTumble60 = simulateImmersionCoupledTumble(60);
+const coupledTumble120 = simulateImmersionCoupledTumble(120);
+if (
+  coupledTumble60.entryRollRate === null
+  || coupledTumble60.preEntryRollRate
+    < broadsideTumble.rollRate * .94
+  || coupledTumble60.rollRate
+    >= coupledTumble60.entryRollRate * .72
+  || Math.abs(coupledTumble60.roll - coupledTumble120.roll) > .035
+  || Math.abs(coupledTumble60.rollRate - coupledTumble120.rollRate) > .035
+) {
+  throw new Error("Tumble no longer conserves airborne rotation or damps from measured immersion");
+}
 const surfaceObservation = {
   durationSeconds: .82,
   startFacePosition: .02,
@@ -3730,6 +3785,8 @@ console.log(JSON.stringify({
     standingBodyFall60,
     standingBodyFall120,
     proneBodyFall,
+    coupledTumble60,
+    coupledTumble120,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,

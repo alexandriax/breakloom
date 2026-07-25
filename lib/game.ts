@@ -3304,7 +3304,7 @@ export function advanceSurfboardTumble(
     (
       state.rollRate
         + washSide * washTorque * (1.12 + waterDrag * .58) * delta
-    ) * Math.exp(-delta * (.38 + waterDrag * 1.42)),
+    ) * Math.exp(-delta * (.055 + waterDrag * 1.72)),
     -7.4,
     7.4,
   );
@@ -3315,14 +3315,14 @@ export function advanceSurfboardTumble(
           * washTorque
           * .16
           * delta
-    ) * Math.exp(-delta * (.46 + waterDrag * 1.62)),
+    ) * Math.exp(-delta * (.07 + waterDrag * 1.9)),
     -5.8,
     5.8,
   );
   const nextYawRate = clampValue(
     (
       state.yawRate + washSide * washTorque * .08 * delta
-    ) * Math.exp(-delta * (.32 + waterDrag * 1.24)),
+    ) * Math.exp(-delta * (.045 + waterDrag * 1.52)),
     -4.8,
     4.8,
   );
