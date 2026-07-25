@@ -3718,9 +3718,93 @@ export function resolveSeparatedSurfboardWaterForces(
   };
 }
 
+export type SeparatedSurferProjectedAreaSample = {
+  pitch: number;
+  yaw: number;
+  roll: number;
+  flowX: number;
+  flowY: number;
+  flowZ: number;
+};
+
+export type SeparatedSurferProjectedAreaReading = {
+  flowAlignment: number;
+  crossFlow: number;
+  projectedArea: number;
+  dragScale: number;
+  rotationalDragScale: number;
+};
+
+/**
+ * Approximates a separated surfer as a long capsule. Flow parallel to the
+ * head-to-foot axis sees little area; broadside flow sees the torso and limbs.
+ * The result is geometry-only and can be shared by linear and angular drag.
+ */
+export function resolveSeparatedSurferProjectedArea(
+  sample: SeparatedSurferProjectedAreaSample,
+): SeparatedSurferProjectedAreaReading {
+  const pitch = clampValue(sample.pitch, -Math.PI, Math.PI);
+  const yaw = clampValue(sample.yaw, -Math.PI, Math.PI);
+  const roll = clampValue(sample.roll, -Math.PI, Math.PI);
+  const flowMagnitude = Math.hypot(
+    sample.flowX,
+    sample.flowY,
+    sample.flowZ,
+  );
+  if (flowMagnitude <= 1e-6) {
+    return {
+      flowAlignment: 0,
+      crossFlow: 0,
+      projectedArea: .52,
+      dragScale: 1,
+      rotationalDragScale: 1,
+    };
+  }
+  const sinPitch = Math.sin(pitch);
+  const cosPitch = Math.cos(pitch);
+  const sinYaw = Math.sin(yaw);
+  const cosYaw = Math.cos(yaw);
+  const sinRoll = Math.sin(roll);
+  const cosRoll = Math.cos(roll);
+  const axisX =
+    cosRoll * sinYaw * sinPitch
+      - sinRoll * cosPitch;
+  const axisY =
+    sinRoll * sinYaw * sinPitch
+      + cosRoll * cosPitch;
+  const axisZ = cosYaw * sinPitch;
+  const flowX = sample.flowX / flowMagnitude;
+  const flowY = sample.flowY / flowMagnitude;
+  const flowZ = sample.flowZ / flowMagnitude;
+  const flowAlignment = clampValue(
+    Math.abs(
+      axisX * flowX
+        + axisY * flowY
+        + axisZ * flowZ
+    ),
+    0,
+    1,
+  );
+  const crossFlow = Math.sqrt(
+    Math.max(0, 1 - flowAlignment * flowAlignment),
+  );
+  const projectedArea = .16 + crossFlow * .58;
+  const dragScale = projectedArea / .52;
+
+  return {
+    flowAlignment,
+    crossFlow,
+    projectedArea,
+    dragScale,
+    rotationalDragScale:
+      .62 + crossFlow * .78,
+  };
+}
+
 export type SeparatedSurferVerticalSample = {
   deltaSeconds: number;
   downwardWaterVelocity: number;
+  projectedArea?: number;
 };
 
 export type SeparatedSurferVerticalReading =
@@ -3747,6 +3831,11 @@ export function advanceSeparatedSurferVerticalDynamics(
     -4.5,
     .5,
   );
+  const dragAreaScale = clampValue(
+    (sample.projectedArea ?? .52) / .52,
+    .3,
+    1.5,
+  );
   let remaining = clampValue(sample.deltaSeconds, 0, .05);
   const maxStep = 1 / 240;
 
@@ -3758,7 +3847,8 @@ export function advanceSeparatedSurferVerticalDynamics(
     const waterDragAcceleration = -waterRelativeVelocity
       * Math.abs(waterRelativeVelocity)
       * (1.05 + immersion * 1.85)
-      * immersion;
+      * immersion
+      * dragAreaScale;
     const gravityAcceleration = -9.81 * (1 - immersion);
     const buoyancyAcceleration = immersion
       * (1.15 + Math.max(0, -surfaceOffset) * .48);
@@ -3893,6 +3983,7 @@ export type SeparatedSurferHorizontalSample = {
   waterVelocityX: number;
   waterVelocityZ: number;
   turbulence: number;
+  projectedArea?: number;
 };
 
 /**
@@ -3911,6 +4002,11 @@ export function advanceSeparatedSurferHorizontalDynamics(
   const turbulence = clampValue(sample.turbulence, 0, 1);
   const waterVelocityX = clampValue(sample.waterVelocityX, -12, 12);
   const waterVelocityZ = clampValue(sample.waterVelocityZ, -12, 12);
+  const dragAreaScale = clampValue(
+    (sample.projectedArea ?? .52) / .52,
+    .3,
+    1.5,
+  );
   let remaining = clampValue(sample.deltaSeconds, 0, .05);
   const maxStep = 1 / 240;
 
@@ -3918,7 +4014,9 @@ export function advanceSeparatedSurferHorizontalDynamics(
     const step = Math.min(maxStep, remaining);
     const relativeX = velocityX - waterVelocityX;
     const relativeZ = velocityZ - waterVelocityZ;
-    const dragCoefficient = immersion * (.12 + turbulence * .22);
+    const dragCoefficient = immersion
+      * (.12 + turbulence * .22)
+      * dragAreaScale;
     let accelerationX = -relativeX
       * Math.abs(relativeX)
       * dragCoefficient

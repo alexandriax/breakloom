@@ -34,6 +34,7 @@ import {
   recognizeSurfboardSurfaceManeuver,
   resolveSeparatedSurfboardWaterForces,
   resolveSeparatedSurferBreakingWash,
+  resolveSeparatedSurferProjectedArea,
   resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
@@ -1919,6 +1920,68 @@ function simulateSeparatedHorizontal(hz) {
 }
 const separatedHorizontal60 = simulateSeparatedHorizontal(60);
 const separatedHorizontal120 = simulateSeparatedHorizontal(120);
+const uprightVerticalFlow =
+  resolveSeparatedSurferProjectedArea({
+    pitch: 0,
+    yaw: 0,
+    roll: 0,
+    flowX: 0,
+    flowY: 3,
+    flowZ: 0,
+  });
+const uprightHorizontalFlow =
+  resolveSeparatedSurferProjectedArea({
+    pitch: 0,
+    yaw: 0,
+    roll: 0,
+    flowX: 3,
+    flowY: 0,
+    flowZ: 0,
+  });
+const rolledHorizontalFlow =
+  resolveSeparatedSurferProjectedArea({
+    pitch: 0,
+    yaw: 0,
+    roll: Math.PI / 2,
+    flowX: -3,
+    flowY: 0,
+    flowZ: 0,
+  });
+function simulateProjectedBodyDrag(
+  hz,
+  projectedArea,
+) {
+  let body = { velocityX: 8, velocityZ: 0 };
+  for (let frame = 0; frame < hz; frame += 1) {
+    body = advanceSeparatedSurferHorizontalDynamics(
+      body,
+      {
+        deltaSeconds: 1 / hz,
+        immersion: 1,
+        waterVelocityX: 1,
+        waterVelocityZ: 0,
+        turbulence: .5,
+        projectedArea,
+      },
+    );
+  }
+  return body;
+}
+const streamlinedBodyDrag60 =
+  simulateProjectedBodyDrag(
+    60,
+    uprightVerticalFlow.projectedArea,
+  );
+const broadsideBodyDrag60 =
+  simulateProjectedBodyDrag(
+    60,
+    uprightHorizontalFlow.projectedArea,
+  );
+const broadsideBodyDrag120 =
+  simulateProjectedBodyDrag(
+    120,
+    uprightHorizontalFlow.projectedArea,
+  );
 const initialHorizontalSpeed = Math.hypot(8, 5);
 if (
   separatedHorizontal60.airborneVelocity === null
@@ -1938,8 +2001,20 @@ if (
     separatedHorizontal60.velocityZ
       - separatedHorizontal120.velocityZ,
   ) > .025
+  || uprightVerticalFlow.flowAlignment < .999
+  || uprightVerticalFlow.projectedArea > .17
+  || uprightHorizontalFlow.flowAlignment !== 0
+  || uprightHorizontalFlow.projectedArea < .73
+  || rolledHorizontalFlow.flowAlignment < .999
+  || rolledHorizontalFlow.projectedArea > .17
+  || broadsideBodyDrag60.velocityX
+    >= streamlinedBodyDrag60.velocityX - .8
+  || Math.abs(
+    broadsideBodyDrag60.velocityX
+      - broadsideBodyDrag120.velocityX,
+  ) > .025
 ) {
-  throw new Error("Separated horizontal motion no longer retains air momentum or couples to occupied water");
+  throw new Error("Separated body drag no longer retains air momentum or follows projected area in occupied water");
 }
 function simulateSettledRecovery(hz) {
   let readiness = 0;
@@ -4327,6 +4402,12 @@ console.log(JSON.stringify({
     coupledTumble120,
     separatedHorizontal60,
     separatedHorizontal120,
+    uprightVerticalFlow,
+    uprightHorizontalFlow,
+    rolledHorizontalFlow,
+    streamlinedBodyDrag60,
+    broadsideBodyDrag60,
+    broadsideBodyDrag120,
     settledRecovery60,
     settledRecovery120,
     submergedRecovery,
