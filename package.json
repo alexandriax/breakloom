@@ -1,6 +1,6 @@
 {
   "name": "surfscape",
-  "version": "0.233.0-rc.1",
+  "version": "0.234.0-rc.1",
   "private": true,
   "engines": {
     "node": ">=22.13.0"

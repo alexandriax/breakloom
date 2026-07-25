@@ -4803,6 +4803,32 @@ export default function SurfscapeApp() {
               </span>
             </div>
           )}
+          {guidanceEnabled
+            && stats.phase === "paddling"
+            && !stats.inLineup
+            && (duckDiveApproaching || stats.duckDiveReady) && (
+            <div
+              className={`duck-dive-alert ${stats.duckDiveReady ? "is-ready" : ""}`}
+              role="status"
+              aria-live="polite"
+            >
+              <kbd>{gamepadConnected ? "LB" : "SHIFT / DIVE"}</kbd>
+              <span>
+                <small>
+                  INCOMING WALL · {Math.max(0, stats.shorebreakSeconds).toFixed(1)}S
+                </small>
+                <strong>
+                  {stats.duckDiveAlignment < .72
+                    ? `AIM NOSE ${duckDiveTurn}`
+                    : stats.duckDiveActive
+                      ? "HOLD THROUGH THE CREST"
+                      : stats.duckDiveReady
+                        ? "PRESS NOW — DUCK DIVE"
+                        : "GET READY TO DUCK DIVE"}
+                </strong>
+              </span>
+            </div>
+          )}
           {guidanceEnabled && paddleTrainerActive && (
             <div
               className={`paddle-training-instrument is-${paddleTraining.pressureMode} has-direction-aim`}

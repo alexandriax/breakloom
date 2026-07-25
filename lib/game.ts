@@ -10,6 +10,9 @@ export const SHORELINE_REFERENCE_Z = 8;
 export const RIDE_RESULT_LINE_Z = SHORELINE_REFERENCE_Z - 9.2;
 export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z - 1.2;
 export const OUTER_PADDLE_LIMIT_Z = -900;
+// Baseline shoaling starts offshore so the takeoff zone leaves a usable face
+// between the crest and the inside. Set energy can move it farther outside.
+export const BREAK_OFFSHORE_OFFSET = 24;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
 const WAVE_ENERGY_SEQUENCE = [
   .12, .16, .2, .14, .18, .24,
@@ -1132,7 +1135,7 @@ export const BOARD_SPECS: Record<BoardType, {
 };
 
 export const SURFSCAPE_RELEASE = {
-  version: 233,
+  version: 234,
   channel: "STABLE RC",
 } as const;
 
@@ -4114,6 +4117,7 @@ export type SeparatedSurferVerticalSample = {
   deltaSeconds: number;
   downwardWaterVelocity: number;
   projectedArea?: number;
+  maximumDepth?: number;
 };
 
 export type SeparatedSurferVerticalReading =
@@ -4133,7 +4137,16 @@ export function advanceSeparatedSurferVerticalDynamics(
   state: SeparatedSurferVerticalState,
   sample: SeparatedSurferVerticalSample,
 ): SeparatedSurferVerticalReading {
-  let surfaceOffset = clampValue(state.surfaceOffset, -1.8, 1.35);
+  const maximumDepth = clampValue(
+    sample.maximumDepth ?? 1.8,
+    .3,
+    1.8,
+  );
+  let surfaceOffset = clampValue(
+    state.surfaceOffset,
+    -maximumDepth,
+    1.35,
+  );
   let verticalVelocity = clampValue(state.verticalVelocity, -9, 7);
   const downwardWaterVelocity = clampValue(
     sample.downwardWaterVelocity,
@@ -4171,9 +4184,15 @@ export function advanceSeparatedSurferVerticalDynamics(
     );
     surfaceOffset = clampValue(
       surfaceOffset + verticalVelocity * step,
-      -1.8,
+      -maximumDepth,
       1.35,
     );
+    if (
+      surfaceOffset <= -maximumDepth
+      && verticalVelocity < 0
+    ) {
+      verticalVelocity = 0;
+    }
     remaining -= step;
   }
 
@@ -4196,6 +4215,9 @@ export type SeparatedSurferRecoverySample = {
   washIntensity: number;
   leashTension: number;
   maximumHoldSeconds: number;
+  minimumImpactSeconds?: number;
+  settleSeconds?: number;
+  washReleaseThreshold?: number;
 };
 
 export type SeparatedSurferRecoveryReading = {
@@ -4235,20 +4257,35 @@ export function advanceSeparatedSurferRecovery(
   const leashTension = clampValue(sample.leashTension, 0, 1.5);
   const maximumHoldSeconds = clampValue(
     sample.maximumHoldSeconds,
-    5,
+    2.2,
     12,
+  );
+  const minimumImpactSeconds = clampValue(
+    sample.minimumImpactSeconds ?? .9,
+    .35,
+    .9,
+  );
+  const settleSeconds = clampValue(
+    sample.settleSeconds ?? .55,
+    .25,
+    .55,
+  );
+  const washReleaseThreshold = clampValue(
+    sample.washReleaseThreshold ?? .18,
+    .18,
+    .45,
   );
   const safetyRelease = elapsed >= maximumHoldSeconds;
   let limitingFactor:
     SeparatedSurferRecoveryReading["limitingFactor"] = "settled";
 
-  if (elapsed < .9) {
+  if (elapsed < minimumImpactSeconds) {
     limitingFactor = "impact";
   } else if (surfaceOffset < -.1) {
     limitingFactor = "submerged";
   } else if (verticalSpeed > 1.05) {
     limitingFactor = "rising";
-  } else if (washIntensity > .18) {
+  } else if (washIntensity > washReleaseThreshold) {
     limitingFactor = "wash";
   } else if (angularSpeed > 2.2) {
     limitingFactor = "tumble";
@@ -4263,7 +4300,7 @@ export function advanceSeparatedSurferRecovery(
     currentReadiness
       + delta * (
         physicallySettled
-          ? 1 / .55
+          ? 1 / settleSeconds
           : -1 / .2
       ),
     0,
@@ -4846,16 +4883,25 @@ export function advanceSurfboardDynamics(
   }).planing;
 
   const speedAuthority = smoothstep(
-    .42,
-    Math.max(.43, 4.7 / Math.sqrt(turn)),
+    .28,
+    Math.max(.72, 3 / Math.sqrt(turn)),
     Math.abs(initialForwardSpeed),
+  );
+  const faceSlope = clampValue(
+    Math.hypot(
+      sample.surfaceSlopeX,
+      sample.surfaceSlopeZ,
+    ) / .32,
+    0,
+    1,
   );
   const lengthYawInertia = Math.pow(safeLength / 2.5, 1.28);
   const targetYawRate = railInput
     * turn
     * speedAuthority
-    * (.32 + Math.abs(initialForwardSpeed) * .055)
+    * (.46 + Math.abs(initialForwardSpeed) * .07)
     * (.34 + grip * .66)
+    * (1 + faceSlope * .45)
     * (1 + tailPressure * .34 - nosePressure * .12)
     * hullContact
     / lengthYawInertia;
@@ -4959,8 +5005,13 @@ export function advanceSurfboardDynamics(
     boardWidth: safeWidth,
     boardTurn: turn,
   });
+  const activeRailPressureResistance =
+    1 - Math.abs(railInput) * grip * planing * .45;
   yawRate = clampValue(
-    yawRate + wavePressure.yawAcceleration * delta,
+    yawRate
+      + wavePressure.yawAcceleration
+        * activeRailPressureResistance
+        * delta,
     -4.8,
     4.8,
   );
@@ -6013,6 +6064,7 @@ function breakingGeometryWithTide(
   const breakingCoordinate = coastalZ
     + x * peel * .16
     + section
+    + BREAK_OFFSHORE_OFFSET
     - tideResponse.breakShift;
   const crossShoreGradientX = peel * .16
     + Math.cos(x * .07 + elapsed * .05)

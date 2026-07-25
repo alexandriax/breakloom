@@ -21,6 +21,7 @@ import {
   advanceRideCaptureState,
   advanceWaveEngagement,
   boardRailContactFrame,
+  BREAK_OFFSHORE_OFFSET,
   duckDiveSubmersionAt,
   deepWaterWavelengthForPeriod,
   evaluateBoardWaterInteraction,
@@ -284,6 +285,17 @@ const centerBreakCoordinate = waveBreakingCoordinateAt(
   settings,
   character,
 );
+const nominalRideableFaceLength =
+  RIDE_RESULT_LINE_Z
+    - (-18 - BREAK_OFFSHORE_OFFSET);
+if (
+  BREAK_OFFSHORE_OFFSET < 20
+  || nominalRideableFaceLength < 38
+) {
+  throw new Error(
+    "Baseline break geometry no longer leaves a full offshore face for the ride",
+  );
+}
 const peelingBreakCoordinate = waveBreakingCoordinateAt(
   80,
   -18,
@@ -1747,6 +1759,40 @@ if (performanceTurn.heading < .3) {
 if (longboardTurn.heading >= performanceTurn.heading * .78) {
   throw new Error("Longboard yaw inertia no longer distinguishes it from a shortboard");
 }
+function simulateTakeoffBottomTurn(railInput) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 2.4,
+    heading: 0,
+    yawRate: 0,
+  };
+  let x = 0;
+  let z = 0;
+  for (let frame = 0; frame < 90; frame += 1) {
+    state = advanceSurfboardDynamics(state, {
+      ...dynamicsSample,
+      railInput,
+      stance: -.24,
+      surfaceSlopeZ: -.18,
+      waveContact: .82,
+    });
+    x += state.velocityX / 60;
+    z += state.velocityZ / 60;
+  }
+  return { ...state, x, z };
+}
+const lowSpeedBottomTurn = simulateTakeoffBottomTurn(1);
+const lowSpeedStraightDrop =
+  simulateTakeoffBottomTurn(0);
+if (
+  lowSpeedBottomTurn.heading < .55
+  || lowSpeedBottomTurn.x
+    <= lowSpeedStraightDrop.x + .6
+) {
+  throw new Error(
+    `A takeoff-speed rail cannot redirect the board down the line: ${JSON.stringify(lowSpeedBottomTurn)}`,
+  );
+}
 const currentDrift = advanceSurfboardDynamics(
   { velocityX: 0, velocityZ: 0, heading: 0, yawRate: 0 },
   {
@@ -2483,6 +2529,49 @@ function simulateSettledRecovery(hz) {
 }
 const settledRecovery60 = simulateSettledRecovery(60);
 const settledRecovery120 = simulateSettledRecovery(120);
+let shallowBody = {
+  surfaceOffset: .18,
+  verticalVelocity: -3.2,
+};
+let shallowMinimumOffset = shallowBody.surfaceOffset;
+for (let frame = 0; frame < 90; frame += 1) {
+  shallowBody = advanceSeparatedSurferVerticalDynamics(
+    shallowBody,
+    {
+      deltaSeconds: 1 / 60,
+      downwardWaterVelocity: -3.4,
+      maximumDepth: .38,
+    },
+  );
+  shallowMinimumOffset = Math.min(
+    shallowMinimumOffset,
+    shallowBody.surfaceOffset,
+  );
+}
+const shallowSafetyRecovery =
+  advanceSeparatedSurferRecovery(0, {
+    deltaSeconds: 1 / 60,
+    elapsedSeconds: 2.4,
+    surfaceOffset: -.38,
+    verticalVelocity: 0,
+    waterRelativeSpeed: 2,
+    angularSpeed: 3,
+    washIntensity: .8,
+    leashTension: .8,
+    maximumHoldSeconds: 2.4,
+    minimumImpactSeconds: .45,
+    settleSeconds: .3,
+    washReleaseThreshold: .38,
+  });
+if (
+  shallowMinimumOffset < -.381
+  || !shallowSafetyRecovery.ready
+  || !shallowSafetyRecovery.safetyRelease
+) {
+  throw new Error(
+    "Nearshore wipeout recovery can still simulate deep-water hold-down depth or duration",
+  );
+}
 const submergedRecovery = advanceSeparatedSurferRecovery(.9, {
   deltaSeconds: .05,
   elapsedSeconds: 4,
