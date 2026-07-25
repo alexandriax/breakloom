@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurferCompression, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, surfboardWipeoutTriggered, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -453,6 +453,8 @@ type ReplayRestoreState = {
   finishAt: number;
   takeoffCommitAt: number;
   popUpStartStamina: number;
+  bodyCompression: number;
+  bodyCompressionVelocity: number;
   motion: MotionState;
   waterElevation: number;
   waterVelocity: number;
@@ -10749,7 +10751,8 @@ function Simulation({
   const maneuverId = useRef(0);
   const maneuverCount = useRef(0);
   const activeManeuver = useRef<ManeuverAttempt | null>(null);
-  const trickCharge = useRef(0);
+  const bodyCompression = useRef(0);
+  const bodyCompressionVelocity = useRef(0);
   const lastManeuverAt = useRef(-10);
   const lastSurfaceObservationAt = useRef(-10);
   const catchQuality = useRef(0.5);
@@ -10998,6 +11001,8 @@ function Simulation({
         finishAt.current = restore.finishAt >= 0 ? restore.finishAt + frozenDuration : restore.finishAt;
         takeoffCommitAt.current = restore.takeoffCommitAt >= 0 ? restore.takeoffCommitAt + frozenDuration : restore.takeoffCommitAt;
         popUpStartStamina.current = restore.popUpStartStamina;
+        bodyCompression.current = restore.bodyCompression;
+        bodyCompressionVelocity.current = restore.bodyCompressionVelocity;
         motion.current = { ...restore.motion };
         waterRide.current.elevation = restore.waterElevation;
         waterRide.current.velocity = restore.waterVelocity;
@@ -11087,6 +11092,8 @@ function Simulation({
           finishAt: finishAt.current,
           takeoffCommitAt: takeoffCommitAt.current,
           popUpStartStamina: popUpStartStamina.current,
+          bodyCompression: bodyCompression.current,
+          bodyCompressionVelocity: bodyCompressionVelocity.current,
           motion: { ...motion.current },
           waterElevation: waterRide.current.elevation,
           waterVelocity: waterRide.current.velocity,
@@ -11301,6 +11308,9 @@ function Simulation({
     let barrelIntensity = 0;
     let railLoad = 0;
     let compression = 0;
+    let releaseCompression = bodyCompression.current;
+    let bodyExtensionSpeed = 0;
+    let releaseExtensionSpeed = 0;
     let catchReady = false;
     let inLineup = false;
     let shorebreakIntensity = 0;
@@ -13061,6 +13071,23 @@ function Simulation({
             0,
             1,
           );
+          const standingCompression = advanceSurferCompression(
+            {
+              compression: bodyCompression.current,
+              velocity: bodyCompressionVelocity.current,
+            },
+            {
+              deltaSeconds: delta,
+              crouchIntent: 0,
+              stamina: stamina.current,
+            },
+          );
+          bodyCompression.current = standingCompression.compression;
+          bodyCompressionVelocity.current = standingCompression.velocity;
+          compression = Math.max(
+            compression,
+            standingCompression.compression,
+          );
           waveQuality = standingReading.waveContact * .36;
           sectionPressure = Math.max(
             sectionPressure,
@@ -13848,19 +13875,37 @@ function Simulation({
         );
         const surfaceObservationInterrupted = surfaceObservationActive
           && (state.action || actionReleased);
-        const loadAvailable = (!attempt || surfaceObservationActive)
-          && t - lastManeuverAt.current > .72
-          && stamina.current > 5
-          && railSlip.current < .8;
-        if (loadAvailable && state.action) {
-          if (actionPressed) trickCharge.current = Math.max(trickCharge.current, .08);
-          const loadRate = SURF_PHYSICS_TUNING.maneuverLoadRate;
-          trickCharge.current = Math.min(1, trickCharge.current + delta * loadRate);
-          stamina.current = Math.max(0, stamina.current - delta * (2.2 + trickCharge.current * 3.2));
-          compression = Math.max(compression, .28 + trickCharge.current * .72);
+        const compressionBeforeStep = bodyCompression.current;
+        const compressionReading = advanceSurferCompression(
+          {
+            compression: bodyCompression.current,
+            velocity: bodyCompressionVelocity.current,
+          },
+          {
+            deltaSeconds: delta,
+            crouchIntent: state.action ? 1 : 0,
+            stamina: stamina.current,
+          },
+        );
+        bodyCompression.current = compressionReading.compression;
+        bodyCompressionVelocity.current = compressionReading.velocity;
+        releaseCompression = actionReleased
+          ? Math.max(compressionBeforeStep, compressionReading.compression)
+          : compressionReading.compression;
+        bodyExtensionSpeed = compressionReading.extensionSpeed;
+        releaseExtensionSpeed = actionReleased
+          ? compressionReading.extensionPotentialSpeed
+          : compressionReading.extensionSpeed;
+        compression = Math.max(compression, compressionReading.compression);
+        if (compressionReading.muscularEffort > .02) {
+          stamina.current = Math.max(
+            0,
+            stamina.current
+              - delta * (.25 + compressionReading.muscularEffort * 1.6),
+          );
+        }
+        if (state.action && (!attempt || surfaceObservationActive)) {
           maneuverPhase = "load";
-        } else if ((!attempt || surfaceObservationActive) && !state.action && !actionReleased) {
-          trickCharge.current = THREE.MathUtils.damp(trickCharge.current, 0, 8, delta);
         }
         if (attempt) {
           const attemptElapsed = t - attempt.startedAt;
@@ -14191,7 +14236,6 @@ function Simulation({
               lastSurfaceObservationAt.current = t;
             }
           } else {
-            trickCharge.current = 0;
             lastManeuverAt.current = t;
           }
         }
@@ -14206,14 +14250,14 @@ function Simulation({
         });
         const wantsRelease = (!attempt || surfaceObservationActive)
           && actionReleased;
-        if (wantsRelease && t - lastManeuverAt.current > .72 && trickCharge.current >= .055 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
-          const charge = THREE.MathUtils.clamp(trickCharge.current, .06, 1);
+        if (wantsRelease && t - lastManeuverAt.current > .72 && releaseCompression >= .055 && releaseExtensionSpeed > .15 && stamina.current > 4 && balanceError < failThreshold * .94 && railSlip.current < .78) {
+          const charge = THREE.MathUtils.clamp(releaseCompression, .06, 1);
           const rail = Math.abs(physicalRailInput);
           let name = "";
           let family: ManeuverAttempt["family"] | null = null;
           let base = 0;
           let rotation = 0;
-          if (charge > .82 && tailPressure > .34 && rail > .38 && lipLaunchSupport > .64 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
+          if (charge > .56 && releaseExtensionSpeed > .65 && tailPressure > .34 && rail > .38 && lipLaunchSupport > .64 && speed > 10.2 && linePosition < .5 && physicalFacePosition > .38) {
             family = "air";
             name = "Aerial Release";
             base = 520;
@@ -14228,6 +14272,7 @@ function Simulation({
           if (family) {
             const releaseVelocity = surfboardReleaseVerticalImpulse({
               compression: charge,
+              extensionSpeed: releaseExtensionSpeed,
               tailPressure,
               lipSupport: lipLaunchSupport,
               speed,
@@ -14257,7 +14302,15 @@ function Simulation({
               rotation = Math.abs(releaseYawRate)
                 * ballisticFlightSeconds;
             }
-            stamina.current = Math.max(0, stamina.current - (5 + charge * 8 + (family === "air" ? 5 : 0)));
+            stamina.current = Math.max(
+              0,
+              stamina.current
+                - (
+                  3
+                  + releaseVelocity * 2.4
+                  + Math.abs(releaseYawRate) * .48
+                ),
+            );
             maneuver.current = name;
             maneuverScore.current = 0;
             maneuverQuality.current = 0;
@@ -14305,15 +14358,10 @@ function Simulation({
             if (Math.abs(releaseYawRate) > .05) {
               rideYawRate.current += releaseYawRate;
             }
-            trickCharge.current = 0;
             motion.current.maneuver = .16;
             motion.current.maneuverSide = side;
             motion.current.impact = .35;
-          } else {
-            trickCharge.current = 0;
           }
-        } else if (wantsRelease) {
-          trickCharge.current = 0;
         }
         prompt = rideCapture.current.overtaken > .44
           ? "The lip is overtaking you — point down the face and regain planing speed"
@@ -14324,8 +14372,10 @@ function Simulation({
               || activeManeuver.current.family === "carve"
               ? "Reading the board's rail, heading, and path across the face"
               : `${activeManeuver.current.name} · ${maneuverPhase === "air" ? "spot the water and counter the board's rotation" : "follow the board back into the face"}`
-          : trickCharge.current > .05
-            ? `Body compressed ${Math.round(trickCharge.current * 100)}% · release against a live lip to redirect momentum`
+          : bodyCompression.current > .05
+            ? state.action
+              ? `Crouched ${Math.round(bodyCompression.current * 100)}% · extend as the loaded tail reaches a live lip`
+              : `Body extending at ${bodyExtensionSpeed.toFixed(1)} body-lengths/s · the water decides whether the board releases`
           : actionReleased && railSlip.current >= .78
           ? "Fins released — reconnect the rail before the next move"
           : pitchOverRisk > .48
@@ -14369,7 +14419,6 @@ function Simulation({
                   : "W nose pressure · S tail pressure · A/D rolls onto the rail";
         if (wavePressureReleased && !activeManeuver.current) {
           rideEngaged.current = false;
-          trickCharge.current = 0;
           barrelIntensity = 0;
           if (rideDistance.current >= 8 && rideResult.current === "") {
             rideScore.current = Math.max(
@@ -14719,7 +14768,8 @@ function Simulation({
         paddleVelocity.current.set(0, 0);
         rideEngaged.current = false;
         stance.current = 0;
-        trickCharge.current = 0;
+        bodyCompression.current = 0;
+        bodyCompressionVelocity.current = 0;
         finishAt.current = -1;
         rideOutProgress = 0;
       }
@@ -15008,7 +15058,10 @@ function Simulation({
       phase.current === "riding" ? 9.5 : 5.5,
       delta,
     );
-    if (phase.current !== "riding") trickCharge.current = 0;
+    if (phase.current !== "riding") {
+      bodyCompression.current = 0;
+      bodyCompressionVelocity.current = 0;
+    }
     motion.current.run = THREE.MathUtils.damp(motion.current.run, runBlend, 8, delta);
     const waterDepthTarget = phase.current === "shore" || phase.current === "driving"
       ? 0
@@ -15073,7 +15126,12 @@ function Simulation({
     );
     motion.current.setEnergy = setState.energy;
     motion.current.maneuver = Math.max(0, motion.current.maneuver - delta * 1.72);
-    motion.current.trickCharge = THREE.MathUtils.damp(motion.current.trickCharge, trickCharge.current, trickCharge.current > motion.current.trickCharge ? 12 : 8, delta);
+    motion.current.trickCharge = THREE.MathUtils.damp(
+      motion.current.trickCharge,
+      bodyCompression.current,
+      bodyCompression.current > motion.current.trickCharge ? 12 : 8,
+      delta,
+    );
     motion.current.maneuverProgress = activeManeuver.current ? maneuverProgress : THREE.MathUtils.damp(motion.current.maneuverProgress, 0, 9, delta);
     const physicalLandingCue = activeManeuver.current
       && (

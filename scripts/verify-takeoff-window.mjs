@@ -5,6 +5,7 @@ import {
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
   advanceProneBoardAttitude,
+  advanceSurferCompression,
   advanceSurfboardDynamics,
   advanceSurfboardInstability,
   advanceSurfboardRailSlip,
@@ -1997,6 +1998,7 @@ const disconnectedLipSupport = surfboardLipLaunchSupport({
 });
 const flatReleaseImpulse = surfboardReleaseVerticalImpulse({
   compression: 1,
+  extensionSpeed: 1.6,
   tailPressure: .7,
   lipSupport: flatLipSupport,
   speed: 12,
@@ -2006,6 +2008,7 @@ const flatReleaseImpulse = surfboardReleaseVerticalImpulse({
 });
 const lipReleaseImpulse = surfboardReleaseVerticalImpulse({
   compression: .92,
+  extensionSpeed: 1.6,
   tailPressure: .62,
   lipSupport: liveLipSupport,
   speed: 12.4,
@@ -2015,6 +2018,7 @@ const lipReleaseImpulse = surfboardReleaseVerticalImpulse({
 });
 const longboardLipReleaseImpulse = surfboardReleaseVerticalImpulse({
   compression: .92,
+  extensionSpeed: 1.6,
   tailPressure: .62,
   lipSupport: liveLipSupport,
   speed: 12.4,
@@ -2514,6 +2518,45 @@ if (
 ) {
   throw new Error("Fore-aft body pressure no longer integrates consistently across engagement and frame rate");
 }
+function compressionReleaseAfter(holdSeconds, hz = 60, stamina = 100) {
+  let state = { compression: 0, velocity: 0 };
+  const frames = Math.round(holdSeconds * hz);
+  for (let frame = 0; frame < frames; frame += 1) {
+    state = advanceSurferCompression(state, {
+      deltaSeconds: 1 / hz,
+      crouchIntent: 1,
+      stamina,
+    });
+  }
+  const loadedCompression = state.compression;
+  const release = advanceSurferCompression(state, {
+    deltaSeconds: 1 / hz,
+    crouchIntent: 0,
+    stamina,
+  });
+  return { loadedCompression, release };
+}
+const shortCompression = compressionReleaseAfter(.12);
+const fullCompression60 = compressionReleaseAfter(.8);
+const fullCompression120 = compressionReleaseAfter(.8, 120);
+const fatiguedCompression = compressionReleaseAfter(.8, 60, 8);
+if (
+  shortCompression.loadedCompression >= fullCompression60.loadedCompression * .45
+  || fullCompression60.loadedCompression < .9
+  || Math.abs(
+    fullCompression60.loadedCompression
+      - fullCompression120.loadedCompression,
+  ) > .004
+  || fullCompression60.release.extensionPotentialSpeed < 3
+  || Math.abs(
+    fullCompression60.release.extensionPotentialSpeed
+      - fullCompression120.release.extensionPotentialSpeed,
+  ) > .004
+  || fatiguedCompression.release.extensionPotentialSpeed
+    >= fullCompression60.release.extensionPotentialSpeed
+) {
+  throw new Error("Surfer compression no longer behaves as a frame-rate-stable crouch and extension");
+}
 
 const marginalCaptureStart = .22 + marginalTraining.averageQuality * .22;
 let marginalCapture = marginalCaptureStart;
@@ -2677,6 +2720,17 @@ console.log(JSON.stringify({
     tailStance,
     neutralStance,
     rideOutStance,
+  },
+  bodyDynamics: {
+    shortCompression: shortCompression.loadedCompression,
+    fullCompression60Hz: fullCompression60.loadedCompression,
+    fullCompression120Hz: fullCompression120.loadedCompression,
+    extensionPotential60Hz:
+      fullCompression60.release.extensionPotentialSpeed,
+    extensionPotential120Hz:
+      fullCompression120.release.extensionPotentialSpeed,
+    fatiguedExtensionPotential:
+      fatiguedCompression.release.extensionPotentialSpeed,
   },
   rollDynamics: {
     performanceRailAngle: loadedPerformanceRail.rollAngle,

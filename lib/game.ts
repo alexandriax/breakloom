@@ -33,7 +33,6 @@ export const SURF_PHYSICS_TUNING = {
   tubeFatigue: 1.2,
   foamFatigue: 1,
   lipOvertakeFailure: 1.08,
-  maneuverLoadRate: 1.24,
   maneuverBalanceWindow: .52,
   balanceFailureThreshold: 1,
   rollFailure: .82,
@@ -98,6 +97,89 @@ export function advanceSurfboardStance(
     return Math.max(-1, current + delta * .86 * intent);
   }
   return current * Math.exp(-1.05 * delta);
+}
+
+export type SurferCompressionState = {
+  compression: number;
+  velocity: number;
+};
+
+export type SurferCompressionSample = {
+  deltaSeconds: number;
+  crouchIntent: number;
+  stamina: number;
+};
+
+export type SurferCompressionReading = SurferCompressionState & {
+  extensionSpeed: number;
+  extensionPotentialSpeed: number;
+  muscularEffort: number;
+};
+
+/**
+ * Integrates the surfer's leg compression as a damped biomechanical degree of
+ * freedom. The control asks the body to crouch or extend; it does not fill a
+ * move meter. The resulting extension velocity can redirect the board only
+ * through whatever water and lip support the hull is actually carrying.
+ */
+export function advanceSurferCompression(
+  state: SurferCompressionState,
+  sample: SurferCompressionSample,
+): SurferCompressionReading {
+  const delta = Math.max(0, Math.min(.05, sample.deltaSeconds));
+  const staminaAuthority = .58
+    + clampValue(sample.stamina, 0, 100) / 100 * .42;
+  const crouchIntent = clampValue(sample.crouchIntent, 0, 1);
+  const target = crouchIntent * .94;
+  let compression = clampValue(state.compression, 0, 1);
+  let velocity = clampValue(state.velocity, -4.2, 3.2);
+  const extensionPotentialSpeed = crouchIntent <= .02
+    ? clampValue(
+        Math.max(0, -velocity)
+          + compression * 4.2 * staminaAuthority,
+        0,
+        4.2 * staminaAuthority,
+      )
+    : 0;
+  let remaining = delta;
+
+  // Small internal steps keep the spring response equivalent at common browser
+  // frame rates while retaining velocity for a real extension on release.
+  while (remaining > 1e-6) {
+    const step = Math.min(1 / 240, remaining);
+    const response = (crouchIntent > .02 ? 10.5 : 13.5)
+      * staminaAuthority;
+    const acceleration = (target - compression) * response * response
+      - velocity * response * 2;
+    velocity = clampValue(
+      velocity + acceleration * step,
+      -4.2 * staminaAuthority,
+      3.2 * staminaAuthority,
+    );
+    compression = clampValue(compression + velocity * step, 0, 1);
+    if (
+      (compression <= 0 && velocity < 0)
+      || (compression >= 1 && velocity > 0)
+    ) {
+      velocity = 0;
+    }
+    remaining -= step;
+  }
+
+  const extensionSpeed = Math.max(0, -velocity);
+  const muscularEffort = clampValue(
+    compression * (.18 + crouchIntent * .48)
+      + Math.abs(velocity) * .2,
+    0,
+    1,
+  );
+  return {
+    compression,
+    velocity,
+    extensionSpeed,
+    extensionPotentialSpeed,
+    muscularEffort,
+  };
 }
 
 export type WaveEngagementSample = {
@@ -1189,6 +1271,7 @@ export type BoardHeaveReading = BoardHeaveState & {
 
 export type SurfboardReleaseSample = {
   compression: number;
+  extensionSpeed: number;
   tailPressure: number;
   lipSupport: number;
   speed: number;
@@ -1251,13 +1334,19 @@ export function surfboardReleaseVerticalImpulse(
   sample: SurfboardReleaseSample,
 ) {
   const compression = clampValue(sample.compression, 0, 1);
+  const extensionAuthority = smoothstep(
+    .18,
+    2.35,
+    Math.max(0, sample.extensionSpeed),
+  );
   const tailPressure = clampValue(sample.tailPressure, 0, 1);
   const lipSupport = clampValue(sample.lipSupport, 0, 1);
   const speedAuthority = smoothstep(6.2, 14.5, Math.max(0, sample.speed));
   const planing = clampValue(sample.planing, 0, 1);
   const waterContact = clampValue(sample.waterContact, 0, 1);
   const safeLength = Math.max(1.6, sample.boardLength);
-  const athleteRelease = .2 + compression * .62;
+  const athleteRelease = (.12 + compression * .78)
+    * (.16 + extensionAuthority * .84);
   const lipRedirect = lipSupport
     * (1.45 + lipSupport * 1.05)
     * (1 + speedAuthority * .8 + planing * .45);
