@@ -1904,6 +1904,9 @@ const sharedWipeoutSample = {
   waveEnergy: .78,
   tidePower: .86,
   speed: 9.2,
+  rollRate: 2.4,
+  pitchRate: 1.3,
+  yawRate: 1.1,
   tubePressure: .34,
   whitewater: .46,
   shoulderStall: .18,
@@ -1923,6 +1926,10 @@ const engagedWipeout = resolveSurfboardWipeout(
 );
 const lightWipeout = resolveSurfboardWipeout({
   ...sharedWipeoutSample,
+  speed: 1.8,
+  rollRate: .2,
+  pitchRate: .1,
+  yawRate: .1,
   waveEnergy: .18,
   whitewater: .04,
   crossWaveLoad: .12,
@@ -1937,6 +1944,8 @@ if (
   || standingWipeout.duration !== engagedWipeout.duration
   || standingWipeout.power <= lightWipeout.power
   || standingWipeout.duration <= lightWipeout.duration
+  || standingWipeout.kineticImpact
+    <= lightWipeout.kineticImpact * 8
 ) {
   throw new Error("Wipeout severity changed across engagement");
 }
@@ -5053,8 +5062,11 @@ console.log(JSON.stringify({
     standingInstability60,
     engagedInstability120,
     standingWipeoutPower: standingWipeout.power,
+    standingWipeoutKineticImpact:
+      standingWipeout.kineticImpact,
     engagedWipeoutPower: engagedWipeout.power,
     lightWipeoutPower: lightWipeout.power,
+    lightWipeoutKineticImpact: lightWipeout.kineticImpact,
     broadsideTumbleRollRate: broadsideTumble.rollRate,
     alignedTumbleRollRate: alignedTumble.rollRate,
     pearlingTumblePitchRate: pearlingTumble.pitchRate,

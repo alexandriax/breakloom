@@ -3329,6 +3329,9 @@ export type SurfboardWipeoutSample = {
   waveEnergy: number;
   tidePower: number;
   speed: number;
+  rollRate?: number;
+  pitchRate?: number;
+  yawRate?: number;
   tubePressure: number;
   whitewater: number;
   shoulderStall: number;
@@ -3344,12 +3347,29 @@ export type SurfboardWipeoutSample = {
 export function resolveSurfboardWipeout(
   sample: SurfboardWipeoutSample,
 ) {
+  const linearKineticImpact = Math.pow(
+    clampValue(Math.max(0, sample.speed) / 14, 0, 1),
+    2,
+  );
+  const rotationalKineticImpact = clampValue(
+    Math.pow(Math.abs(sample.rollRate ?? 0) / 4.6, 2) * .48
+      + Math.pow(Math.abs(sample.pitchRate ?? 0) / 3.8, 2) * .34
+      + Math.pow(Math.abs(sample.yawRate ?? 0) / 3.4, 2) * .18,
+    0,
+    1,
+  );
+  const kineticImpact = clampValue(
+    linearKineticImpact * .72
+      + rotationalKineticImpact * .28,
+    0,
+    1,
+  );
   const waveEnergy = clampValue(
     Math.max(.25, sample.waveHeight) / 4.2 * .24
       + Math.max(0, sample.wavePeriod - 6) / 12 * .16
       + clampValue(sample.waveEnergy, 0, 1) * .18
       + clampValue(sample.tidePower, 0, 1.5) * .09
-      + Math.min(1, Math.max(0, sample.speed) / 22) * .13
+      + kineticImpact * .18
       + clampValue(sample.tubePressure, 0, 1) * .08
       + clampValue(sample.whitewater, 0, 1) * .18
       + clampValue(sample.shoulderStall, 0, 1) * .035
@@ -3365,6 +3385,7 @@ export function resolveSurfboardWipeout(
   );
   return {
     power: waveEnergy,
+    kineticImpact,
     duration: clampValue(
       (
         1.55 + (4.18 - 1.55) * Math.pow(waveEnergy, .84)
