@@ -3184,12 +3184,6 @@ export function resolveSurfboardWipeout(
       1.35,
       4.65,
     ),
-    momentumRetention: .62 + waveEnergy * .14,
-    washSpeed: 1.25
-      + waveEnergy * 4.1
-      + clampValue(sample.waveEnergy, 0, 1) * .72,
-    railThrow: clampValue(sample.crossWaveLoad, 0, 1.5)
-      * (1.2 + waveEnergy * 2.1),
   };
 }
 
@@ -3364,22 +3358,153 @@ export function resolveSurfboardSeparationRelease(
   const rollRate = clampValue(sample.rollRate, -7.4, 7.4);
   const pitchRate = clampValue(sample.pitchRate, -5.8, 5.8);
   const yawRate = clampValue(sample.yawRate, -4.8, 4.8);
-  const rollSide = Math.sign(rollRate) || 1;
-  const pitchSide = Math.sign(pitchRate);
   const railEdgeSpeed = Math.abs(rollRate) * boardWidth * .5;
   const noseTailSpeed = Math.abs(pitchRate) * boardLength * .43;
   const yawEdgeSpeed = Math.abs(yawRate) * boardWidth * .5;
 
   return {
-    lateralVelocity: -rollSide
-      * (.12 + railEdgeSpeed * 1.24 + yawEdgeSpeed * .18),
-    verticalVelocity: .08
+    lateralVelocity: -rollRate * boardWidth * .5 * 1.24
+      - yawRate * boardWidth * .5 * .18,
+    verticalVelocity:
       + railEdgeSpeed * .52
       + noseTailSpeed * .22,
-    longitudinalVelocity: pitchSide * noseTailSpeed * .3
-      - rollSide * yawEdgeSpeed * .16,
+    longitudinalVelocity: pitchRate * boardLength * .43 * .3
+      - yawRate * boardWidth * .5 * .16,
     railEdgeSpeed,
     noseTailSpeed,
+  };
+}
+
+export type SurfboardFailureReleaseSample = {
+  velocityX: number;
+  velocityZ: number;
+  heading: number;
+  heaveVelocity: number;
+  rollRate: number;
+  pitchRate: number;
+  yawRate: number;
+  centerOfMassHeight: number;
+  lateralOffset: number;
+  longitudinalOffset: number;
+  rollCapsizeRisk: number;
+  pitchOverRisk: number;
+  pearlingRisk: number;
+  boardLength: number;
+  boardWidth: number;
+};
+
+export type SurfboardFailureReleaseReading = {
+  velocityX: number;
+  velocityZ: number;
+  verticalVelocity: number;
+  lateralVelocity: number;
+  longitudinalVelocity: number;
+  railTangentialSpeed: number;
+  noseTangentialSpeed: number;
+  cause: "rail edge" | "buried nose" | "rotation" | "loss of support";
+  direction:
+    | "left"
+    | "right"
+    | "forward"
+    | "back"
+    | "up"
+    | "down"
+    | "still";
+};
+
+/**
+ * Releases the surfer from the board with the instantaneous velocity of the
+ * rider's real center of mass. The hull's integrated translation is retained,
+ * while omega × radius supplies the velocity created by roll, pitch, and yaw.
+ * There is deliberately no wipeout-strength launch or wave-speed assignment:
+ * polygon pressure has already changed the board's linear and angular state.
+ */
+export function resolveSurfboardFailureRelease(
+  sample: SurfboardFailureReleaseSample,
+): SurfboardFailureReleaseReading {
+  const boardLength = clampValue(sample.boardLength, 1.6, 3.6);
+  const boardWidth = clampValue(sample.boardWidth, .38, .72);
+  const height = clampValue(sample.centerOfMassHeight, .12, 1.05);
+  const lateralOffset = clampValue(
+    sample.lateralOffset,
+    -boardWidth * .42,
+    boardWidth * .42,
+  );
+  const longitudinalOffset = clampValue(
+    sample.longitudinalOffset,
+    -boardLength * .32,
+    boardLength * .32,
+  );
+  const rollRate = clampValue(sample.rollRate, -7.4, 7.4);
+  const pitchRate = clampValue(sample.pitchRate, -5.8, 5.8);
+  const yawRate = clampValue(sample.yawRate, -4.8, 4.8);
+
+  // Local board axes are right, up, and nose-forward. For angular velocity
+  // (pitch, yaw, roll), omega × rider-offset is the body's tangential velocity.
+  const lateralVelocity = yawRate * longitudinalOffset
+    - rollRate * height;
+  const verticalVelocity = sample.heaveVelocity
+    + rollRate * lateralOffset
+    - pitchRate * longitudinalOffset;
+  const longitudinalVelocity = pitchRate * height
+    - yawRate * lateralOffset;
+  const forwardX = Math.sin(sample.heading);
+  const forwardZ = Math.cos(sample.heading);
+  const rightX = Math.cos(sample.heading);
+  const rightZ = -Math.sin(sample.heading);
+  const velocityX = sample.velocityX
+    + rightX * lateralVelocity
+    + forwardX * longitudinalVelocity;
+  const velocityZ = sample.velocityZ
+    + rightZ * lateralVelocity
+    + forwardZ * longitudinalVelocity;
+  const railTangentialSpeed = Math.abs(rollRate) * height;
+  const noseTangentialSpeed = Math.abs(pitchRate) * height;
+  const noseFailure = Math.max(
+    clampValue(sample.pitchOverRisk, 0, 1),
+    clampValue(sample.pearlingRisk, 0, 1),
+  );
+  const railFailure = clampValue(sample.rollCapsizeRisk, 0, 1);
+  const cause = noseFailure > railFailure + .08
+    ? "buried nose"
+    : railFailure > .42 || railTangentialSpeed > .28
+      ? "rail edge"
+      : Math.max(railTangentialSpeed, noseTangentialSpeed) > .12
+        ? "rotation"
+        : "loss of support";
+  const direction = cause === "buried nose"
+    ? longitudinalVelocity >= 0
+      ? "forward"
+      : "back"
+    : cause === "rail edge"
+      ? lateralVelocity >= 0
+        ? "right"
+        : "left"
+      : Math.abs(lateralVelocity) > Math.abs(longitudinalVelocity)
+        && Math.abs(lateralVelocity) > .04
+        ? lateralVelocity >= 0
+          ? "right"
+          : "left"
+        : Math.abs(longitudinalVelocity) > .04
+          ? longitudinalVelocity >= 0
+            ? "forward"
+            : "back"
+          : Math.abs(verticalVelocity) > .04
+            ? verticalVelocity >= 0
+              ? "up"
+              : "down"
+            : "still";
+
+  return {
+    velocityX,
+    velocityZ,
+    verticalVelocity,
+    lateralVelocity,
+    longitudinalVelocity,
+    railTangentialSpeed,
+    noseTangentialSpeed,
+    cause,
+    direction,
   };
 }
 

@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardSeparationRelease, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -10813,6 +10813,7 @@ function Simulation({
   const wipeoutRotation = useRef(new THREE.Vector3());
   const wipeoutAngularVelocity = useRef(new THREE.Vector3());
   const wipeoutTumbleSide = useRef(1);
+  const wipeoutCause = useRef("Loss of board support");
   const breath = useRef(100);
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
@@ -12857,20 +12858,6 @@ function Simulation({
             3.55,
             proneFailure.power,
           );
-          const proneRailThrow = proneInteraction.crossWaveSide
-            * crossWaveLoad
-            * (1.05 + proneFailure.power * 1.9);
-          const proneWashSpeed = .75
-            + proneFailure.power * 3.4
-            + shorebreakIntensity * 1.4;
-          wipeoutVelocity.current.set(
-            paddleVelocity.current.x * .64
-              + takeoffWaveNormalX * proneWashSpeed
-              + paddleRightX * proneRailThrow,
-            paddleVelocity.current.y * .64
-              + takeoffWaveNormalZ * proneWashSpeed
-              + paddleRightZ * proneRailThrow,
-          );
           const proneTumble = resolveSurfboardTumbleRelease({
             rollAngle: physicalRollAngle,
             rollRate: physicalRollRate,
@@ -12887,6 +12874,36 @@ function Simulation({
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
           });
+          const proneRelease = resolveSurfboardFailureRelease({
+            velocityX: paddleVelocity.current.x,
+            velocityZ: paddleVelocity.current.y,
+            heading: paddleHeading.current,
+            heaveVelocity: verticalVelocity,
+            rollRate: proneTumble.rollRate,
+            pitchRate: proneTumble.pitchRate,
+            yawRate: proneTumble.yawRate,
+            centerOfMassHeight:
+              .18 + popUpTransition.centerOfMassHeight * .62,
+            lateralOffset: physicalBalance * boardSpec.width * .32,
+            longitudinalOffset:
+              popUpTransition.trim * boardSpec.length * .16,
+            rollCapsizeRisk,
+            pitchOverRisk,
+            pearlingRisk,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+          });
+          wipeoutVelocity.current.set(
+            proneRelease.velocityX,
+            proneRelease.velocityZ,
+          );
+          wipeoutCause.current = proneRelease.cause === "rail edge"
+            ? `Rail-edge rotation threw the body ${proneRelease.direction}`
+            : proneRelease.cause === "buried nose"
+              ? `Buried-nose rotation pitched the body ${proneRelease.direction}`
+              : proneRelease.cause === "rotation"
+                ? `Board rotation sent the body ${proneRelease.direction}`
+                : "Hull support vanished — momentum carried through";
           wipeoutHeading.current = paddleHeading.current;
           wipeoutRotation.current.set(
             proneTumble.pitch,
@@ -13727,20 +13744,6 @@ function Simulation({
               const tumblePower = standingWipeoutReading.power;
               wipeoutPower.current = tumblePower;
               wipeoutDuration.current = standingWipeoutReading.duration;
-              const standingRailThrow = standingReading.crossWaveSide
-                * standingWipeoutReading.railThrow;
-              wipeoutVelocity.current.set(
-                rideVelocity.current.x
-                  * standingWipeoutReading.momentumRetention
-                  + standingWaveNormalX
-                    * standingWipeoutReading.washSpeed
-                  + standingRightX * standingRailThrow,
-                rideVelocity.current.y
-                  * standingWipeoutReading.momentumRetention
-                  + standingWaveNormalZ
-                    * standingWipeoutReading.washSpeed
-                  + standingRightZ * standingRailThrow,
-              );
               const standingTumble = resolveSurfboardTumbleRelease({
                 rollAngle: physicalRollAngle,
                 rollRate: physicalRollRate,
@@ -13757,6 +13760,37 @@ function Simulation({
                 boardLength: boardSpec.length,
                 boardWidth: boardSpec.width,
               });
+              const standingRelease = resolveSurfboardFailureRelease({
+                velocityX: rideVelocity.current.x,
+                velocityZ: rideVelocity.current.y,
+                heading: rideHeading.current,
+                heaveVelocity: verticalVelocity,
+                rollRate: standingTumble.rollRate,
+                pitchRate: standingTumble.pitchRate,
+                yawRate: standingTumble.yawRate,
+                centerOfMassHeight:
+                  .2 + (1 - returnProne.bodyLowering) * .68,
+                lateralOffset:
+                  standingCounterweight * boardSpec.width * .36,
+                longitudinalOffset:
+                  stance.current * boardSpec.length * .14,
+                rollCapsizeRisk,
+                pitchOverRisk,
+                pearlingRisk,
+                boardLength: boardSpec.length,
+                boardWidth: boardSpec.width,
+              });
+              wipeoutVelocity.current.set(
+                standingRelease.velocityX,
+                standingRelease.velocityZ,
+              );
+              wipeoutCause.current = standingRelease.cause === "rail edge"
+                ? `Rail-edge rotation threw the body ${standingRelease.direction}`
+                : standingRelease.cause === "buried nose"
+                  ? `Buried-nose rotation pitched the body ${standingRelease.direction}`
+                  : standingRelease.cause === "rotation"
+                    ? `Board rotation sent the body ${standingRelease.direction}`
+                    : "Hull support vanished — momentum carried through";
               wipeoutHeading.current = rideHeading.current;
               wipeoutRotation.current.set(
                 standingTumble.pitch,
@@ -14947,20 +14981,6 @@ function Simulation({
           const waveEnergy = wipeoutReading.power;
           wipeoutPower.current = waveEnergy;
           wipeoutDuration.current = wipeoutReading.duration;
-          const currentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
-          const currentSpeed = settings.currentStrength / 3.6;
-          const railThrow = (Math.sign(boardWaveAngle) || 1)
-            * wipeoutReading.railThrow;
-          wipeoutVelocity.current.set(
-            rideVelocity.current.x * wipeoutReading.momentumRetention
-              + waveNormalX * wipeoutReading.washSpeed
-              + boardRightX * railThrow
-              + Math.sin(currentAngle) * currentSpeed * .72,
-            rideVelocity.current.y * wipeoutReading.momentumRetention
-              + waveNormalZ * wipeoutReading.washSpeed
-              + boardRightZ * railThrow
-              - Math.cos(currentAngle) * currentSpeed * .72,
-          );
           const rideTumble = resolveSurfboardTumbleRelease({
             rollAngle: physicalRollAngle,
             rollRate: physicalRollRate,
@@ -14977,6 +14997,36 @@ function Simulation({
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
           });
+          const rideRelease = resolveSurfboardFailureRelease({
+            velocityX: rideVelocity.current.x,
+            velocityZ: rideVelocity.current.y,
+            heading: rideHeading.current,
+            heaveVelocity: verticalVelocity,
+            rollRate: rideTumble.rollRate,
+            pitchRate: rideTumble.pitchRate,
+            yawRate: rideTumble.yawRate,
+            centerOfMassHeight:
+              .2 + (1 - returnProne.bodyLowering) * .68,
+            lateralOffset: rideCounterweight * boardSpec.width * .36,
+            longitudinalOffset:
+              stance.current * boardSpec.length * .14,
+            rollCapsizeRisk,
+            pitchOverRisk,
+            pearlingRisk,
+            boardLength: boardSpec.length,
+            boardWidth: boardSpec.width,
+          });
+          wipeoutVelocity.current.set(
+            rideRelease.velocityX,
+            rideRelease.velocityZ,
+          );
+          wipeoutCause.current = rideRelease.cause === "rail edge"
+            ? `Rail-edge rotation threw the body ${rideRelease.direction}`
+            : rideRelease.cause === "buried nose"
+              ? `Buried-nose rotation pitched the body ${rideRelease.direction}`
+              : rideRelease.cause === "rotation"
+                ? `Board rotation sent the body ${rideRelease.direction}`
+                : "Hull support vanished — momentum carried through";
           wipeoutHeading.current = rideHeading.current;
           wipeoutRotation.current.set(
             rideTumble.pitch,
@@ -15107,7 +15157,7 @@ function Simulation({
         speed = wipeoutVelocity.current.length();
         const remaining = Math.max(0, duration - elapsed);
         prompt = progress < .16
-          ? "Impact zone — protect your head"
+          ? `${wipeoutCause.current} · protect your head`
           : progress < .72
             ? `Hold-down · ${remaining.toFixed(1)}s to surface`
             : "Follow the leash — rising through the foam";

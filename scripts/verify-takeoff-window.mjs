@@ -32,6 +32,7 @@ import {
   resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
+  resolveSurfboardFailureRelease,
   resolveSurfboardRailDemand,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
@@ -1589,7 +1590,6 @@ const lightWipeout = resolveSurfboardWipeout({
 if (
   standingWipeout.power !== engagedWipeout.power
   || standingWipeout.duration !== engagedWipeout.duration
-  || standingWipeout.washSpeed !== engagedWipeout.washSpeed
   || standingWipeout.power <= lightWipeout.power
   || standingWipeout.duration <= lightWipeout.duration
 ) {
@@ -1693,6 +1693,102 @@ if (
     < alignedSeparation.verticalVelocity + .35
 ) {
   throw new Error("Board separation no longer follows measured rail edge speed and side");
+}
+const stillBoardSeparation = resolveSurfboardSeparationRelease({
+  rollRate: 0,
+  pitchRate: 0,
+  yawRate: 0,
+  boardLength: 2.1,
+  boardWidth: .5,
+});
+if (
+  stillBoardSeparation.lateralVelocity !== 0
+  || stillBoardSeparation.verticalVelocity !== 0
+  || stillBoardSeparation.longitudinalVelocity !== 0
+) {
+  throw new Error("A motionless board still receives a hidden separation kick");
+}
+const sharedFailureRelease = {
+  velocityX: 1.4,
+  velocityZ: 6.2,
+  heading: 0,
+  heaveVelocity: -.2,
+  rollRate: broadsideTumble.rollRate,
+  pitchRate: broadsideTumble.pitchRate,
+  yawRate: broadsideTumble.yawRate,
+  centerOfMassHeight: .86,
+  lateralOffset: .04,
+  longitudinalOffset: -.08,
+  rollCapsizeRisk: .96,
+  pitchOverRisk: .24,
+  pearlingRisk: .18,
+  boardLength: 2.1,
+  boardWidth: .5,
+};
+const standingFailureRelease = resolveSurfboardFailureRelease(
+  sharedFailureRelease,
+);
+const engagedFailureRelease = resolveSurfboardFailureRelease(
+  sharedFailureRelease,
+);
+const alignedFailureRelease = resolveSurfboardFailureRelease({
+  ...sharedFailureRelease,
+  rollRate: alignedTumble.rollRate,
+  pitchRate: alignedTumble.pitchRate,
+  yawRate: alignedTumble.yawRate,
+  rollCapsizeRisk: .12,
+});
+const oppositeFailureRelease = resolveSurfboardFailureRelease({
+  ...sharedFailureRelease,
+  rollRate: oppositeBroadsideTumble.rollRate,
+  pitchRate: oppositeBroadsideTumble.pitchRate,
+  yawRate: oppositeBroadsideTumble.yawRate,
+  lateralOffset: -.04,
+});
+const pearlingFailureRelease = resolveSurfboardFailureRelease({
+  ...sharedFailureRelease,
+  rollRate: pearlingTumble.rollRate,
+  pitchRate: pearlingTumble.pitchRate,
+  yawRate: pearlingTumble.yawRate,
+  rollCapsizeRisk: .1,
+  pitchOverRisk: .98,
+  pearlingRisk: .9,
+});
+const proneFailureRelease = resolveSurfboardFailureRelease({
+  ...sharedFailureRelease,
+  centerOfMassHeight: .2,
+  lateralOffset: 0,
+  longitudinalOffset: 0,
+});
+const unsupportedFailureRelease = resolveSurfboardFailureRelease({
+  ...sharedFailureRelease,
+  rollRate: 0,
+  pitchRate: 0,
+  yawRate: 0,
+  heaveVelocity: 0,
+  lateralOffset: 0,
+  longitudinalOffset: 0,
+  rollCapsizeRisk: 0,
+  pitchOverRisk: 0,
+  pearlingRisk: 0,
+});
+if (
+  JSON.stringify(standingFailureRelease)
+    !== JSON.stringify(engagedFailureRelease)
+  || standingFailureRelease.lateralVelocity
+    > alignedFailureRelease.lateralVelocity - 2
+  || oppositeFailureRelease.lateralVelocity < 2
+  || pearlingFailureRelease.longitudinalVelocity
+    < alignedFailureRelease.longitudinalVelocity + 1.4
+  || Math.abs(proneFailureRelease.lateralVelocity)
+    >= Math.abs(standingFailureRelease.lateralVelocity) * .36
+  || unsupportedFailureRelease.velocityX !== 1.4
+  || unsupportedFailureRelease.velocityZ !== 6.2
+  || unsupportedFailureRelease.cause !== "loss of support"
+  || standingFailureRelease.cause !== "rail edge"
+  || pearlingFailureRelease.cause !== "buried nose"
+) {
+  throw new Error("Surfer release no longer inherits board COM and angular edge velocity");
 }
 const surfaceObservation = {
   durationSeconds: .82,
@@ -3556,6 +3652,11 @@ console.log(JSON.stringify({
     tumbleRoll120Hz: tumble120.roll,
     broadsideBoardRelease: broadsideSeparation,
     alignedBoardRelease: alignedSeparation,
+    broadsideBodyRelease: standingFailureRelease,
+    alignedBodyRelease: alignedFailureRelease,
+    pearlingBodyRelease: pearlingFailureRelease,
+    proneBodyRelease: proneFailureRelease,
+    unsupportedBodyRelease: unsupportedFailureRelease,
   },
   surfaceManeuvers: {
     bottomTurn: observedBottomTurn.name,
