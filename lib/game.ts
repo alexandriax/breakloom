@@ -3576,6 +3576,148 @@ export function resolveSeparatedSurferBreakingWash(
   };
 }
 
+export type SeparatedSurfboardWaterForceSample = {
+  surfaceOffset: number;
+  velocityX: number;
+  velocityY: number;
+  velocityZ: number;
+  waterVelocityX: number;
+  waterVelocityY: number;
+  waterVelocityZ: number;
+  pitchAngle: number;
+  rollAngle: number;
+  surfacePitch: number;
+  surfaceRoll: number;
+  washIntensity: number;
+  boardMass: number;
+  boardLength: number;
+  boardWidth: number;
+};
+
+export type SeparatedSurfboardWaterForceReading = {
+  waterContact: number;
+  accelerationX: number;
+  accelerationY: number;
+  accelerationZ: number;
+  pitchAcceleration: number;
+  rollAcceleration: number;
+  angularDamping: number;
+};
+
+/**
+ * Resolves forces on a loose board at its own water sample. An airborne board
+ * keeps horizontal momentum under gravity; an edge can enter before the center;
+ * immersed area then produces buoyancy, flow-relative drag, and a righting
+ * moment toward the local polygon normal.
+ */
+export function resolveSeparatedSurfboardWaterForces(
+  sample: SeparatedSurfboardWaterForceSample,
+): SeparatedSurfboardWaterForceReading {
+  const boardMass = clampValue(sample.boardMass, 2.4, 10);
+  const boardLength = clampValue(sample.boardLength, 1.6, 3.6);
+  const boardWidth = clampValue(sample.boardWidth, .28, .72);
+  const pitchAngle = clampValue(sample.pitchAngle, -Math.PI, Math.PI);
+  const rollAngle = clampValue(sample.rollAngle, -Math.PI, Math.PI);
+  const edgeReach = Math.abs(Math.sin(pitchAngle))
+      * boardLength
+      * .48
+    + Math.abs(Math.sin(rollAngle))
+      * boardWidth
+      * .46;
+  const effectiveSurfaceOffset = clampValue(
+    sample.surfaceOffset - edgeReach,
+    -2,
+    2,
+  );
+  const waterContact = 1 - smoothstep(
+    -.1,
+    .22,
+    effectiveSurfaceOffset,
+  );
+  const immersedDepth = Math.max(
+    0,
+    -effectiveSurfaceOffset,
+  );
+  const areaMassScale = clampValue(
+    (
+      boardLength * boardWidth / boardMass
+    ) / .25,
+    .55,
+    1.4,
+  );
+  const relativeX = sample.velocityX
+    - sample.waterVelocityX;
+  const relativeY = sample.velocityY
+    - sample.waterVelocityY;
+  const relativeZ = sample.velocityZ
+    - sample.waterVelocityZ;
+  const washIntensity = clampValue(
+    sample.washIntensity,
+    0,
+    1.25,
+  );
+  const horizontalDrag =
+    .012 + waterContact
+      * (.32 + washIntensity * .5)
+      * areaMassScale;
+  const accelerationX = clampValue(
+    -relativeX * Math.abs(relativeX)
+      * horizontalDrag,
+    -24,
+    24,
+  );
+  const accelerationZ = clampValue(
+    -relativeZ * Math.abs(relativeZ)
+      * horizontalDrag,
+    -24,
+    24,
+  );
+  const buoyancyAcceleration = waterContact
+    * (
+      10.9 + immersedDepth * 18
+    )
+    * Math.sqrt(areaMassScale);
+  const verticalDragAcceleration =
+    -relativeY * Math.abs(relativeY)
+      * waterContact
+      * (2.4 + waterContact * 3.8)
+      * areaMassScale;
+  const accelerationY = clampValue(
+    -9.81
+      + buoyancyAcceleration
+      + verticalDragAcceleration,
+    -28,
+    28,
+  );
+  const pitchError = Math.atan2(
+    Math.sin(sample.surfacePitch - pitchAngle),
+    Math.cos(sample.surfacePitch - pitchAngle),
+  );
+  const rollError = Math.atan2(
+    Math.sin(sample.surfaceRoll - rollAngle),
+    Math.cos(sample.surfaceRoll - rollAngle),
+  );
+  const pitchAcceleration = Math.sin(pitchError * 2)
+    * waterContact
+    * (2.8 + waterContact * 4.4);
+  const rollAcceleration = Math.sin(rollError * 2)
+    * waterContact
+    * (3.4 + waterContact * 5.2);
+
+  return {
+    waterContact,
+    accelerationX,
+    accelerationY,
+    accelerationZ,
+    pitchAcceleration,
+    rollAcceleration,
+    angularDamping:
+      .04 + waterContact * (
+        .85 + washIntensity * 1.2
+      ),
+  };
+}
+
 export type SeparatedSurferVerticalSample = {
   deltaSeconds: number;
   downwardWaterVelocity: number;

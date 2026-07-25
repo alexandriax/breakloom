@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSeparatedSurferBreakingWash, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveDuckDiveInitiation, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -4217,6 +4217,8 @@ function SurferRunoffEffects({ motion }: { motion: MutableRefObject<MotionState>
 
 function SurferModel({
   motion,
+  settings,
+  character,
   boardType,
   accent,
   onLeashReaction,
@@ -4224,6 +4226,8 @@ function SurferModel({
   thermalKit,
 }: {
   motion: MutableRefObject<MotionState>;
+  settings: SessionSettings;
+  character: BreakCharacter;
   boardType: BoardType;
   accent: string;
   onLeashReaction: (feedback: LeashReactionFeedback) => void;
@@ -4245,6 +4249,16 @@ function SurferModel({
     anchor: new THREE.Vector3(),
     attachment: new THREE.Vector3(),
     pull: new THREE.Vector3(),
+    worldPosition: new THREE.Vector3(),
+    previousWorldPosition: new THREE.Vector3(),
+    worldVelocity: new THREE.Vector3(),
+    localVelocity: new THREE.Vector3(),
+    waterVelocity: new THREE.Vector3(),
+    localWaterVelocity: new THREE.Vector3(),
+    surfaceNormal: new THREE.Vector3(),
+    localSurfaceNormal: new THREE.Vector3(),
+    worldQuaternion: new THREE.Quaternion(),
+    inverseWorldQuaternion: new THREE.Quaternion(),
   });
 
   useFrame(({ clock }, delta) => {
@@ -4393,28 +4407,186 @@ function SurferModel({
         state.wipeoutYawRate,
         -state.wipeoutRollRate,
       );
+      root.current.updateWorldMatrix(true, false);
+      board.current.updateWorldMatrix(true, false);
+      board.current.getWorldPosition(
+        dynamics.previousWorldPosition,
+      );
     }
 
     if (wipeout) {
       const step = Math.min(delta, .034);
-      const waterDrag = THREE.MathUtils.clamp(
-        .28 + state.submersion * .52 + state.leashTension * .18,
-        0,
-        1,
+      root.current.updateWorldMatrix(true, false);
+      board.current.updateWorldMatrix(true, false);
+      board.current.getWorldPosition(dynamics.worldPosition);
+      dynamics.worldVelocity.copy(
+        dynamics.worldPosition,
+      ).sub(
+        dynamics.previousWorldPosition,
+      ).multiplyScalar(
+        1 / Math.max(.001, delta),
       );
-      const drag = Math.exp(-step * (.76 + waterDrag * 1.65));
-      const angularDrag = Math.exp(-step * (.64 + waterDrag * 1.85));
-      dynamics.velocity.y += (
-        -dynamics.offset.y * (6.2 + waterDrag * 4.6)
-        - .28
-      ) * step;
-      dynamics.velocity.multiplyScalar(drag);
+      dynamics.previousWorldPosition.copy(
+        dynamics.worldPosition,
+      );
+      root.current.getWorldQuaternion(
+        dynamics.worldQuaternion,
+      );
+      dynamics.inverseWorldQuaternion.copy(
+        dynamics.worldQuaternion,
+      ).invert();
+      dynamics.localVelocity.copy(
+        dynamics.worldVelocity,
+      ).applyQuaternion(
+        dynamics.inverseWorldQuaternion,
+      );
+      const boardSurface = waveSurfaceFrameAt(
+        dynamics.worldPosition.x,
+        dynamics.worldPosition.z,
+        clock.elapsedTime,
+        settings,
+        character,
+      );
+      const boardSurfaceLookback = .12;
+      const boardSurfaceRise = (
+        boardSurface.height
+          - waveHeightAt(
+            dynamics.worldPosition.x,
+            dynamics.worldPosition.z,
+            clock.elapsedTime - boardSurfaceLookback,
+            settings,
+            character,
+          )
+      ) / boardSurfaceLookback;
+      const boardTransport = primaryWaveVelocityAt(
+        dynamics.worldPosition.x,
+        dynamics.worldPosition.z,
+        clock.elapsedTime,
+        settings,
+        character,
+      );
+      const boardWaveNormalX = boardTransport.x
+        / Math.max(.001, boardTransport.speed);
+      const boardWaveNormalZ = boardTransport.z
+        / Math.max(.001, boardTransport.speed);
+      const boardSetState = waveSetStateAt(
+        dynamics.worldPosition.x,
+        dynamics.worldPosition.z,
+        clock.elapsedTime,
+        settings,
+        character,
+      );
+      const boardFaceSlope = Math.max(
+        0,
+        -(
+          boardSurface.slopeX * boardWaveNormalX
+            + boardSurface.slopeZ * boardWaveNormalZ
+        ),
+      );
+      const boardTideResponse = tideResponseForBreak(
+        settings.tide,
+        character,
+      );
+      const boardBreakCoastalZ =
+        dynamics.worldPosition.z
+          - shorelineShiftForTide(settings.tide)
+          - boardTideResponse.breakShift;
+      const boardWash =
+        resolveSeparatedSurferBreakingWash({
+          crestDistance: waveCrestDistanceAtPhase(
+            boardSetState.crestPhaseError,
+            boardTransport.wavelength,
+          ),
+          crestEnergy: boardSetState.crestEnergy,
+          faceSlope: boardFaceSlope,
+          surfaceRise: boardSurfaceRise,
+          breakingActivation:
+            THREE.MathUtils.smoothstep(
+              boardBreakCoastalZ,
+              -150,
+              -16,
+            ) * (
+              1 - THREE.MathUtils.smoothstep(
+                boardBreakCoastalZ,
+                1,
+                7,
+              )
+            ),
+        });
+      const currentAngle = THREE.MathUtils.degToRad(
+        settings.currentDirection
+          - settings.coastHeading,
+      );
+      const currentSpeed = settings.currentStrength / 3.6;
+      dynamics.waterVelocity.set(
+        boardWaveNormalX * boardWash.transportSpeed
+          + Math.sin(currentAngle) * currentSpeed,
+        boardSurfaceRise,
+        boardWaveNormalZ * boardWash.transportSpeed
+          - Math.cos(currentAngle) * currentSpeed,
+      );
+      dynamics.localWaterVelocity.copy(
+        dynamics.waterVelocity,
+      ).applyQuaternion(
+        dynamics.inverseWorldQuaternion,
+      );
+      dynamics.surfaceNormal.set(
+        boardSurface.normalX,
+        boardSurface.normalY,
+        boardSurface.normalZ,
+      );
+      dynamics.localSurfaceNormal.copy(
+        dynamics.surfaceNormal,
+      ).applyQuaternion(
+        dynamics.inverseWorldQuaternion,
+      );
+      const boardWaterForces =
+        resolveSeparatedSurfboardWaterForces({
+          surfaceOffset:
+            dynamics.worldPosition.y
+              - boardSurface.height
+              - .13,
+          velocityX: dynamics.localVelocity.x,
+          velocityY: dynamics.localVelocity.y,
+          velocityZ: dynamics.localVelocity.z,
+          waterVelocityX:
+            dynamics.localWaterVelocity.x,
+          waterVelocityY:
+            dynamics.localWaterVelocity.y,
+          waterVelocityZ:
+            dynamics.localWaterVelocity.z,
+          pitchAngle: dynamics.rotation.x,
+          rollAngle: dynamics.rotation.z,
+          surfacePitch: Math.atan2(
+            dynamics.localSurfaceNormal.z,
+            dynamics.localSurfaceNormal.y,
+          ),
+          surfaceRoll: Math.atan2(
+            -dynamics.localSurfaceNormal.x,
+            dynamics.localSurfaceNormal.y,
+          ),
+          washIntensity: boardWash.intensity,
+          boardMass: spec.mass,
+          boardLength: spec.length,
+          boardWidth: spec.width,
+        });
+      dynamics.velocity.x +=
+        boardWaterForces.accelerationX * step;
+      dynamics.velocity.y +=
+        boardWaterForces.accelerationY * step;
+      dynamics.velocity.z +=
+        boardWaterForces.accelerationZ * step;
       dynamics.offset.addScaledVector(dynamics.velocity, step);
 
-      const surfaceRighting = 1 - state.submersion * .72;
-      dynamics.angularVelocity.x += -Math.sin(dynamics.rotation.x * 2) * 1.12 * surfaceRighting * step;
-      dynamics.angularVelocity.z += -Math.sin(dynamics.rotation.z * 2) * 1.34 * surfaceRighting * step;
-      dynamics.angularVelocity.multiplyScalar(angularDrag);
+      dynamics.angularVelocity.x +=
+        boardWaterForces.pitchAcceleration * step;
+      dynamics.angularVelocity.z +=
+        boardWaterForces.rollAcceleration * step;
+      dynamics.angularVelocity.multiplyScalar(
+        Math.exp(
+          -step * boardWaterForces.angularDamping,
+        ),
+      );
       dynamics.rotation.addScaledVector(dynamics.angularVelocity, step);
 
       board.current.position.set(
@@ -17248,6 +17420,8 @@ function Simulation({
         <UnderwaterSuspendedMatter motion={motion} settings={settings} mobile={mobileRenderer} />
         <SurferModel
           motion={motion}
+          settings={settings}
+          character={character}
           boardType={settings.board}
           accent={beach.palette[0]}
           onLeashReaction={setLeashReaction}

@@ -32,6 +32,7 @@ import {
   readSurfTrainingForces,
   recognizeSurfboardLipManeuver,
   recognizeSurfboardSurfaceManeuver,
+  resolveSeparatedSurfboardWaterForces,
   resolveSeparatedSurferBreakingWash,
   resolveSurfboardBodyRelease,
   resolveSurfboardPlaning,
@@ -2037,6 +2038,102 @@ const equalDistanceOpenFaceWash =
     surfaceRise: .06,
     breakingActivation: 1,
   });
+const airborneLooseBoard =
+  resolveSeparatedSurfboardWaterForces({
+    surfaceOffset: 1.1,
+    velocityX: 4,
+    velocityY: 0,
+    velocityZ: -2,
+    waterVelocityX: 1,
+    waterVelocityY: 0,
+    waterVelocityZ: 1,
+    pitchAngle: 0,
+    rollAngle: 0,
+    surfacePitch: 0,
+    surfaceRoll: 0,
+    washIntensity: 1,
+    boardMass: 3.2,
+    boardLength: 2.5,
+    boardWidth: .32,
+  });
+const flowingLooseBoard =
+  resolveSeparatedSurfboardWaterForces({
+    surfaceOffset: -.06,
+    velocityX: 4,
+    velocityY: -.4,
+    velocityZ: -2,
+    waterVelocityX: 1,
+    waterVelocityY: .2,
+    waterVelocityZ: 1,
+    pitchAngle: .35,
+    rollAngle: -.28,
+    surfacePitch: .08,
+    surfaceRoll: .06,
+    washIntensity: .7,
+    boardMass: 3.2,
+    boardLength: 2.5,
+    boardWidth: .32,
+  });
+const oppositeLooseBoardAttitude =
+  resolveSeparatedSurfboardWaterForces({
+    surfaceOffset: -.06,
+    velocityX: 1,
+    velocityY: 0,
+    velocityZ: 1,
+    waterVelocityX: 1,
+    waterVelocityY: 0,
+    waterVelocityZ: 1,
+    pitchAngle: -.35,
+    rollAngle: .28,
+    surfacePitch: 0,
+    surfaceRoll: 0,
+    washIntensity: .2,
+    boardMass: 3.2,
+    boardLength: 2.5,
+    boardWidth: .32,
+  });
+function simulateLooseBoardSplash(hz) {
+  let surfaceOffset = .8;
+  let velocityY = 0;
+  let minimumOffset = surfaceOffset;
+  let peakContact = 0;
+  for (let frame = 0; frame < hz * 3; frame += 1) {
+    const force = resolveSeparatedSurfboardWaterForces({
+      surfaceOffset,
+      velocityX: 2.4,
+      velocityY,
+      velocityZ: -.8,
+      waterVelocityX: .6,
+      waterVelocityY: 0,
+      waterVelocityZ: .2,
+      pitchAngle: .18,
+      rollAngle: -.12,
+      surfacePitch: 0,
+      surfaceRoll: 0,
+      washIntensity: .25,
+      boardMass: 3.2,
+      boardLength: 2.5,
+      boardWidth: .32,
+    });
+    velocityY += force.accelerationY / hz;
+    surfaceOffset += velocityY / hz;
+    minimumOffset = Math.min(minimumOffset, surfaceOffset);
+    peakContact = Math.max(
+      peakContact,
+      force.waterContact,
+    );
+  }
+  return {
+    surfaceOffset,
+    velocityY,
+    minimumOffset,
+    peakContact,
+  };
+}
+const looseBoardSplash60 =
+  simulateLooseBoardSplash(60);
+const looseBoardSplash120 =
+  simulateLooseBoardSplash(120);
 function simulateSpatialWashPassage(hz) {
   let body = {
     surfaceOffset: .35,
@@ -2103,6 +2200,30 @@ if (
   || strongLipWash.transportSpeed <= 1
   || trailingFoamWash.intensity
     <= equalDistanceOpenFaceWash.intensity * 2
+  || airborneLooseBoard.waterContact !== 0
+  || Math.abs(
+    airborneLooseBoard.accelerationY + 9.81,
+  ) > 1e-9
+  || Math.abs(airborneLooseBoard.accelerationX) > .12
+  || flowingLooseBoard.waterContact < .9
+  || flowingLooseBoard.accelerationX >= 0
+  || flowingLooseBoard.accelerationZ <= 0
+  || flowingLooseBoard.pitchAcceleration >= 0
+  || flowingLooseBoard.rollAcceleration <= 0
+  || oppositeLooseBoardAttitude.pitchAcceleration <= 0
+  || oppositeLooseBoardAttitude.rollAcceleration >= 0
+  || looseBoardSplash60.peakContact < .9
+  || looseBoardSplash60.minimumOffset <= 0
+  || looseBoardSplash60.surfaceOffset < .15
+  || looseBoardSplash60.surfaceOffset > .3
+  || Math.abs(
+    looseBoardSplash60.surfaceOffset
+      - looseBoardSplash120.surfaceOffset,
+  ) > .04
+  || Math.abs(
+    looseBoardSplash60.velocityY
+      - looseBoardSplash120.velocityY,
+  ) > .05
   || spatialWashPassage60.maximumIntensity < .6
   || spatialWashPassage60.minimumOffset > -.35
   || Math.abs(
@@ -4213,6 +4334,10 @@ console.log(JSON.stringify({
     strongLipWash,
     trailingFoamWash,
     equalDistanceOpenFaceWash,
+    airborneLooseBoard,
+    flowingLooseBoard,
+    looseBoardSplash60,
+    looseBoardSplash120,
     spatialWashPassage60,
     spatialWashPassage120,
     stretchedLeash,
