@@ -22,6 +22,7 @@ import {
   resolveSurfboardPlaning,
   resolveSurfboardRailGrip,
   resolveSurfboardRailSlip,
+  resolveSurfboardTurbulence,
   resolveSurfboardWavePressure,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
@@ -29,6 +30,7 @@ import {
   surfboardReleaseVerticalImpulse,
   surfboardReleaseYawImpulse,
   surfboardLipLaunchSupport,
+  waveCrestDistanceAtPhase,
   waveFacePositionAtPhase,
   waveHeightAt,
   waveSetStateAt,
@@ -201,9 +203,11 @@ function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
     frame.height
     - waveHeightAt(x, sampleZ, time - lookback, session, character)
   ) / lookback;
-  const waveNumber = Math.PI * 2 / transport.wavelength;
   return evaluateWaveTakeoff({
-    crestDistance: state.crestPhaseError / waveNumber,
+    crestDistance: waveCrestDistanceAtPhase(
+      state.crestPhaseError,
+      transport.wavelength,
+    ),
     crestEnergy: state.crestEnergy,
     crestSurfable: state.crestSurfable,
     faceSlope,
@@ -467,6 +471,13 @@ if (
 ) {
   throw new Error("Instantaneous wave-face measurement no longer clamps to the physical face");
 }
+const longPeriodCrestDistance = waveCrestDistanceAtPhase(.2, 320);
+if (
+  longPeriodCrestDistance < 10
+  || waveCrestDistanceAtPhase(-.2, 320) >= 0
+) {
+  throw new Error("Crest phase no longer preserves signed physical distance on long waves");
+}
 
 const sharedPocketSample = {
   crestPhase: Math.PI * .5 - Math.PI * 2 * 3,
@@ -525,6 +536,38 @@ if (
   || deepSection.lineControl > .05
 ) {
   throw new Error("Absolute wave section no longer distinguishes the clean pocket from broken water");
+}
+const sharedTurbulenceSample = {
+  elapsed: 24.6,
+  positionX: -6.4,
+  positionZ: -31.2,
+  windSpeed: 9,
+  onshoreChop: .34,
+  waveEnergy: .72,
+  waveSpeed: 6.1,
+  lineSide: 1,
+  whitewater: .28,
+};
+const standingTurbulence = resolveSurfboardTurbulence(
+  sharedTurbulenceSample,
+);
+const engagedTurbulence = resolveSurfboardTurbulence(
+  sharedTurbulenceSample,
+);
+const foamTurbulence = resolveSurfboardTurbulence({
+  ...sharedTurbulenceSample,
+  whitewater: .92,
+});
+if (
+  standingTurbulence.rollTorque !== engagedTurbulence.rollTorque
+  || standingTurbulence.pitchTorque !== engagedTurbulence.pitchTorque
+  || standingTurbulence.tangentForce !== engagedTurbulence.tangentForce
+  || Math.abs(
+    foamTurbulence.rollTorque - standingTurbulence.rollTorque
+  ) < .01
+  || Math.abs(standingTurbulence.surfaceRoll) < .001
+) {
+  throw new Error("Water turbulence changed across ride engagement");
 }
 
 const dynamicsSample = {
@@ -1943,10 +1986,13 @@ console.log(JSON.stringify({
     diagonalPressureTurn60Hz: diagonalTurn60.heading,
     diagonalPressureTurn120Hz: diagonalTurn120.heading,
     facePhaseSweep,
+    longPeriodCrestDistance,
     absolutePocketAlong: absolutePocket.pocketAlong,
     pocketPeelRate: absolutePocket.peelRate,
     cleanPocketLineControl: pocketSection.lineControl,
     brokenSectionPressure: deepSection.whitewaterPressure,
+    sharedRollTurbulence: standingTurbulence.rollTorque,
+    foamRollTurbulence: foamTurbulence.rollTorque,
     sharedPlaning: sharedPlaning.planing,
     flatHighSpeedPlaning: flatHighSpeedPlaning.planing,
     longboardPlaning: longboardPlaning.planing,

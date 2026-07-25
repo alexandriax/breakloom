@@ -191,6 +191,14 @@ export function waveFacePositionAtPhase(
   );
 }
 
+export function waveCrestDistanceAtPhase(
+  crestPhaseError: number,
+  wavelength: number,
+) {
+  const waveNumber = Math.PI * 2 / Math.max(.1, wavelength);
+  return crestPhaseError / waveNumber;
+}
+
 export type WavePocketSample = {
   crestPhase: number;
   referencePhase: number;
@@ -312,6 +320,69 @@ export function resolveWaveSectionPressure(
     shoulderStall,
     whitewaterPressure,
     sectionPressure,
+  };
+}
+
+export type SurfboardTurbulenceSample = {
+  elapsed: number;
+  positionX: number;
+  positionZ: number;
+  windSpeed: number;
+  onshoreChop: number;
+  waveEnergy: number;
+  waveSpeed: number;
+  lineSide: number;
+  whitewater: number;
+};
+
+/**
+ * Samples one deterministic chop/foam field for every standing surf state.
+ * Engagement is intentionally absent: the same patch of moving water applies
+ * the same roll, pitch, and lateral disturbance before and after capture.
+ */
+export function resolveSurfboardTurbulence(
+  sample: SurfboardTurbulenceSample,
+) {
+  const wind = clampValue(sample.windSpeed / 18, 0, 1.5);
+  const onshore = clampValue(sample.onshoreChop, 0, 1.5);
+  const energy = clampValue(sample.waveEnergy, 0, 1);
+  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const lineSide = sample.lineSide < 0 ? -1 : 1;
+  const surfaceRoll = (
+    Math.sin(sample.elapsed * 1.73 + sample.positionX * .08) * .22
+      + Math.sin(sample.elapsed * 2.41 - sample.positionZ * .06) * .14
+  ) * (
+    .42 + wind * .46 + onshore * .12
+  );
+  const surfacePitch = (
+    Math.sin(sample.elapsed * 2.07 - sample.positionX * .045) * .14
+      + Math.sin(sample.elapsed * 1.29 + sample.positionZ * .073) * .09
+  ) * (
+    .48 + wind * .36 + onshore * .16
+  );
+  const foamPulse = Math.sin(
+    sample.elapsed * (8.8 + energy * 1.6)
+      + sample.positionX * .19
+      - sample.positionZ * .07,
+  ) * (
+    .28 + energy * .42 + onshore * .18
+  );
+  const foamTangent = foamPulse
+    + lineSide
+      * (
+        .22
+          + Math.max(0, sample.waveSpeed) * .035
+          + energy * .24
+      );
+  return {
+    tangentForce: foamTangent,
+    rollTorque: surfaceRoll * (1 - whitewater * .55)
+      + foamTangent * whitewater * .22,
+    pitchTorque: surfacePitch * (1 - whitewater * .4)
+      + foamTangent * whitewater * .12,
+    surfaceRoll,
+    surfacePitch,
+    foamTangent,
   };
 }
 

@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advanceProneBoardAttitude, advanceRideCaptureState, advanceSurfboardDynamics, advanceSurfboardStance, advanceWaveEngagement, advanceWaveTakeoffCapture, boardRailContactFrame, BOARD_SPECS, evaluateBoardWaterInteraction, evaluatePopUpTransition, evaluateProneBoardFailure, evaluateWaveTakeoff, initialWavePopUpCapture, OUTER_PADDLE_LIMIT_Z, paddlingStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, resolveSurfboardPlaning, resolveSurfboardRailGrip, resolveSurfboardRailSlip, resolveSurfboardTurbulence, resolveSurfboardWavePressure, resolveWavePocketFrame, resolveWaveSectionPressure, rideRailInputFromPaddleSteer, sessionGrade, SHORELINE_REFERENCE_Z, shorelineShiftForTide, surfboardLipLaunchSupport, surfboardReleaseVerticalImpulse, surfboardReleaseYawImpulse, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -11241,8 +11241,10 @@ function Simulation({
       settings,
       character,
     );
-    const localWaveNumber = Math.PI * 2 / Math.max(.1, localWaveTransport.wavelength);
-    const crestDistance = setState.crestPhaseError / Math.max(.001, localWaveNumber);
+    const crestDistance = waveCrestDistanceAtPhase(
+      setState.crestPhaseError,
+      localWaveTransport.wavelength,
+    );
     let waveSurfable = setState.crestSurfable;
     let speed = 0;
     let rideDrive = 0;
@@ -12175,8 +12177,10 @@ function Simulation({
             Math.sin(caughtPhase - rideWavePhase.current),
             Math.cos(caughtPhase - rideWavePhase.current),
           );
-          const caughtWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
-          const caughtCrestDistance = caughtPhaseError / Math.max(.001, caughtWaveNumber);
+          const caughtCrestDistance = waveCrestDistanceAtPhase(
+            caughtPhaseError,
+            catchTransport.wavelength,
+          );
           const caughtSurface = waveSurfaceFrameAt(
             position.current.x,
             position.current.z,
@@ -12608,10 +12612,7 @@ function Simulation({
             tideVariability,
             onshoreChop,
           });
-          const standingBrokenWater = Math.max(
-            standingReading.wipeoutRisk,
-            standingSection.whitewaterPressure,
-          );
+          const standingBrokenWater = standingSection.whitewaterPressure;
           linePosition = standingSection.linePosition;
           lineControl = standingSection.lineControl;
           sectionPressure = standingSection.sectionPressure;
@@ -12659,12 +12660,17 @@ function Simulation({
           ) * boardWaterContact;
           const standingLateralAcceleration = rideAcceleration.current.x * standingRollRightX
             + rideAcceleration.current.y * standingRollRightZ;
-          const standingTurbulenceTorque = (
-            Math.sin(t * 1.73 + position.current.x * .08) * .32
-              + Math.sin(t * 2.41 - position.current.z * .06) * .18
-          ) * (
-            .42 + Math.min(1, settings.windSpeed / 18) * .58
-          );
+          const standingTurbulence = resolveSurfboardTurbulence({
+            elapsed: t,
+            positionX: position.current.x,
+            positionZ: position.current.z,
+            windSpeed: settings.windSpeed,
+            onshoreChop,
+            waveEnergy: setState.energy,
+            waveSpeed: standingTransport.speed,
+            lineSide: rideLineSide.current,
+            whitewater: standingBrokenWater,
+          });
           const standingRoll = advanceBoardRollDynamics(
             {
               rollAngle: boardRollAngle.current,
@@ -12678,7 +12684,7 @@ function Simulation({
               lateralAcceleration: standingLateralAcceleration,
               crossWaveLoad: standingReading.crossWaveLoad * boardWaterContact,
               crossWaveSide: standingReading.crossWaveSide,
-              turbulenceTorque: standingTurbulenceTorque * boardWaterContact,
+              turbulenceTorque: standingTurbulence.rollTorque,
               speed: rideVelocity.current.length(),
               planing: standingPlaning,
               boardWidth: boardSpec.width,
@@ -12730,10 +12736,7 @@ function Simulation({
               tailSurfaceOffset: standingTailHeight
                 - standingSurface.height
                 + standingSlopeAlong * standingHalfContact,
-              turbulenceTorque: (
-                Math.sin(t * 2.07 - position.current.x * .045) * .18
-                  + Math.sin(t * 1.29 + position.current.z * .073) * .12
-              ) * (.35 + Math.min(1, settings.windSpeed / 18) * .65),
+              turbulenceTorque: standingTurbulence.pitchTorque,
               speed: rideVelocity.current.length(),
               planing: standingPlaning,
               boardLength: boardSpec.length,
@@ -12799,6 +12802,10 @@ function Simulation({
               tailSurfaceOffset: standingTailHeight
                 - standingSurface.height
                 + standingSlopeAlong * standingHalfContact,
+              turbulenceX: standingWaveTangentX
+                * standingTurbulence.tangentForce,
+              turbulenceZ: standingWaveTangentZ
+                * standingTurbulence.tangentForce,
               boardLength: boardSpec.length,
               boardWidth: boardSpec.width,
               boardTurn: boardSpec.turn,
@@ -12935,7 +12942,8 @@ function Simulation({
           } else {
             const standingTumble = standingReading.outcome === "tumble"
               && (
-                standingBrokenWater > .78
+                standingReading.wipeoutRisk > .78
+                || standingBrokenWater > .78
                 || unstableFor.current > .22
               );
             if (
@@ -12950,7 +12958,10 @@ function Simulation({
               wipeoutAt.current = t;
               const tumblePower = THREE.MathUtils.clamp(
                 .18
-                  + standingBrokenWater * .58
+                  + Math.max(
+                    standingReading.wipeoutRisk,
+                    standingBrokenWater,
+                  ) * .58
                   + standingReading.crossWaveLoad * .2
                   + rollCapsizeRisk * .18
                   + pitchOverRisk * .2
@@ -13178,13 +13189,17 @@ function Simulation({
           );
         }
         const gripBase = settings.board === "performance" ? .96 : settings.board === "longboard" ? .9 : .82;
-        const foamCrossChop = Math.sin(
-          t * (8.8 + setState.energy * 1.6)
-            + position.current.x * .19
-            - position.current.z * .07,
-        ) * (.28 + setState.energy * .42 + onshoreChop * .18);
-        const brokenWaterTangent = foamCrossChop
-          + rideLineSide.current * (.22 + waveSpeed * .035 + setState.energy * .24);
+        const rideTurbulence = resolveSurfboardTurbulence({
+          elapsed: t,
+          positionX: position.current.x,
+          positionZ: position.current.z,
+          windSpeed: settings.windSpeed,
+          onshoreChop,
+          waveEnergy: setState.energy,
+          waveSpeed: waveTransport.speed,
+          lineSide: rideLineSide.current,
+          whitewater: whitewaterPressure,
+        });
         const rideCurrentAngle = THREE.MathUtils.degToRad(settings.currentDirection - settings.coastHeading);
         const rideCurrentSpeed = settings.currentStrength / 3.6;
         const rideCurrentX = Math.sin(rideCurrentAngle) * rideCurrentSpeed;
@@ -13210,7 +13225,10 @@ function Simulation({
           slopeZ: rideSurface.slopeZ,
           surfaceRise: rideSurfaceRise,
           surfaceLift: rideSurface.height - settings.tide * .3,
-          crestDistance: -crestPhaseError / Math.max(.08, waveNumber),
+          crestDistance: waveCrestDistanceAtPhase(
+            crestPhaseError,
+            waveTransport.wavelength,
+          ),
           crestEnergy: setState.crestEnergy,
           crestSurfable: setState.crestSurfable,
           boardStability: boardSpec.stability,
@@ -13300,10 +13318,7 @@ function Simulation({
             lateralAcceleration: priorLateralAcceleration,
             crossWaveLoad: rideInteraction.crossWaveLoad * boardWaterContact,
             crossWaveSide: rideInteraction.crossWaveSide,
-            turbulenceTorque: brokenWaterTangent
-              * whitewaterPressure
-              * boardWaterContact
-              * .22,
+            turbulenceTorque: rideTurbulence.rollTorque,
             speed,
             planing: ridePlaning,
             boardWidth: boardSpec.width,
@@ -13355,10 +13370,7 @@ function Simulation({
             tailSurfaceOffset: pitchTailHeight
               - rideSurface.height
               + pitchSlopeAlong * pitchHalfContact,
-            turbulenceTorque: (
-              Math.sin(t * 5.1 + position.current.x * .11 - position.current.z * .04) * .16
-                + brokenWaterTangent * .12
-            ),
+            turbulenceTorque: rideTurbulence.pitchTorque,
             speed,
             planing: ridePlaning,
             boardLength: boardSpec.length,
@@ -13417,8 +13429,8 @@ function Simulation({
             tailSurfaceOffset: pitchTailHeight
               - rideSurface.height
               + pitchSlopeAlong * pitchHalfContact,
-            turbulenceX: waveTangentX * brokenWaterTangent,
-            turbulenceZ: waveTangentZ * brokenWaterTangent,
+            turbulenceX: waveTangentX * rideTurbulence.tangentForce,
+            turbulenceZ: waveTangentZ * rideTurbulence.tangentForce,
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
             boardTurn: boardSpec.turn,
