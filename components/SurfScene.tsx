@@ -12041,6 +12041,10 @@ function Simulation({
               1,
             )
           : 0;
+        // Preserve the live solver reading before the HUD applies a short
+        // visual memory to keep the catch cue legible. The cached guide value
+        // must never improve capture, rail state, or takeoff stability.
+        const physicalTakeoffQuality = takeoffQuality;
         const catchWindowCandidate = !takeoffCommitting
           && takeoffReading.catchable
           && boardWaterContact > .28
@@ -12357,7 +12361,7 @@ function Simulation({
               && pitchOverRisk < .78;
             const committedQuality = engaged
               ? THREE.MathUtils.clamp(
-                  takeoffQuality * .5
+                  physicalTakeoffQuality * .5
                     + popReading.capture * .25
                     + popReading.planing * .12
                     + proneAttitudeQuality * .13,
