@@ -409,6 +409,20 @@ export type SurfboardRailGripSample = {
   onshoreChop: number;
 };
 
+export type SurfboardRailSlipSample = {
+  railDemand: number;
+  railGrip: number;
+  sideslip: number;
+  edgeRisk: number;
+};
+
+export type SurfboardRailSlipReading = {
+  gripSlip: number;
+  sideslip: number;
+  edgeSlip: number;
+  target: number;
+};
+
 export type BoardRollState = {
   rollAngle: number;
   rollRate: number;
@@ -1655,6 +1669,30 @@ export function resolveSurfboardRailGrip(
     .08,
     1,
   );
+}
+
+/**
+ * Resolves loss of rail authority from physical demand alone. Game mode is
+ * intentionally absent: coaching may differ, but identical hull loads must
+ * produce identical slip.
+ */
+export function resolveSurfboardRailSlip(
+  sample: SurfboardRailSlipSample,
+): SurfboardRailSlipReading {
+  const railGrip = clampValue(sample.railGrip, .08, 1);
+  const gripSlip = smoothstep(
+    railGrip,
+    railGrip + .3,
+    Math.max(0, sample.railDemand),
+  );
+  const sideslip = clampValue(sample.sideslip, 0, 1);
+  const edgeSlip = clampValue(sample.edgeRisk, 0, 1) * .56;
+  return {
+    gripSlip,
+    sideslip,
+    edgeSlip,
+    target: Math.max(gripSlip, sideslip, edgeSlip),
+  };
 }
 
 /**

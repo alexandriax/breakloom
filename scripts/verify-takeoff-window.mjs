@@ -19,6 +19,7 @@ import {
   primaryWaveVelocityAt,
   readPaddleTrainingMechanics,
   resolveSurfboardRailGrip,
+  resolveSurfboardRailSlip,
   resolveSurfboardWavePressure,
   rideRailInputFromPaddleSteer,
   surfboardReleaseVerticalImpulse,
@@ -835,6 +836,39 @@ if (
   || tailWeightedGrip <= noseWeightedGrip
 ) {
   throw new Error("Shared physical rail grip no longer preserves boundary continuity or responds to hull load");
+}
+const cleanRailSlip = resolveSurfboardRailSlip({
+  railDemand: .36,
+  railGrip: .82,
+  sideslip: .04,
+  edgeRisk: .08,
+});
+const overloadedRailSlip = resolveSurfboardRailSlip({
+  railDemand: 1.08,
+  railGrip: .72,
+  sideslip: .12,
+  edgeRisk: .18,
+});
+const lateralRailSlip = resolveSurfboardRailSlip({
+  railDemand: .4,
+  railGrip: .82,
+  sideslip: .72,
+  edgeRisk: .1,
+});
+const edgeRailSlip = resolveSurfboardRailSlip({
+  railDemand: .4,
+  railGrip: .82,
+  sideslip: .08,
+  edgeRisk: .9,
+});
+if (
+  cleanRailSlip.target < .04
+  || cleanRailSlip.target > .06
+  || overloadedRailSlip.gripSlip < .99
+  || lateralRailSlip.target !== .72
+  || Math.abs(edgeRailSlip.target - .504) > .001
+) {
+  throw new Error("Mode-free rail slip no longer tracks clean contact, overload, sideslip, and edge risk");
 }
 
 const rollSample = {
@@ -1754,6 +1788,10 @@ console.log(JSON.stringify({
     engagedBoundaryGrip,
     cleanPlaningGrip,
     washedBroadsideGrip,
+    cleanRailSlip: cleanRailSlip.target,
+    overloadedRailSlip: overloadedRailSlip.target,
+    lateralRailSlip: lateralRailSlip.target,
+    edgeRailSlip: edgeRailSlip.target,
   },
   paddlingDynamics: {
     terminalSpeed: steadyPaddle.velocityZ,
