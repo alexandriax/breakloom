@@ -3230,6 +3230,11 @@ export default function SurfscapeApp() {
   const paddleWorkCue = trainingStep === 1
     ? ` · L ${paddleLeftWorkPercent}% / R ${paddleRightWorkPercent}% WATER WORK`
     : "";
+  const lineupMarginMeters =
+    Math.abs(stats.lineupOutsideMargin).toFixed(1);
+  const lineupPositionCue = stats.lineupOutsideMargin >= 0
+    ? `${lineupMarginMeters} M OUTSIDE LIVE BREAK`
+    : `${lineupMarginMeters} M INSIDE LIVE BREAK`;
   const mechanicsGuide = settings.mode !== "training"
     ? null
     : stats.phase === "wading"
@@ -3326,8 +3331,8 @@ export default function SurfscapeApp() {
               ? {
                   cue: "NOSE TO BREAK EXIT · PADDLE",
                   detail: trainingStep === 1
-                    ? `Hold W for alternating pulls · left ${paddleLeftWorkPercent}% / right ${paddleRightWorkPercent}% real water work. The break-exit arrow follows the local polygon contour and crabs against current.`
-                    : "Hold W for alternating pulls. The break-exit arrow follows the local polygon contour and crabs against measured current; release W to coast.",
+                    ? `Hold W for alternating pulls · left ${paddleLeftWorkPercent}% / right ${paddleRightWorkPercent}% real water work. ${lineupPositionCue}; the exit arrow follows the local polygon contour and crabs against current.`
+                    : `Hold W for alternating pulls. ${lineupPositionCue}; the exit arrow follows the local polygon contour and crabs against measured current. Release W to coast.`,
                   rotation: -90,
                   tone: "paddle",
                 }
@@ -4683,7 +4688,7 @@ export default function SurfscapeApp() {
                     <article className="hud-offshore-card">
                       <span>OFFSHORE DISTANCE</span><strong>{Math.round(stats.offshoreDistance)} m</strong>
                       <i><b style={{ width: `${Math.min(100, stats.offshoreDistance / MAX_OFFSHORE_DISTANCE * 100)}%` }} /></i>
-                      <small>{stats.inLineup ? "Outside the break" : "Paddling toward the lineup"}</small>
+                      <small>{lineupPositionCue.toLowerCase()}</small>
                     </article>
                   )}
                 </div>
@@ -4764,7 +4769,7 @@ export default function SurfscapeApp() {
                 <div className={`offshore-readout ${stats.inLineup ? "is-lineup" : ""}`}>
                   <div><MapPin /><span>OFFSHORE</span><strong>{Math.round(stats.offshoreDistance)} m</strong></div>
                   <i><b style={{ width: `${Math.min(100, stats.offshoreDistance / MAX_OFFSHORE_DISTANCE * 100)}%` }} /></i>
-                  <small>{stats.inLineup ? "OUTSIDE THE BREAK" : "PADDLING THROUGH THE BREAK"}</small>
+                  <small>{lineupPositionCue}</small>
                 </div>
               </>
             )}

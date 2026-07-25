@@ -11661,6 +11661,7 @@ function Simulation({
     let returnProneVerticalLoad = 0;
     let catchReady = false;
     let inLineup = false;
+    let lineupOutsideMargin = 0;
     let lineupDirectionX = 0;
     let lineupDirectionZ = -1;
     let shorebreakIntensity = 0;
@@ -12186,6 +12187,8 @@ function Simulation({
         );
         outsideBreak.current = lineupGeometry.outsideBreak;
         inLineup = lineupGeometry.outsideBreak;
+        lineupOutsideMargin =
+          lineupGeometry.outsideMargin;
         const shorebreakSetState = waveSetStateAt(
           position.current.x,
           position.current.z,
@@ -17304,6 +17307,7 @@ function Simulation({
         vehicleOffRoad: vanOffRoad,
         nearVan,
         inLineup,
+        lineupOutsideMargin,
         lineupDirectionX,
         lineupDirectionZ,
         catchReady,

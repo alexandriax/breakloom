@@ -5440,6 +5440,7 @@ export type GameStats = {
   vehicleOffRoad: number;
   nearVan: boolean;
   inLineup: boolean;
+  lineupOutsideMargin: number;
   lineupDirectionX: number;
   lineupDirectionZ: number;
   catchReady: boolean;
@@ -5574,6 +5575,7 @@ export const INITIAL_STATS: GameStats = {
   vehicleOffRoad: 0,
   nearVan: false,
   inLineup: false,
+  lineupOutsideMargin: 0,
   lineupDirectionX: 0,
   lineupDirectionZ: -1,
   catchReady: false,
