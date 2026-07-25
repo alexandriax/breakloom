@@ -58,6 +58,7 @@ import {
   resolveSurfboardWavePatchContact,
   resolveSurfboardWavePressure,
   resolveSurfboardWipeout,
+  resolveTakeoffPaddleDrive,
   resolveWaveCrestPhaseIdentity,
   resolveWaveLineSide,
   resolveWavePocketFrame,
@@ -638,6 +639,47 @@ if (
   || dryTakeoffOpportunity !== 0
 ) {
   throw new Error("Live takeoff opportunity no longer follows continuous hull support and attitude stability");
+}
+const idleTakeoffDrive = resolveTakeoffPaddleDrive({
+  normalSpeed: 0,
+  matchTargetSpeed: 2,
+  strokeForce: 0,
+  attitudeQuality: 1,
+  waterContact: 1,
+});
+const plantedHandTakeoffDrive =
+  resolveTakeoffPaddleDrive({
+    normalSpeed: 0,
+    matchTargetSpeed: 2,
+    strokeForce: 6.9,
+    attitudeQuality: 1,
+    waterContact: 1,
+  });
+const coastingTakeoffDrive =
+  resolveTakeoffPaddleDrive({
+    normalSpeed: 2,
+    matchTargetSpeed: 2,
+    strokeForce: 0,
+    attitudeQuality: 1,
+    waterContact: 1,
+  });
+const halfContactTakeoffDrive =
+  resolveTakeoffPaddleDrive({
+    normalSpeed: 2,
+    matchTargetSpeed: 2,
+    strokeForce: 0,
+    attitudeQuality: 1,
+    waterContact: .5,
+  });
+if (
+  idleTakeoffDrive !== 0
+  || plantedHandTakeoffDrive <= idleTakeoffDrive
+  || coastingTakeoffDrive
+    <= plantedHandTakeoffDrive * 4
+  || halfContactTakeoffDrive
+    >= coastingTakeoffDrive * .72
+) {
+  throw new Error("Takeoff paddle drive no longer comes from carried board speed and resolved hand force");
 }
 
 const visiblyStandingWeakCrest = evaluateWaveTakeoff({
@@ -4803,6 +4845,10 @@ console.log(JSON.stringify({
     halfContactOpportunity: halfContactTakeoffOpportunity,
     unstableOpportunity: unstableTakeoffOpportunity,
     dryOpportunity: dryTakeoffOpportunity,
+    idleTakeoffDrive,
+    plantedHandTakeoffDrive,
+    coastingTakeoffDrive,
+    halfContactTakeoffDrive,
   },
   alignedProneEngagement,
   independentPopUpSeconds: independentPopUp.duration,

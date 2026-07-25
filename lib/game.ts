@@ -6161,6 +6161,44 @@ export function resolveBoardTakeoffOpportunity(
   return waveOpportunity * waterSupport * stability;
 }
 
+export type TakeoffPaddleDriveSample = {
+  normalSpeed: number;
+  matchTargetSpeed: number;
+  strokeForce: number;
+  attitudeQuality: number;
+  waterContact: number;
+};
+
+/**
+ * Measures the propulsive state carried into a takeoff. Most credit comes from
+ * board speed already earned through the water; only the currently resolved
+ * hand force adds stroke credit. Holding an input during arm recovery cannot
+ * improve this reading.
+ */
+export function resolveTakeoffPaddleDrive(
+  sample: TakeoffPaddleDriveSample,
+) {
+  const speedMatch = smoothstep(
+    .48,
+    Math.max(.49, sample.matchTargetSpeed),
+    sample.normalSpeed,
+  );
+  const resolvedPull = clampValue(
+    Math.max(0, sample.strokeForce) / 6.9,
+    0,
+    1,
+  );
+  return clampValue(
+    speedMatch * .82 + resolvedPull * .18,
+    0,
+    1,
+  ) * (
+    .72 + clampValue(sample.attitudeQuality, 0, 1) * .28
+  ) * (
+    .38 + clampValue(sample.waterContact, 0, 1) * .62
+  );
+}
+
 export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReading {
   const waveHeight = Math.max(.25, sample.waveHeight);
   // A real takeoff develops across the rising wall, not at one mathematical
