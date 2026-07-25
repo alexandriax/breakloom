@@ -11927,12 +11927,26 @@ function Simulation({
           waveHeight: settings.waveHeight * tideResponse.faceScale,
           stance: popUpTransition.trim,
           pearlingRisk,
+          noseSurfaceOffset: proneNoseHeight
+            - takeoffSurface.height
+            - proneSlopeAlong * proneHalfContact,
+          tailSurfaceOffset: proneTailHeight
+            - takeoffSurface.height
+            + proneSlopeAlong * proneHalfContact,
+          boardLength: boardSpec.length,
+          boardTurn: boardSpec.turn,
         });
         const pronePressureStep = Math.min(delta, .05);
         paddleVelocity.current.x += proneWavePressure.accelerationX
           * pronePressureStep;
         paddleVelocity.current.y += proneWavePressure.accelerationZ
           * pronePressureStep;
+        paddleYawRate.current = THREE.MathUtils.clamp(
+          paddleYawRate.current
+            + proneWavePressure.yawAcceleration * pronePressureStep,
+          -4.8,
+          4.8,
+        );
         speed = paddleVelocity.current.length();
         crossWaveLoad = proneInteraction.crossWaveLoad * boardWaterContact;
         proneHeaveIntegrated = true;
@@ -12645,6 +12659,12 @@ function Simulation({
               whitewater: standingReading.wipeoutRisk,
               noseImmersion: standingPitch.noseImmersion,
               tailImmersion: standingPitch.tailImmersion,
+              noseSurfaceOffset: standingNoseHeight
+                - standingSurface.height
+                - standingSlopeAlong * standingHalfContact,
+              tailSurfaceOffset: standingTailHeight
+                - standingSurface.height
+                + standingSlopeAlong * standingHalfContact,
               boardLength: boardSpec.length,
               boardWidth: boardSpec.width,
               boardTurn: boardSpec.turn,
@@ -13268,6 +13288,12 @@ function Simulation({
             whitewater: whitewaterPressure,
             noseImmersion: ridePitch.noseImmersion,
             tailImmersion: ridePitch.tailImmersion,
+            noseSurfaceOffset: pitchNoseHeight
+              - rideSurface.height
+              - pitchSlopeAlong * pitchHalfContact,
+            tailSurfaceOffset: pitchTailHeight
+              - rideSurface.height
+              + pitchSlopeAlong * pitchHalfContact,
             turbulenceX: waveTangentX * brokenWaterTangent,
             turbulenceZ: waveTangentZ * brokenWaterTangent,
             boardLength: boardSpec.length,

@@ -314,6 +314,8 @@ export type SurfboardDynamicsSample = {
   waterContact?: number;
   noseImmersion?: number;
   tailImmersion?: number;
+  noseSurfaceOffset?: number;
+  tailSurfaceOffset?: number;
   turbulenceX?: number;
   turbulenceZ?: number;
   boardLength: number;
@@ -333,6 +335,8 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   sideslip: number;
   gravityDrive: number;
   wavePressure: number;
+  wavePressureCenter: number;
+  waveYawAcceleration: number;
   pearlingRisk: number;
   tailStall: number;
 };
@@ -348,6 +352,10 @@ export type SurfboardWavePressureSample = {
   waveHeight: number;
   stance: number;
   pearlingRisk?: number;
+  noseSurfaceOffset?: number;
+  tailSurfaceOffset?: number;
+  boardLength?: number;
+  boardTurn?: number;
 };
 
 export type SurfboardWavePressureReading = {
@@ -358,6 +366,10 @@ export type SurfboardWavePressureReading = {
   lateralLoad: number;
   waveDeficit: number;
   headingAlignment: number;
+  centerOfPressure: number;
+  yawAcceleration: number;
+  noseContact: number;
+  tailContact: number;
 };
 
 export type BoardRollState = {
@@ -1361,6 +1373,10 @@ export function resolveSurfboardWavePressure(
       lateralLoad: 0,
       waveDeficit: Math.max(0, waveSpeed),
       headingAlignment: 0,
+      centerOfPressure: 0,
+      yawAcceleration: 0,
+      noseContact: 0,
+      tailContact: 0,
     };
   }
 
@@ -1382,7 +1398,29 @@ export function resolveSurfboardWavePressure(
   const tailPressure = Math.max(0, -stance);
   const nosePressure = Math.max(0, stance);
   const pearlingRisk = clampValue(sample.pearlingRisk ?? 0, 0, 1);
-  const pressure = contact
+  const safeLength = Math.max(1.6, sample.boardLength ?? 2.5);
+  const turn = Math.max(.45, sample.boardTurn ?? 1);
+  const contactRelief = .055 + Math.max(.25, sample.waveHeight) * .035;
+  const noseContact = clampValue(
+    contact * (
+      1 + (sample.noseSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  );
+  const tailContact = clampValue(
+    contact * (
+      1 + (sample.tailSurfaceOffset ?? 0) / contactRelief
+    ),
+    0,
+    1,
+  );
+  const distributedContact = clampValue(
+    contact * .5 + noseContact * .25 + tailContact * .25,
+    0,
+    1,
+  );
+  const pressure = distributedContact
     * hullContact
     * waveDeficit
     * (.48 + Math.max(0, headingAlignment) * .72)
@@ -1390,14 +1428,30 @@ export function resolveSurfboardWavePressure(
     * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .42);
   const accelerationX = waveNormalX * pressure;
   const accelerationZ = waveNormalZ * pressure;
+  const forwardDrive = accelerationX * forwardX + accelerationZ * forwardZ;
+  const lateralLoad = accelerationX * rightX + accelerationZ * rightZ;
+  const centerOfPressure = (
+    noseContact - tailContact
+  ) / Math.max(.001, noseContact + tailContact + contact * 2)
+    * safeLength
+    * .5;
+  const yawAcceleration = centerOfPressure
+    * lateralLoad
+    * 5.4
+    * turn
+    / (safeLength * safeLength);
   return {
     accelerationX,
     accelerationZ,
     pressure,
-    forwardDrive: accelerationX * forwardX + accelerationZ * forwardZ,
-    lateralLoad: accelerationX * rightX + accelerationZ * rightZ,
+    forwardDrive,
+    lateralLoad,
     waveDeficit,
     headingAlignment,
+    centerOfPressure,
+    yawAcceleration,
+    noseContact,
+    tailContact,
   };
 }
 
@@ -1555,7 +1609,16 @@ export function advanceSurfboardDynamics(
     waveHeight: sample.waveHeight,
     stance,
     pearlingRisk,
+    noseSurfaceOffset: sample.noseSurfaceOffset,
+    tailSurfaceOffset: sample.tailSurfaceOffset,
+    boardLength: safeLength,
+    boardTurn: turn,
   });
+  yawRate = clampValue(
+    yawRate + wavePressure.yawAcceleration * delta,
+    -4.8,
+    4.8,
+  );
 
   const lengthDragScale = Math.pow(2.5 / safeLength, .58);
   const widthDragScale = Math.pow(safeWidth / .34, .46);
@@ -1646,6 +1709,8 @@ export function advanceSurfboardDynamics(
     sideslip,
     gravityDrive,
     wavePressure: wavePressure.pressure,
+    wavePressureCenter: wavePressure.centerOfPressure,
+    waveYawAcceleration: wavePressure.yawAcceleration,
     pearlingRisk,
     tailStall,
   };

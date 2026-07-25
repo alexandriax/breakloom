@@ -479,6 +479,51 @@ const stillWaterPressure = resolveSurfboardWavePressure({
   waveHeight: 0,
   stance: 0,
 });
+const symmetricHullPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 4,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: .08,
+  tailSurfaceOffset: .08,
+  boardLength: 2.5,
+  boardTurn: 1,
+});
+const noseLoadedDiagonalPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 4,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: .12,
+  tailSurfaceOffset: -.08,
+  boardLength: 2.5,
+  boardTurn: 1,
+});
+const tailLoadedDiagonalPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 4,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: 0,
+  noseSurfaceOffset: -.08,
+  tailSurfaceOffset: .12,
+  boardLength: 2.5,
+  boardTurn: 1,
+});
 if (
   alignedWavePressure.forwardDrive < 3
   || Math.abs(alignedWavePressure.lateralLoad) > .001
@@ -487,6 +532,16 @@ if (
   || stillWaterPressure.pressure !== 0
 ) {
   throw new Error("Shared wave pressure no longer distinguishes aligned drive, broadside load, and still water");
+}
+if (
+  Math.abs(symmetricHullPressure.centerOfPressure) > .001
+  || Math.abs(symmetricHullPressure.yawAcceleration) > .001
+  || noseLoadedDiagonalPressure.centerOfPressure <= .08
+  || noseLoadedDiagonalPressure.yawAcceleration >= -.08
+  || tailLoadedDiagonalPressure.centerOfPressure >= -.08
+  || tailLoadedDiagonalPressure.yawAcceleration <= .08
+) {
+  throw new Error("Nose and tail polygon contact is not producing symmetric and directional pressure torque");
 }
 function pressureCatchAfterOneSecond(hz) {
   const deltaSeconds = 1 / hz;
@@ -517,6 +572,45 @@ if (
   || Math.abs(pressureCatch60.velocityX - .7) > .001
 ) {
   throw new Error("Prone catch pressure is not frame-stable or is deleting cross-wave momentum");
+}
+function diagonalPressureTurnAfterOneSecond(hz) {
+  const deltaSeconds = 1 / hz;
+  let state = {
+    velocityX: 0,
+    velocityZ: 2,
+    heading: Math.PI / 4,
+    yawRate: 0,
+  };
+  for (let frame = 0; frame < hz; frame += 1) {
+    const pressure = resolveSurfboardWavePressure({
+      velocityX: state.velocityX,
+      velocityZ: state.velocityZ,
+      heading: state.heading,
+      waveVelocityX: 0,
+      waveVelocityZ: 6,
+      waveContact: .8,
+      waterContact: 1,
+      waveHeight: 2,
+      stance: 0,
+      noseSurfaceOffset: .12,
+      tailSurfaceOffset: -.08,
+      boardLength: 2.5,
+      boardTurn: 1,
+    });
+    state.velocityX += pressure.accelerationX * deltaSeconds;
+    state.velocityZ += pressure.accelerationZ * deltaSeconds;
+    state.yawRate += pressure.yawAcceleration * deltaSeconds;
+    state.heading += state.yawRate * deltaSeconds;
+  }
+  return state;
+}
+const diagonalTurn60 = diagonalPressureTurnAfterOneSecond(60);
+const diagonalTurn120 = diagonalPressureTurnAfterOneSecond(120);
+if (
+  diagonalTurn60.heading >= Math.PI / 4 - .035
+  || Math.abs(diagonalTurn60.heading - diagonalTurn120.heading) > .012
+) {
+  throw new Error("Distributed wave-pressure yaw is not turning a diagonally loaded nose consistently");
 }
 const flatDynamics = advanceSurfboardDynamics(dynamicsState, {
   ...dynamicsSample,
@@ -1403,6 +1497,8 @@ console.log(JSON.stringify({
     broadsideWaveLoad: Math.abs(broadsideWavePressure.lateralLoad),
     proneCatchSpeed60Hz: pressureCatch60.velocityZ,
     proneCatchSpeed120Hz: pressureCatch120.velocityZ,
+    diagonalPressureTurn60Hz: diagonalTurn60.heading,
+    diagonalPressureTurn120Hz: diagonalTurn120.heading,
     stillWater: stillWaterStand.outcome,
     angleSweep: angleSweep.map(({ degrees, reading }) => ({
       degrees,
