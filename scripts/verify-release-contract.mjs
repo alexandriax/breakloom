@@ -103,9 +103,15 @@ if (
   || !launchSource.includes('id: "medium"')
   || !launchSource.includes('id: "hard"')
   || !launchSource.includes('id: "open"')
-  || !launchSource.includes('className="launch-location"')
-  || !launchSource.includes('className="advanced-launch-options"')
-  || !launchStyles.includes(".launch-condition-strip")
+  || !launchSource.includes('className="coast-rail"')
+  || !launchSource.includes('className="spot-list"')
+  || !launchSource.includes('className="board-grid"')
+  || !launchSource.includes('className="setup-panel"')
+  || !launchStyles.includes(".conditions-strip")
+  // The coast atlas, the map, and the peak list are first-screen decisions:
+  // none of them may retreat behind an optional disclosure.
+  || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
+  || launchSource.indexOf('className="coast-rail"') > launchSource.indexOf("<WorldMap")
 ) {
   throw new Error("Surfscape release physics contract failed");
 }

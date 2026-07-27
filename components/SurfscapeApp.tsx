@@ -10,9 +10,13 @@ import {
   Camera,
   CarFront,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleCheck,
   Clapperboard,
+  Clock,
   CloudSun,
+  Compass,
   Crosshair,
   Download,
   Gauge,
@@ -41,7 +45,7 @@ import {
   X,
 } from "lucide-react";
 import { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BEACHES, DEFAULT_BEACH, getBreakCharacter, getCoastBiome, type Beach } from "@/lib/beaches";
+import { BEACHES, DEFAULT_BEACH, getBreakCharacter, getCoastBiome, type Beach, type BreakCharacter, type SurfZone } from "@/lib/beaches";
 import {
   fallbackConditions,
   fetchMarineConditions,
@@ -67,6 +71,7 @@ import {
   SURFSCAPE_RELEASE,
   thermalKitForConditions,
   tideResponseForBreak,
+  type TideResponse,
   type BoardType,
   type GameMode,
   type GameStats,
@@ -74,6 +79,7 @@ import {
   type SurfAssistLevel,
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
+import TideSparkline from "./TideSparkline";
 import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
@@ -85,7 +91,7 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 type Screen = "launch" | "game";
 type SessionFormat = "free" | "heat";
 type LaunchPreset = "easy" | "medium" | "hard" | "open";
-type LaunchPanel = "break" | "forecast" | "tour";
+type LaunchSection = "session" | "forecast" | "tour" | "lab";
 type HudPanel = "ocean" | "session" | "controls";
 type MotionBalanceStatus = "checking" | "unavailable" | "idle" | "requesting" | "active" | "denied";
 type PersonalBest = { score: number; distance: number; combo: number };
@@ -203,27 +209,27 @@ const LAUNCH_PRESETS: Array<{
 }> = [
   {
     id: "easy",
-    name: "Easy",
-    kicker: "Guided Tour",
-    description: "Learn the paddle-out, earn coast stamps, and take on harder beaches as your tour grows.",
+    name: "Learning",
+    kicker: "Guided",
+    description: "Extra paddle power, clear timing cues, and softer wipeouts.",
   },
   {
     id: "medium",
-    name: "Medium",
-    kicker: "Free Surf",
-    description: "Natural board response with light recovery help and only essential coaching.",
+    name: "Natural",
+    kicker: "Free surf",
+    description: "True board response with light recovery help.",
   },
   {
     id: "hard",
-    name: "Hard",
-    kicker: "Raw Ocean",
-    description: "Full water load, timing, and separation thresholds with minimal guidance.",
+    name: "Raw",
+    kicker: "No safety net",
+    description: "Full water load, real timing, unforgiving rails.",
   },
   {
     id: "open",
-    name: "Open Play",
-    kicker: "Wave Lab",
-    description: "Choose a beach first, then build a custom swell from the advanced setup.",
+    name: "Wave Lab",
+    kicker: "Build your own",
+    description: "Dial in swell, wind, tide, and light by hand.",
   },
 ];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
@@ -410,6 +416,47 @@ function coastMasteryLabel(mastery: number) {
   if (mastery >= 2) return "CLEAN LINE";
   if (mastery >= 1) return "COAST LOGGED";
   return "UNSURFED";
+}
+
+/** Plain-language shorthand for how a peak behaves, read off its break character. */
+function breakCharacterTag(character: BreakCharacter) {
+  if (character.hollow >= .82) return "Barrelling";
+  if (character.length >= 1.24) return "Long wall";
+  if (character.power >= 1.16) return "Heavy";
+  if (character.steepness >= .86) return "Steep";
+  if (character.variability >= .6) return "Shifting peaks";
+  if (character.power <= .86 && character.steepness <= .62) return "Forgiving";
+  return "Balanced";
+}
+
+function breakLineLabel(line: BreakCharacter["line"]) {
+  if (line === "LEFT") return "Lefts";
+  if (line === "RIGHT") return "Rights";
+  return "Peaks";
+}
+
+/** 1–5 commitment rating so every peak can be compared at a glance. */
+function breakDemand(character: BreakCharacter) {
+  return Math.max(1, Math.min(5, Math.round(
+    character.power * 2.1 + character.steepness * 1.5 + character.hollow * 1.1,
+  )));
+}
+
+/**
+ * Face height as the simulation actually builds it: the swell scaled by the
+ * peak's own power and by how the tide is treating that seabed. Two peaks on
+ * one coast share a swell but rarely throw the same wave.
+ */
+function peakFaceHeight(waveHeight: number, character: BreakCharacter, tide: TideResponse) {
+  return waveHeight * tide.faceScale * character.power * tide.powerScale;
+}
+
+/** Wind read every surfer checks first: is it grooming the face or wrecking it? */
+function windRelation(windDirection: number, coastHeading: number) {
+  const offset = Math.abs(shortestAngleDelta(windDirection, coastHeading + 180));
+  if (offset <= 55) return { label: "Offshore", quality: "is-good" as const };
+  if (offset >= 125) return { label: "Onshore", quality: "is-poor" as const };
+  return { label: "Cross-shore", quality: "is-fair" as const };
 }
 
 function masteryForRide(ride: RideToast) {
@@ -916,10 +963,7 @@ export default function SurfscapeApp() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [pointerLocked, setPointerLocked] = useState(false);
   const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
-  const [showPlanner, setShowPlanner] = useState(true);
-  const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
-  const [advancedSetupOpen, setAdvancedSetupOpen] = useState(false);
-  const [launchPanel, setLaunchPanel] = useState<LaunchPanel>("break");
+  const [openSections, setOpenSections] = useState<LaunchSection[]>([]);
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
   const [showHowTo, setShowHowTo] = useState(false);
@@ -939,19 +983,16 @@ export default function SurfscapeApp() {
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [shorebreakToast, setShorebreakToast] = useState<{ id: number; result: "clean" | "hit"; quality: number } | null>(null);
   const [wetLens, setWetLens] = useState<WetLensEvent | null>(null);
-  useEffect(() => {
-    if (!destinationPickerOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDestinationPickerOpen(false);
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [destinationPickerOpen]);
+  const sectionOpen = (section: LaunchSection) => openSections.includes(section);
+  const toggleSection = (section: LaunchSection, open: boolean) => setOpenSections((current) => (
+    open ? [...new Set([...current, section])] : current.filter((entry) => entry !== section)
+  ));
+  const coastRail = useRef<HTMLDivElement>(null);
+  const scrollCoastRail = (direction: -1 | 1) => {
+    const rail = coastRail.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(240, rail.clientWidth * .8), behavior: "smooth" });
+  };
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
   const audio = useRef<SurfscapeAudio | null>(null);
   const rideCard = useRef<File | null>(null);
@@ -1093,7 +1134,7 @@ export default function SurfscapeApp() {
     () => tideResponseForBreak(conditions.seaLevel, breakCharacter),
     [breakCharacter, conditions.seaLevel],
   );
-  const effectiveFaceHeight = settings.waveHeight * tideResponse.faceScale;
+  const effectiveFaceHeight = peakFaceHeight(settings.waveHeight, breakCharacter, tideResponse);
   const thermalKit = useMemo(
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
@@ -1117,6 +1158,25 @@ export default function SurfscapeApp() {
     },
     { explored: 0, stamps: 0 },
   ), [passport]);
+  /** Every peak on this coast, read against the same swell, so they compare honestly. */
+  const spotReadouts = useMemo(() => beach.zones.map((zone) => {
+    const character = getBreakCharacter(beach.id, zone.name);
+    const tide = tideResponseForBreak(settings.tide, character);
+    return {
+      zone,
+      character,
+      face: peakFaceHeight(settings.waveHeight, character, tide),
+      tideLabel: tide.shortName,
+      fit: tide.quality,
+      tag: breakCharacterTag(character),
+      line: breakLineLabel(character.line),
+      demand: breakDemand(character),
+    };
+  }), [beach.id, beach.zones, settings.tide, settings.waveHeight]);
+  const wind = useMemo(
+    () => windRelation(settings.windDirection, settings.coastHeading),
+    [settings.coastHeading, settings.windDirection],
+  );
 
   const splashLens = useCallback((intensity: number, duration: number) => {
     wetLensSequence.current += 1;
@@ -2373,7 +2433,13 @@ export default function SurfscapeApp() {
           board: current.board,
         });
     setSelectedForecastTime(null);
-    setDestinationPickerOpen(false);
+  };
+
+  const chooseSpot = (zone: SurfZone) => {
+    setLatitude(zone.lat);
+    setLongitude(zone.lon);
+    setZoneLabel(zone.name);
+    setSelectedForecastTime(null);
   };
 
   const chooseMode = (mode: GameMode) => {
@@ -2406,7 +2472,7 @@ export default function SurfscapeApp() {
     setSessionFormat("free");
     chooseMode(mode);
     setSettings((current) => ({ ...current, mode, assist }));
-    if (preset === "open") setAdvancedSetupOpen(true);
+    if (preset === "open") toggleSection("lab", true);
   };
 
   const selectSessionWindow = (point: MarineForecastPoint | null) => {
@@ -3999,184 +4065,291 @@ export default function SurfscapeApp() {
       )}
 
       {screen === "launch" && (
-        <section className="launch-screen">
-          <header className="launch-header">
-            <button className="wordmark" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label="Surfscape home">
-              <span className="wordmark-mark"><Waves /></span>
-              <span>SURFSCAPE</span>
-              <small>01</small>
-            </button>
-            <button
-              type="button"
-              className="header-beach-select"
-              onClick={() => setDestinationPickerOpen(true)}
-              aria-haspopup="dialog"
-              aria-expanded={destinationPickerOpen}
-            >
-              <MapPin />
-              <span><small>SURF DESTINATION</small><strong>{beach.name}</strong></span>
-              <ChevronDown />
-            </button>
-            <div className="launch-nav">
-              <span className={`live-chip ${conditions.source === "live" ? "is-live" : ""}`}>
-                <i /> {conditionsLoading ? "Reading buoy models" : selectedForecast ? "Forecast session" : conditions.source === "live" ? "Live ocean model" : "Modeled offline"}
+        <section className="launch">
+          <header className="launch-bar">
+            <div className="launch-brand">
+              <i aria-hidden="true"><Waves /></i>
+              <b>SURFSCAPE</b>
+              <small>Real coastlines · live ocean data</small>
+            </div>
+            <div className="launch-tools">
+              <span className={`data-chip ${conditions.source === "live" && !conditionsLoading ? "is-live" : ""}`}>
+                <i />
+                {conditionsLoading
+                  ? "Reading the buoys"
+                  : selectedForecast
+                    ? "Forecast window"
+                    : conditions.source === "live"
+                      ? "Live ocean data"
+                      : "Modelled ocean"}
               </span>
-              <button className="icon-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute sound" : "Enable sound"}>
+              <button type="button" className="tool-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute sound" : "Enable sound"}>
                 {soundEnabled ? <Volume2 /> : <VolumeX />}
               </button>
               {installPrompt && (
-                <button className="install-button" onClick={() => void installApp()}>
-                  <Download /><span>Install game</span>
+                <button type="button" className="tool-button is-wide" onClick={() => void installApp()}>
+                  <Download /><span>Install</span>
                 </button>
               )}
-              <button className="text-button" onClick={() => setShowHowTo(true)}>How to ride</button>
+              <button type="button" className="tool-button is-wide" onClick={() => setShowHowTo(true)}>
+                <Sparkles /><span>How to surf</span>
+              </button>
             </div>
           </header>
 
-          <div className="launch-content">
-            <div className="launch-hero">
-              <div className="hero-index"><span>01</span> PICK A SESSION / GET IN THE WATER</div>
-              <h1>
-                CHOOSE<br />
-                YOUR <em>LINE.</em>
-              </h1>
-              <p className="hero-copy">
-                Start with the guided tour or set your own challenge. Pick a coast, a break, and a board; the ocean takes it from there.
-              </p>
-              <div className="tour-callout">
-                <Trophy />
-                <span>
-                  <small>GUIDED WORLD TOUR</small>
-                  <strong>{passportSummary.stamps ? `${passportSummary.stamps} stamps earned` : "Start at Rockaway"}</strong>
-                  <em>Learn on forgiving settings, then progress through all {BEACHES.length} coastlines.</em>
-                </span>
-              </div>
-            </div>
-
-            <div className="launch-config">
-              <div className="launch-config-head">
-                <div>
-                  <span>01 / SESSION SETUP</span>
-                  <strong>{beach.name}</strong>
-                  <small>{zoneLabel} · {beach.country}</small>
+          <div className="launch-body">
+            <section className="step" aria-labelledby="step-coast-title">
+              <div className="step-head">
+                <span className="step-number" aria-hidden="true">1</span>
+                <div className="step-title">
+                  <h2 id="step-coast-title">Choose a coast</h2>
+                  <p>{BEACHES.length} real coastlines around the world. Live conditions load with your pick.</p>
                 </div>
-                <button
-                  type="button"
-                  className="config-beach-select"
-                  onClick={() => setDestinationPickerOpen(true)}
-                  aria-haspopup="dialog"
-                  aria-expanded={destinationPickerOpen}
-                >
-                  <MapPin />
-                  <span><small>CHANGE COAST</small><strong>{beach.name}</strong></span>
-                  <ChevronDown />
-                </button>
-              </div>
-              <section className="launch-location" aria-label="Choose a surf break">
-                <div className="launch-location-head">
-                  <div>
-                    <span>COAST AND BEACH</span>
-                    <strong>{zoneLabel}</strong>
-                    <small>{beach.name} · {beach.region}</small>
-                  </div>
-                  <span className={`launch-model-status ${conditions.source === "live" ? "is-live" : ""}`}>
-                    <i /> {conditionsLoading ? "Loading conditions" : settings.mode === "playground" ? "Custom ocean" : conditions.source === "live" ? "Live conditions" : "Modeled conditions"}
+                <div className="step-aside">
+                  <span className="tour-chip"><Trophy /> {passportSummary.stamps} / {BEACHES.length * 3} stamps</span>
+                  <span className="rail-arrows">
+                    <button type="button" onClick={() => scrollCoastRail(-1)} aria-label="Scroll to earlier coasts"><ChevronLeft /></button>
+                    <button type="button" onClick={() => scrollCoastRail(1)} aria-label="Scroll to more coasts"><ChevronRight /></button>
                   </span>
                 </div>
-                <div className="launch-zone-strip" role="list" aria-label={`${beach.name} beaches`}>
-                  {beach.zones.map((zone) => (
+              </div>
+              <div className="coast-rail" ref={coastRail} role="listbox" aria-label="Surf coastlines">
+                {BEACHES.map((destination) => {
+                  const mastery = passport[destination.id]?.mastery ?? 0;
+                  const selected = destination.id === beach.id;
+                  return (
                     <button
                       type="button"
-                      key={zone.name}
-                      className={zoneLabel === zone.name ? "is-selected" : ""}
-                      onClick={() => {
-                        setLatitude(zone.lat);
-                        setLongitude(zone.lon);
-                        setZoneLabel(zone.name);
-                        setSelectedForecastTime(null);
-                      }}
-                      aria-pressed={zoneLabel === zone.name}
+                      key={destination.id}
+                      role="option"
+                      aria-selected={selected}
+                      className={`coast-card ${selected ? "is-selected" : ""}`}
+                      onClick={() => chooseBeach(destination)}
                     >
-                      <strong>{zone.name}</strong>
-                      <small>{zone.note}</small>
+                      <i className="coast-art" aria-hidden="true">
+                        <Image src={`/icons/beaches/${destination.id}.webp`} alt="" width={256} height={256} sizes="112px" />
+                      </i>
+                      <strong>{destination.name}</strong>
+                      <small>{destination.region} · {destination.country}</small>
+                      <em className="coast-foot">
+                        <span>{destination.breakType}</span>
+                        <b className="demand" aria-label={`Commitment ${destination.difficulty} of 5`}>
+                          {Array.from({ length: 5 }, (_, level) => (
+                            <u key={level} className={level < destination.difficulty ? "is-on" : ""} />
+                          ))}
+                        </b>
+                      </em>
+                      {mastery > 0 && (
+                        <span className="coast-stamps" aria-label={`${mastery} of 3 stamps earned`}>
+                          {Array.from({ length: mastery }, (_, stamp) => <Trophy key={stamp} />)}
+                        </span>
+                      )}
                     </button>
-                  ))}
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="step" aria-labelledby="step-spot-title">
+              <div className="step-head">
+                <span className="step-number" aria-hidden="true">2</span>
+                <div className="step-title">
+                  <h2 id="step-spot-title">Pick your peak at {beach.name}</h2>
+                  <p>{beach.description}</p>
                 </div>
-                <div className="launch-condition-strip" aria-label={`Conditions at ${zoneLabel}`}>
-                  <div>
-                    <span>Wave</span>
-                    <strong>{settings.waveHeight.toFixed(1)} m</strong>
-                    <small>{settings.wavePeriod.toFixed(1)} s · {degrees(settings.waveDirection)}</small>
-                  </div>
-                  <div>
-                    <span>Swell</span>
-                    <strong>{settings.swellHeight.toFixed(1)} m</strong>
-                    <small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small>
-                  </div>
-                  <div>
-                    <span>Tide</span>
-                    <strong>{settings.mode === "playground" ? "Custom" : sessionConditions.tideTrend}</strong>
-                    <small>{tideResponse.label} · {Math.round(tideResponse.quality * 100)}% fit</small>
-                  </div>
-                </div>
-              </section>
-              <div className="mode-section">
-                <div className="section-label"><span>SESSION</span><p>Start guided, surf naturally, or take full control</p></div>
-                <div className="mode-grid">
-                  {LAUNCH_PRESETS.map((preset) => (
-                    <button
-                      type="button"
-                      key={preset.id}
-                      className={`mode-card preset-${preset.id} ${selectedLaunchPreset === preset.id ? "is-selected" : ""}`}
-                      onClick={() => chooseLaunchPreset(preset.id)}
-                      aria-pressed={selectedLaunchPreset === preset.id}
-                    >
-                      <span>{preset.kicker}</span>
-                      <strong>{preset.name}</strong>
-                      <p>{preset.description}</p>
-                      <i>{selectedLaunchPreset === preset.id ? "Selected" : "Choose"} <ArrowRight /></i>
-                    </button>
-                  ))}
-                </div>
-                <div className="quiver-picker">
-                  <div className="quiver-head"><span>BOARD</span><strong>Choose the board under your feet</strong></div>
-                  <div className="quiver-grid">
-                    {BOARD_OPTIONS.map((boardId) => {
-                      const board = BOARD_SPECS[boardId];
-                      return (
-                        <button
-                          key={boardId}
-                          className={settings.board === boardId ? "is-selected" : ""}
-                          onClick={() => setSettings((current) => ({ ...current, board: boardId }))}
-                          style={{ "--board-color": board.color, "--board-accent": board.accent } as CSSProperties}
-                          aria-pressed={settings.board === boardId}
-                          title={board.description}
-                        >
-                          <i className={`board-shape is-${boardId}`} />
-                          <span><small>{board.profile}</small><strong>{board.name}</strong></span>
-                          <em>{board.mass.toFixed(1)} KG · SPD {Math.round(board.speed * 10)} · TURN {Math.round(board.turn * 10)} · STAB {Math.round(board.stability * 10)}</em>
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div className="step-aside">
+                  <span className="local-chip"><Clock /> {localTime} local</span>
                 </div>
               </div>
+
+              <div className="spot-layout">
+                <div className="spot-map">
+                  <WorldMap
+                    beach={beach}
+                    latitude={latitude}
+                    longitude={longitude}
+                    onSelect={(lat, lon, label) => chooseSpot({ name: label, lat, lon, note: "Your own paddle-out" })}
+                  />
+                  <div className="map-facts">
+                    <span><Waves /> {beach.breakType}</span>
+                    <span><Compass /> {breakLineLabel(breakCharacter.line)} · {breakCharacter.kind}</span>
+                    <span><Gauge /> Commitment {breakDemand(breakCharacter)}/5</span>
+                    <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
+                  </div>
+                </div>
+
+                <div className="spot-list" role="listbox" aria-label={`Peaks at ${beach.name}`}>
+                  <div className="spot-list-head">
+                    <span>Peak</span>
+                    <span>Face</span>
+                    <span>Commitment</span>
+                  </div>
+                  {spotReadouts.map((spot) => {
+                    const selected = zoneLabel === spot.zone.name;
+                    return (
+                      <button
+                        type="button"
+                        key={spot.zone.name}
+                        role="option"
+                        aria-selected={selected}
+                        className={`spot-row ${selected ? "is-selected" : ""}`}
+                        onClick={() => chooseSpot(spot.zone)}
+                      >
+                        <span className="spot-id">
+                          <strong>{spot.zone.name}</strong>
+                          <small>{spot.zone.note}</small>
+                        </span>
+                        <span className="spot-read">
+                          <b>{spot.face.toFixed(1)}<u>m</u></b>
+                          <em>{spot.tag} · {spot.line}</em>
+                        </span>
+                        <span className="demand" aria-label={`Commitment ${spot.demand} of 5`}>
+                          {Array.from({ length: 5 }, (_, level) => (
+                            <u key={level} className={level < spot.demand ? "is-on" : ""} />
+                          ))}
+                        </span>
+                      </button>
+                    );
+                  })}
+                  {zoneLabel === "Your own paddle-out" && (
+                    <p className="spot-custom"><Crosshair /> Surfing your own point on the shoreline.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="conditions-strip" aria-label={`Conditions at ${zoneLabel}`}>
+                <div className="condition is-lead">
+                  <span>Face</span>
+                  <strong>{effectiveFaceHeight.toFixed(1)} m</strong>
+                  <small>{settings.wavePeriod.toFixed(0)} s · {degrees(settings.waveDirection)}</small>
+                </div>
+                <div className="condition">
+                  <span>Swell</span>
+                  <strong>{settings.swellHeight.toFixed(1)} m</strong>
+                  <small>{settings.swellPeriod.toFixed(0)} s · {degrees(settings.swellDirection)}</small>
+                </div>
+                <div className={`condition ${wind.quality}`}>
+                  <span>Wind</span>
+                  <strong>{settings.windSpeed.toFixed(0)} km/h</strong>
+                  <small>{wind.label} · {degrees(settings.windDirection)}</small>
+                </div>
+                <div className="condition">
+                  <span>Water</span>
+                  <strong>{settings.waterTemperature.toFixed(0)}°C</strong>
+                  <small>{thermalKit.name}</small>
+                </div>
+                <div className="condition is-tide">
+                  <span>Tide</span>
+                  <strong>{settings.mode === "playground" ? tideResponse.shortName : sessionConditions.tideTrend}</strong>
+                  <small>{tideResponse.label} · {Math.round(tideResponse.quality * 100)}% fit</small>
+                  {settings.mode !== "playground" && conditions.tide.length > 1 && (
+                    <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <div className="step-pair">
+              <section className="step" aria-labelledby="step-board-title">
+                <div className="step-head">
+                  <span className="step-number" aria-hidden="true">3</span>
+                  <div className="step-title">
+                    <h2 id="step-board-title">Choose your board</h2>
+                    <p>Shape changes how you paddle, turn, and hold a line.</p>
+                  </div>
+                </div>
+                <div className="board-grid">
+                  {BOARD_OPTIONS.map((boardId) => {
+                    const board = BOARD_SPECS[boardId];
+                    const selected = settings.board === boardId;
+                    return (
+                      <button
+                        type="button"
+                        key={boardId}
+                        className={`board-card ${selected ? "is-selected" : ""}`}
+                        onClick={() => setSettings((current) => ({ ...current, board: boardId }))}
+                        style={{ "--board-color": board.color, "--board-accent": board.accent } as CSSProperties}
+                        aria-pressed={selected}
+                      >
+                        <i className={`board-shape is-${boardId}`} aria-hidden="true" />
+                        <span className="board-name">
+                          <small>{board.profile}</small>
+                          <strong>{board.name}</strong>
+                        </span>
+                        <p>{board.description}</p>
+                        <span className="board-stats">
+                          {([
+                            ["Speed", board.speed],
+                            ["Turn", board.turn],
+                            ["Stability", board.stability],
+                            ["Paddle", board.paddle],
+                          ] as const).map(([label, value]) => (
+                            <span key={label}>
+                              <small>{label}</small>
+                              <i><b style={{ width: `${Math.round(THREEClamp((value - .7) / .6, .08, 1) * 100)}%` }} /></i>
+                            </span>
+                          ))}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="step" aria-labelledby="step-level-title">
+                <div className="step-head">
+                  <span className="step-number" aria-hidden="true">4</span>
+                  <div className="step-title">
+                    <h2 id="step-level-title">Set the challenge</h2>
+                    <p>How much the ocean helps you. Change it any time.</p>
+                  </div>
+                </div>
+                <div className="level-grid">
+                  {LAUNCH_PRESETS.map((preset) => {
+                    const selected = selectedLaunchPreset === preset.id;
+                    return (
+                      <button
+                        type="button"
+                        key={preset.id}
+                        className={`level-card ${selected ? "is-selected" : ""}`}
+                        onClick={() => chooseLaunchPreset(preset.id)}
+                        aria-pressed={selected}
+                      >
+                        <span>{preset.kicker}</span>
+                        <strong>{preset.name}</strong>
+                        <p>{preset.description}</p>
+                        <i>{selected ? <><CircleCheck /> Selected</> : <>Choose <ArrowRight /></>}</i>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+
+            <div className="setup-more">
+              <div className="setup-more-head">
+                <Settings2 />
+                <strong>Fine-tune the session</strong>
+                <small>Optional. Everything here already has a sensible default.</small>
+              </div>
+
               <details
-                className="advanced-launch-options"
-                open={advancedSetupOpen}
-                onToggle={(event) => setAdvancedSetupOpen(event.currentTarget.open)}
+                className="setup-panel"
+                open={sectionOpen("session")}
+                onToggle={(event) => toggleSection("session", event.currentTarget.open)}
               >
                 <summary>
-                  <span><Settings2 /><strong>Advanced setup</strong><small>Heat format, assistance, exact map point, forecast, tour, and Wave Lab</small></span>
+                  <i><Timer /></i>
+                  <span>
+                    <strong>Format and assistance</strong>
+                    <small>Free surf or a judged five-minute heat · {SURF_ASSIST_PROFILES[settings.assist].label} board response</small>
+                  </span>
                   <ChevronDown />
                 </summary>
-                <div className="advanced-launch-controls">
+                <div className="panel-body">
                   {settings.mode === "advanced" && (
-                    <div className="session-format-picker">
-                      <div>
-                        <span>SESSION FORMAT</span>
-                        <strong>Choose how this ocean scores you</strong>
-                      </div>
+                    <div className="choice-row" role="group" aria-label="Session format">
+                      <span className="choice-label"><small>Format</small><strong>How the ocean scores you</strong></span>
                       <button
                         type="button"
                         className={sessionFormat === "free" ? "is-selected" : ""}
@@ -4184,7 +4357,7 @@ export default function SurfscapeApp() {
                         aria-pressed={sessionFormat === "free"}
                       >
                         <Waves />
-                        <span><small>OPEN SESSION</small><strong>Free Surf</strong><em>Ride without a clock</em></span>
+                        <span><strong>Free surf</strong><small>Ride without a clock</small></span>
                       </button>
                       <button
                         type="button"
@@ -4193,18 +4366,12 @@ export default function SurfscapeApp() {
                         aria-pressed={sessionFormat === "heat"}
                       >
                         <Timer />
-                        <span><small>5:00 · BEST TWO</small><strong>World Tour Heat</strong><em>Beat {heatTarget.toFixed(2)} to qualify</em></span>
+                        <span><strong>World Tour heat</strong><small>5:00 · best two waves · beat {heatTarget.toFixed(2)}</small></span>
                       </button>
                     </div>
                   )}
-                  <div className="assist-picker">
-                    <div>
-                      <Target />
-                      <span>
-                        <small>CONTROL SUPPORT</small>
-                        <strong>Same ocean surface</strong>
-                      </span>
-                    </div>
+                  <div className="choice-row" role="group" aria-label="Board assistance">
+                    <span className="choice-label"><small>Assistance</small><strong>Same ocean, different support</strong></span>
                     {ASSIST_OPTIONS.map((assist) => {
                       const profile = SURF_ASSIST_PROFILES[assist];
                       return (
@@ -4212,141 +4379,43 @@ export default function SurfscapeApp() {
                           type="button"
                           key={assist}
                           className={settings.assist === assist ? "is-selected" : ""}
-                          onClick={() => setSettings((current) => ({
-                            ...current,
-                            assist,
-                          }))}
+                          onClick={() => setSettings((current) => ({ ...current, assist }))}
                           aria-pressed={settings.assist === assist}
-                          title={profile.description}
                         >
-                          <strong>{profile.label}</strong>
-                          <small>{profile.description}</small>
+                          <Target />
+                          <span><strong>{profile.label}</strong><small>{profile.description}</small></span>
                         </button>
                       );
                     })}
                   </div>
                 </div>
-            <aside className={`planner panel-${launchPanel} ${showPlanner ? "is-open" : ""}`}>
-              <button className="planner-mobile-toggle" onClick={() => setShowPlanner((value) => !value)}>
-                <span><MapPin /> <strong>{beach.name}</strong><small>{zoneLabel}</small></span>
-                <ChevronDown />
-              </button>
-              <div className="planner-inner">
-                <div className="planner-head">
-                  <div>
-                    <span className="overline">02 / EXPLORE THE BREAK</span>
-                    <h2>{zoneLabel}</h2>
-                    <p>{beach.name} · {beach.region}</p>
-                  </div>
-                </div>
-                <nav className="planner-tabs" aria-label="Session planning">
-                  <button type="button" className={launchPanel === "break" ? "is-active" : ""} onClick={() => setLaunchPanel("break")} aria-pressed={launchPanel === "break"}>
-                    <MapPin /><span>Break</span><small>Choose a line</small>
-                  </button>
-                  <button type="button" className={launchPanel === "forecast" ? "is-active" : ""} onClick={() => setLaunchPanel("forecast")} aria-pressed={launchPanel === "forecast"}>
-                    <CloudSun /><span>Forecast</span><small>Pick a window</small>
-                  </button>
-                  <button type="button" className={launchPanel === "tour" ? "is-active" : ""} onClick={() => setLaunchPanel("tour")} aria-pressed={launchPanel === "tour"}>
-                    <Trophy /><span>Tour</span><small>{passportSummary.stamps} stamps</small>
-                  </button>
-                </nav>
-                {launchPanel === "tour" && <div className={`tour-passport mastery-${currentCoastRecord.mastery}`}>
-                  <div className="passport-heading">
-                    <Trophy />
-                    <span>WORLD TOUR PASSPORT</span>
-                    <strong>{passportSummary.explored} / {BEACHES.length} COASTS · {passportSummary.stamps} / {BEACHES.length * 3} STAMPS</strong>
-                  </div>
-                  <div className="passport-route" aria-label="World Tour coastline progress">
-                    {BEACHES.map((destination, index) => {
-                      const destinationMastery = passport[destination.id]?.mastery ?? 0;
-                      return (
-                        <button
-                          type="button"
-                          key={destination.id}
-                          className={`${destinationMastery ? "is-stamped" : ""} ${destination.id === beach.id ? "is-current" : ""}`}
-                          onClick={() => chooseBeach(destination)}
-                          aria-label={`${destination.name}. ${coastMasteryLabel(destinationMastery)}. Select destination.`}
-                          title={`${destination.name} · ${coastMasteryLabel(destinationMastery)}`}
-                        >
-                          <i>{String(index + 1).padStart(2, "0")}</i>
-                          <span>{Array.from({ length: 3 }, (_, stamp) => <b key={stamp} className={stamp < destinationMastery ? "is-earned" : ""} />)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="passport-coast">
-                    <div>
-                      <span>{zoneLabel} · {beach.country}</span>
-                      <strong>{coastMasteryLabel(currentCoastRecord.mastery)}</strong>
-                      <small>
-                        {currentCoastRecord.rides > 0
-                          ? `${currentCoastRecord.bestGrade} BEST · ${currentCoastRecord.bestScore.toLocaleString()} PTS · ${currentCoastRecord.cleanRides} CLEAN${currentCoastRecord.bestHeat > 0 ? ` · HEAT ${currentCoastRecord.bestHeat.toFixed(2)}` : ""}`
-                          : "LOG A WAVE · FINISH CLEAN · MASTER THE COAST"}
-                      </small>
-                    </div>
-                    <span className="passport-stamps" aria-label={`${currentCoastRecord.mastery} of 3 stamps earned`}>
-                      {Array.from({ length: 3 }, (_, stamp) => <i key={stamp} className={stamp < currentCoastRecord.mastery ? "is-earned" : ""}>{stamp + 1}</i>)}
-                    </span>
-                  </div>
-                </div>}
-                {launchPanel === "break" && <div className="planner-panel planner-break-panel">
-                  <WorldMap
-                  beach={beach}
-                  latitude={latitude}
-                  longitude={longitude}
-                  onSelect={(lat, lon, label) => {
-                    setLatitude(lat);
-                    setLongitude(lon);
-                    setZoneLabel(label);
-                    setSelectedForecastTime(null);
-                  }}
-                />
-                <div className="zone-strip" role="list" aria-label={`${beach.name} surf zones`}>
-                  {beach.zones.map((zone) => (
-                    <button
-                      key={zone.name}
-                      className={zoneLabel === zone.name ? "is-active" : ""}
-                      onClick={() => {
-                        setLatitude(zone.lat);
-                        setLongitude(zone.lon);
-                        setZoneLabel(zone.name);
-                        setSelectedForecastTime(null);
-                      }}
-                    >
-                      <span />
-                      <strong>{zone.name}</strong>
-                      <small>{zone.note}</small>
-                    </button>
-                  ))}
-                </div>
-                  <p className="break-description">{beach.description}</p>
-                  <div className="break-meta">
-                    <span><Waves /> {beach.breakType}</span>
-                    <span><ArrowRight /> {breakCharacter.line} · {breakCharacter.kind.toUpperCase()}</span>
-                    <span><Gauge /> Difficulty {beach.difficulty}/5</span>
-                    <span><Thermometer /> {settings.waterTemperature.toFixed(0)}°C · {thermalKit.name}</span>
-                    <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
-                    <span className="data-credit">Model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD · Not for navigation</span>
-                  </div>
-                </div>}
-                {launchPanel === "forecast" && <div className="planner-panel planner-forecast-panel">
-                  <div className="forecast-summary">
-                    <div><Waves /><span>Face</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong></div>
-                    <div><Wind /><span>Period</span><strong>{settings.swellPeriod.toFixed(1)} s</strong></div>
-                    <div><ArrowRight /><span>Tide</span><strong>{tideResponse.shortName}</strong></div>
-                    <div><SunMedium /><span>Local</span><strong>{localTime}</strong></div>
-                  </div>
-                  <div className="forecast-planner">
-                  <div className="forecast-head">
-                    <span>03 / SESSION WINDOW</span>
-                    <strong>{selectedForecast ? `${forecastDayLabel(selectedForecast.time, conditions.observedAt)} · ${formatClock(selectedForecast.time)}` : "Now · live model"}</strong>
-                  </div>
-                  <div className="forecast-strip" role="list" aria-label="Choose a forecast session time">
+              </details>
+
+              <details
+                className="setup-panel"
+                open={sectionOpen("forecast")}
+                onToggle={(event) => toggleSection("forecast", event.currentTarget.open)}
+              >
+                <summary>
+                  <i><CloudSun /></i>
+                  <span>
+                    <strong>Session window</strong>
+                    <small>
+                      {selectedForecast
+                        ? `${forecastDayLabel(selectedForecast.time, conditions.observedAt)} · ${formatClock(selectedForecast.time)}`
+                        : "Surfing now · or pick a better tide from the two-day forecast"}
+                    </small>
+                  </span>
+                  <ChevronDown />
+                </summary>
+                <div className="panel-body">
+                  <div className="forecast-rail" role="listbox" aria-label="Choose a session window">
                     <button
                       type="button"
-                      className={selectedForecastTime === null ? "is-active" : ""}
+                      role="option"
+                      aria-selected={selectedForecastTime === null}
+                      className={selectedForecastTime === null ? "is-selected" : ""}
                       onClick={() => selectSessionWindow(null)}
-                      aria-pressed={selectedForecastTime === null}
                       disabled={conditionsLoading}
                     >
                       <span><b>NOW</b><em>{formatClock(conditions.observedAt)}</em></span>
@@ -4360,9 +4429,10 @@ export default function SurfscapeApp() {
                         <button
                           type="button"
                           key={point.time}
-                          className={selectedForecastTime === point.time ? "is-active" : ""}
+                          role="option"
+                          aria-selected={selectedForecastTime === point.time}
+                          className={selectedForecastTime === point.time ? "is-selected" : ""}
                           onClick={() => selectSessionWindow(point)}
-                          aria-pressed={selectedForecastTime === point.time}
                           disabled={conditionsLoading}
                         >
                           <span><b>{forecastDayLabel(point.time, conditions.observedAt).toUpperCase()}</b><em>{formatClock(point.time)}</em></span>
@@ -4373,118 +4443,122 @@ export default function SurfscapeApp() {
                       );
                     })}
                   </div>
+                  <p className="panel-note">
+                    Forecast model: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> · DWD. Not for navigation.
+                  </p>
                 </div>
-                  <div className="break-meta forecast-meta">
-                  <span title={tideResponse.note} aria-label={`${tideResponse.label}. ${tideResponse.note}. ${Math.round(tideResponse.quality * 100)} percent bathymetry fit.`}><Waves /> {tideResponse.label} · {Math.round(tideResponse.quality * 100)}% bathymetry fit</span>
-                    <span><Wind /> Wind {settings.windSpeed.toFixed(0)} km/h · {degrees(settings.windDirection)}</span>
-                    <span><Thermometer /> Water {settings.waterTemperature.toFixed(0)}°C · {thermalKit.name}</span>
-                  </div>
-                </div>}
-              </div>
-            </aside>
               </details>
+
+              <details
+                className="setup-panel"
+                open={sectionOpen("tour")}
+                onToggle={(event) => toggleSection("tour", event.currentTarget.open)}
+              >
+                <summary>
+                  <i><Trophy /></i>
+                  <span>
+                    <strong>World Tour progress</strong>
+                    <small>{passportSummary.explored} of {BEACHES.length} coasts surfed · {passportSummary.stamps} of {BEACHES.length * 3} stamps</small>
+                  </span>
+                  <ChevronDown />
+                </summary>
+                <div className="panel-body">
+                  <div className={`tour-board mastery-${currentCoastRecord.mastery}`}>
+                    <div className="tour-route" aria-label="World Tour coastline progress">
+                      {BEACHES.map((destination, index) => {
+                        const destinationMastery = passport[destination.id]?.mastery ?? 0;
+                        return (
+                          <button
+                            type="button"
+                            key={destination.id}
+                            className={`${destinationMastery ? "is-stamped" : ""} ${destination.id === beach.id ? "is-current" : ""}`}
+                            onClick={() => chooseBeach(destination)}
+                            title={`${destination.name} · ${coastMasteryLabel(destinationMastery)}`}
+                            aria-label={`${destination.name}. ${coastMasteryLabel(destinationMastery)}. Select coast.`}
+                          >
+                            <i>{String(index + 1).padStart(2, "0")}</i>
+                            <span>{Array.from({ length: 3 }, (_, stamp) => <b key={stamp} className={stamp < destinationMastery ? "is-earned" : ""} />)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="tour-record">
+                      <div>
+                        <span>{beach.name} · {beach.country}</span>
+                        <strong>{coastMasteryLabel(currentCoastRecord.mastery)}</strong>
+                        <small>
+                          {currentCoastRecord.rides > 0
+                            ? `${currentCoastRecord.bestGrade} best · ${currentCoastRecord.bestScore.toLocaleString()} pts · ${currentCoastRecord.cleanRides} clean${currentCoastRecord.bestHeat > 0 ? ` · heat ${currentCoastRecord.bestHeat.toFixed(2)}` : ""}`
+                            : "Log a wave · finish clean · master the coast"}
+                        </small>
+                      </div>
+                      <span className="tour-stamps" aria-label={`${currentCoastRecord.mastery} of 3 stamps earned`}>
+                        {Array.from({ length: 3 }, (_, stamp) => (
+                          <i key={stamp} className={stamp < currentCoastRecord.mastery ? "is-earned" : ""}>{stamp + 1}</i>
+                        ))}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              {settings.mode === "playground" && (
+                <details
+                  className="setup-panel"
+                  open={sectionOpen("lab")}
+                  onToggle={(event) => toggleSection("lab", event.currentTarget.open)}
+                >
+                  <summary>
+                    <i><Settings2 /></i>
+                    <span>
+                      <strong>Wave Lab</strong>
+                      <small>Build the ocean yourself · {tideResponse.label}</small>
+                    </span>
+                    <ChevronDown />
+                  </summary>
+                  <div className="panel-body">
+                    <div className="lab-grid">
+                      <PlaygroundSlider label="Face height" value={settings.waveHeight} min={0.3} max={6} step={0.1} unit="m" onChange={(waveHeight) => setSettings((value) => ({ ...value, waveHeight }))} />
+                      <PlaygroundSlider label="Period" value={settings.wavePeriod} min={5} max={22} step={0.5} unit="s" onChange={(wavePeriod) => setSettings((value) => ({ ...value, wavePeriod }))} />
+                      <PlaygroundSlider label="Wave bearing" value={settings.waveDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(waveDirection) => setSettings((value) => ({ ...value, waveDirection }))} />
+                      <PlaygroundSlider label="Swell height" value={settings.swellHeight} min={0} max={6} step={0.1} unit="m" onChange={(swellHeight) => setSettings((value) => ({ ...value, swellHeight }))} />
+                      <PlaygroundSlider label="Swell period" value={settings.swellPeriod} min={5} max={24} step={0.5} unit="s" onChange={(swellPeriod) => setSettings((value) => ({ ...value, swellPeriod }))} />
+                      <PlaygroundSlider label="Swell bearing" value={settings.swellDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(swellDirection) => setSettings((value) => ({ ...value, swellDirection }))} />
+                      <PlaygroundSlider label="Current" value={settings.currentStrength} min={0} max={4} step={0.1} unit="km/h" onChange={(currentStrength) => setSettings((value) => ({ ...value, currentStrength }))} />
+                      <PlaygroundSlider label="Current bearing" value={settings.currentDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(currentDirection) => setSettings((value) => ({ ...value, currentDirection }))} />
+                      <PlaygroundSlider label="Wind" value={settings.windSpeed} min={0} max={45} step={1} unit="km/h" onChange={(windSpeed) => setSettings((value) => ({ ...value, windSpeed }))} />
+                      <PlaygroundSlider label="Wind bearing" value={settings.windDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(windDirection) => setSettings((value) => ({ ...value, windDirection }))} />
+                      <PlaygroundSlider label="Tide" value={settings.tide} min={-1.5} max={1.8} step={0.05} unit="m" onChange={(tide) => setSettings((value) => ({ ...value, tide }))} />
+                      <PlaygroundSlider label="Water temperature" value={settings.waterTemperature} min={8} max={31} step={1} unit="°C" onChange={(waterTemperature) => setSettings((value) => ({ ...value, waterTemperature }))} />
+                      <PlaygroundSlider label="Air temperature" value={settings.airTemperature} min={5} max={38} step={1} unit="°C" onChange={(airTemperature) => setSettings((value) => ({ ...value, airTemperature }))} />
+                      <PlaygroundSlider label="Local hour" value={settings.timeOfDay} min={0} max={23.5} step={0.5} unit=":00" onChange={(timeOfDay) => setSettings((value) => ({ ...value, timeOfDay }))} />
+                      <button
+                        className="lab-weather"
+                        type="button"
+                        onClick={() => setSettings((value) => ({ ...value, weatherCode: nextWeatherPreset(value.weatherCode) }))}
+                        aria-label={`Weather preset: ${weatherLabel(settings.weatherCode)}. Tap to change.`}
+                      >
+                        <span>Weather</span>
+                        <strong>{weatherLabel(settings.weatherCode)}</strong>
+                        <small>Tap to cycle</small>
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              )}
             </div>
           </div>
 
-          {destinationPickerOpen && (
-            <div
-              className="destination-picker-backdrop"
-              role="presentation"
-              onMouseDown={(event) => {
-                if (event.currentTarget === event.target) setDestinationPickerOpen(false);
-              }}
-            >
-              <section
-                className="destination-picker"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="destination-picker-title"
-              >
-                <header>
-                  <div>
-                    <span>WORLD SURF ATLAS · 13 COASTLINES</span>
-                    <h2 id="destination-picker-title">Choose your ocean</h2>
-                    <p>Live marine conditions are loaded for the line you select.</p>
-                  </div>
-                  <button type="button" onClick={() => setDestinationPickerOpen(false)} aria-label="Close destination picker">
-                    <X />
-                  </button>
-                </header>
-                <div className="destination-picker-grid">
-                  {BEACHES.map((destination, index) => (
-                    <button
-                      type="button"
-                      key={destination.id}
-                      className={destination.id === beach.id ? "is-current" : ""}
-                      onClick={() => chooseBeach(destination)}
-                      aria-pressed={destination.id === beach.id}
-                    >
-                      <i className="destination-icon" aria-hidden="true">
-                        <Image
-                          src={`/icons/beaches/${destination.id}.webp`}
-                          alt=""
-                          width={256}
-                          height={256}
-                          sizes="56px"
-                        />
-                        <b>{String(index + 1).padStart(2, "0")}</b>
-                      </i>
-                      <span>
-                        <small>{destination.country}</small>
-                        <strong>{destination.name}</strong>
-                        <em>{destination.region}</em>
-                      </span>
-                      <b>
-                        <small>{destination.breakType}</small>
-                        <em>{destination.difficulty}/5</em>
-                      </b>
-                      <ArrowRight />
-                    </button>
-                  ))}
-                </div>
-                <footer>
-                  <span><i /> {conditions.source === "live" ? "Live marine model connected" : "Modeled conditions available offline"}</span>
-                  <small>Wave, swell, wind, current and tide update after selection.</small>
-                </footer>
-              </section>
-            </div>
-          )}
-
-          {settings.mode === "playground" && advancedSetupOpen && (
-            <section className="wave-lab-panel">
-              <div className="lab-title"><Settings2 /><div><span>WAVE LAB · {tideResponse.shortName}</span><strong>{tideResponse.label}</strong></div></div>
-              <PlaygroundSlider label="Face height" value={settings.waveHeight} min={0.3} max={6} step={0.1} unit="m" onChange={(waveHeight) => setSettings((value) => ({ ...value, waveHeight }))} />
-              <PlaygroundSlider label="Period" value={settings.wavePeriod} min={5} max={22} step={0.5} unit="s" onChange={(wavePeriod) => setSettings((value) => ({ ...value, wavePeriod }))} />
-              <PlaygroundSlider label="Wave bearing" value={settings.waveDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(waveDirection) => setSettings((value) => ({ ...value, waveDirection }))} />
-              <PlaygroundSlider label="Swell height" value={settings.swellHeight} min={0} max={6} step={0.1} unit="m" onChange={(swellHeight) => setSettings((value) => ({ ...value, swellHeight }))} />
-              <PlaygroundSlider label="Swell period" value={settings.swellPeriod} min={5} max={24} step={0.5} unit="s" onChange={(swellPeriod) => setSettings((value) => ({ ...value, swellPeriod }))} />
-              <PlaygroundSlider label="Swell bearing" value={settings.swellDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(swellDirection) => setSettings((value) => ({ ...value, swellDirection }))} />
-              <PlaygroundSlider label="Current" value={settings.currentStrength} min={0} max={4} step={0.1} unit="km/h" onChange={(currentStrength) => setSettings((value) => ({ ...value, currentStrength }))} />
-              <PlaygroundSlider label="Current bearing" value={settings.currentDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(currentDirection) => setSettings((value) => ({ ...value, currentDirection }))} />
-              <PlaygroundSlider label="Wind" value={settings.windSpeed} min={0} max={45} step={1} unit="km/h" onChange={(windSpeed) => setSettings((value) => ({ ...value, windSpeed }))} />
-              <PlaygroundSlider label="Wind bearing" value={settings.windDirection} min={0} max={355} step={5} unit="" formatter={degrees} onChange={(windDirection) => setSettings((value) => ({ ...value, windDirection }))} />
-              <PlaygroundSlider label="Tide" value={settings.tide} min={-1.5} max={1.8} step={0.05} unit="m" onChange={(tide) => setSettings((value) => ({ ...value, tide }))} />
-              <PlaygroundSlider label="Water temperature" value={settings.waterTemperature} min={8} max={31} step={1} unit="°C" onChange={(waterTemperature) => setSettings((value) => ({ ...value, waterTemperature }))} />
-              <PlaygroundSlider label="Air temperature" value={settings.airTemperature} min={5} max={38} step={1} unit="°C" onChange={(airTemperature) => setSettings((value) => ({ ...value, airTemperature }))} />
-              <PlaygroundSlider label="Local hour" value={settings.timeOfDay} min={0} max={23.5} step={0.5} unit=":00" onChange={(timeOfDay) => setSettings((value) => ({ ...value, timeOfDay }))} />
-              <button className="lab-weather" type="button" onClick={() => setSettings((value) => ({ ...value, weatherCode: nextWeatherPreset(value.weatherCode) }))} aria-label={`Weather preset: ${weatherLabel(settings.weatherCode)}. Tap to change.`}>
-                <CloudSun /><span>Weather</span><strong>{weatherLabel(settings.weatherCode)}</strong><small>Tap to cycle</small>
-              </button>
-            </section>
-          )}
-
-          <footer className="launch-footer" aria-label="Ready session">
-            <div className="session-summary">
-              <div><span>Session</span><strong>{sessionFormat === "heat" ? "World Tour Heat" : selectedLaunchChoice.name}</strong></div>
-              <i />
-              <div><span>Line</span><strong>{zoneLabel}</strong></div>
-              <i />
-              <div><span>Window</span><strong>{localTime} · {settings.waveHeight.toFixed(1)} m</strong></div>
-              <i />
+          <footer className="launch-cta" aria-label="Start your session">
+            <div className="cta-recap">
+              <div><span>Coast</span><strong>{beach.name}</strong></div>
+              <div><span>Peak</span><strong>{zoneLabel}</strong></div>
+              <div><span>Conditions</span><strong>{effectiveFaceHeight.toFixed(1)} m · {localTime}</strong></div>
               <div><span>Board</span><strong>{BOARD_SPECS[settings.board].name}</strong></div>
+              <div><span>Challenge</span><strong>{sessionFormat === "heat" ? "World Tour heat" : selectedLaunchChoice.name}</strong></div>
             </div>
             <button className="launch-button" onClick={startSession}>
-              <span>{sessionFormat === "heat" ? "START WORLD TOUR HEAT" : "ENTER THE WATER"}</span>
+              <span>{sessionFormat === "heat" ? "START THE HEAT" : "PADDLE OUT"}</span>
               <i><Play fill="currentColor" /></i>
             </button>
           </footer>
@@ -5509,7 +5583,7 @@ export default function SurfscapeApp() {
               <div className="pause-card">
                 <span className="overline">SESSION PAUSED</span>
                 <h2>Listen to the break.</h2>
-                <p>{zoneLabel} is running {settings.waveHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
+                <p>{zoneLabel} is running {effectiveFaceHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
                 {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
