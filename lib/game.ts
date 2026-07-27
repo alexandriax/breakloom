@@ -1134,7 +1134,7 @@ export const BOARD_SPECS: Record<BoardType, {
   },
 };
 
-export const SURFSCAPE_RELEASE = {
+export const BREAKLOOM_RELEASE = {
   version: 236,
   channel: "STABLE RC",
 } as const;

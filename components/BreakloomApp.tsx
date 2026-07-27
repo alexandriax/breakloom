@@ -68,7 +68,7 @@ import {
   settingsFromConditions,
   stabilizeHeadingGuideDegrees,
   SURF_ASSIST_PROFILES,
-  SURFSCAPE_RELEASE,
+  BREAKLOOM_RELEASE,
   thermalKitForConditions,
   tideResponseForBreak,
   type TideResponse,
@@ -78,7 +78,7 @@ import {
   type SessionSettings,
   type SurfAssistLevel,
 } from "@/lib/game";
-import { SOUNDTRACK, SurfscapeAudio, type NowPlaying } from "@/lib/audio";
+import { SOUNDTRACK, BreakloomAudio, type NowPlaying } from "@/lib/audio";
 import TideSparkline from "./TideSparkline";
 import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 
@@ -243,9 +243,34 @@ const LAUNCH_PRESETS: Array<{
 ];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
-const RECORD_KEY = "surfscape-personal-best-v1";
-const PASSPORT_KEY = "surfscape-world-tour-v1";
-const GUIDANCE_KEY = "surfscape-coaching-v1";
+const RECORD_KEY = "breakloom-personal-best-v1";
+const PASSPORT_KEY = "breakloom-world-tour-v1";
+const GUIDANCE_KEY = "breakloom-coaching-v1";
+
+/**
+ * The game stored progress under a surfscape- prefix before it was renamed.
+ * Anyone who played it then keeps their personal bests, World Tour stamps, and
+ * coaching preference: the old entry is copied across once and then removed.
+ */
+function carryOverRenamedProgress() {
+  const renamed = [
+    ["surfscape-personal-best-v1", RECORD_KEY],
+    ["surfscape-world-tour-v1", PASSPORT_KEY],
+    ["surfscape-coaching-v1", GUIDANCE_KEY],
+  ] as const;
+  try {
+    for (const [before, after] of renamed) {
+      const saved = window.localStorage.getItem(before);
+      if (saved === null) continue;
+      if (window.localStorage.getItem(after) === null) {
+        window.localStorage.setItem(after, saved);
+      }
+      window.localStorage.removeItem(before);
+    }
+  } catch {
+    // Nothing to carry over when storage is blocked; the game still plays.
+  }
+}
 const HEAT_DURATION_SECONDS = 5 * 60;
 const GRADE_ORDER: GameStats["grade"][] = ["C", "B", "A", "S"];
 const EMPTY_COAST_RECORD: CoastPassportRecord = {
@@ -909,19 +934,21 @@ async function rideCardFile({
 
   context.fillStyle = "rgba(216,247,242,.52)";
   context.font = "700 13px Arial, sans-serif";
-  context.fillText("SURF THE WORLD  ·  SURFSCAPE.ALEXANDRIA.CHATGPT.SITE", 64, 566);
+  // No hostname here: a shared card outlives whatever the game is deployed
+  // on, and the rename already stranded the address that used to be printed.
+  context.fillText("SURF THE WORLD  ·  BREAKLOOM", 64, 566);
   context.fillStyle = accent;
   context.fillRect(64, 588, 1070, 3);
   capturedImage?.close();
 
   return new Promise<File | null>((resolve) => {
     canvas.toBlob((blob) => {
-      resolve(blob ? new File([blob], "surfscape-ride.png", { type: "image/png" }) : null);
+      resolve(blob ? new File([blob], "breakloom-ride.png", { type: "image/png" }) : null);
     }, "image/png");
   });
 }
 
-export default function SurfscapeApp() {
+export default function BreakloomApp() {
   const [screen, setScreen] = useState<Screen>("launch");
   const [beach, setBeach] = useState<Beach>(DEFAULT_BEACH);
   const [latitude, setLatitude] = useState(DEFAULT_BEACH.zones[1].lat);
@@ -1004,7 +1031,7 @@ export default function SurfscapeApp() {
     rail.scrollBy({ left: direction * Math.max(240, rail.clientWidth * .8), behavior: "smooth" });
   };
   const controls = useRef<ControlState>({ ...EMPTY_CONTROLS });
-  const audio = useRef<SurfscapeAudio | null>(null);
+  const audio = useRef<BreakloomAudio | null>(null);
   const rideCard = useRef<File | null>(null);
   const photoFile = useRef<File | null>(null);
   const rideFrame = useRef<RideFrameCapture | null>(null);
@@ -1085,6 +1112,7 @@ export default function SurfscapeApp() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
+        carryOverRenamedProgress();
         setGuidanceEnabled(
           window.localStorage.getItem(GUIDANCE_KEY) !== "hidden",
         );
@@ -1213,7 +1241,7 @@ export default function SurfscapeApp() {
 
   const handleRideFrameCapture = useCallback((capture: RideFrameCapture) => {
     if (capture.purpose === "photo") {
-      photoFile.current = new File([capture.blob], `surfscape-photo-${Date.now()}.jpg`, { type: "image/jpeg" });
+      photoFile.current = new File([capture.blob], `breakloom-photo-${Date.now()}.jpg`, { type: "image/jpeg" });
       setPhotoStatus("ready");
       haptic([7, 18, 11]);
       return;
@@ -1438,6 +1466,7 @@ export default function SurfscapeApp() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
+        carryOverRenamedProgress();
         const saved = window.localStorage.getItem(RECORD_KEY);
         if (saved) {
           const parsed = JSON.parse(saved) as Partial<PersonalBest>;
@@ -1471,6 +1500,7 @@ export default function SurfscapeApp() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
+        carryOverRenamedProgress();
         const saved = window.localStorage.getItem(PASSPORT_KEY);
         if (saved) setPassport(normalizePassport(JSON.parse(saved)));
       } catch {
@@ -2573,7 +2603,7 @@ export default function SurfscapeApp() {
   /** One audio engine per session, wired to report the running order. */
   const ensureAudio = () => {
     if (!audio.current) {
-      const engine = new SurfscapeAudio();
+      const engine = new BreakloomAudio();
       engine.onTrackChange = setNowPlaying;
       audio.current = engine;
     }
@@ -3010,8 +3040,8 @@ export default function SurfscapeApp() {
       return;
     }
     const shareData: ShareData = {
-      title: `Surfscape · ${zoneLabel}`,
-      text: `${zoneLabel}, ${beach.name} · ${effectiveFaceHeight.toFixed(1)}m at ${settings.wavePeriod.toFixed(0)}s. Captured in Surfscape.`,
+      title: `Breakloom · ${zoneLabel}`,
+      text: `${zoneLabel}, ${beach.name} · ${effectiveFaceHeight.toFixed(1)}m at ${settings.wavePeriod.toFixed(0)}s. Captured in Breakloom.`,
       url: window.location.origin,
       files: [file],
     };
@@ -3036,7 +3066,7 @@ export default function SurfscapeApp() {
     if (shareStatus === "working") return;
     setShareStatus("working");
     const url = window.location.origin;
-    const text = `I scored ${ride.score.toLocaleString()} points on a ${ride.distance.toFixed(0)}m line at ${zoneLabel}, ${beach.name}. Grade ${ride.grade} in Surfscape. #Surfscape`;
+    const text = `I scored ${ride.score.toLocaleString()} points on a ${ride.distance.toFixed(0)}m line at ${zoneLabel}, ${beach.name}. Grade ${ride.grade} in Breakloom. #Breakloom`;
     const copyLink = async () => {
       if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(`${text}\n${url}`);
@@ -3061,7 +3091,7 @@ export default function SurfscapeApp() {
         });
       }
       if (navigator.share) {
-        const shareData: ShareData = { title: `Surfscape · ${zoneLabel} · ${ride.grade}`, text, url };
+        const shareData: ShareData = { title: `Breakloom · ${zoneLabel} · ${ride.grade}`, text, url };
         if (rideCard.current && navigator.canShare?.({ files: [rideCard.current] })) shareData.files = [rideCard.current];
         await navigator.share(shareData);
         setShareStatus("shared");
@@ -4057,7 +4087,7 @@ export default function SurfscapeApp() {
   } as CSSProperties;
 
   return (
-    <main className={`surfscape ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle}>
+    <main className={`breakloom ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle}>
       <div className="scene-layer" aria-hidden={screen === "launch"}>
         <SurfScene
           key={`${beach.id}-${sessionKey}`}
@@ -4112,7 +4142,7 @@ export default function SurfscapeApp() {
           <header className="launch-bar">
             <div className="launch-brand">
               <i aria-hidden="true"><Waves /></i>
-              <b>SURFSCAPE</b>
+              <b>BREAKLOOM</b>
               <small>Real coastlines · live ocean data</small>
             </div>
             <div className="launch-tools">
@@ -4652,7 +4682,7 @@ export default function SurfscapeApp() {
             <span>{gamepadConnected ? "RIGHT STICK · 360° VIEW" : pointerLocked ? "360° VIEW LOCKED · ESC RELEASES" : "CLICK / TOUCH · 360° VIEW"} · {CAMERA_LABELS[cameraMode].toUpperCase()}</span>
           </div>
           {replayActive && replayRide && (
-            <div className="replay-mode-ui" aria-label="Surfscape instant replay">
+            <div className="replay-mode-ui" aria-label="Breakloom instant replay">
               <div className="replay-letterbox" aria-hidden="true" />
               <div className="replay-mode-top">
                 <div>
@@ -4755,7 +4785,7 @@ export default function SurfscapeApp() {
           )}
           {photoMode && (
             <>
-              <div className="photo-mode-ui" aria-label="Surfscape photo mode">
+              <div className="photo-mode-ui" aria-label="Breakloom photo mode">
                 <div className="photo-mode-top">
                   <div>
                     <Aperture />
@@ -4896,7 +4926,7 @@ export default function SurfscapeApp() {
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
-              <div><strong>SURFSCAPE</strong><span>v{SURFSCAPE_RELEASE.version} {SURFSCAPE_RELEASE.channel} · {zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
+              <div><strong>BREAKLOOM</strong><span>v{BREAKLOOM_RELEASE.version} {BREAKLOOM_RELEASE.channel} · {zoneLabel} · {beach.name} · {BOARD_SPECS[settings.board].name}</span></div>
             </div>
             <div className={`game-objective ${sessionFormat === "heat" ? "is-heat" : settings.mode === "training" ? "is-training" : ""} ${settings.mode === "training" && trainingComplete ? "is-complete" : ""}`}>
               <span>
@@ -5322,7 +5352,7 @@ export default function SurfscapeApp() {
                   onClick={() => void shareRide(rideToast)}
                   onPointerDown={(event) => event.stopPropagation()}
                   disabled={shareStatus === "working"}
-                  aria-label="Share this Surfscape ride"
+                  aria-label="Share this Breakloom ride"
                 >
                   {shareStatus === "shared" || shareStatus === "copied" ? <CircleCheck /> : <Share2 />}
                   <span>{shareStatus === "working" ? "OPENING SHARE" : shareStatus === "shared" ? "SHARED" : shareStatus === "copied" ? "LINK COPIED" : shareStatus === "error" ? "TRY AGAIN" : "SHARE RIDE"}</span>
@@ -5662,7 +5692,7 @@ export default function SurfscapeApp() {
                     <Smartphone /> Motion balance · {motionBalanceStatus === "requesting" ? "Requesting access" : motionBalanceStatus === "denied" ? "Browser access needed" : motionBalanceActive ? "On" : "Off"}
                   </button>
                 )}
-                {installPrompt && <button onClick={() => void installApp()}><Download /> Install Surfscape</button>}
+                {installPrompt && <button onClick={() => void installApp()}><Download /> Install Breakloom</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
                 <button onClick={restartSession}><RotateCcw /> Restart session</button>
               </div>

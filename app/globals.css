@@ -62,7 +62,7 @@ input:focus-visible {
   border: 0;
 }
 
-.surfscape {
+.breakloom {
   position: relative;
   min-height: 100dvh;
   overflow: hidden;
@@ -1799,7 +1799,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   body { overflow: hidden; }
   .pause-card { max-height: calc(100dvh - 30px); overflow-y: auto; padding: 26px 20px; }
   .pause-card p { margin-bottom: 16px; }
-  .surfscape.is-launch { overflow-y: auto; }
+  .breakloom.is-launch { overflow-y: auto; }
   .scene-layer::after { background: linear-gradient(180deg, rgba(3, 12, 18, 0.52), rgba(3, 12, 18, 0.88) 63%); }
   .launch-button { width: 100%; max-width: none; padding-left: 23px; }
 
@@ -3051,7 +3051,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 
 /* Viewport correction: launch layout follows width, while touch gameplay can
    still follow pointer capability. The launch root is always its own scroller. */
-.surfscape.is-launch {
+.breakloom.is-launch {
   height: 100dvh;
   min-height: 0;
   overflow-x: hidden;
@@ -3271,7 +3271,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 
 /* v234 legibility floor: primary labels remain readable while dense secondary
    telemetry is removed on narrow screens instead of being shrunk into noise. */
-.surfscape :is(
+.breakloom :is(
   .game-brand span,
   .game-objective span,
   .hud-score-chip span,
@@ -3285,7 +3285,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 ) {
   font-size: 9px;
 }
-.surfscape :is(
+.breakloom :is(
   .mechanics-guide small,
   .paddle-training-readout > small,
   .hud-ocean-grid article > small,
@@ -3294,7 +3294,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 ) {
   font-size: 10px;
 }
-.surfscape :is(
+.breakloom :is(
   .hud-vitals strong,
   .mechanics-guide strong,
   .paddle-training-readout > strong,
@@ -3303,25 +3303,25 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 ) {
   font-size: 11px;
 }
-.surfscape .paddle-out-controls kbd { font-size: 9px; }
-.surfscape .paddle-out-controls b { font-size: 8px; }
+.breakloom .paddle-out-controls kbd { font-size: 9px; }
+.breakloom .paddle-out-controls b { font-size: 8px; }
 
 @media (max-width: 780px) {
-  .surfscape .game-objective strong { font-size: 10px; }
-  .surfscape .hud-vitals span { font-size: 8px; }
-  .surfscape .hud-vitals strong { font-size: 10px; }
-  .surfscape .mechanics-guide strong { font-size: 10px; }
-  .surfscape .mechanics-guide small { font-size: 9px; }
-  .surfscape .training-force-vectors { display: none; }
-  .surfscape .touch-ride-telemetry small,
-  .surfscape .replay-mobile-telemetry small {
+  .breakloom .game-objective strong { font-size: 10px; }
+  .breakloom .hud-vitals span { font-size: 8px; }
+  .breakloom .hud-vitals strong { font-size: 10px; }
+  .breakloom .mechanics-guide strong { font-size: 10px; }
+  .breakloom .mechanics-guide small { font-size: 9px; }
+  .breakloom .training-force-vectors { display: none; }
+  .breakloom .touch-ride-telemetry small,
+  .breakloom .replay-mobile-telemetry small {
     font-size: 8px;
   }
-  .surfscape .touch-ride-telemetry strong,
-  .surfscape .replay-mobile-telemetry strong {
+  .breakloom .touch-ride-telemetry strong,
+  .breakloom .replay-mobile-telemetry strong {
     font-size: 10px;
   }
-  .surfscape .dive-button small { font-size: 8px; }
+  .breakloom .dive-button small { font-size: 8px; }
 }
 
 /* ---------------------------------------------------------------------------
