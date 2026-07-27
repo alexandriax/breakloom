@@ -42,3 +42,6 @@ next-env.d.ts
 /work/
 /.sites/
 /qa-artifacts/
+
+# Cached OpenStreetMap tiles for scripts/verify-surf-zones.mjs
+.tiles/

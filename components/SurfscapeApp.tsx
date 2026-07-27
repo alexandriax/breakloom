@@ -78,7 +78,7 @@ import {
   type SessionSettings,
   type SurfAssistLevel,
 } from "@/lib/game";
-import { SOUNDTRACK, SurfscapeAudio } from "@/lib/audio";
+import { SOUNDTRACK, SurfscapeAudio, type NowPlaying } from "@/lib/audio";
 import TideSparkline from "./TideSparkline";
 import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 
@@ -196,6 +196,15 @@ type HapticGamepad = Gamepad & {
 type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<"granted" | "denied">;
 };
+
+/**
+ * Deployment root. A GitHub Pages project site serves the game from a
+ * repository subpath, and next/image does not prefix an unoptimized src.
+ */
+const ASSET_BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+/** Label for a paddle-out the surfer placed on the map rather than a named peak. */
+const CUSTOM_SPOT = "Your own paddle-out";
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const ASSIST_OPTIONS = Object.keys(
@@ -954,7 +963,7 @@ export default function SurfscapeApp() {
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
-  const [soundtrackTrack, setSoundtrackTrack] = useState<{ index: number; total: number }>({ index: 1, total: SOUNDTRACK.length });
+  const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ title: SOUNDTRACK[0].title, index: 1, total: SOUNDTRACK.length });
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
   const [paddleGuideDegrees, setPaddleGuideDegrees] =
     useState(0);
@@ -1547,7 +1556,7 @@ export default function SurfscapeApp() {
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    const basePath = ASSET_BASE;
     const registerServiceWorker = () => {
       if (!("serviceWorker" in navigator)) return;
       void navigator.serviceWorker
@@ -2565,7 +2574,7 @@ export default function SurfscapeApp() {
   const ensureAudio = () => {
     if (!audio.current) {
       const engine = new SurfscapeAudio();
-      engine.onTrackChange = setSoundtrackTrack;
+      engine.onTrackChange = setNowPlaying;
       audio.current = engine;
     }
     return audio.current;
@@ -4126,7 +4135,7 @@ export default function SurfscapeApp() {
                 onClick={() => void toggleMusic()}
                 aria-pressed={musicEnabled}
                 aria-label={musicEnabled ? "Mute the soundtrack" : "Play the soundtrack"}
-                title={musicEnabled ? `Soundtrack · track ${soundtrackTrack.index} of ${soundtrackTrack.total}` : "Soundtrack muted"}
+                title={musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack muted"}
               >
                 <AudioLines />
               </button>
@@ -4171,7 +4180,7 @@ export default function SurfscapeApp() {
                       onClick={() => chooseBeach(destination)}
                     >
                       <i className="coast-art" aria-hidden="true">
-                        <Image src={`/icons/beaches/${destination.id}.webp`} alt="" width={256} height={256} sizes="112px" />
+                        <Image src={`${ASSET_BASE}/icons/beaches/${destination.id}.webp`} alt="" width={256} height={256} sizes="112px" />
                       </i>
                       <strong>{destination.name}</strong>
                       <small>{destination.region} · {destination.country}</small>
@@ -4212,7 +4221,12 @@ export default function SurfscapeApp() {
                     beach={beach}
                     latitude={latitude}
                     longitude={longitude}
-                    onSelect={(lat, lon, label) => chooseSpot({ name: label, lat, lon, note: "Your own paddle-out" })}
+                    onSelect={(lat, lon, label) => {
+                      // A tap on a peak marker selects that peak; a tap on open
+                      // water is the surfer choosing their own paddle-out.
+                      const peak = beach.zones.find((zone) => zone.name === label);
+                      chooseSpot(peak ?? { name: CUSTOM_SPOT, lat, lon, note: "Chosen from the map" });
+                    }}
                   />
                   <div className="map-facts">
                     <span><Waves /> {beach.breakType}</span>
@@ -4255,8 +4269,8 @@ export default function SurfscapeApp() {
                       </button>
                     );
                   })}
-                  {zoneLabel === "Your own paddle-out" && (
-                    <p className="spot-custom"><Crosshair /> Surfing your own point on the shoreline.</p>
+                  {zoneLabel === CUSTOM_SPOT && (
+                    <p className="spot-custom"><Crosshair /> Your own paddle-out, {latitude.toFixed(3)}, {longitude.toFixed(3)}.</p>
                   )}
                 </div>
               </div>
@@ -4934,7 +4948,7 @@ export default function SurfscapeApp() {
                 onClick={() => void toggleMusic()}
                 aria-pressed={musicEnabled}
                 aria-label={musicEnabled ? "Mute the soundtrack" : "Play the soundtrack"}
-                title={musicEnabled ? `Soundtrack · track ${soundtrackTrack.index} of ${soundtrackTrack.total}` : "Soundtrack muted"}
+                title={musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack muted"}
               >
                 <AudioLines />
               </button>
@@ -5638,7 +5652,7 @@ export default function SurfscapeApp() {
                 <h2>Listen to the break.</h2>
                 <p>{zoneLabel} is running {effectiveFaceHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
-                <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Soundtrack · {musicEnabled ? `Track ${soundtrackTrack.index} of ${soundtrackTrack.total}` : "Off"}</button>
+                <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> {musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack · Off"}</button>
                 {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
                   <button
                     className={`motion-toggle ${motionBalanceActive ? "" : "is-off"} ${motionBalanceStatus === "denied" ? "is-denied" : ""}`}
