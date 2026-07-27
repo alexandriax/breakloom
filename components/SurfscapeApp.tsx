@@ -203,6 +203,9 @@ type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
  */
 const ASSET_BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
+/** Label for a paddle-out the surfer placed on the map rather than a named peak. */
+const CUSTOM_SPOT = "Your own paddle-out";
+
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const ASSIST_OPTIONS = Object.keys(
   SURF_ASSIST_PROFILES,
@@ -4218,7 +4221,12 @@ export default function SurfscapeApp() {
                     beach={beach}
                     latitude={latitude}
                     longitude={longitude}
-                    onSelect={(lat, lon, label) => chooseSpot({ name: label, lat, lon, note: "Your own paddle-out" })}
+                    onSelect={(lat, lon, label) => {
+                      // A tap on a peak marker selects that peak; a tap on open
+                      // water is the surfer choosing their own paddle-out.
+                      const peak = beach.zones.find((zone) => zone.name === label);
+                      chooseSpot(peak ?? { name: CUSTOM_SPOT, lat, lon, note: "Chosen from the map" });
+                    }}
                   />
                   <div className="map-facts">
                     <span><Waves /> {beach.breakType}</span>
@@ -4261,8 +4269,8 @@ export default function SurfscapeApp() {
                       </button>
                     );
                   })}
-                  {zoneLabel === "Your own paddle-out" && (
-                    <p className="spot-custom"><Crosshair /> Surfing your own point on the shoreline.</p>
+                  {zoneLabel === CUSTOM_SPOT && (
+                    <p className="spot-custom"><Crosshair /> Your own paddle-out, {latitude.toFixed(3)}, {longitude.toFixed(3)}.</p>
                   )}
                 </div>
               </div>

@@ -67,7 +67,12 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
           direction: "top",
           opacity: 0.95,
         });
-        marker.on("click", () => onSelectRef.current(zone.lat, zone.lon, zone.name));
+        marker.on("click", (event) => {
+          // A vector layer click still reaches the map, whose own handler would
+          // immediately overwrite this peak with a hand-placed paddle-out.
+          L.DomEvent.stopPropagation(event);
+          onSelectRef.current(zone.lat, zone.lon, zone.name);
+        });
       });
 
       const selection = L.circleMarker([selected.latitude, selected.longitude], {
