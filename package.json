@@ -1,0 +1,43 @@
+{
+  "name": "surfscape",
+  "version": "0.235.0-rc.1",
+  "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && node scripts/build-sites.mjs && node scripts/verify-sites-artifact.mjs",
+    "build:sites": "npm run build",
+    "start": "next dev",
+    "test": "npm run verify:release && npm run build",
+    "verify:release": "npm run verify:takeoff && node --experimental-strip-types scripts/verify-release-contract.mjs",
+    "verify:takeoff": "node --experimental-strip-types scripts/verify-takeoff-window.mjs",
+    "lint": "eslint . --ignore-pattern out --ignore-pattern .next --ignore-pattern dist"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.25.0",
+    "next": "^16.2.11",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.21",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/three": "^0.185.1",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.22",
+    "sharp": "^0.35.3"
+  },
+  "type": "module"
+}
