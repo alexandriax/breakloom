@@ -67,6 +67,17 @@ for (const reference of localReferences) {
   await requireFile(`client${reference}`);
 }
 
+// Every track the player can shuffle into has to actually ship.
+const audioSource = await readFile(resolve(root, "lib/audio.ts"), "utf8");
+const soundtrackBlock = audioSource.match(/export const SOUNDTRACK = \[([^\]]*)\]/s);
+if (!soundtrackBlock) {
+  failures.push("lib/audio.ts has no parseable SOUNDTRACK list");
+} else {
+  const tracks = [...soundtrackBlock[1].matchAll(/file:\s*"([^"]+)"/g)].map((match) => match[1]);
+  if (tracks.length === 0) failures.push("SOUNDTRACK is empty");
+  await Promise.all(tracks.map((track) => requireFile(`client/audio/${track}.mp3`)));
+}
+
 const manifest = JSON.parse(await readFile(resolve(client, "manifest.webmanifest"), "utf8"));
 for (const icon of manifest.icons ?? []) {
   if (typeof icon.src === "string") {
@@ -83,8 +94,15 @@ const totalBytes = sizedFiles.reduce((total, file) => total + file.size, 0);
 const javascript = sizedFiles.filter((file) => file.path.endsWith(".js"));
 const javascriptBytes = javascript.reduce((total, file) => total + file.size, 0);
 const largestJavascriptBytes = Math.max(0, ...javascript.map((file) => file.size));
+// The soundtrack is streamed one track at a time and is never precached by the
+// service worker, so it does not affect how long the game takes to become
+// playable. It gets its own budget instead of competing with the app shell.
+const soundtrack = sizedFiles.filter((file) => /[\\/]audio[\\/][^\\/]+\.mp3$/.test(file.path));
+const soundtrackBytes = soundtrack.reduce((total, file) => total + file.size, 0);
+const shellBytes = totalBytes - soundtrackBytes;
 
-if (totalBytes > 10 * 1024 * 1024) failures.push("Sites artifact exceeds the 10 MiB release budget");
+if (shellBytes > 10 * 1024 * 1024) failures.push("Sites app shell exceeds the 10 MiB release budget");
+if (soundtrackBytes > 18 * 1024 * 1024) failures.push("Soundtrack exceeds the 18 MiB release budget");
 if (javascriptBytes > 3 * 1024 * 1024) failures.push("JavaScript exceeds the 3 MiB release budget");
 if (largestJavascriptBytes > 1.6 * 1024 * 1024) {
   failures.push("A JavaScript chunk exceeds the 1.6 MiB release budget");
@@ -109,6 +127,9 @@ console.log(JSON.stringify({
   files: sizedFiles.length,
   localReferences: localReferences.size,
   totalBytes,
+  shellBytes,
+  soundtrackBytes,
+  soundtrackTracks: soundtrack.length,
   javascriptBytes,
   largestJavascriptBytes,
 }, null, 2));

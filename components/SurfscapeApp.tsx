@@ -78,7 +78,7 @@ import {
   type SessionSettings,
   type SurfAssistLevel,
 } from "@/lib/game";
-import { SurfscapeAudio } from "@/lib/audio";
+import { SOUNDTRACK, SurfscapeAudio, type NowPlaying } from "@/lib/audio";
 import TideSparkline from "./TideSparkline";
 import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 
@@ -196,6 +196,12 @@ type HapticGamepad = Gamepad & {
 type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<"granted" | "denied">;
 };
+
+/**
+ * Deployment root. A GitHub Pages project site serves the game from a
+ * repository subpath, and next/image does not prefix an unoptimized src.
+ */
+const ASSET_BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const ASSIST_OPTIONS = Object.keys(
@@ -954,6 +960,7 @@ export default function SurfscapeApp() {
   const [gamepadConnected, setGamepadConnected] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
+  const [nowPlaying, setNowPlaying] = useState<NowPlaying>({ title: SOUNDTRACK[0].title, index: 1, total: SOUNDTRACK.length });
   const [guidanceEnabled, setGuidanceEnabled] = useState(true);
   const [paddleGuideDegrees, setPaddleGuideDegrees] =
     useState(0);
@@ -1546,7 +1553,7 @@ export default function SurfscapeApp() {
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+    const basePath = ASSET_BASE;
     const registerServiceWorker = () => {
       if (!("serviceWorker" in navigator)) return;
       void navigator.serviceWorker
@@ -2537,17 +2544,50 @@ export default function SurfscapeApp() {
     setHeatComplete(false);
   }
 
+  /**
+   * Browsers will not open an audio context before a gesture, so the
+   * soundtrack starts on the first touch of the setup screen rather than
+   * waiting for the surfer to paddle out.
+   */
+  useEffect(() => {
+    if (screen !== "launch") return;
+    const openAudio = () => {
+      const engine = ensureAudio();
+      void engine.start().then(() => {
+        engine.setEnabled(soundEnabled);
+        engine.setMusicEnabled(musicEnabled);
+      });
+    };
+    window.addEventListener("pointerdown", openAudio, { once: true });
+    window.addEventListener("keydown", openAudio, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", openAudio);
+      window.removeEventListener("keydown", openAudio);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen]);
+
+  /** One audio engine per session, wired to report the running order. */
+  const ensureAudio = () => {
+    if (!audio.current) {
+      const engine = new SurfscapeAudio();
+      engine.onTrackChange = setNowPlaying;
+      audio.current = engine;
+    }
+    return audio.current;
+  };
+
   const startSession = async () => {
-    if (!audio.current) audio.current = new SurfscapeAudio();
-    await audio.current.start();
-    audio.current.setEnabled(soundEnabled);
-    audio.current.setMusicEnabled(musicEnabled);
-    audio.current.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
-    audio.current.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, .34, sessionWeatherCode);
-    audio.current.setCoastSoundscape(coastBiome, "shore", 0, settings.windSpeed, settings.timeOfDay, sessionWeatherCode, true);
-    audio.current.setWaveField("shore", 0, 0, 0, 1, 0, effectiveFaceHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, true, 0);
-    audio.current.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
-    audio.current.setMovement("shore", 0, true);
+    const engine = ensureAudio();
+    await engine.start();
+    engine.setEnabled(soundEnabled);
+    engine.setMusicEnabled(musicEnabled);
+    engine.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
+    engine.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, .34, sessionWeatherCode);
+    engine.setCoastSoundscape(coastBiome, "shore", 0, settings.windSpeed, settings.timeOfDay, sessionWeatherCode, true);
+    engine.setWaveField("shore", 0, 0, 0, 1, 0, effectiveFaceHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, true, 0);
+    engine.setScore("shore", 0, 0, settings.timeOfDay, sessionWeatherCode, true);
+    engine.setMovement("shore", 0, true);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     resetRideCapture();
@@ -2625,13 +2665,13 @@ export default function SurfscapeApp() {
   const toggleSound = async () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
-    if (!audio.current) audio.current = new SurfscapeAudio();
-    await audio.current.start();
-    audio.current.setEnabled(next);
+    const engine = ensureAudio();
+    await engine.start();
+    engine.setEnabled(next);
     if (next) {
-      audio.current.setPerspective(stats.cameraHeading, settings.windDirection, settings.coastHeading, stats.phase);
-      audio.current.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
-      audio.current.setCoastSoundscape(
+      engine.setPerspective(stats.cameraHeading, settings.windDirection, settings.coastHeading, stats.phase);
+      engine.setEnvironment(settings.windSpeed, effectiveFaceHeight, sessionCloudCover, screen === "game" ? 1 : 0.42, sessionWeatherCode);
+      engine.setCoastSoundscape(
         coastBiome,
         stats.phase,
         stats.offshoreDistance,
@@ -2640,7 +2680,7 @@ export default function SurfscapeApp() {
         sessionWeatherCode,
         screen === "game" && !paused,
       );
-      audio.current.setWaveField(
+      engine.setWaveField(
         stats.phase,
         stats.setEnergy,
         stats.shorebreakIntensity,
@@ -2662,10 +2702,10 @@ export default function SurfscapeApp() {
   const toggleMusic = async () => {
     const next = !musicEnabled;
     setMusicEnabled(next);
-    if (!audio.current) audio.current = new SurfscapeAudio();
-    await audio.current.start();
-    audio.current.setMusicEnabled(next);
-    audio.current.setScore(stats.phase, stats.setEnergy, stats.barrelIntensity, settings.timeOfDay, sessionWeatherCode, screen === "game" && !paused);
+    const engine = ensureAudio();
+    await engine.start();
+    engine.setMusicEnabled(next);
+    engine.setScore(stats.phase, stats.setEnergy, stats.barrelIntensity, settings.timeOfDay, sessionWeatherCode, screen === "game" && !paused);
   };
 
   const installApp = async () => {
@@ -4083,8 +4123,18 @@ export default function SurfscapeApp() {
                       ? "Live ocean data"
                       : "Modelled ocean"}
               </span>
-              <button type="button" className="tool-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute sound" : "Enable sound"}>
+              <button type="button" className="tool-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute all sound" : "Unmute all sound"}>
                 {soundEnabled ? <Volume2 /> : <VolumeX />}
+              </button>
+              <button
+                type="button"
+                className={`tool-button ${musicEnabled ? "" : "is-off"}`}
+                onClick={() => void toggleMusic()}
+                aria-pressed={musicEnabled}
+                aria-label={musicEnabled ? "Mute the soundtrack" : "Play the soundtrack"}
+                title={musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack muted"}
+              >
+                <AudioLines />
               </button>
               {installPrompt && (
                 <button type="button" className="tool-button is-wide" onClick={() => void installApp()}>
@@ -4127,7 +4177,7 @@ export default function SurfscapeApp() {
                       onClick={() => chooseBeach(destination)}
                     >
                       <i className="coast-art" aria-hidden="true">
-                        <Image src={`/icons/beaches/${destination.id}.webp`} alt="" width={256} height={256} sizes="112px" />
+                        <Image src={`${ASSET_BASE}/icons/beaches/${destination.id}.webp`} alt="" width={256} height={256} sizes="112px" />
                       </i>
                       <strong>{destination.name}</strong>
                       <small>{destination.region} · {destination.country}</small>
@@ -4885,6 +4935,15 @@ export default function SurfscapeApp() {
                 <strong>{sessionFormat === "heat" ? heatTotal.toFixed(2) : stats.score.toLocaleString()}</strong>
               </div>
               <button className="sound-button" onClick={toggleSound} aria-label={soundEnabled ? "Mute" : "Unmute"}>{soundEnabled ? <Volume2 /> : <VolumeX />}</button>
+              <button
+                className={`sound-button ${musicEnabled ? "" : "is-off"}`}
+                onClick={() => void toggleMusic()}
+                aria-pressed={musicEnabled}
+                aria-label={musicEnabled ? "Mute the soundtrack" : "Play the soundtrack"}
+                title={musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack muted"}
+              >
+                <AudioLines />
+              </button>
               {gamepadConnected && <div className="controller-chip" role="status" aria-label="Game controller connected"><Gamepad2 /><span>PAD</span></div>}
               {fullscreenAvailable && (
                 <button className="fullscreen-button" onClick={toggleFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
@@ -5585,7 +5644,7 @@ export default function SurfscapeApp() {
                 <h2>Listen to the break.</h2>
                 <p>{zoneLabel} is running {effectiveFaceHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
-                <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> Original score · {musicEnabled ? "On" : "Off"}</button>
+                <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> {musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack · Off"}</button>
                 {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
                   <button
                     className={`motion-toggle ${motionBalanceActive ? "" : "is-off"} ${motionBalanceStatus === "denied" ? "is-denied" : ""}`}

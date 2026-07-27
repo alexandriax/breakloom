@@ -3467,6 +3467,27 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .tool-button svg { width: 15px; }
 .tool-button:hover { border-color: var(--card-line-strong); background: rgba(97, 214, 200, .12); color: #eafffb; }
 
+/* A muted soundtrack has to read as muted at a glance, from either screen. */
+.tool-button.is-off,
+.game-actions .sound-button.is-off {
+  border-color: rgba(255, 255, 255, .12);
+  color: rgba(233, 248, 245, .34);
+}
+
+.tool-button.is-off::after,
+.game-actions .sound-button.is-off::after {
+  content: "";
+  position: absolute;
+  width: 19px;
+  height: 1.5px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: rotate(-45deg);
+}
+
+.tool-button,
+.game-actions .sound-button { position: relative; }
+
 /* --- page body ------------------------------------------------------------ */
 
 .launch-body {
