@@ -43,6 +43,18 @@ export type Beach = {
   };
 };
 
+/**
+ * `heading` is the bearing each coast faces, out to sea. It orients the scene,
+ * decides the angle swell arrives at, and drives the offshore/onshore wind
+ * read, so a wrong one is felt in play rather than only seen on the map.
+ *
+ * Each value below was cross-checked two ways against the rendered
+ * OpenStreetMap coastline - the reverse bearing from each surf zone to its
+ * nearest land, and a fit through the shoreline points either side of the break
+ * - then reconciled with how the break is known to sit. Where a headland,
+ * breakwater or reef sits seaward of the peak, both fits mislead, and the
+ * comment says so.
+ */
 export const BEACHES: Beach[] = [
   {
     id: "rockaway",
@@ -52,7 +64,7 @@ export const BEACHES: Beach[] = [
     lat: 40.5834,
     lon: -73.8172,
     zoom: 13,
-    heading: 156,
+    heading: 172, // S-facing Atlantic beach; both fits agree (185/165)
     difficulty: 2,
     breakType: "Beach break",
     palette: ["#73e6e1", "#e6b98a"],
@@ -74,7 +86,7 @@ export const BEACHES: Beach[] = [
     lat: 21.6652,
     lon: -158.0528,
     zoom: 15,
-    heading: 334,
+    heading: 322, // NNW-facing North Shore; both fits agree (312/327)
     difficulty: 5,
     breakType: "Shallow reef",
     palette: ["#35b8bb", "#d2a161"],
@@ -94,7 +106,7 @@ export const BEACHES: Beach[] = [
     lat: -17.8332,
     lon: -149.2674,
     zoom: 15,
-    heading: 208,
+    heading: 240, // SW-facing reef pass; both fits agree (252/254)
     difficulty: 5,
     breakType: "Outer reef pass",
     palette: ["#48d7c1", "#92b57c"],
@@ -114,7 +126,7 @@ export const BEACHES: Beach[] = [
     lat: -34.0289,
     lon: 24.9291,
     zoom: 14,
-    heading: 229,
+    heading: 100, // E-facing point; fits say 63/67, was 229 - about 130 out
     difficulty: 4,
     breakType: "Point break",
     palette: ["#76c9d6", "#c5ab79"],
@@ -134,7 +146,7 @@ export const BEACHES: Beach[] = [
     lat: -28.1642,
     lon: 153.5513,
     zoom: 15,
-    heading: 88,
+    heading: 75, // ENE-facing Superbank; fits confused by the rocks themselves
     difficulty: 4,
     breakType: "Sand point",
     palette: ["#4bc4cd", "#efc98d"],
@@ -154,7 +166,7 @@ export const BEACHES: Beach[] = [
     lat: -8.8149,
     lon: 115.0877,
     zoom: 15,
-    heading: 244,
+    heading: 245, // WSW-facing Bukit reef; fits confused by the cliff
     difficulty: 4,
     breakType: "Limestone reef",
     palette: ["#2fd0c1", "#db9a62"],
@@ -174,7 +186,7 @@ export const BEACHES: Beach[] = [
     lat: 33.3817,
     lon: -117.5889,
     zoom: 15,
-    heading: 226,
+    heading: 210, // SW-facing; both fits agree (191/202)
     difficulty: 3,
     breakType: "Cobblestone reef",
     palette: ["#58b9cb", "#cdaa7a"],
@@ -194,7 +206,7 @@ export const BEACHES: Beach[] = [
     lat: 43.6647,
     lon: -1.4477,
     zoom: 14,
-    heading: 272,
+    heading: 275, // W-facing Landes beach; both fits agree (269/283)
     difficulty: 4,
     breakType: "Heavy beach break",
     palette: ["#5aacc3", "#c49b68"],
@@ -214,7 +226,7 @@ export const BEACHES: Beach[] = [
     lat: 39.6017,
     lon: -9.0852,
     zoom: 14,
-    heading: 282,
+    heading: 270, // W-facing canyon beach; both fits agree (257/250)
     difficulty: 5,
     breakType: "Submarine canyon",
     palette: ["#4b91ac", "#b99c77"],
@@ -234,7 +246,7 @@ export const BEACHES: Beach[] = [
     lat: -17.884,
     lon: 177.1884,
     zoom: 14,
-    heading: 216,
+    heading: 210, // SW-facing outer reef; coastline fit agrees (194)
     difficulty: 5,
     breakType: "Outer barrier reef",
     palette: ["#39d6d0", "#4eab93"],
@@ -254,7 +266,7 @@ export const BEACHES: Beach[] = [
     lat: 37.4946,
     lon: -122.5001,
     zoom: 14,
-    heading: 238,
+    heading: 250, // WSW-facing; fits confused by the Pillar Point breakwater
     difficulty: 5,
     breakType: "Deep-water reef",
     palette: ["#50899b", "#a9a693"],
@@ -274,7 +286,7 @@ export const BEACHES: Beach[] = [
     lat: -37.821,
     lon: 174.7998,
     zoom: 14,
-    heading: 247,
+    heading: 310, // NW-facing points; fits say 341/355, was 247 - about 65 out
     difficulty: 3,
     breakType: "Volcanic point",
     palette: ["#459f9f", "#778a69"],
@@ -294,7 +306,7 @@ export const BEACHES: Beach[] = [
     lat: -7.7043,
     lon: -79.4501,
     zoom: 14,
-    heading: 205,
+    heading: 230, // SW-facing desert point; fits confused by the harbour mole
     difficulty: 3,
     breakType: "Desert point",
     palette: ["#6ab9c2", "#d09a68"],

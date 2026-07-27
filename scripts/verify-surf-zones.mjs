@@ -7,6 +7,10 @@
  * the map. Any zone stranded in open ocean gets a suggested position pulled
  * back toward its nearest shoreline.
  *
+ * It also cross-checks each coast's `heading` against the coastline two ways,
+ * and warns when a recorded bearing disagrees with both - the failure mode that
+ * put several coasts at the wrong angle to the swell.
+ *
  * Run manually after editing coastlines - it fetches tiles, so it is kept out
  * of `npm test`:
  *
@@ -30,9 +34,11 @@ for (const block of source.split(/\n  \{\n    id: /).slice(1)) {
   const id = block.match(/^"([^"]+)"/)?.[1];
   const name = block.match(/name: "([^"]+)"/)?.[1];
   const heading = Number(block.match(/heading: (-?[\d.]+)/)?.[1]);
+  // A bearing whose comment says the fits mislead is a deliberate override.
+  const overridden = /heading:.*fits confused/.test(block);
   const zones = [...block.matchAll(/\{ name: "([^"]+)", lat: (-?[\d.]+), lon: (-?[\d.]+), note: "([^"]*)" \}/g)]
     .map((m) => ({ name: m[1], lat: Number(m[2]), lon: Number(m[3]) }));
-  if (id && zones.length) beaches.push({ id, name, heading, zones });
+  if (id && zones.length) beaches.push({ id, name, heading, overridden, zones });
 }
 
 const project = (lat, lon) => {
@@ -141,6 +147,80 @@ for (const beach of beaches) {
     );
   }
 }
+const bearingOf = (north, east) => ((Math.atan2(east, north) * 180) / Math.PI + 360) % 360;
+const angleGap = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+const move = (lat, lon, bearing, metres) => {
+  const radians = (bearing * Math.PI) / 180;
+  return {
+    lat: lat + (metres * Math.cos(radians)) / 111320,
+    lon: lon + (metres * Math.sin(radians)) / (111320 * Math.cos((lat * Math.PI) / 180)),
+  };
+};
+
+console.log("\nCoast bearings, against the rendered coastline:");
+let bearingWarnings = 0;
+for (const beach of beaches) {
+  let north = 0;
+  let east = 0;
+  const shore = [];
+  for (const zone of beach.zones) {
+    const step = metresPerPixel(zone.lat);
+    let land = null;
+    for (let radius = 2; radius <= 320 && !land; radius += 2) {
+      for (let angle = 0; angle < 360; angle += 4) {
+        const point = move(zone.lat, zone.lon, angle, radius * step);
+        if (!(await isWater(point.lat, point.lon))) { land = { angle, ...point }; break; }
+      }
+    }
+    if (!land) continue;
+    const seaward = (land.angle + 180) % 360;
+    north += Math.cos((seaward * Math.PI) / 180);
+    east += Math.sin((seaward * Math.PI) / 180);
+    shore.push(land);
+  }
+  if (shore.length < 2) continue;
+  const fromZones = bearingOf(north, east);
+
+  const meanLat = shore.reduce((t, p) => t + p.lat, 0) / shore.length;
+  const meanLon = shore.reduce((t, p) => t + p.lon, 0) / shore.length;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (const point of shore) {
+    const dx = (point.lon - meanLon) * 111320 * Math.cos((meanLat * Math.PI) / 180);
+    const dy = (point.lat - meanLat) * 111320;
+    sxx += dx * dx;
+    sxy += dx * dy;
+    syy += dy * dy;
+  }
+  const along = bearingOf(Math.sin(.5 * Math.atan2(2 * sxy, sxx - syy)), Math.cos(.5 * Math.atan2(2 * sxy, sxx - syy)));
+  let fromCoast = along + 90;
+  let best = -1;
+  for (const option of [(along + 90) % 360, (along + 270) % 360]) {
+    let wet = 0;
+    for (const distance of [80, 160, 320, 640]) {
+      const probe = move(meanLat, meanLon, option, distance);
+      if (await isWater(probe.lat, probe.lon)) wet += 1;
+    }
+    if (wet > best) { best = wet; fromCoast = option; }
+  }
+
+  // Both fits mislead where a headland, breakwater or reef sits seaward of the
+  // peak, so only disagreeing with both is worth a warning.
+  const gap = Math.min(angleGap(beach.heading, fromZones), angleGap(beach.heading, fromCoast));
+  const suspect = gap > 60 && !beach.overridden;
+  if (suspect) bearingWarnings += 1;
+  console.log(
+    `  ${suspect ? "WARN" : beach.overridden && gap > 60 ? "set " : "ok  "}  ${beach.name.padEnd(18)} recorded ${String(beach.heading).padStart(3)}°`
+    + `  zones ${String(Math.round(fromZones)).padStart(3)}°  coastline ${String(Math.round(fromCoast)).padStart(3)}°`,
+  );
+}
+console.log(
+  bearingWarnings
+    ? `${bearingWarnings} coast bearing(s) disagree with both fits by more than 60° without explanation.`
+    : "  (\"set\" marks a bearing deliberately set against the fits; see the comment in lib/beaches.ts.)",
+);
+
 console.log(failures === 0 ? "\nEvery paddle-out sits in the sea within a swim of land." : `\n${failures} zone(s) failed.`);
 if (repairs.length) {
   console.log("\nSuggested positions, pulled shoreward from open water:");
