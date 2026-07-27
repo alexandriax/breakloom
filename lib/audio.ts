@@ -3,17 +3,36 @@ import type { CoastBiome } from "./beaches";
 
 type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "leash" | "wipeout" | "finish" | "coach" | "door";
 
-const CHORDS = [
-  [0, 7, 12, 19],
-  [0, 5, 12, 17],
-  [0, 3, 10, 15],
+/**
+ * The surf rock soundtrack. The order is shuffled once when the audio engine
+ * starts and then repeats, so no two sessions open the same way but a single
+ * session keeps a predictable running order.
+ */
+export const SOUNDTRACK = [
+  "surfrock00",
+  "surfrock01",
+  "surfrock03",
+  "surfrock04",
+  "surfrock05",
+  "surfrock06",
+  "surfrock07",
+  "surfrock08",
+  "surfrock09",
+  "surfrock10",
+  "surfrock11",
+  "surfrock12",
 ] as const;
 
-const MELODIC_PATTERNS = [
-  [0, 2, 1, 3, 2, 1, 0, 2, 3, 2, 1, 0, 1, 2, 1, 3],
-  [0, 1, 3, 2, 1, 2, 0, 3, 2, 3, 1, 0, 2, 1, 3, 2],
-  [0, 3, 2, 1, 3, 1, 2, 0, 2, 3, 0, 1, 3, 2, 1, 0],
-] as const;
+const SOUNDTRACK_LEVEL = .58;
+
+function shuffled<T>(values: readonly T[]) {
+  const order = [...values];
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [order[index], order[swap]] = [order[swap], order[index]];
+  }
+  return order;
+}
 
 type CoastSoundProfile = {
   bedRate: number;
@@ -168,13 +187,11 @@ export class SurfscapeAudio {
   private previousSetEnergy = 0;
   private nextSetBreathAt = 0;
 
-  private score: OscillatorNode[] = [];
-  private scoreGain: GainNode | null = null;
-  private scoreFilter: BiquadFilterNode | null = null;
-  private scoreChord = -1;
   private musicBus: GainNode | null = null;
-  private nextMusicStepAt = 0;
-  private musicStep = 0;
+  private soundtrack: HTMLAudioElement | null = null;
+  private soundtrackGain: GainNode | null = null;
+  private soundtrackOrder: string[] = [];
+  private soundtrackIndex = 0;
   private musicEnabled = true;
 
   private engine: OscillatorNode[] = [];
@@ -404,7 +421,7 @@ export class SurfscapeAudio {
     this.sendToReverb(musicBus, .22);
     this.musicBus = musicBus;
 
-    this.createScore();
+    this.createSoundtrack();
     this.createEngine();
     this.nextGullAt = context.currentTime + 5 + Math.random() * 5;
     this.nextSetBreathAt = context.currentTime + 1.2;
@@ -412,21 +429,32 @@ export class SurfscapeAudio {
     this.nextHeartbeatAt = context.currentTime + .8;
     this.nextGaspAt = context.currentTime + .5;
     this.nextCoastCueAt = context.currentTime + 3.2;
-    this.nextMusicStepAt = context.currentTime + .12;
   }
 
   setEnabled(enabled: boolean) {
     this.enabled = enabled;
     if (!this.context || !this.master) return;
     ramp(this.master.gain, enabled ? .42 : 0, this.context.currentTime, .18);
+    this.syncSoundtrackPlayback();
   }
 
   setMusicEnabled(enabled: boolean) {
     this.musicEnabled = enabled;
     if (!this.context || !this.musicBus) return;
     ramp(this.musicBus.gain, enabled ? 1 : 0, this.context.currentTime, .32);
-    if (enabled) this.nextMusicStepAt = this.context.currentTime + .08;
+    this.syncSoundtrackPlayback();
   }
+
+  /** One-based position in the running order, for anything that names the track. */
+  currentTrack() {
+    return {
+      index: this.soundtrackIndex + 1,
+      total: this.soundtrackOrder.length || SOUNDTRACK.length,
+    };
+  }
+
+  /** Notified whenever the running order moves on, so the UI can name the track. */
+  onTrackChange: ((track: { index: number; total: number }) => void) | null = null;
 
   setAcousticSpace(phase: GamePhase, barrel: number, active: boolean) {
     if (!this.context || !this.worldGain || !this.worldFilter) return;
@@ -768,54 +796,38 @@ export class SurfscapeAudio {
     this.previousSetEnergy = energy;
   }
 
+  /**
+   * The soundtrack plays continuously; this only decides how loud it sits
+   * under the surf. It lifts while riding or driving and steps back on the
+   * beach and in the setup screen so the ocean stays legible.
+   */
   setScore(
     phase: GamePhase,
     setEnergy: number,
     barrel: number,
-    timeOfDay: number,
-    weatherCode: number,
+    _timeOfDay: number,
+    _weatherCode: number,
     active: boolean,
   ) {
-    if (!this.context || !this.scoreGain || !this.scoreFilter || !this.musicBus) return;
+    if (!this.context || !this.soundtrackGain) return;
     const now = this.context.currentTime;
-    const night = timeOfDay < 6 || timeOfDay > 19.25;
-    const rain = precipitationLevel(weatherCode);
     const riding = phase === "riding";
     const driving = phase === "driving";
     const paddling = phase === "paddling" || phase === "wading";
-    const intensity = riding ? .8 + setEnergy * .36 + barrel * .42 : driving ? .66 : paddling ? .48 + setEnergy * .18 : .32;
-    const scoreLevel = this.enabled && this.musicEnabled
-      ? active
-        ? .012 + intensity * .026
-        : .006
-      : 0;
-    ramp(this.scoreGain.gain, scoreLevel, now, .65);
-    ramp(this.scoreFilter.frequency, (night ? 390 : 520) + setEnergy * 390 + barrel * 860 - rain * 130, now, .7);
-    const chord = barrel > .48 ? 2 : setEnergy > .64 || driving ? 1 : 0;
-    if (chord !== this.scoreChord) this.setChord(chord, now);
-
-    if (!this.enabled || !this.musicEnabled || !active) {
-      this.nextMusicStepAt = now + .16;
-      return;
-    }
-    const tempo = riding ? 94 + setEnergy * 10 : driving ? 78 : paddling ? 70 : 58;
-    const stepDuration = 30 / tempo;
-    if (this.nextMusicStepAt < now - .5) this.nextMusicStepAt = now + .03;
-    let scheduled = 0;
-    while (this.nextMusicStepAt < now + .2 && scheduled < 3) {
-      this.scheduleMusicStep(
-        this.nextMusicStepAt,
-        phase,
-        setEnergy,
-        barrel,
-        night,
-        rain,
-        stepDuration,
-      );
-      this.nextMusicStepAt += stepDuration;
-      this.musicStep += 1;
-      scheduled += 1;
-    }
+    const intensity = riding
+      ? .9 + setEnergy * .1 + barrel * .1
+      : driving
+        ? .84
+        : paddling
+          ? .7 + setEnergy * .08
+          : .58;
+    ramp(
+      this.soundtrackGain.gain,
+      SOUNDTRACK_LEVEL * (active ? intensity : .72),
+      now,
+      .65,
+    );
+    this.syncSoundtrackPlayback();
   }
 
   setMovement(phase: GamePhase, speed: number, active: boolean) {
@@ -993,27 +1005,59 @@ export class SurfscapeAudio {
     return source;
   }
 
-  private createScore() {
+  private createSoundtrack() {
     const context = this.context!;
-    const scoreGain = context.createGain();
-    const scoreFilter = context.createBiquadFilter();
-    scoreGain.gain.value = .009;
-    scoreFilter.type = "lowpass";
-    scoreFilter.frequency.value = 480;
-    scoreFilter.Q.value = 1.15;
-    scoreGain.connect(scoreFilter).connect(this.musicBus!);
-    CHORDS[0].forEach((semitone, index) => {
-      const oscillator = context.createOscillator();
-      oscillator.type = index % 2 ? "sine" : "triangle";
-      oscillator.frequency.value = 55 * Math.pow(2, semitone / 12);
-      oscillator.detune.value = index * 2.5 - 3.5;
-      oscillator.connect(scoreGain);
-      oscillator.start();
-      this.score.push(oscillator);
+    const soundtrackGain = context.createGain();
+    soundtrackGain.gain.value = SOUNDTRACK_LEVEL * .72;
+    soundtrackGain.connect(this.musicBus!);
+    this.soundtrackGain = soundtrackGain;
+    this.soundtrackOrder = shuffled(SOUNDTRACK);
+    this.soundtrackIndex = 0;
+
+    // A media element streams each track instead of decoding the whole
+    // soundtrack into memory, and routing it through the music bus keeps it
+    // under the same mute, barrel ducking, and van cabin filtering as before.
+    const element = new Audio();
+    element.preload = "auto";
+    element.loop = false;
+    element.crossOrigin = "anonymous";
+    element.addEventListener("ended", () => this.advanceTrack());
+    // A track that will not load must not take the rest of the running order
+    // with it.
+    element.addEventListener("error", () => {
+      if (this.soundtrackOrder.length > 1) this.advanceTrack();
     });
-    this.scoreGain = scoreGain;
-    this.scoreFilter = scoreFilter;
-    this.scoreChord = 0;
+    context.createMediaElementSource(element).connect(soundtrackGain);
+    this.soundtrack = element;
+    this.loadTrack();
+  }
+
+  private loadTrack() {
+    const element = this.soundtrack;
+    const track = this.soundtrackOrder[this.soundtrackIndex];
+    if (!element || !track) return;
+    element.src = `/audio/${track}.mp3`;
+    this.onTrackChange?.(this.currentTrack());
+    this.syncSoundtrackPlayback();
+  }
+
+  /** Wrap back to the top of the same shuffle rather than reshuffling. */
+  private advanceTrack() {
+    if (this.soundtrackOrder.length === 0) return;
+    this.soundtrackIndex = (this.soundtrackIndex + 1) % this.soundtrackOrder.length;
+    this.loadTrack();
+  }
+
+  private syncSoundtrackPlayback() {
+    const element = this.soundtrack;
+    if (!element) return;
+    if (this.enabled && this.musicEnabled) {
+      // Autoplay is only ever reached from the gesture that started the audio
+      // context, but a rejected promise must not surface as an unhandled error.
+      void element.play().catch(() => {});
+    } else if (!element.paused) {
+      element.pause();
+    }
   }
 
   private createEngine() {
@@ -1046,124 +1090,6 @@ export class SurfscapeAudio {
     this.engineFilter = engineFilter;
     this.roadGain = roadGain;
     this.roadFilter = roadFilter;
-  }
-
-  private setChord(chord: number, now: number) {
-    this.scoreChord = chord;
-    this.score.forEach((oscillator, index) => {
-      const semitone = CHORDS[chord][index] ?? CHORDS[chord][0];
-      ramp(oscillator.frequency, 55 * Math.pow(2, semitone / 12), now, 1.35 + index * .14);
-    });
-  }
-
-  private scheduleMusicStep(
-    at: number,
-    phase: GamePhase,
-    setEnergy: number,
-    barrel: number,
-    night: boolean,
-    rain: number,
-    stepDuration: number,
-  ) {
-    const riding = phase === "riding";
-    const driving = phase === "driving";
-    const paddling = phase === "paddling" || phase === "wading";
-    const density = riding ? 1 : driving || paddling ? 2 : 4;
-    const step = this.musicStep % 16;
-    const chordIndex = Math.max(0, this.scoreChord);
-    const pattern = MELODIC_PATTERNS[chordIndex] ?? MELODIC_PATTERNS[0];
-    const chord = CHORDS[chordIndex] ?? CHORDS[0];
-    const chordTone = chord[pattern[step] % chord.length] ?? 0;
-    const octaveLift = riding && (step === 3 || step === 7 || step === 14) ? 12 : driving && step % 8 === 6 ? 12 : 0;
-    const root = night ? 92.5 : 110;
-    const frequency = root * Math.pow(2, (chordTone + octaveLift) / 12);
-    const pan = Math.sin(step * 1.71 + chordIndex) * (riding ? .46 : .3);
-    const shouldPlay = step % density === 0 || barrel > .52;
-    if (shouldPlay) {
-      const velocity = riding ? .028 + setEnergy * .012 + barrel * .014 : driving ? .022 : paddling ? .018 : .013;
-      const brightness = (night ? 980 : 1540) + setEnergy * 920 + barrel * 1280 - rain * 360;
-      this.musicPluck(at, frequency, stepDuration * (riding ? 1.65 : 2.2), velocity, pan, brightness);
-    }
-
-    if ((riding || driving) && step % 4 === 0) {
-      this.musicPulse(at, riding ? .025 + setEnergy * .01 : .016);
-    }
-    if ((riding || paddling) && step % 4 === 2 && rain < .8) {
-      this.musicShaker(at, riding ? .013 : .007, night ? 3500 : 5100);
-    }
-    if (barrel > .46 && step % 2 === 1) {
-      this.musicPluck(at + stepDuration * .26, frequency * 2.01, stepDuration * 2.5, .012 + barrel * .012, -pan * .7, 2800 + barrel * 2200);
-    }
-  }
-
-  private musicPluck(
-    at: number,
-    frequency: number,
-    duration: number,
-    gainValue: number,
-    pan: number,
-    brightness: number,
-  ) {
-    if (!this.context || !this.musicBus) return;
-    const primary = this.context.createOscillator();
-    const air = this.context.createOscillator();
-    const filter = this.context.createBiquadFilter();
-    const gain = this.context.createGain();
-    const panner = this.context.createStereoPanner();
-    primary.type = "triangle";
-    air.type = "sine";
-    primary.frequency.value = frequency;
-    air.frequency.value = frequency * 2.002;
-    air.detune.value = 4.5;
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(Math.max(320, brightness), at);
-    filter.frequency.exponentialRampToValueAtTime(Math.max(220, brightness * .38), at + duration);
-    filter.Q.value = 1.8;
-    gain.gain.setValueAtTime(.0001, at);
-    gain.gain.exponentialRampToValueAtTime(Math.max(.0002, gainValue), at + .018);
-    gain.gain.exponentialRampToValueAtTime(.0001, at + duration);
-    panner.pan.value = pan;
-    primary.connect(filter);
-    air.connect(filter);
-    filter.connect(gain).connect(panner).connect(this.musicBus);
-    primary.start(at);
-    air.start(at);
-    primary.stop(at + duration + .04);
-    air.stop(at + duration + .04);
-  }
-
-  private musicPulse(at: number, gainValue: number) {
-    if (!this.context || !this.musicBus) return;
-    const oscillator = this.context.createOscillator();
-    const gain = this.context.createGain();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(76, at);
-    oscillator.frequency.exponentialRampToValueAtTime(38, at + .28);
-    gain.gain.setValueAtTime(.0001, at);
-    gain.gain.exponentialRampToValueAtTime(gainValue, at + .012);
-    gain.gain.exponentialRampToValueAtTime(.0001, at + .34);
-    oscillator.connect(gain).connect(this.musicBus);
-    oscillator.start(at);
-    oscillator.stop(at + .37);
-  }
-
-  private musicShaker(at: number, gainValue: number, frequency: number) {
-    if (!this.context || !this.musicBus || !this.noiseBuffer) return;
-    const source = this.context.createBufferSource();
-    const filter = this.context.createBiquadFilter();
-    const gain = this.context.createGain();
-    const panner = this.context.createStereoPanner();
-    source.buffer = this.noiseBuffer;
-    filter.type = "highpass";
-    filter.frequency.value = frequency;
-    filter.Q.value = .42;
-    gain.gain.setValueAtTime(.0001, at);
-    gain.gain.exponentialRampToValueAtTime(gainValue, at + .008);
-    gain.gain.exponentialRampToValueAtTime(.0001, at + .11);
-    panner.pan.value = Math.sin(this.musicStep * 2.31) * .62;
-    source.connect(filter).connect(gain).connect(panner).connect(this.musicBus);
-    source.start(at, Math.random() * Math.max(.1, this.noiseBuffer.duration - .2), .14);
-    source.stop(at + .16);
   }
 
   private sendToReverb(source: AudioNode, amount: number) {
