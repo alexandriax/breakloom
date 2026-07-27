@@ -1,5 +1,5 @@
-import SurfscapeApp from "@/components/SurfscapeApp";
+import BreakloomApp from "@/components/BreakloomApp";
 
 export default function Home() {
-  return <SurfscapeApp />;
+  return <BreakloomApp />;
 }

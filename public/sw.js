@@ -1,14 +1,17 @@
-const CACHE_NAME = "surfscape-shell-v236";
-const CACHE_PREFIX = "surfscape-shell-";
+const CACHE_NAME = "breakloom-shell-v236";
+const CACHE_PREFIX = "breakloom-shell-";
+// The game shipped as Surfscape; drop those caches rather than leaving a dead
+// copy of the old shell on every device that ever installed it.
+const RETIRED_CACHE_PREFIXES = ["surfscape-shell-"];
 const scopeUrl = new URL(self.registration.scope);
 const scoped = (path) => new URL(path, scopeUrl).href;
 const CORE_ASSETS = [
   scoped("./"),
   scoped("./manifest.webmanifest"),
-  scoped("./icons/surfscape-180.png"),
-  scoped("./icons/surfscape-192.png"),
-  scoped("./icons/surfscape-512.png"),
-  scoped("./icons/surfscape-maskable-512.png"),
+  scoped("./icons/breakloom-180.png"),
+  scoped("./icons/breakloom-192.png"),
+  scoped("./icons/breakloom-512.png"),
+  scoped("./icons/breakloom-maskable-512.png"),
   scoped("./models/beach-visitor-premium.glb"),
   scoped("./models/surf-van-premium.glb"),
   scoped("./models/surfer-premium.glb"),
@@ -48,7 +51,10 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(
         keys
-          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+          .filter((key) => (
+            (key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+            || RETIRED_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix))
+          ))
           .map((key) => caches.delete(key)),
       ))
       .then(() => self.clients.claim()),

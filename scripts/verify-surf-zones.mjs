@@ -49,7 +49,7 @@ async function tile(tx, ty) {
   const file = resolve(CACHE, `${ZOOM}-${tx}-${ty}.png`);
   if (!existsSync(file)) {
     const response = await fetch(`https://tile.openstreetmap.org/${ZOOM}/${tx}/${ty}.png`, {
-      headers: { "User-Agent": "surfscape-zone-audit/1.0 (coordinate QA; contact via repo)" },
+      headers: { "User-Agent": "breakloom-zone-audit/1.0 (coordinate QA; contact via repo)" },
     });
     if (!response.ok) throw new Error(`tile ${ZOOM}/${tx}/${ty}: ${response.status}`);
     writeFileSync(file, Buffer.from(await response.arrayBuffer()));

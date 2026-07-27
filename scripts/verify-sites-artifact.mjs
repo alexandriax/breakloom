@@ -38,7 +38,7 @@ await Promise.all(requiredFiles.map(requireFile));
 
 const source = await readFile(resolve(root, "lib/game.ts"), "utf8");
 const releaseMatch = source.match(
-  /SURFSCAPE_RELEASE\s*=\s*{\s*version:\s*(\d+),\s*channel:\s*"([^"]+)"/s,
+  /BREAKLOOM_RELEASE\s*=\s*{\s*version:\s*(\d+),\s*channel:\s*"([^"]+)"/s,
 );
 if (!releaseMatch) failures.push("lib/game.ts has no parseable release marker");
 const release = releaseMatch

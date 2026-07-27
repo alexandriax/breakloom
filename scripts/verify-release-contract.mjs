@@ -4,12 +4,12 @@ import {
   evaluateWaveTakeoff,
   INITIAL_STATS,
   reachedSurfTrainingStep,
-  SURFSCAPE_RELEASE,
+  BREAKLOOM_RELEASE,
 } from "../lib/game.ts";
 import { readFileSync } from "node:fs";
 
 const launchSource = readFileSync(
-  new URL("../components/SurfscapeApp.tsx", import.meta.url),
+  new URL("../components/BreakloomApp.tsx", import.meta.url),
   "utf8",
 );
 const launchStyles = readFileSync(
@@ -98,7 +98,7 @@ if (
   || broadsideImpact.outcome !== "tumble"
   || unsupportedStanding !== 5
   || supportedStanding !== 6
-  || SURFSCAPE_RELEASE.version !== 236
+  || BREAKLOOM_RELEASE.version !== 236
   || !launchSource.includes('id: "easy"')
   || !launchSource.includes('id: "medium"')
   || !launchSource.includes('id: "hard"')
@@ -113,11 +113,11 @@ if (
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
   || launchSource.indexOf('className="coast-rail"') > launchSource.indexOf("<WorldMap")
 ) {
-  throw new Error("Surfscape release physics contract failed");
+  throw new Error("Breakloom release physics contract failed");
 }
 
 console.log(JSON.stringify({
-  release: SURFSCAPE_RELEASE,
+  release: BREAKLOOM_RELEASE,
   arbitraryPopUpProgress: arbitraryPopUp.progress,
   flatWaterOutcome: stillWaterStand.outcome,
   flatWaterCapture: stillWaterStand.capture,

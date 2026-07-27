@@ -3158,11 +3158,11 @@ function prepareSurferScene(
       const materials = sourceMaterials.map((sourceMaterial) => {
         const next = sourceMaterial.clone();
         if (next instanceof THREE.MeshStandardMaterial) {
-          next.userData.surfscapeBaseRoughness = next.roughness;
-          next.userData.surfscapeBaseEnv = next.envMapIntensity;
+          next.userData.breakloomBaseRoughness = next.roughness;
+          next.userData.breakloomBaseEnv = next.envMapIntensity;
           if (next instanceof THREE.MeshPhysicalMaterial) {
-            next.userData.surfscapeBaseClearcoat = next.clearcoat;
-            next.userData.surfscapeBaseClearcoatRoughness = next.clearcoatRoughness;
+            next.userData.breakloomBaseClearcoat = next.clearcoat;
+            next.userData.breakloomBaseClearcoatRoughness = next.clearcoatRoughness;
           }
           const name = next.name.toLowerCase();
           const isNeoprene = name.includes("neoprene") || name.includes("stretch panels") || name.includes("knee panels");
@@ -3305,17 +3305,17 @@ function PremiumSurferBody({
     const surfaceWetness = state.wetness;
     responsiveMaterials.forEach((surface) => {
       const name = surface.name.toLowerCase();
-      const baseRoughness = Number(surface.userData.surfscapeBaseRoughness ?? surface.roughness);
+      const baseRoughness = Number(surface.userData.breakloomBaseRoughness ?? surface.roughness);
       const isSkin = name.includes("skin") || name.includes("sclera") || name.includes("lip") || name.includes("nail");
       const isHair = name.includes("hair") || name.includes("brow");
       const isNeoprene = name.includes("neoprene") || name.includes("stretch") || name.includes("knee") || name.includes("seam") || name.includes("cuff");
       const wetRoughness = isHair ? .16 : isSkin ? .27 : isNeoprene ? .24 : Math.max(.2, baseRoughness * .72);
       surface.roughness = THREE.MathUtils.damp(surface.roughness, THREE.MathUtils.lerp(baseRoughness, wetRoughness, surfaceWetness), 5, delta);
-      surface.envMapIntensity = THREE.MathUtils.damp(surface.envMapIntensity, THREE.MathUtils.lerp(Number(surface.userData.surfscapeBaseEnv ?? 1), isSkin ? 1.3 : 1.55, surfaceWetness), 4, delta);
+      surface.envMapIntensity = THREE.MathUtils.damp(surface.envMapIntensity, THREE.MathUtils.lerp(Number(surface.userData.breakloomBaseEnv ?? 1), isSkin ? 1.3 : 1.55, surfaceWetness), 4, delta);
       if (surface instanceof THREE.MeshPhysicalMaterial) {
         const wetClearcoat = isHair ? .78 : isSkin ? .32 : isNeoprene ? .4 : .26;
-        const baseClearcoat = Number(surface.userData.surfscapeBaseClearcoat ?? surface.clearcoat);
-        const baseClearcoatRoughness = Number(surface.userData.surfscapeBaseClearcoatRoughness ?? surface.clearcoatRoughness);
+        const baseClearcoat = Number(surface.userData.breakloomBaseClearcoat ?? surface.clearcoat);
+        const baseClearcoatRoughness = Number(surface.userData.breakloomBaseClearcoatRoughness ?? surface.clearcoatRoughness);
         surface.clearcoat = THREE.MathUtils.damp(surface.clearcoat, THREE.MathUtils.lerp(baseClearcoat, Math.max(baseClearcoat, wetClearcoat), surfaceWetness), 4, delta);
         surface.clearcoatRoughness = THREE.MathUtils.damp(surface.clearcoatRoughness, THREE.MathUtils.lerp(baseClearcoatRoughness, isHair ? .12 : .2, surfaceWetness), 4, delta);
       }
@@ -10215,7 +10215,7 @@ const CINEMATIC_GRADE_SHADER = {
     uniform float uAspect;
     varying vec2 vUv;
 
-    float surfscapeLuminance(vec3 color) {
+    float breakloomLuminance(vec3 color) {
       return dot(color, vec3(.2126, .7152, .0722));
     }
 
@@ -10326,12 +10326,12 @@ const CINEMATIC_GRADE_SHADER = {
         source = texture2D(tDiffuse, vUv);
       }
       vec3 color = max(source.rgb, vec3(0.0));
-      float initialLuma = surfscapeLuminance(color);
+      float initialLuma = breakloomLuminance(color);
 
       // A restrained display curve keeps the ACES highlight roll-off while
       // restoring just enough separation in wet materials and distant haze.
       color = (color - vec3(.18)) * uContrast + vec3(.18);
-      float gradedLuma = surfscapeLuminance(color);
+      float gradedLuma = breakloomLuminance(color);
       color = mix(vec3(gradedLuma), color, uSaturation);
 
       float highlightWeight = smoothstep(.16, .78, initialLuma);
@@ -10340,7 +10340,7 @@ const CINEMATIC_GRADE_SHADER = {
       color += vec3(-.008, .003, .015) * uWarmth * -shadowWeight * .42;
 
       float stormMix = uStorm * (.18 + shadowWeight * .12);
-      vec3 stormColor = mix(vec3(surfscapeLuminance(color)), color, .62) * vec3(.91, .995, 1.04);
+      vec3 stormColor = mix(vec3(breakloomLuminance(color)), color, .62) * vec3(.91, .995, 1.04);
       color = mix(color, stormColor, stormMix);
 
       vec3 nightColor = color * vec3(.84, .96, 1.08);
@@ -10350,7 +10350,7 @@ const CINEMATIC_GRADE_SHADER = {
       // Approximate the wavelength loss that occurs beneath the surface:
       // red falls away first, while suspended light lifts cyan-green mids.
       vec3 absorbed = color * vec3(.52, .86, .96);
-      float underwaterLuma = surfscapeLuminance(absorbed);
+      float underwaterLuma = breakloomLuminance(absorbed);
       absorbed = mix(vec3(underwaterLuma) * vec3(.55, 1.04, 1.08), absorbed, .68);
       absorbed += vec3(0.0, .018, .024) * (1.0 - smoothstep(.2, .92, underwaterLuma));
       color = mix(color, absorbed, uUnderwater);
@@ -10373,7 +10373,7 @@ const CINEMATIC_GRADE_SHADER = {
       color *= 1.0 - edge * uVignette;
 
       float noise = interleavedGradientNoise(gl_FragCoord.xy, uTime) - .5;
-      float shadowGrain = mix(.72, 1.42, 1.0 - smoothstep(.04, .68, surfscapeLuminance(color)));
+      float shadowGrain = mix(.72, 1.42, 1.0 - smoothstep(.04, .68, breakloomLuminance(color)));
       color += noise * (uGrain * shadowGrain + 1.1 / 255.0);
       color = max(color, vec3(0.0));
 
@@ -11860,7 +11860,7 @@ function Simulation({
             ? t - vanDoorStartedAt.current < 1.7
               ? "Stepping out of the van"
               : "Driver door closing"
-            : "DRIVE / SPACE to enter the Surfscape van"
+            : "DRIVE / SPACE to enter the Breakloom van"
           : besideVan
             ? "Walk around to the driver door"
           : position.current.z > 54

@@ -142,7 +142,7 @@ function ramp(parameter: AudioParam, value: number, now: number, duration = .12)
   parameter.linearRampToValueAtTime(value, now + duration);
 }
 
-export class SurfscapeAudio {
+export class BreakloomAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private submersionFilter: BiquadFilterNode | null = null;

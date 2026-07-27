@@ -1,4 +1,4 @@
-name: Deploy Surfscape to GitHub Pages
+name: Deploy Breakloom to GitHub Pages
 
 on:
   push:
