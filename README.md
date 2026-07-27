@@ -37,12 +37,6 @@ need) and sets immutable cache headers on the soundtrack, models, textures, and
 icons, with the service worker held at `must-revalidate`. The game deploys at the
 domain root, so no base path applies.
 
-**GitHub Pages.** `.github/workflows/deploy-pages.yml` publishes `out/` on every push
-to `main`. A project site serves the game from a repository subpath, so the build
-derives `basePath` from `GITHUB_REPOSITORY`; assets that Next does not rewrite for you
-go through `NEXT_PUBLIC_BASE_PATH`. Note that Pages has a soft 100 GB/month bandwidth
-limit and the soundtrack is 15.6 MB per full listen.
-
 `npm test` runs the physics contract and the release artifact check, which holds the
 app shell under 10 MiB and the soundtrack under 18 MiB, and fails if a track named in
 `SOUNDTRACK` is missing from the build.
@@ -134,12 +128,6 @@ The drivable two-tone surf expedition van is also Blender-authored. Its compact 
 ```
 
 The script exports `public/models/surf-van-premium.glb` and renders a local QA preview before the application build.
-
-## Deploy to GitHub Pages
-
-The workflow in `.github/workflows/deploy-pages.yml` builds and publishes the static `out` directory on every push to `main`. In the repository settings, set **Pages → Source** to **GitHub Actions**.
-
-The build automatically accounts for project-page paths such as `username.github.io/<repository>`.
 
 ## Scope
 
