@@ -73,7 +73,7 @@ const soundtrackBlock = audioSource.match(/export const SOUNDTRACK = \[([^\]]*)\
 if (!soundtrackBlock) {
   failures.push("lib/audio.ts has no parseable SOUNDTRACK list");
 } else {
-  const tracks = [...soundtrackBlock[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  const tracks = [...soundtrackBlock[1].matchAll(/file:\s*"([^"]+)"/g)].map((match) => match[1]);
   if (tracks.length === 0) failures.push("SOUNDTRACK is empty");
   await Promise.all(tracks.map((track) => requireFile(`client/audio/${track}.mp3`)));
 }
@@ -102,7 +102,7 @@ const soundtrackBytes = soundtrack.reduce((total, file) => total + file.size, 0)
 const shellBytes = totalBytes - soundtrackBytes;
 
 if (shellBytes > 10 * 1024 * 1024) failures.push("Sites app shell exceeds the 10 MiB release budget");
-if (soundtrackBytes > 40 * 1024 * 1024) failures.push("Soundtrack exceeds the 40 MiB release budget");
+if (soundtrackBytes > 18 * 1024 * 1024) failures.push("Soundtrack exceeds the 18 MiB release budget");
 if (javascriptBytes > 3 * 1024 * 1024) failures.push("JavaScript exceeds the 3 MiB release budget");
 if (largestJavascriptBytes > 1.6 * 1024 * 1024) {
   failures.push("A JavaScript chunk exceeds the 1.6 MiB release budget");

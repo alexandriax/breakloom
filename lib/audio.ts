@@ -9,19 +9,22 @@ type EffectKind = "catch" | "duck" | "shorebreak" | "release" | "turn" | "leash"
  * session keeps a predictable running order.
  */
 export const SOUNDTRACK = [
-  "surfrock00",
-  "surfrock01",
-  "surfrock03",
-  "surfrock04",
-  "surfrock05",
-  "surfrock06",
-  "surfrock07",
-  "surfrock08",
-  "surfrock09",
-  "surfrock10",
-  "surfrock11",
-  "surfrock12",
+  { file: "surfrock00", title: "Desert Chase" },
+  { file: "surfrock01", title: "Down at the Market" },
+  { file: "surfrock03", title: "Chrome Coastline" },
+  { file: "surfrock04", title: "Crashing Wave" },
+  { file: "surfrock05", title: "Tide Line Twist" },
+  { file: "surfrock06", title: "Saltwater Stomp" },
+  { file: "surfrock07", title: "Third Reef Rumble" },
+  { file: "surfrock08", title: "Midnight Offshore" },
+  { file: "surfrock09", title: "Woodie on Fire" },
+  { file: "surfrock10", title: "Kelp Forest Kicks" },
+  { file: "surfrock11", title: "Reverb Highway" },
+  { file: "surfrock12", title: "Last Set at Dusk" },
 ] as const;
+
+export type SoundtrackEntry = { file: string; title: string };
+export type NowPlaying = { title: string; index: number; total: number };
 
 const SOUNDTRACK_LEVEL = .58;
 
@@ -190,7 +193,7 @@ export class SurfscapeAudio {
   private musicBus: GainNode | null = null;
   private soundtrack: HTMLAudioElement | null = null;
   private soundtrackGain: GainNode | null = null;
-  private soundtrackOrder: string[] = [];
+  private soundtrackOrder: SoundtrackEntry[] = [];
   private soundtrackIndex = 0;
   private musicEnabled = true;
 
@@ -445,16 +448,17 @@ export class SurfscapeAudio {
     this.syncSoundtrackPlayback();
   }
 
-  /** One-based position in the running order, for anything that names the track. */
-  currentTrack() {
+  /** What is playing and where it sits in the running order. */
+  currentTrack(): NowPlaying {
     return {
+      title: this.soundtrackOrder[this.soundtrackIndex]?.title ?? SOUNDTRACK[0].title,
       index: this.soundtrackIndex + 1,
       total: this.soundtrackOrder.length || SOUNDTRACK.length,
     };
   }
 
   /** Notified whenever the running order moves on, so the UI can name the track. */
-  onTrackChange: ((track: { index: number; total: number }) => void) | null = null;
+  onTrackChange: ((track: NowPlaying) => void) | null = null;
 
   setAcousticSpace(phase: GamePhase, barrel: number, active: boolean) {
     if (!this.context || !this.worldGain || !this.worldFilter) return;
@@ -1036,7 +1040,9 @@ export class SurfscapeAudio {
     const element = this.soundtrack;
     const track = this.soundtrackOrder[this.soundtrackIndex];
     if (!element || !track) return;
-    element.src = `/audio/${track}.mp3`;
+    // Absolute from the deployment root, which is a repository subpath when the
+    // game is served from a GitHub Pages project site.
+    element.src = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/audio/${track.file}.mp3`;
     this.onTrackChange?.(this.currentTrack());
     this.syncSoundtrackPlayback();
   }

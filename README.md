@@ -23,6 +23,29 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Deploy
+
+Surfscape is a fully static build: `next build` emits `output: "export"`, and every
+external call — Open-Meteo marine and forecast data, OpenStreetMap tiles — is made
+from the browser to a CORS-enabled third party. There is no server runtime, no API
+route, and no build-time fetch, so any static host will serve it.
+
+**Vercel.** Import the repository and accept the defaults; `vercel.json` pins the
+build to `next build` (skipping the Cloudflare Sites artifact, which Vercel does not
+need) and sets immutable cache headers on the soundtrack, models, textures, and
+icons, with the service worker held at `must-revalidate`. The game deploys at the
+domain root, so no base path applies.
+
+**GitHub Pages.** `.github/workflows/deploy-pages.yml` publishes `out/` on every push
+to `main`. A project site serves the game from a repository subpath, so the build
+derives `basePath` from `GITHUB_REPOSITORY`; assets that Next does not rewrite for you
+go through `NEXT_PUBLIC_BASE_PATH`. Note that Pages has a soft 100 GB/month bandwidth
+limit and the soundtrack is 15.6 MB per full listen.
+
+`npm test` runs the physics contract and the release artifact check, which holds the
+app shell under 10 MiB and the soundtrack under 18 MiB, and fails if a track named in
+`SOUNDTRACK` is missing from the build.
+
 ## Controls
 
 - `WASD` or arrow keys: camera-relative movement on land, then paddle and steer in the water
