@@ -57,28 +57,6 @@ export type Beach = {
  */
 export const BEACHES: Beach[] = [
   {
-    id: "rockaway",
-    name: "Rockaway Beach",
-    region: "Queens, New York",
-    country: "USA",
-    lat: 40.5834,
-    lon: -73.8172,
-    zoom: 13,
-    heading: 172, // S-facing Atlantic beach; both fits agree (185/165)
-    difficulty: 2,
-    breakType: "Beach break",
-    palette: ["#73e6e1", "#e6b98a"],
-    description: "A long, shifting Atlantic beach with jetties, peaks, and room to explore block by block.",
-    zones: [
-      { name: "Beach 67th", lat: 40.5836, lon: -73.8064, note: "Roomy western peaks" },
-      { name: "Beach 90th", lat: 40.5829, lon: -73.8115, note: "Classic local lineup" },
-      { name: "Beach 92nd", lat: 40.5816, lon: -73.8162, note: "Jetty-shaped walls" },
-      { name: "Beach 98th", lat: 40.5803, lon: -73.8208, note: "Punchy sandbars" },
-      { name: "Beach 108th", lat: 40.5788, lon: -73.8254, note: "Open-beach energy" },
-    ],
-    fallback: { waveHeight: 1.1, wavePeriod: 8, waveDirection: 168, waterTemperature: 20, windSpeed: 13 },
-  },
-  {
     id: "pipeline",
     name: "Banzai Pipeline",
     region: "North Shore, Oʻahu",
@@ -117,6 +95,28 @@ export const BEACHES: Beach[] = [
       { name: "Inside", lat: -17.8471, lon: -149.2728, note: "Training shoulder" },
     ],
     fallback: { waveHeight: 2.8, wavePeriod: 17, waveDirection: 210, waterTemperature: 28, windSpeed: 8 },
+  },
+  {
+    id: "rockaway",
+    name: "Rockaway Beach",
+    region: "Queens, New York",
+    country: "USA",
+    lat: 40.5834,
+    lon: -73.8172,
+    zoom: 13,
+    heading: 172, // S-facing Atlantic beach; both fits agree (185/165)
+    difficulty: 2,
+    breakType: "Beach break",
+    palette: ["#73e6e1", "#e6b98a"],
+    description: "A long, shifting Atlantic beach with jetties, peaks, and room to explore block by block.",
+    zones: [
+      { name: "Beach 67th", lat: 40.5836, lon: -73.8064, note: "Roomy western peaks" },
+      { name: "Beach 90th", lat: 40.5829, lon: -73.8115, note: "Classic local lineup" },
+      { name: "Beach 92nd", lat: 40.5816, lon: -73.8162, note: "Jetty-shaped walls" },
+      { name: "Beach 98th", lat: 40.5803, lon: -73.8208, note: "Punchy sandbars" },
+      { name: "Beach 108th", lat: 40.5788, lon: -73.8254, note: "Open-beach energy" },
+    ],
+    fallback: { waveHeight: 1.1, wavePeriod: 8, waveDirection: 168, waterTemperature: 20, windSpeed: 13 },
   },
   {
     id: "jeffreys-bay",
