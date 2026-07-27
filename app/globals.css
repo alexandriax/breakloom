@@ -5657,3 +5657,531 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
     flex: 0 0 auto;
   }
 }
+
+/* v236 launch flow: keep the four decisions required to surf together and
+   place specialist ocean controls behind one deliberate disclosure. */
+.surfscape.is-launch .launch-screen {
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 102px;
+}
+
+.surfscape.is-launch .launch-content {
+  width: min(1480px, 100%);
+  min-height: 0;
+  align-items: start;
+  grid-template-columns: minmax(300px, .58fr) minmax(610px, 1.42fr);
+  gap: clamp(22px, 3vw, 52px);
+  margin: 0 auto;
+  padding-bottom: 26px;
+}
+
+.surfscape.is-launch .launch-hero {
+  padding: clamp(30px, 6vh, 72px) 0 24px;
+}
+
+.surfscape.is-launch .launch-hero h1 {
+  margin: 18px 0 16px;
+  font-size: clamp(64px, 6.4vw, 104px);
+}
+
+.surfscape.is-launch .hero-copy {
+  max-width: 580px;
+  font-size: clamp(13px, 1vw, 16px);
+  line-height: 1.55;
+}
+
+.tour-callout {
+  max-width: 560px;
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(151, 239, 225, .2);
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(41, 151, 143, .13), rgba(3, 16, 22, .38));
+}
+
+.tour-callout > svg {
+  width: 27px;
+  color: var(--sand-accent);
+}
+
+.tour-callout > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tour-callout small,
+.launch-location-head span,
+.launch-condition-strip span {
+  color: rgba(207, 241, 235, .55);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.tour-callout strong {
+  font-size: 15px;
+}
+
+.tour-callout em {
+  color: rgba(217, 242, 237, .65);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.surfscape.is-launch .launch-config {
+  width: 100%;
+  margin: 18px 0;
+  padding: 16px;
+  overflow: visible;
+}
+
+.launch-location {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(183, 244, 235, .14);
+  border-radius: 14px;
+  background: rgba(2, 13, 18, .47);
+}
+
+.launch-location-head {
+  min-height: 57px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(185, 242, 234, .1);
+}
+
+.launch-location-head > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.launch-location-head > div > strong {
+  overflow: hidden;
+  color: #f1fffb;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-location-head > div > small {
+  overflow: hidden;
+  color: rgba(213, 240, 235, .58);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-model-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(213, 239, 235, .62);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.launch-model-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d5a86e;
+  box-shadow: 0 0 0 4px rgba(213, 168, 110, .09);
+}
+
+.launch-model-status.is-live i {
+  background: #76e2b2;
+  box-shadow: 0 0 0 4px rgba(118, 226, 178, .09);
+}
+
+.launch-zone-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 1px;
+  background: rgba(191, 245, 237, .09);
+}
+
+.launch-zone-strip button {
+  min-width: 0;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 0;
+  background: rgba(3, 17, 23, .96);
+  color: #eafffa;
+  text-align: left;
+  cursor: pointer;
+}
+
+.launch-zone-strip button:hover {
+  background: rgba(36, 114, 112, .18);
+}
+
+.launch-zone-strip button.is-selected {
+  background: color-mix(in srgb, var(--spot-accent) 16%, rgba(3, 17, 23, .96));
+  box-shadow: inset 0 -3px var(--spot-accent);
+}
+
+.launch-zone-strip strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-zone-strip small {
+  overflow: hidden;
+  color: rgba(209, 237, 232, .5);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launch-condition-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.launch-condition-strip > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-right: 1px solid rgba(190, 241, 233, .1);
+}
+
+.launch-condition-strip > div:last-child {
+  border-right: 0;
+}
+
+.launch-condition-strip strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.launch-condition-strip small {
+  overflow: hidden;
+  color: rgba(215, 239, 235, .54);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.surfscape.is-launch .launch-config .mode-section {
+  margin-top: 12px;
+}
+
+.surfscape.is-launch .launch-config .section-label {
+  min-height: 26px;
+}
+
+.surfscape.is-launch .launch-config .section-label p {
+  color: rgba(213, 238, 234, .58);
+  font-size: 11px;
+}
+
+.surfscape.is-launch .launch-config .mode-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.surfscape.is-launch .launch-config .mode-card {
+  min-height: 98px;
+  padding: 11px 11px 27px;
+}
+
+.surfscape.is-launch .launch-config .mode-card > span {
+  font-size: 9px;
+}
+
+.surfscape.is-launch .launch-config .mode-card > strong {
+  font-size: 14px;
+}
+
+.surfscape.is-launch .launch-config .mode-card > p {
+  display: -webkit-box;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.surfscape.is-launch .launch-config .mode-card.preset-easy::after {
+  content: "RECOMMENDED";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--sand-accent);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.surfscape.is-launch .launch-config .quiver-picker {
+  margin-top: 9px;
+}
+
+.surfscape.is-launch .launch-config .quiver-grid button {
+  min-height: 58px;
+}
+
+.surfscape.is-launch .launch-config .quiver-grid button strong {
+  font-size: 11px;
+}
+
+.advanced-launch-options {
+  margin-top: 10px;
+  border: 1px solid rgba(185, 242, 234, .14);
+  border-radius: 13px;
+  background: rgba(2, 13, 18, .42);
+}
+
+.advanced-launch-options > summary {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 13px;
+  color: #eafffa;
+  cursor: pointer;
+  list-style: none;
+}
+
+.advanced-launch-options > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-launch-options > summary > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 9px;
+}
+
+.advanced-launch-options > summary > span > svg {
+  grid-row: 1 / 3;
+  width: 17px;
+  color: var(--spot-accent);
+}
+
+.advanced-launch-options > summary strong {
+  font-size: 12px;
+}
+
+.advanced-launch-options > summary small {
+  overflow: hidden;
+  color: rgba(210, 238, 233, .53);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.advanced-launch-options > summary > svg {
+  width: 17px;
+  transition: transform .2s ease;
+}
+
+.advanced-launch-options[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.advanced-launch-controls {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px;
+  border-top: 1px solid rgba(190, 242, 234, .09);
+}
+
+.advanced-launch-controls > :first-child {
+  margin-top: 10px;
+}
+
+.advanced-launch-options .planner {
+  position: static;
+  width: auto;
+  margin: 0 10px 10px;
+  border-radius: 13px;
+  box-shadow: none;
+}
+
+.advanced-launch-options .planner-inner {
+  padding: 16px;
+}
+
+.advanced-launch-options .planner-head h2 {
+  font-size: 26px;
+}
+
+.advanced-launch-options .map-shell {
+  height: 280px;
+}
+
+.surfscape.is-launch .wave-lab-panel {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  width: min(1480px, 100%);
+  grid-template-columns: repeat(5, minmax(135px, 1fr));
+  margin: 0 auto 24px;
+  transform: none;
+}
+
+@media (max-width: 1119px) {
+  .surfscape.is-launch .launch-content {
+    display: block;
+    width: min(860px, 100%);
+  }
+
+  .surfscape.is-launch .launch-hero {
+    padding: 18px 0 8px;
+  }
+
+  .surfscape.is-launch .launch-hero h1 {
+    margin: 10px 0;
+    font-size: clamp(54px, 9vw, 78px);
+  }
+
+  .surfscape.is-launch .tour-callout {
+    max-width: none;
+    min-height: 66px;
+    margin-top: 12px;
+  }
+
+  .surfscape.is-launch .launch-config {
+    margin: 8px 0 14px;
+  }
+}
+
+@media (max-width: 760px) {
+  .surfscape.is-launch .launch-screen {
+    padding-bottom: 86px;
+  }
+
+  .surfscape.is-launch .launch-hero {
+    padding: 12px 0 5px;
+  }
+
+  .surfscape.is-launch .launch-hero h1 {
+    font-size: clamp(40px, 12vw, 54px);
+  }
+
+  .surfscape.is-launch .hero-copy {
+    max-width: none;
+    font-size: 12px;
+  }
+
+  .tour-callout {
+    min-height: 58px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 10px 12px;
+  }
+
+  .tour-callout > svg {
+    width: 22px;
+  }
+
+  .tour-callout em {
+    display: none;
+  }
+
+  .surfscape.is-launch .launch-config {
+    padding: 10px;
+  }
+
+  .launch-location-head {
+    align-items: flex-start;
+  }
+
+  .launch-model-status {
+    font-size: 9px;
+  }
+
+  .launch-zone-strip {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .launch-zone-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .launch-zone-strip button {
+    flex: 0 0 126px;
+  }
+
+  .launch-condition-strip > div {
+    padding: 8px;
+  }
+
+  .launch-condition-strip span {
+    font-size: 8px;
+  }
+
+  .launch-condition-strip strong {
+    font-size: 12px;
+  }
+
+  .launch-condition-strip small {
+    font-size: 9px;
+  }
+
+  .surfscape.is-launch .launch-config .mode-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .surfscape.is-launch .launch-config .mode-card {
+    min-height: 82px;
+  }
+
+  .surfscape.is-launch .launch-config .mode-card > p {
+    display: none;
+  }
+
+  .surfscape.is-launch .launch-config .quiver-grid button strong {
+    font-size: 10px;
+  }
+
+  .advanced-launch-options > summary small {
+    display: none;
+  }
+
+  .advanced-launch-options .planner {
+    margin-inline: 7px;
+  }
+
+  .advanced-launch-options .planner-inner {
+    padding: 12px;
+  }
+
+  .surfscape.is-launch .wave-lab-panel {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-bottom: 14px;
+  }
+}

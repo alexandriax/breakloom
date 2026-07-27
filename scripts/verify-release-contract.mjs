@@ -6,6 +6,16 @@ import {
   reachedSurfTrainingStep,
   SURFSCAPE_RELEASE,
 } from "../lib/game.ts";
+import { readFileSync } from "node:fs";
+
+const launchSource = readFileSync(
+  new URL("../components/SurfscapeApp.tsx", import.meta.url),
+  "utf8",
+);
+const launchStyles = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 const liveFace = {
   boardHeading: 0,
@@ -88,6 +98,14 @@ if (
   || broadsideImpact.outcome !== "tumble"
   || unsupportedStanding !== 5
   || supportedStanding !== 6
+  || SURFSCAPE_RELEASE.version !== 236
+  || !launchSource.includes('id: "easy"')
+  || !launchSource.includes('id: "medium"')
+  || !launchSource.includes('id: "hard"')
+  || !launchSource.includes('id: "open"')
+  || !launchSource.includes('className="launch-location"')
+  || !launchSource.includes('className="advanced-launch-options"')
+  || !launchStyles.includes(".launch-condition-strip")
 ) {
   throw new Error("Surfscape release physics contract failed");
 }

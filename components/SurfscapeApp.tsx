@@ -75,7 +75,6 @@ import {
 } from "@/lib/game";
 import { SurfscapeAudio } from "@/lib/audio";
 import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
-import TideSparkline from "./TideSparkline";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
 const WorldMap = dynamic(() => import("./WorldMap"), {
@@ -85,6 +84,7 @@ const WorldMap = dynamic(() => import("./WorldMap"), {
 
 type Screen = "launch" | "game";
 type SessionFormat = "free" | "heat";
+type LaunchPreset = "easy" | "medium" | "hard" | "open";
 type LaunchPanel = "break" | "forecast" | "tour";
 type HudPanel = "ocean" | "session" | "controls";
 type MotionBalanceStatus = "checking" | "unavailable" | "idle" | "requesting" | "active" | "denied";
@@ -195,6 +195,37 @@ const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const ASSIST_OPTIONS = Object.keys(
   SURF_ASSIST_PROFILES,
 ) as SurfAssistLevel[];
+const LAUNCH_PRESETS: Array<{
+  id: LaunchPreset;
+  name: string;
+  kicker: string;
+  description: string;
+}> = [
+  {
+    id: "easy",
+    name: "Easy",
+    kicker: "Guided Tour",
+    description: "Learn the paddle-out, earn coast stamps, and take on harder beaches as your tour grows.",
+  },
+  {
+    id: "medium",
+    name: "Medium",
+    kicker: "Free Surf",
+    description: "Natural board response with light recovery help and only essential coaching.",
+  },
+  {
+    id: "hard",
+    name: "Hard",
+    kicker: "Raw Ocean",
+    description: "Full water load, timing, and separation thresholds with minimal guidance.",
+  },
+  {
+    id: "open",
+    name: "Open Play",
+    kicker: "Wave Lab",
+    description: "Choose a beach first, then build a custom swell from the advanced setup.",
+  },
+];
 const INITIAL_MODELED_CONDITIONS = fallbackConditions(DEFAULT_BEACH, "2025-01-15T12:00:00.000Z");
 
 const RECORD_KEY = "surfscape-personal-best-v1";
@@ -503,27 +534,6 @@ function gamepadAxis(value = 0, deadzone = .14) {
   if (magnitude <= deadzone) return 0;
   return Math.sign(value) * Math.min(1, (magnitude - deadzone) / (1 - deadzone));
 }
-
-const MODES: Array<{ id: GameMode; name: string; kicker: string; description: string }> = [
-  {
-    id: "training",
-    name: "First Light",
-    kicker: "Training",
-    description: "The full ocean physics with live force arrows, paddle-hand timing, and causal prompts.",
-  },
-  {
-    id: "advanced",
-    name: "Raw Ocean",
-    kicker: "Advanced",
-    description: "The same board-and-water solver with sparse coaching and an unobstructed line.",
-  },
-  {
-    id: "playground",
-    name: "Wave Lab",
-    kicker: "Playground",
-    description: "Build the exact swell, tide, current, and light you want to ride.",
-  },
-];
 
 const TRAINING_STEPS = [
   { title: "Enter the shallows", detail: "Move from the sand into the water." },
@@ -908,6 +918,7 @@ export default function SurfscapeApp() {
   const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
   const [showPlanner, setShowPlanner] = useState(true);
   const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
+  const [advancedSetupOpen, setAdvancedSetupOpen] = useState(false);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanel>("break");
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
@@ -2379,6 +2390,25 @@ export default function SurfscapeApp() {
     }
   };
 
+  const chooseLaunchPreset = (preset: LaunchPreset) => {
+    const mode: GameMode = preset === "easy"
+      ? "training"
+      : preset === "open"
+        ? "playground"
+        : "advanced";
+    const assist: SurfAssistLevel = preset === "easy"
+      ? "guided"
+      : preset === "medium"
+        ? "natural"
+        : preset === "hard"
+          ? "raw"
+          : settings.assist;
+    setSessionFormat("free");
+    chooseMode(mode);
+    setSettings((current) => ({ ...current, mode, assist }));
+    if (preset === "open") setAdvancedSetupOpen(true);
+  };
+
   const selectSessionWindow = (point: MarineForecastPoint | null) => {
     const nextConditions = conditionsAtForecast(conditions, point);
     const nextSettings = settingsFromConditions(nextConditions, beach.heading);
@@ -2955,7 +2985,14 @@ export default function SurfscapeApp() {
 
   const localTime = settings.mode === "playground" ? formatHourValue(settings.timeOfDay) : formatClock(sessionConditions.observedAt);
   const hasPhoto = photoStatus === "ready" || photoStatus === "shared" || photoStatus === "saved";
-  const selectedMode = MODES.find((mode) => mode.id === settings.mode) ?? MODES[0];
+  const selectedLaunchPreset: LaunchPreset = settings.mode === "playground"
+    ? "open"
+    : settings.mode === "training"
+      ? "easy"
+      : settings.assist === "raw"
+        ? "hard"
+        : "medium";
+  const selectedLaunchChoice = LAUNCH_PRESETS.find((preset) => preset.id === selectedLaunchPreset) ?? LAUNCH_PRESETS[0];
   const motionBalanceActive = motionBalanceStatus === "active";
   const motionBalanceLabel = motionBalanceStatus === "requesting"
     ? "REQUESTING MOTION"
@@ -3998,37 +4035,21 @@ export default function SurfscapeApp() {
 
           <div className="launch-content">
             <div className="launch-hero">
-              <div className="hero-index"><span>13</span> ICONIC COASTLINES / LIVE CONDITIONS</div>
+              <div className="hero-index"><span>01</span> PICK A SESSION / GET IN THE WATER</div>
               <h1>
-                READ<br />
-                THE <em>OCEAN.</em>
+                CHOOSE<br />
+                YOUR <em>LINE.</em>
               </h1>
               <p className="hero-copy">
-                Choose a real break. Drive the coast. Walk the sand. Read a living swell. Find the line that only exists right now.
+                Start with the guided tour or set your own challenge. Pick a coast, a break, and a board; the ocean takes it from there.
               </p>
-
-              <div className="current-readout">
-                <div className="readout-location">
-                  <span className="overline"><MapPin /> CURRENT PADDLE-OUT</span>
-                  <strong>{zoneLabel}</strong>
-                  <small>{beach.name} · {beach.region}</small>
-                </div>
-                <div className="readout-metric primary">
-                  <span>Wave</span>
-                  <strong>{settings.waveHeight.toFixed(1)}<small>m</small></strong>
-                  <em>{settings.wavePeriod.toFixed(1)}s · {degrees(settings.waveDirection)}</em>
-                </div>
-                <div className="readout-metric">
-                  <span>Dominant swell</span>
-                  <strong>{settings.swellHeight.toFixed(1)}<small>m</small></strong>
-                  <em>{settings.swellPeriod.toFixed(1)}s · {degrees(settings.swellDirection)}</em>
-                </div>
-                <div className="readout-metric tide-readout">
-                  <span>Tide · {settings.mode === "playground" ? "custom" : sessionConditions.tideTrend}</span>
-                  <strong>{settings.tide >= 0 ? "+" : ""}{settings.tide.toFixed(2)}<small>m</small></strong>
-                  <em>{tideResponse.label} · {Math.round(tideResponse.quality * 100)}% fit</em>
-                  {settings.mode !== "playground" && <TideSparkline points={conditions.tide} observedAt={sessionConditions.observedAt} />}
-                </div>
+              <div className="tour-callout">
+                <Trophy />
+                <span>
+                  <small>GUIDED WORLD TOUR</small>
+                  <strong>{passportSummary.stamps ? `${passportSummary.stamps} stamps earned` : "Start at Rockaway"}</strong>
+                  <em>Learn on forgiving settings, then progress through all {BEACHES.length} coastlines.</em>
+                </span>
               </div>
             </div>
 
@@ -4051,78 +4072,74 @@ export default function SurfscapeApp() {
                   <ChevronDown />
                 </button>
               </div>
-              <div className="mode-section">
-                <div className="section-label"><span>MODE</span><p>Choose your relationship with the water</p></div>
-                <div className="mode-grid">
-                  {MODES.map((mode) => (
+              <section className="launch-location" aria-label="Choose a surf break">
+                <div className="launch-location-head">
+                  <div>
+                    <span>COAST AND BEACH</span>
+                    <strong>{zoneLabel}</strong>
+                    <small>{beach.name} · {beach.region}</small>
+                  </div>
+                  <span className={`launch-model-status ${conditions.source === "live" ? "is-live" : ""}`}>
+                    <i /> {conditionsLoading ? "Loading conditions" : settings.mode === "playground" ? "Custom ocean" : conditions.source === "live" ? "Live conditions" : "Modeled conditions"}
+                  </span>
+                </div>
+                <div className="launch-zone-strip" role="list" aria-label={`${beach.name} beaches`}>
+                  {beach.zones.map((zone) => (
                     <button
-                      key={mode.id}
-                      className={`mode-card ${settings.mode === mode.id ? "is-selected" : ""}`}
-                      onClick={() => chooseMode(mode.id)}
+                      type="button"
+                      key={zone.name}
+                      className={zoneLabel === zone.name ? "is-selected" : ""}
+                      onClick={() => {
+                        setLatitude(zone.lat);
+                        setLongitude(zone.lon);
+                        setZoneLabel(zone.name);
+                        setSelectedForecastTime(null);
+                      }}
+                      aria-pressed={zoneLabel === zone.name}
                     >
-                      <span>{mode.kicker}</span>
-                      <strong>{mode.name}</strong>
-                      <p>{mode.description}</p>
-                      <i>{settings.mode === mode.id ? "Selected" : "Choose"} <ArrowRight /></i>
+                      <strong>{zone.name}</strong>
+                      <small>{zone.note}</small>
                     </button>
                   ))}
                 </div>
-                {settings.mode === "advanced" && (
-                  <div className="session-format-picker">
-                    <div>
-                      <span>SESSION FORMAT</span>
-                      <strong>Choose how this ocean scores you</strong>
-                    </div>
-                    <button
-                      type="button"
-                      className={sessionFormat === "free" ? "is-selected" : ""}
-                      onClick={() => setSessionFormat("free")}
-                      aria-pressed={sessionFormat === "free"}
-                    >
-                      <Waves />
-                      <span><small>OPEN SESSION</small><strong>Free Surf</strong><em>Ride without a clock</em></span>
-                    </button>
-                    <button
-                      type="button"
-                      className={sessionFormat === "heat" ? "is-selected" : ""}
-                      onClick={() => setSessionFormat("heat")}
-                      aria-pressed={sessionFormat === "heat"}
-                    >
-                      <Timer />
-                      <span><small>5:00 · BEST TWO</small><strong>World Tour Heat</strong><em>Beat {heatTarget.toFixed(2)} to qualify</em></span>
-                    </button>
-                  </div>
-                )}
-                <div className="assist-picker">
+                <div className="launch-condition-strip" aria-label={`Conditions at ${zoneLabel}`}>
                   <div>
-                    <Target />
-                    <span>
-                      <small>CONTROL SUPPORT</small>
-                      <strong>Same ocean surface</strong>
-                    </span>
+                    <span>Wave</span>
+                    <strong>{settings.waveHeight.toFixed(1)} m</strong>
+                    <small>{settings.wavePeriod.toFixed(1)} s · {degrees(settings.waveDirection)}</small>
                   </div>
-                  {ASSIST_OPTIONS.map((assist) => {
-                    const profile = SURF_ASSIST_PROFILES[assist];
-                    return (
-                      <button
-                        type="button"
-                        key={assist}
-                        className={settings.assist === assist ? "is-selected" : ""}
-                        onClick={() => setSettings((current) => ({
-                          ...current,
-                          assist,
-                        }))}
-                        aria-pressed={settings.assist === assist}
-                        title={profile.description}
-                      >
-                        <strong>{profile.label}</strong>
-                        <small>{profile.description}</small>
-                      </button>
-                    );
-                  })}
+                  <div>
+                    <span>Swell</span>
+                    <strong>{settings.swellHeight.toFixed(1)} m</strong>
+                    <small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small>
+                  </div>
+                  <div>
+                    <span>Tide</span>
+                    <strong>{settings.mode === "playground" ? "Custom" : sessionConditions.tideTrend}</strong>
+                    <small>{tideResponse.label} · {Math.round(tideResponse.quality * 100)}% fit</small>
+                  </div>
+                </div>
+              </section>
+              <div className="mode-section">
+                <div className="section-label"><span>SESSION</span><p>Start guided, surf naturally, or take full control</p></div>
+                <div className="mode-grid">
+                  {LAUNCH_PRESETS.map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      className={`mode-card preset-${preset.id} ${selectedLaunchPreset === preset.id ? "is-selected" : ""}`}
+                      onClick={() => chooseLaunchPreset(preset.id)}
+                      aria-pressed={selectedLaunchPreset === preset.id}
+                    >
+                      <span>{preset.kicker}</span>
+                      <strong>{preset.name}</strong>
+                      <p>{preset.description}</p>
+                      <i>{selectedLaunchPreset === preset.id ? "Selected" : "Choose"} <ArrowRight /></i>
+                    </button>
+                  ))}
                 </div>
                 <div className="quiver-picker">
-                  <div className="quiver-head"><span>QUIVER / 03</span><strong>Choose the board under your feet</strong></div>
+                  <div className="quiver-head"><span>BOARD</span><strong>Choose the board under your feet</strong></div>
                   <div className="quiver-grid">
                     {BOARD_OPTIONS.map((boardId) => {
                       const board = BOARD_SPECS[boardId];
@@ -4144,8 +4161,71 @@ export default function SurfscapeApp() {
                   </div>
                 </div>
               </div>
-            </div>
-
+              <details
+                className="advanced-launch-options"
+                open={advancedSetupOpen}
+                onToggle={(event) => setAdvancedSetupOpen(event.currentTarget.open)}
+              >
+                <summary>
+                  <span><Settings2 /><strong>Advanced setup</strong><small>Heat format, assistance, exact map point, forecast, tour, and Wave Lab</small></span>
+                  <ChevronDown />
+                </summary>
+                <div className="advanced-launch-controls">
+                  {settings.mode === "advanced" && (
+                    <div className="session-format-picker">
+                      <div>
+                        <span>SESSION FORMAT</span>
+                        <strong>Choose how this ocean scores you</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className={sessionFormat === "free" ? "is-selected" : ""}
+                        onClick={() => setSessionFormat("free")}
+                        aria-pressed={sessionFormat === "free"}
+                      >
+                        <Waves />
+                        <span><small>OPEN SESSION</small><strong>Free Surf</strong><em>Ride without a clock</em></span>
+                      </button>
+                      <button
+                        type="button"
+                        className={sessionFormat === "heat" ? "is-selected" : ""}
+                        onClick={() => setSessionFormat("heat")}
+                        aria-pressed={sessionFormat === "heat"}
+                      >
+                        <Timer />
+                        <span><small>5:00 · BEST TWO</small><strong>World Tour Heat</strong><em>Beat {heatTarget.toFixed(2)} to qualify</em></span>
+                      </button>
+                    </div>
+                  )}
+                  <div className="assist-picker">
+                    <div>
+                      <Target />
+                      <span>
+                        <small>CONTROL SUPPORT</small>
+                        <strong>Same ocean surface</strong>
+                      </span>
+                    </div>
+                    {ASSIST_OPTIONS.map((assist) => {
+                      const profile = SURF_ASSIST_PROFILES[assist];
+                      return (
+                        <button
+                          type="button"
+                          key={assist}
+                          className={settings.assist === assist ? "is-selected" : ""}
+                          onClick={() => setSettings((current) => ({
+                            ...current,
+                            assist,
+                          }))}
+                          aria-pressed={settings.assist === assist}
+                          title={profile.description}
+                        >
+                          <strong>{profile.label}</strong>
+                          <small>{profile.description}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
             <aside className={`planner panel-${launchPanel} ${showPlanner ? "is-open" : ""}`}>
               <button className="planner-mobile-toggle" onClick={() => setShowPlanner((value) => !value)}>
                 <span><MapPin /> <strong>{beach.name}</strong><small>{zoneLabel}</small></span>
@@ -4302,6 +4382,8 @@ export default function SurfscapeApp() {
                 </div>}
               </div>
             </aside>
+              </details>
+            </div>
           </div>
 
           {destinationPickerOpen && (
@@ -4368,7 +4450,7 @@ export default function SurfscapeApp() {
             </div>
           )}
 
-          {settings.mode === "playground" && (
+          {settings.mode === "playground" && advancedSetupOpen && (
             <section className="wave-lab-panel">
               <div className="lab-title"><Settings2 /><div><span>WAVE LAB · {tideResponse.shortName}</span><strong>{tideResponse.label}</strong></div></div>
               <PlaygroundSlider label="Face height" value={settings.waveHeight} min={0.3} max={6} step={0.1} unit="m" onChange={(waveHeight) => setSettings((value) => ({ ...value, waveHeight }))} />
@@ -4393,7 +4475,7 @@ export default function SurfscapeApp() {
 
           <footer className="launch-footer" aria-label="Ready session">
             <div className="session-summary">
-              <div><span>Session</span><strong>{sessionFormat === "heat" ? "World Tour Heat" : selectedMode.name}</strong></div>
+              <div><span>Session</span><strong>{sessionFormat === "heat" ? "World Tour Heat" : selectedLaunchChoice.name}</strong></div>
               <i />
               <div><span>Line</span><strong>{zoneLabel}</strong></div>
               <i />
@@ -4702,7 +4784,7 @@ export default function SurfscapeApp() {
                       ? `${heatTotal.toFixed(2)} total · qualification line cleared`
                       : `${heatTotal.toFixed(2)} total · need ${heatNeed.toFixed(2)} to qualify`
                   : settings.mode === "training" && trainingComplete
-                    ? "First clean line complete — the ocean is open"
+                    ? "First clean line complete - the ocean is open"
                     : stats.prompt}
               </strong>
               {sessionFormat === "heat" && (
@@ -4710,7 +4792,7 @@ export default function SurfscapeApp() {
                   {[0, 1].map((slot) => (
                     <i key={slot} className={countedHeatWaves[slot] ? "is-filled" : ""}>
                       <b style={{ width: `${(countedHeatWaves[slot]?.judgeScore ?? 0) * 10}%` }} />
-                      <em>{countedHeatWaves[slot]?.judgeScore.toFixed(2) ?? "—"}</em>
+                      <em>{countedHeatWaves[slot]?.judgeScore.toFixed(2) ?? "N/A"}</em>
                     </i>
                   ))}
                   <small>{heatTotal.toFixed(2)} / 20</small>
@@ -4848,7 +4930,7 @@ export default function SurfscapeApp() {
                     : stats.duckDiveActive
                       ? "HOLD THROUGH THE CREST"
                       : stats.duckDiveReady
-                        ? "PRESS NOW — DUCK DIVE"
+                        ? "PRESS NOW - DUCK DIVE"
                         : "GET READY TO DUCK DIVE"}
                 </strong>
               </span>
@@ -5149,7 +5231,7 @@ export default function SurfscapeApp() {
             </div>
             <div className="vehicle-copy">
               <span>COAST RUNNER / SURF RACK 03</span>
-              <strong>{stats.vehicleSlip > .24 ? "Tires sliding — unwind the steering" : `${vehicleSurfaceLabel} · ${coastPosition}`}</strong>
+              <strong>{stats.vehicleSlip > .24 ? "Tires sliding - unwind the steering" : `${vehicleSurfaceLabel} · ${coastPosition}`}</strong>
               <div className="vehicle-grip">
                 <i><b style={{ width: `${vehicleGrip}%` }} /></i>
                 <em>{vehicleGrip}% GRIP</em>
@@ -5386,7 +5468,7 @@ export default function SurfscapeApp() {
                     return (
                       <article key={slot} className={wave ? "is-scored" : ""}>
                         <span>COUNTING WAVE {slot + 1}</span>
-                        <strong>{wave?.judgeScore.toFixed(2) ?? "—"}</strong>
+                        <strong>{wave?.judgeScore.toFixed(2) ?? "N/A"}</strong>
                         <small>{wave ? `${wave.distance.toFixed(0)} m · ${wave.maneuvers} moves · ${wave.grade} grade` : "No score posted"}</small>
                         <i><b style={{ width: `${(wave?.judgeScore ?? 0) * 10}%` }} /></i>
                       </article>
@@ -5460,7 +5542,7 @@ export default function SurfscapeApp() {
               <article><span>03</span><Sparkles /><strong>Flow</strong><p>A/D applies roll torque; the resulting bank angle loads the rail and turns the board. W/S shifts pressure between nose and tail. Your momentum and the polygon face decide where the board travels. Use Q/E to counter unwanted roll.</p></article>
               <article><span>04</span><CarFront /><strong>Roam</strong><p>Walk up to the coast road and press Space beside the van. Cruise between peaks, then stop to step out.</p></article>
             </div>
-            <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT — FIND A LINE</span><i><ArrowRight /></i></button>
+            <button className="launch-button compact" onClick={() => setShowHowTo(false)}><span>GOT IT - FIND A LINE</span><i><ArrowRight /></i></button>
           </div>
         </div>
       )}
