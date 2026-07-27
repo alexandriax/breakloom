@@ -7,7 +7,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Surfscape — Read the Ocean",
+  title: "Surfscape - Read the Ocean",
   description:
     "A living, browser-based surf experience powered by real marine conditions from the world's most iconic breaks.",
   applicationName: "Surfscape",
@@ -26,13 +26,13 @@ export const metadata: Metadata = {
   },
   keywords: ["surfing", "browser game", "ocean", "waves", "OpenStreetMap"],
   openGraph: {
-    title: "Surfscape — Read the Ocean",
+    title: "Surfscape - Read the Ocean",
     description: "Choose a real break. Read a living ocean. Chase the clean line.",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Surfscape — Read the Ocean",
+    title: "Surfscape - Read the Ocean",
     description: "A living surf experience in your browser.",
   },
 };

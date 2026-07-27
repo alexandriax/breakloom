@@ -1135,7 +1135,7 @@ export const BOARD_SPECS: Record<BoardType, {
 };
 
 export const SURFSCAPE_RELEASE = {
-  version: 235,
+  version: 236,
   channel: "STABLE RC",
 } as const;
 

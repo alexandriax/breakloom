@@ -11866,7 +11866,7 @@ function Simulation({
           : position.current.z > 54
             ? "The van is parked beside the coast road"
             : cleanFinish.current
-              ? "Clean finish — head back out"
+              ? "Clean finish - head back out"
               : "Walk toward the water · or head up-road to the van";
         if (actionPressed && nearVan && !vanTransitionActive) {
           const playerDeltaX = position.current.x - vanPosition.current.x;
@@ -11961,11 +11961,11 @@ function Simulation({
         } else if (Math.abs(vanPosition.current.x) > COAST_PLAYABLE_HALF_WIDTH) {
           vanPosition.current.x = THREE.MathUtils.clamp(vanPosition.current.x, -COAST_PLAYABLE_HALF_WIDTH, COAST_PLAYABLE_HALF_WIDTH);
           vanSpeed.current = THREE.MathUtils.damp(vanSpeed.current, 0, 8, delta);
-          prompt = "End of this modeled coastline — turn around for another run";
+          prompt = "End of this modeled coastline - turn around for another run";
         } else if (nextRoadEdge > 4.3) {
-          prompt = vanSlip.current > .25 ? "Loose shoulder — ease the wheel and find grip" : "Ease back onto the coast road";
+          prompt = vanSlip.current > .25 ? "Loose shoulder - ease the wheel and find grip" : "Ease back onto the coast road";
         } else if (vanSlip.current > .22) {
-          prompt = "Tires loading — unwind the steering to settle the van";
+          prompt = "Tires loading - unwind the steering to settle the van";
         } else if (Math.abs(vanSpeed.current) < 0.8) {
           prompt = mobileRenderer ? "Use the stick to drive · DRIVE to exit" : "W to drive · A/D to steer · SPACE to exit";
         } else {
@@ -12015,7 +12015,7 @@ function Simulation({
         position.current.z += landVelocity.current.y * delta;
         speed = landVelocity.current.length();
         if (speed > .12) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), 9, delta);
-        prompt = "Keep moving — your board will float soon";
+        prompt = "Keep moving - your board will float soon";
         if (position.current.z > 10 + tideShift) phase.current = "shore";
         if (position.current.z < 1 + tideShift) {
           phase.current = "paddling";
@@ -12971,12 +12971,12 @@ function Simulation({
         ) {
           takeoffOpportunity = 0;
           prompt =
-            "Shallow wash — step off, keep hold of the board, and reset";
+            "Shallow wash - step off, keep hold of the board, and reset";
         } else if (proneFailure.failed && !qaScenario) {
           takeoffOpportunity = 0;
           prompt = rollCapsizeRisk >= pitchOverRisk
-            ? "The loaded rail passed its righting limit — protect your head"
-            : "The buried nose pitched the board over — protect your head";
+            ? "The loaded rail passed its righting limit - protect your head"
+            : "The buried nose pitched the board over - protect your head";
         } else if (takeoffCommitting) {
           const commitElapsed = Math.max(0, t - takeoffCommitAt.current);
           const catchTransport = primaryWaveVelocityAt(
@@ -13182,15 +13182,15 @@ function Simulation({
           const bodyDrive = Math.round(popUpMovementAuthority * 100);
           prompt = takeoffCommitProgress < .2
             ? captureStrength < .12
-              ? `Last stroke — ${bodyDrive}% body drive, no wave support`
-              : `Last stroke — ${bodyDrive}% body drive; match the face`
+              ? `Last stroke - ${bodyDrive}% body drive, no wave support`
+              : `Last stroke - ${bodyDrive}% body drive; match the face`
             : takeoffCommitProgress < .5
-              ? `Hands under the ribs — ${bodyDrive}% drive; level the shoulders`
+              ? `Hands under the ribs - ${bodyDrive}% drive; level the shoulders`
               : takeoffCommitProgress < .74
-                ? `Rear foot under the hips — ${bodyDrive}% drive; W/S places pressure`
+                ? `Rear foot under the hips - ${bodyDrive}% drive; W/S places pressure`
                 : lostCrest
-                  ? "Wave passed underneath — finish the front foot and balance"
-                  : `Front foot landing — ${stance.current > .14 ? "nose pressure" : stance.current < -.14 ? "tail pressure" : "centered pressure"} carries into the ride`;
+                  ? "Wave passed underneath - finish the front foot and balance"
+                  : `Front foot landing - ${stance.current > .14 ? "nose pressure" : stance.current < -.14 ? "tail pressure" : "centered pressure"} carries into the ride`;
           if (takeoffCommitProgress >= .995) {
             const standingSupported = !lostCrest
               && boardStillEngaged
@@ -13231,7 +13231,7 @@ function Simulation({
             : pitchOverRisk > .4
               ? `Nose contact ${Math.round(noseImmersion * 100)} cm · lift your chest before the board pearls`
             : takeoffReading.headingQuality < .16 && takeoffReading.physicalLift > .1
-              ? "Wave approaching across the rail — point the nose with A/D"
+              ? "Wave approaching across the rail - point the nose with A/D"
               : takeoffOpportunity > .02
                 ? `${takeoffQuality > .72 ? "Clean open face" : "The swell has the board"} · stand when you choose`
                 : takeoffReading.surfable && takeoffReading.faceEnvelope > .08
@@ -13283,8 +13283,8 @@ function Simulation({
             rideWavePhase.current = Math.PI * .5
               + Math.round((popPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
             prompt = engaged
-              ? "Last stroke — plant the hands as the face lifts"
-              : "Hands moving under the ribs — the board keeps its own momentum";
+              ? "Last stroke - plant the hands as the face lifts"
+              : "Hands moving under the ribs - the board keeps its own momentum";
             takeoffOpportunity = 0;
           }
         }
@@ -13374,7 +13374,7 @@ function Simulation({
               ? `Buried-nose rotation pitched the body ${proneRelease.direction}`
               : proneRelease.cause === "rotation"
                 ? `Board rotation sent the body ${proneRelease.direction}`
-                : "Hull support vanished — momentum carried through";
+                : "Hull support vanished - momentum carried through";
           wipeoutHeading.current = paddleHeading.current;
           wipeoutRotation.current.set(
             proneTumble.pitch,
@@ -13481,7 +13481,7 @@ function Simulation({
           stance.current = 0;
           bodyCompression.current = 0;
           bodyCompressionVelocity.current = 0;
-          prompt = "Weight settled prone — the hull kept its momentum and water state";
+          prompt = "Weight settled prone - the hull kept its momentum and water state";
         } else if (!rideEngaged.current) {
           const standingTransport = primaryWaveVelocityAt(
             position.current.x,
@@ -14206,8 +14206,8 @@ function Simulation({
             rideManeuverStart.current = maneuverCount.current;
             score.current += Math.round(45 + catchQuality.current * 310);
             prompt = standingReleased
-              ? `${activeManeuver.current?.name ?? "Board release"} — live lip geometry lifted the hull`
-              : "The face has the board — set a rail into the open shoulder";
+              ? `${activeManeuver.current?.name ?? "Board release"} - live lip geometry lifted the hull`
+              : "The face has the board - set a rail into the open shoulder";
           } else {
             if (standingWipeout) {
               phase.current = "wipeout";
@@ -14290,7 +14290,7 @@ function Simulation({
                   ? `Buried-nose rotation pitched the body ${standingRelease.direction}`
                   : standingRelease.cause === "rotation"
                     ? `Board rotation sent the body ${standingRelease.direction}`
-                    : "Hull support vanished — momentum carried through";
+                    : "Hull support vanished - momentum carried through";
               wipeoutHeading.current = rideHeading.current;
               wipeoutRotation.current.set(
                 standingTumble.pitch,
@@ -14333,27 +14333,27 @@ function Simulation({
               motion.current.wipeoutBoardLongitudinalVelocity =
                 standingRelease.boardRelativeLongitudinalVelocity;
               motion.current.impact = .72 + tumblePower * .28;
-              prompt = "The wave hit the rail broadside — protect your head";
+              prompt = "The wave hit the rail broadside - protect your head";
             } else if (bodyCompression.current > .05) {
               prompt = state.action
-                ? `Crouched ${Math.round(bodyCompression.current * 100)}% — the board will release only if live water supports the extension`
-                : `Body extending at ${bodyExtensionSpeed.toFixed(1)} body-lengths/s — flat water cannot create a launch`;
+                ? `Crouched ${Math.round(bodyCompression.current * 100)}% - the board will release only if live water supports the extension`
+                : `Body extending at ${bodyExtensionSpeed.toFixed(1)} body-lengths/s - flat water cannot create a launch`;
             } else if (waveEngagement.current > .08) {
-              prompt = `Wave pressure ${Math.round(waveEngagement.current * 100)}% — stay aligned and let the hull accelerate`;
+              prompt = `Wave pressure ${Math.round(waveEngagement.current * 100)}% - stay aligned and let the hull accelerate`;
             } else if (standingReading.waveContact > .18) {
               prompt = pearlingRisk > .34
-                ? "Too much nose pressure on the drop — shift back before the nose buries"
+                ? "Too much nose pressure on the drop - shift back before the nose buries"
                 : tailStall > .42
-                  ? "The tail is sinking — center your stance to restore glide"
+                  ? "The tail is sinking - center your stance to restore glide"
               : standingReading.broadside > .58
-                ? `Wave loading the ${standingReading.crossWaveSide > 0 ? "right" : "left"} rail — turn the nose or counterweight`
+                ? `Wave loading the ${standingReading.crossWaveSide > 0 ? "right" : "left"} rail - turn the nose or counterweight`
                 : standingReading.headingAlignment < .18
                   ? "Point the nose with the wave before the wall reaches you"
-                  : "The board is gliding — stay centered and let the face engage";
+                  : "The board is gliding - stay centered and let the face engage";
             } else if (speed > .65) {
-              prompt = "Coasting on the surface — momentum is bleeding away";
+              prompt = "Coasting on the surface - momentum is bleeding away";
             } else {
-              prompt = "Standing in still water — counterweight the chop · SHIFT returns prone";
+              prompt = "Standing in still water - counterweight the chop · SHIFT returns prone";
             }
           }
         } else {
@@ -15392,9 +15392,9 @@ function Simulation({
           });
         }
         prompt = rideCapture.current.overtaken > .44
-          ? "The lip is overtaking you — point down the face and regain planing speed"
+          ? "The lip is overtaking you - point down the face and regain planing speed"
           : rideCapture.current.ahead > .46
-            ? "You have outrun the power — cut back before the shoulder goes flat"
+            ? "You have outrun the power - cut back before the shoulder goes flat"
           : activeManeuver.current
             ? activeManeuver.current.family === "trim"
               || activeManeuver.current.family === "carve"
@@ -15405,25 +15405,25 @@ function Simulation({
               ? `Crouched ${Math.round(bodyCompression.current * 100)}% · extend as the loaded tail reaches a live lip`
               : `Body extending at ${bodyExtensionSpeed.toFixed(1)} body-lengths/s · the water decides whether the board releases`
           : actionReleased && railSlip.current >= .78
-          ? "Fins released — reconnect the rail before the next move"
+          ? "Fins released - reconnect the rail before the next move"
           : pitchOverRisk > .48
-            ? `Nose ${Math.round(noseImmersion * 100)} cm underwater — shift back before you pitch over`
+            ? `Nose ${Math.round(noseImmersion * 100)} cm underwater - shift back before you pitch over`
           : pearlingRisk > .34
-            ? "Nose contact rising — shift weight back before the board pearls"
+            ? "Nose contact rising - shift weight back before the board pearls"
           : tailStall > .42
-            ? "Tail stalled — center your weight and point down the slope"
+            ? "Tail stalled - center your weight and point down the slope"
           : rollCapsizeRisk > .62
-            ? "Board rolling past its righting limit — counterweight now"
+            ? "Board rolling past its righting limit - counterweight now"
           : rollEdgeRisk > .46
-            ? `Rail angle ${Math.round(Math.abs(physicalRollAngle) * 180 / Math.PI)}° — ease the lean before the edge catches`
+            ? `Rail angle ${Math.round(Math.abs(physicalRollAngle) * 180 / Math.PI)}° - ease the lean before the edge catches`
           : crossWaveLoad > .72
-            ? `The wall is loading the board broadside — point the nose ${boardWaveAngle > 0 ? "right" : "left"} or expect a tumble`
+            ? `The wall is loading the board broadside - point the nose ${boardWaveAngle > 0 ? "right" : "left"} or expect a tumble`
           : whitewaterPressure > .58
             ? `Whitewater on the rail · drive ${rideLineSide.current > 0 ? "right" : "left"} toward the open face`
           : balanceError > failThreshold * 0.76
           ? "Counterweight toward the marker to cancel the roll torque"
           : railSlip.current > .55
-            ? "Rail releasing — soften the turn or load the tail"
+            ? "Rail releasing - soften the turn or load the tail"
           : inBarrel
             ? `Tube pressure ${Math.round(barrelIntensity * 100)}% · stay compact and hold the high line`
           : linePosition < -.72
@@ -15433,11 +15433,11 @@ function Simulation({
           : lineControl > .76 && Math.abs(steer) < .18
             ? "Power pocket locked · build speed or release a move"
           : physicalFacePosition > .58
-            ? "Lip line — load the tail and release through the pitching section"
+            ? "Lip line - load the tail and release through the pitching section"
           : physicalFacePosition < -.58
-            ? "Bottom turn — set the rail and drive back toward the lip"
+            ? "Bottom turn - set the rail and drive back toward the lip"
           : steer
-            ? "Hold the rail — turns are read from the board's actual path"
+            ? "Hold the rail - turns are read from the board's actual path"
             : move > .08
               ? "Nose pressure · trim and carry the board's existing momentum"
               : move < -0.08
@@ -15463,8 +15463,8 @@ function Simulation({
             cleanFinish.current = true;
           }
           prompt = speed > .65
-            ? "Wave pressure released — the board is coasting on retained momentum"
-            : "Wave pressure released — balance in place or return prone";
+            ? "Wave pressure released - the board is coasting on retained momentum"
+            : "Wave pressure released - balance in place or return prone";
         }
         if (
           !qaScenario
@@ -15553,7 +15553,7 @@ function Simulation({
               ? `Buried-nose rotation pitched the body ${rideRelease.direction}`
               : rideRelease.cause === "rotation"
                 ? `Board rotation sent the body ${rideRelease.direction}`
-                : "Hull support vanished — momentum carried through";
+                : "Hull support vanished - momentum carried through";
           wipeoutHeading.current = rideHeading.current;
           wipeoutRotation.current.set(
             rideTumble.pitch,
@@ -15618,10 +15618,10 @@ function Simulation({
             motion.current.proneTransition * 100,
           );
           prompt = motion.current.proneTransition < .48
-            ? `Lowering center of mass ${transitionPercent}% — feet still carry the rail`
+            ? `Lowering center of mass ${transitionPercent}% - feet still carry the rail`
             : motion.current.proneTransition < 1
-              ? `Hands loaded, feet releasing ${transitionPercent}% — keep the board level`
-              : "Body is prone — waiting for the hull to reconnect with water";
+              ? `Hands loaded, feet releasing ${transitionPercent}% - keep the board level`
+              : "Body is prone - waiting for the hull to reconnect with water";
         }
       } else if (currentPhase === "wipeout") {
         const elapsed = Math.max(0, t - wipeoutAt.current);
@@ -15923,16 +15923,16 @@ function Simulation({
               ? `Body ${bodyVertical.depth.toFixed(1)}m underwater · polygon crest load ${Math.round(residualWash * 100)}%`
               : `Body ${bodyVertical.depth.toFixed(1)}m underwater · local wash released, buoyancy is lifting you`
             : recovery.limitingFactor === "rising"
-              ? "Breaking the surface — keep protecting your head"
+              ? "Breaking the surface - keep protecting your head"
               : recovery.limitingFactor === "wash"
-                ? "Foam still loading the body — stay loose and follow the flow"
+                ? "Foam still loading the body - stay loose and follow the flow"
                 : recovery.limitingFactor === "tumble"
                   ? "At the surface, but rotation is still carrying the body"
                   : recovery.limitingFactor === "drift"
                     ? "Surface flow is still carrying you faster than the water"
                     : recovery.limitingFactor === "leash"
-                      ? "Leash is still loaded — let the board and body converge"
-                      : "Resurfaced and settled — locate the board";
+                      ? "Leash is still loaded - let the board and body converge"
+                      : "Resurfaced and settled - locate the board";
         motion.current.wipeout = Math.min(1.8, elapsed);
         motion.current.wipeoutProgress =
           recovery.readiness;
