@@ -1,4 +1,12 @@
-# Surfscape
+<p align="center">
+  <img src="public/icons/surfscape-192.png" alt="Surfscape app icon" width="128" height="128">
+</p>
+
+<h1 align="center">Surfscape</h1>
+
+<p align="center">
+  <strong><a href="https://surfscape.alexandria.chatgpt.site">Play Surfscape at surfscape.alexandria.chatgpt.site</a></strong>
+</p>
 
 Surfscape is a browser-based 3D surfing game driven by current marine forecast data. Pick an exact paddle-out on a real OpenStreetMap shoreline, read the local swell, walk into the water, paddle beyond the break, and surf a procedural wave set.
 
