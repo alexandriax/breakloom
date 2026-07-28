@@ -11,7 +11,7 @@ import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
 import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
-import { emergencyRenderDpr, lowerRenderQuality, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
+import { boundedSimulationDelta, emergencyRenderDpr, lowerRenderQuality, renderFrameSignal, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -237,7 +237,17 @@ function AdaptiveRenderer({
       meter.warmup -= Math.min(delta, .05);
       return;
     }
-    if (delta > .12) {
+    const frameSignal = renderFrameSignal(delta);
+    if (frameSignal === "stale") {
+      meter.elapsed = 0;
+      meter.frames = 0;
+      meter.jankFrames = 0;
+      meter.goodWindows = 0;
+      meter.badWindows = 0;
+      meter.warmup = .8;
+      return;
+    }
+    if (frameSignal === "pressure") {
       const emergencyDpr = emergencyRenderDpr(
         currentDpr.current,
         limits.minimum,
@@ -1134,6 +1144,18 @@ const OCEAN_FRAGMENT = /* glsl */ `
       swellRidgeColor,
       vSwellRead * (1.0 - vBreaker) * (.055 + fresnel * .16)
     );
+
+    // Thin, steep crests transmit green light before they feather. This adds
+    // readable face shape without another mesh, texture, or post-process pass.
+    float sunBehindFace = max(0.0, dot(-surfaceNormal, normalize(uSunDirection)));
+    float crestTransmission = smoothstep(.08, 1.15, vCrest)
+      * (.34 + faceSteepness * .66)
+      * (1.0 - uCloud * .76)
+      * uLight;
+    vec3 transmittedCrest = mix(vec3(.025, .29, .28), vec3(.12, .68, .54), uLight);
+    color += transmittedCrest
+      * crestTransmission
+      * (.035 + sunBehindFace * .19);
 
     vec3 reflectedSun = reflect(-normalize(uSunDirection), surfaceNormal);
     float sunGlint = pow(max(0.0, dot(reflectedSun, viewDirection)), mix(62.0, 150.0, 1.0 - wind * .45));
@@ -11292,8 +11314,10 @@ function Simulation({
     replayStateCallback.current = onReplayState;
   }, [onReplayReady, onReplayState]);
 
-  useFrame(({ clock, gl }, delta) => {
+  useFrame(({ clock, gl }, rawDelta) => {
     if (!player.current || !van.current) return;
+    const delta = boundedSimulationDelta(rawDelta);
+    if (delta <= 0) return;
     gl.toneMappingExposure = photoMode ? 1.08 * Math.pow(2, photoExposure) : 1.08;
     const t = clock.elapsedTime;
     const playback = replayPlayback.current;

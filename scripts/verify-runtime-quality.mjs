@@ -1,6 +1,8 @@
 import {
+  boundedSimulationDelta,
   emergencyRenderDpr,
   lowerRenderQuality,
+  renderFrameSignal,
   shadowMapSizeForQuality,
 } from "../lib/performance.ts";
 import { readBufferedControlEdge } from "../lib/input.ts";
@@ -26,6 +28,21 @@ invariant(lowerRenderQuality("reduced") === "reduced", "reduced quality is not a
 invariant(shadowMapSizeForQuality("high") === 2048, "high-tier shadows lost detail");
 invariant(shadowMapSizeForQuality("balanced") === 1024, "balanced shadows exceed their budget");
 invariant(shadowMapSizeForQuality("reduced") === 512, "reduced shadows exceed their budget");
+invariant(renderFrameSignal(1 / 60) === "normal", "healthy frames report pressure");
+invariant(renderFrameSignal(.18) === "pressure", "a real stall no longer sheds detail");
+invariant(renderFrameSignal(.9) === "stale", "tab resumes incorrectly downgrade graphics");
+invariant(
+  Math.abs(boundedSimulationDelta(1 / 60) - 1 / 60) < 1e-9,
+  "healthy simulation time is altered",
+);
+invariant(
+  boundedSimulationDelta(.24) === .05,
+  "a delayed frame can inject an unsafe gameplay impulse",
+);
+invariant(
+  boundedSimulationDelta(Number.NaN) === 0,
+  "invalid frame time reaches gameplay physics",
+);
 
 const quickTap = readBufferedControlEdge(false, false, 1, 0);
 const consumedQuickTap = readBufferedControlEdge(false, false, 1, quickTap.nextConsumedPresses);
@@ -52,6 +69,12 @@ console.log(JSON.stringify({
     high: shadowMapSizeForQuality("high"),
     balanced: shadowMapSizeForQuality("balanced"),
     reduced: shadowMapSizeForQuality("reduced"),
+  },
+  framePacing: {
+    healthy: renderFrameSignal(1 / 60),
+    overloaded: renderFrameSignal(.18),
+    resumed: renderFrameSignal(.9),
+    maximumSimulationStep: boundedSimulationDelta(.24),
   },
   inputBuffer: {
     quickTap: quickTap.pressed,

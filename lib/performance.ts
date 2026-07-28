@@ -1,10 +1,14 @@
 export type RenderQuality = "reduced" | "balanced" | "high";
+export type RenderFrameSignal = "normal" | "pressure" | "stale";
 
 const RENDER_QUALITY_ORDER: RenderQuality[] = [
   "reduced",
   "balanced",
   "high",
 ];
+const FRAME_PRESSURE_SECONDS = 0.12;
+const STALE_FRAME_SECONDS = 0.5;
+const MAX_SIMULATION_DELTA = 0.05;
 
 export function lowerRenderQuality(quality: RenderQuality): RenderQuality {
   const currentIndex = RENDER_QUALITY_ORDER.indexOf(quality);
@@ -23,6 +27,28 @@ export function emergencyRenderDpr(current: number, minimum: number) {
     safeMinimum,
     current - Math.max(0.1, headroom * 0.55),
   );
+}
+
+/**
+ * Distinguishes a rendered stall from time that passed while the tab or
+ * renderer was suspended. A stale resume frame is not evidence that the GPU
+ * cannot sustain its current quality tier.
+ */
+export function renderFrameSignal(delta: number): RenderFrameSignal {
+  if (!Number.isFinite(delta) || delta <= 0 || delta > STALE_FRAME_SECONDS) {
+    return "stale";
+  }
+  return delta > FRAME_PRESSURE_SECONDS ? "pressure" : "normal";
+}
+
+/**
+ * Prevents one delayed frame from injecting a large impulse into surfing,
+ * camera, vehicle, particle, and stamina dynamics. The renderer may drop
+ * detail in response to the original delta while gameplay advances safely.
+ */
+export function boundedSimulationDelta(delta: number) {
+  if (!Number.isFinite(delta) || delta <= 0) return 0;
+  return Math.min(delta, MAX_SIMULATION_DELTA);
 }
 
 export function shadowMapSizeForQuality(quality: RenderQuality) {
