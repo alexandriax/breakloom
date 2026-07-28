@@ -4,10 +4,7 @@ import { resolve } from "node:path";
 const root = process.cwd();
 const output = resolve(root, "out");
 const failures = [];
-const repositoryName = process.env.GITHUB_REPOSITORY?.split("/")[1] ?? "";
-const isProjectPage =
-  process.env.GITHUB_ACTIONS === "true" && !repositoryName.endsWith(".github.io");
-const basePath = isProjectPage ? `/${repositoryName}` : "";
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 async function filesBelow(directory) {
   const entries = await readdir(directory, { withFileTypes: true });

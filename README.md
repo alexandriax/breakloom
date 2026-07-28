@@ -5,7 +5,7 @@
 <h1 align="center">Breakloom</h1>
 
 <p align="center">
-  <strong>Published from <code>main</code> through Vercel and GitHub Actions</strong>
+  <strong>Published from <code>main</code> through Vercel</strong>
 </p>
 
 Breakloom is a browser-based 3D surfing game driven by current marine forecast data. Pick an exact paddle-out on a real OpenStreetMap shoreline, read the local swell, walk into the water, paddle beyond the break, and surf a procedural wave set.
@@ -29,20 +29,12 @@ Breakloom is a fully static build: `next build` emits `output: "export"`, and ev
 external call — Open-Meteo marine and forecast data, OpenStreetMap tiles — is made
 from the browser to a CORS-enabled third party. There is no server runtime, no API
 route, and no build-time fetch. Production publishing is intentionally limited to
-Vercel and the repository's GitHub Pages workflow.
+Vercel.
 
 **Vercel.** Import the repository and accept the defaults; `vercel.json` pins the
 build directly to `next build` and sets immutable cache headers on the soundtrack,
 models, textures, and icons, with the service worker held at `must-revalidate`. The
 game deploys at the domain root, so no base path applies.
-
-**GitHub Pages.** `.github/workflows/deploy-pages.yml` publishes `out/` on every push
-to `main` and verifies the exact Pages build on pull requests without deploying it.
-A project site serves the game from a repository subpath, so the build derives
-`basePath` from `GITHUB_REPOSITORY`; assets that Next does not rewrite for you go
-through `NEXT_PUBLIC_BASE_PATH`. In the repository settings, set **Pages → Source**
-to **GitHub Actions**. Note that Pages has a soft 100 GB/month bandwidth limit and
-the soundtrack is 15.6 MB per full listen.
 
 `npm test` runs the physics contract and the release artifact check, which holds the
 app shell under 10 MiB and the soundtrack under 18 MiB, and fails if a track named in
