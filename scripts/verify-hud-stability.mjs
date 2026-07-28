@@ -29,6 +29,7 @@ const stableHudMarkup = appSource.slice(boundaryStart, boundaryEnd);
   'className="score-panel"',
   'className="set-panel"',
   'className="hud-event-slot"',
+  "className={`tow-instrument",
   "className={`mobile-controls",
 ].forEach((token) => {
   invariant(stableHudMarkup.includes(token), `${token} escaped the persistent paint layer`);
@@ -102,7 +103,7 @@ invariant(
 );
 
 console.log(JSON.stringify({
-  persistentSurfaces: 7,
+  persistentSurfaces: 8,
   telemetryHz: Number((1 / reportInterval).toFixed(2)),
   telemetryPriority: "transition",
   sceneBoundary: "memoized",

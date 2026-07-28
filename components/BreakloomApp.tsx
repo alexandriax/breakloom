@@ -206,6 +206,14 @@ const ASSET_BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 /** Label for a paddle-out the surfer placed on the map rather than a named peak. */
 const CUSTOM_SPOT = "Your own paddle-out";
 
+function nearestSurfZone(beach: Beach, latitude: number, longitude: number) {
+  return beach.zones.reduce((closest, zone) => {
+    const distance = Math.hypot(zone.lat - latitude, zone.lon - longitude);
+    const closestDistance = Math.hypot(closest.lat - latitude, closest.lon - longitude);
+    return distance < closestDistance ? zone : closest;
+  });
+}
+
 const BOARD_OPTIONS = Object.keys(BOARD_SPECS) as BoardType[];
 const ASSIST_OPTIONS = Object.keys(
   SURF_ASSIST_PROFILES,
@@ -1164,6 +1172,11 @@ export default function BreakloomApp() {
   const breakCharacter = useMemo(
     () => getBreakCharacter(beach.id, zoneLabel),
     [beach.id, zoneLabel],
+  );
+  const selectedZone = useMemo(
+    () => beach.zones.find((zone) => zone.name === zoneLabel)
+      ?? nearestSurfZone(beach, latitude, longitude),
+    [beach, latitude, longitude, zoneLabel],
   );
   const coastBiome = useMemo(() => getCoastBiome(beach.id), [beach.id]);
   const tideResponse = useMemo(
@@ -3914,9 +3927,18 @@ export default function BreakloomApp() {
       1,
     ) * 100,
   );
-  const mobileActionIsContextual = stats.vehicleMode || stats.nearVan || stats.phase === "riding" || stats.phase === "paddling";
+  const mobileActionIsContextual = stats.vehicleMode
+    || stats.nearVan
+    || stats.nearJetSki
+    || stats.towMode
+    || stats.phase === "riding"
+    || stats.phase === "paddling";
   const mobileActionLabel = stats.vehicleMode
     ? "EXIT"
+    : stats.towMode
+      ? "RELEASE"
+      : stats.nearJetSki
+        ? "TOW"
     : stats.nearVan
       ? "DRIVE"
       : stats.phase === "riding"
@@ -3931,10 +3953,21 @@ export default function BreakloomApp() {
         title: stats.vehicleSlip > .24 ? "SETTLE THE VAN" : vehicleSurfaceLabel,
         detail: `${coastPosition} · ${vehicleGrip}% grip · ${stats.vehicleSlip > .24 ? "unwind the stick" : "stop before exit"}`,
       }
+    : stats.towMode
+      ? {
+          title: stats.towBestRelease ? "BEST POP-UP LINE" : "OPTIONAL TOW",
+          detail: stats.towBestRelease
+            ? "Tap RELEASE now · read the lifting face after disengaging"
+            : `${Math.round(stats.towProgress * 100)}% to peak · RELEASE works anytime`,
+        }
     : stats.phase === "shore"
-      ? { title: "BEACH TRAVERSE", detail: "Full stick runs · swipe scene to look" }
+      ? stats.nearJetSki
+        ? { title: "TOW READY", detail: "Tap TOW for a guided run · or walk past and paddle" }
+        : { title: "BEACH TRAVERSE", detail: "Full stick runs · swipe scene to look" }
       : stats.phase === "wading"
-        ? { title: "SHOREBREAK", detail: "Push through until the board floats" }
+        ? stats.nearJetSki
+          ? { title: "TOW READY", detail: "Tap TOW for a guided run · or keep wading" }
+          : { title: "SHOREBREAK", detail: "Push through until the board floats" }
         : ridingOut
           ? {
               title: "SHALLOW EXIT",
@@ -4295,13 +4328,22 @@ export default function BreakloomApp() {
                       // A tap on a peak marker selects that peak; a tap on open
                       // water is the surfer choosing their own surf peak.
                       const peak = beach.zones.find((zone) => zone.name === label);
-                      chooseSpot(peak ?? { name: CUSTOM_SPOT, lat, lon, note: "Chosen from the map" });
+                      const nearest = nearestSurfZone(beach, lat, lon);
+                      chooseSpot(peak ?? {
+                        name: CUSTOM_SPOT,
+                        lat,
+                        lon,
+                        note: "Chosen from the map",
+                        access: nearest.access,
+                      });
                     }}
                   />
                   <div className="map-facts">
                     <span><Waves /> {beach.breakType}</span>
                     <span><Compass /> {breakLineLabel(breakCharacter.line)} · {breakCharacter.kind}</span>
                     <span><Gauge /> Commitment {breakDemand(breakCharacter)}/5</span>
+                    <span><MapPin /> {selectedZone.access.name}</span>
+                    {selectedZone.access.towRecommended && <span><Sparkles /> Optional tow</span>}
                     <span><Crosshair /> Peak {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
                   </div>
                 </div>
@@ -4325,7 +4367,10 @@ export default function BreakloomApp() {
                       >
                         <span className="spot-id">
                           <strong>{spot.zone.name}</strong>
-                          <small>{spot.zone.note}</small>
+                          <small>
+                            {spot.zone.note} · {spot.zone.access.name}
+                            {spot.zone.access.towRecommended ? " · optional tow" : ""}
+                          </small>
                         </span>
                         <span className="spot-read">
                           <b>{spot.face.toFixed(1)}<u>m</u></b>
@@ -5243,11 +5288,11 @@ export default function BreakloomApp() {
                 <div className="hud-controls-panel">
                   <span>{gamepadConnected ? "GAMEPAD" : "KEYBOARD + MOUSE"} · {stats.phase.toUpperCase()}</span>
                   <div>
-                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : takeoffCommitted ? "W/S places fore-aft foot pressure during the pop-up" : "W paddles · A/D sets board heading"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.towMode ? "Tow path is guided; use the camera to read the peak" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : takeoffCommitted ? "W/S places fore-aft foot pressure during the pop-up" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {(stats.phase === "riding" || takeoffCommitted) && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
-                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.phase === "riding" ? "Compress and extend; only live lip support can release the board" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
-                    {stats.phase === "paddling" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Disengage the optional tow at any time" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? "Compress and extend; only live lip support can release the board" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
+                    {stats.phase === "paddling" && !stats.towMode && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
                     {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Return prone anytime without changing the board&apos;s momentum</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
@@ -5403,7 +5448,7 @@ export default function BreakloomApp() {
             </div>
           )}
 
-          <div className={`balance-instrument ${stats.phase === "riding" || stats.phase === "paddling" ? "is-active" : ""} ${stats.phase === "paddling" ? "is-prone" : ""} ${standingOnBoard ? "is-standing" : ""} ${ridingOut ? "is-exit" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
+          <div className={`balance-instrument ${stats.phase === "riding" || (stats.phase === "paddling" && !stats.towMode) ? "is-active" : ""} ${stats.phase === "paddling" ? "is-prone" : ""} ${standingOnBoard ? "is-standing" : ""} ${ridingOut ? "is-exit" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
               <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard && stats.trickCharge <= .04 ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "BODY COMPRESSION" : rollInstrumentTitle} <em className={showPhysicalLandingGuide ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard && stats.trickCharge <= .04 ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuverPhase === "air" ? "AIRBORNE" : "HULL RELEASED"} · ${Math.round(stats.maneuverProgress * 100)}% OBSERVED` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% CROUCH · ${stats.lipLaunchSupport > .42 ? `LIP SUPPORT ${Math.round(stats.lipLaunchSupport * 100)}%` : "NO LIP SUPPORT"}` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
               <strong>{stats.maneuverActive ? `${Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100)}%` : `${attitudeDegrees}°`}</strong>
@@ -5453,6 +5498,23 @@ export default function BreakloomApp() {
             </div>
           </div>
 
+          <div className={`tow-instrument ${stats.towMode ? "is-active" : ""} ${stats.towBestRelease ? "is-window" : ""}`}>
+            <div className="tow-dial">
+              <Waves />
+              <strong>{Math.round(stats.towProgress * 100)}</strong>
+              <small>% TO PEAK</small>
+            </div>
+            <div className="tow-copy">
+              <span>OPTIONAL JETSKI TOW</span>
+              <strong>{stats.towBestRelease ? "Best pop-up line · release now" : "Guided approach · release anytime"}</strong>
+              <div className="tow-track" aria-label={`Tow progress ${Math.round(stats.towProgress * 100)} percent`}>
+                <i className="tow-window" />
+                <b style={{ left: `${Math.round(stats.towProgress * 100)}%` }} />
+              </div>
+              <small>{gamepadConnected ? "A" : "SPACE"} / RELEASE disengages immediately · paddling always remains available</small>
+            </div>
+          </div>
+
           <div className="game-conditions">
             <div><Waves /><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong></div>
             <div><Wind /><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)}m · {settings.swellPeriod.toFixed(0)}s</strong></div>
@@ -5460,13 +5522,16 @@ export default function BreakloomApp() {
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
             <div>
               <Crosshair />
-              <span>{stats.phase === "paddling" ? "OFFSHORE" : stats.phase === "driving" ? "COAST" : "DISTANCE"}</span>
+              <span>{stats.towMode ? "TOW LINE" : stats.phase === "paddling" ? "OFFSHORE" : stats.phase === "driving" ? "COAST" : "DISTANCE"}</span>
               <strong>
-                {stats.phase === "paddling"
+                {stats.towMode
+                  ? `${Math.round(stats.towProgress * 100)}%`
+                  : stats.phase === "paddling"
                   ? stats.offshoreDistance.toFixed(0)
                   : stats.phase === "driving"
                     ? Math.abs(stats.coastDistance).toFixed(0)
-                    : stats.rideDistance.toFixed(0)} m
+                    : stats.rideDistance.toFixed(0)}
+                {stats.towMode ? "" : " m"}
               </strong>
             </div>
             <div><Thermometer /><span>WATER / KIT</span><strong>{settings.waterTemperature.toFixed(0)}° · {thermalKit.shortName}</strong></div>
@@ -5475,12 +5540,19 @@ export default function BreakloomApp() {
           <div className="desktop-controls">
             {gamepadConnected ? (
               <>
-                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : standingOnBoard ? "roll / shift stance" : stats.phase === "riding" ? "roll / stance pressure" : takeoffCommitted ? "fore-aft foot pressure" : "paddle / steer"}</span>
+                <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : stats.towMode ? "tow path guided" : standingOnBoard ? "roll / shift stance" : stats.phase === "riding" ? "roll / stance pressure" : takeoffCommitted ? "fore-aft foot pressure" : "paddle / steer"}</span>
                 <span><kbd>LT</kbd><kbd>RT</kbd> counterweight / recover</span>
-                <span><kbd>A</kbd> {stats.phase === "riding" ? "crouch / extend" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
-                {(stats.phase === "paddling" || stats.phase === "riding") && <span><kbd>LB</kbd> {stats.phase === "riding" ? "return prone anytime" : "duck dive anytime · cue marks timing"}</span>}
+                <span><kbd>A</kbd> {stats.towMode ? "release tow anytime" : stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "crouch / extend" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                {((stats.phase === "paddling" && !stats.towMode) || stats.phase === "riding") && <span><kbd>LB</kbd> {stats.phase === "riding" ? "return prone anytime" : "duck dive anytime · cue marks timing"}</span>}
                 <span><kbd>RS</kbd> freelook</span>
                 <span><kbd>RB</kbd> camera · <kbd>START</kbd> pause</span>
+              </>
+            ) : stats.towMode ? (
+              <>
+                <span><kbd>SPACE</kbd> release tow anytime</span>
+                <span>Release in the highlighted window for the cleanest pop-up line</span>
+                <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
+                <span><span className="mouse-icon" /> look around while the route is guided</span>
               </>
             ) : stats.vehicleMode ? (
               <>
@@ -5503,7 +5575,7 @@ export default function BreakloomApp() {
                     <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : takeoffCommitted ? "place pop-up foot pressure" : "paddle / brake"}</span>
                   </>
                 )}
-                <span><kbd>SPACE</kbd> {stats.phase === "riding" ? "compress · release only with lip support" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                <span><kbd>SPACE</kbd> {stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "compress · release only with lip support" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
                 {(stats.phase === "paddling" || stats.phase === "riding") && <span><kbd>SHIFT</kbd> {stats.phase === "riding" ? "return prone anytime" : "duck dive anytime · cue marks timing"}</span>}
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{stats.phase === "riding" || stats.phase === "paddling" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
@@ -5527,7 +5599,7 @@ export default function BreakloomApp() {
             >
               <span className="analog-ring" />
               <span ref={joystickKnob} className="analog-knob"><i /></span>
-              <small>{stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
+              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
             </div>
             <div className={`mobile-balance-stack ${motionBalanceActive ? "is-motion" : ""}`}>
               {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
@@ -5544,7 +5616,7 @@ export default function BreakloomApp() {
                   <small>{motionBalanceActive ? "TILT · TAP OFF" : motionBalanceStatus === "denied" ? "CHECK BROWSER ACCESS" : "FREE YOUR THUMB"}</small>
                 </button>
               )}
-              {(stats.phase === "riding" || stats.phase === "paddling") ? (
+              {(stats.phase === "riding" || (stats.phase === "paddling" && !stats.towMode)) ? (
                 <div
                   className={`touch-balance ${motionBalanceActive ? "is-motion" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${balanceAccuracy >= 88 ? "is-locked" : ""}`}
                   role={motionBalanceActive ? "meter" : "slider"}
@@ -5587,7 +5659,7 @@ export default function BreakloomApp() {
               )}
             </div>
             {(
-              (stats.phase === "paddling" && !takeoffCommitted)
+              (stats.phase === "paddling" && !takeoffCommitted && !stats.towMode)
               || stats.phase === "riding"
             ) && (
               <button
@@ -5637,7 +5709,13 @@ export default function BreakloomApp() {
             >
               {stats.phase === "riding" && !stats.maneuverActive && stats.trickCharge > .02 && <i className="action-charge" aria-hidden="true" />}
               <span>{mobileActionLabel}</span>
-              {stats.vehicleMode || stats.nearVan ? <CarFront /> : stats.phase === "riding" || takeoffCommitted ? <Sparkles /> : <Waves />}
+              {stats.vehicleMode || stats.nearVan
+                ? <CarFront />
+                : stats.towMode || stats.nearJetSki
+                  ? <Gauge />
+                  : stats.phase === "riding" || takeoffCommitted
+                    ? <Sparkles />
+                    : <Waves />}
             </button>
             {stats.phase === "riding" && (
               <div className={`touch-ride-telemetry ${stats.whitewaterPressure > .28 || stats.sectionPressure > .52 ? "is-risk" : stats.lineControl > .82 ? "is-locked" : ""}`} aria-label={`Stance ${stanceLabel}. Face ${faceLabel}. Line ${lineLabel}. Whitewater pressure ${Math.round(stats.whitewaterPressure * 100)} percent. Rail grip ${Math.round(stats.railGrip * 100)} percent.`}>

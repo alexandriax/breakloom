@@ -1,8 +1,11 @@
 import {
+  advanceOptionalTowProgress,
   evaluateBoardWaterInteraction,
   evaluatePopUpTransition,
   evaluateWaveTakeoff,
   INITIAL_STATS,
+  optionalTowReleaseQuality,
+  optionalTowReleaseRecommended,
   reachedSurfTrainingStep,
   BREAKLOOM_RELEASE,
 } from "../lib/game.ts";
@@ -92,6 +95,8 @@ const supportedStanding = reachedSurfTrainingStep({
   wavePressure: .34,
   hullPatchContact: .48,
 });
+const towProgressAfterOneSecond = advanceOptionalTowProgress(0, 1);
+const idealTowReleaseQuality = optionalTowReleaseQuality(.82);
 
 if (
   arbitraryPopUp.progress < .99
@@ -102,6 +107,15 @@ if (
   || broadsideImpact.outcome !== "tumble"
   || unsupportedStanding !== 5
   || supportedStanding !== 6
+  || towProgressAfterOneSecond <= .1
+  || towProgressAfterOneSecond >= .13
+  || idealTowReleaseQuality !== 1
+  || !optionalTowReleaseRecommended(.72)
+  || !optionalTowReleaseRecommended(.82)
+  || !optionalTowReleaseRecommended(.92)
+  || optionalTowReleaseRecommended(.7)
+  || optionalTowReleaseRecommended(.94)
+  || optionalTowReleaseRecommended(.5)
   || BREAKLOOM_RELEASE.version !== 236
   || !launchSource.includes('id: "easy"')
   || !launchSource.includes('id: "medium"')
@@ -112,10 +126,13 @@ if (
   || !launchSource.includes('className="board-grid"')
   || !launchSource.includes('className="setup-panel"')
   || !launchStyles.includes(".conditions-strip")
-  || !worldMapSource.includes("Coast reference")
+  || !worldMapSource.includes("Beach entries")
   || !worldMapSource.includes("Selected surf peak")
-  || !worldMapSource.includes("[beach.lat, beach.lon]")
+  || !worldMapSource.includes("[zone.access.lat, zone.access.lon]")
+  || !worldMapSource.includes("Optional jetski tow available")
   || !worldMapSource.includes("map.fitBounds(mapBounds")
+  || !launchSource.includes("tow-instrument")
+  || !launchSource.includes("paddling always remains available")
   // The coast atlas, the map, and the peak list are first-screen decisions:
   // none of them may retreat behind an optional disclosure.
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
@@ -135,4 +152,8 @@ console.log(JSON.stringify({
   broadsideLoad: broadsideImpact.crossWaveLoad,
   unsupportedStandingLesson: unsupportedStanding,
   supportedStandingLesson: supportedStanding,
+  optionalTow: {
+    progressAfterOneSecond: towProgressAfterOneSecond,
+    idealReleaseQuality: idealTowReleaseQuality,
+  },
 }, null, 2));

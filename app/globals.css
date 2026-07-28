@@ -1152,6 +1152,7 @@ input:focus-visible {
 .ride-recap,
 .balance-instrument,
 .vehicle-instrument,
+.tow-instrument,
 .game-conditions,
 .desktop-controls { z-index: 3; }
 
@@ -1705,6 +1706,38 @@ input:focus-visible {
 .vehicle-instrument.is-slipping .vehicle-grip > i b { background: #f2644e; box-shadow: 0 0 9px rgba(242, 100, 78, .78); }
 .vehicle-instrument.is-slipping .vehicle-grip > em { color: #ffad95; }
 
+.tow-instrument {
+  position: absolute;
+  left: 50%;
+  bottom: 101px;
+  width: min(500px, 46vw);
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px 10px 11px;
+  transform: translateX(-50%) translateY(20px);
+  opacity: 0;
+  border: 1px solid rgba(113, 225, 211, .24);
+  border-left: 2px solid #efc579;
+  background: linear-gradient(100deg, rgba(5, 17, 22, .9), rgba(5, 28, 31, .76));
+  transition: opacity .25s ease, transform .25s ease, border-color .2s ease;
+}
+.tow-instrument.is-active { opacity: 1; transform: translateX(-50%) translateY(0); }
+.tow-instrument.is-window { border-color: rgba(239, 197, 121, .72); box-shadow: 0 0 26px rgba(239, 197, 121, .18), inset 0 -2px rgba(113, 225, 211, .42); }
+.tow-dial { width: 58px; height: 58px; position: relative; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(113, 225, 211, .34); border-radius: 50%; box-shadow: inset 0 0 18px rgba(113, 225, 211, .13); }
+.tow-dial svg { position: absolute; top: 7px; width: 14px; color: #efc579; }
+.tow-dial strong { margin-top: 8px; font-family: Impact, sans-serif; font-size: 23px; letter-spacing: .04em; }
+.tow-dial small { position: absolute; bottom: 6px; color: var(--muted); font-size: 7px; letter-spacing: .08em; }
+.tow-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.tow-copy > span { color: #efc579; font-size: 8px; font-weight: 800; letter-spacing: .16em; }
+.tow-copy > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.tow-copy > small { color: var(--muted); font-size: 8px; line-height: 1.35; }
+.tow-track { position: relative; height: 5px; margin: 2px 0; border-radius: 4px; background: rgba(255, 255, 255, .11); }
+.tow-track .tow-window { position: absolute; inset: -2px 8% -2px 72%; border: 1px solid rgba(239, 197, 121, .72); background: rgba(239, 197, 121, .18); box-shadow: 0 0 10px rgba(239, 197, 121, .22); }
+.tow-track > b { position: absolute; top: 50%; width: 9px; height: 9px; border: 2px solid white; border-radius: 50%; background: #16c8bd; box-shadow: 0 0 8px rgba(113, 225, 211, .76); transform: translate(-50%, -50%); transition: left .1s linear; }
+.tow-instrument.is-window .tow-track > b { background: #efc579; box-shadow: 0 0 11px rgba(239, 197, 121, .92); }
+
 .game-conditions {
   position: absolute;
   left: 24px;
@@ -1889,6 +1922,11 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .vehicle-copy > strong { font-size: 10px; }
   .vehicle-copy > small { display: none; }
   .vehicle-grip > em { font-size: 8px; }
+  .tow-instrument { width: calc(100vw - 30px); min-height: 66px; bottom: calc(200px + env(safe-area-inset-bottom)); padding: 7px 11px 7px 8px; }
+  .tow-dial { width: 50px; height: 50px; }
+  .tow-dial strong { font-size: 20px; }
+  .tow-copy > strong { font-size: 10px; }
+  .tow-copy > small { display: none; }
   .game-conditions { left: 10px; right: 10px; bottom: calc(122px + env(safe-area-inset-bottom)); overflow: hidden; border-radius: 3px; background: rgba(3, 13, 18, 0.68); }
   .game-conditions > div { min-width: 0; flex: 1; padding: 8px 6px; grid-template-columns: 14px 1fr; }
   .game-conditions > div:nth-child(5), .game-conditions > div:nth-child(6) { display: none; }
@@ -2174,8 +2212,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .breath-meter { margin: 6px 0; }
   .wipeout-power { padding-top: 6px; }
   .game-conditions { display: none; }
-  .balance-instrument, .vehicle-instrument { bottom: calc(104px + env(safe-area-inset-bottom)); width: min(430px, calc(100vw - 270px)); }
-  .balance-instrument small, .vehicle-copy small, .grip-track { display: none; }
+  .balance-instrument, .vehicle-instrument, .tow-instrument { bottom: calc(104px + env(safe-area-inset-bottom)); width: min(430px, calc(100vw - 270px)); }
+  .balance-instrument small, .vehicle-copy small, .tow-copy small, .grip-track { display: none; }
   .mobile-controls { bottom: max(6px, env(safe-area-inset-bottom)); grid-template-columns: 88px minmax(120px, 1fr) 80px; gap: 12px; padding: 0 12px; }
   .analog-stick { width: 84px; height: 84px; }
   .analog-ring { inset: 12px; }
@@ -3087,6 +3125,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .hud-drawer,
 .balance-instrument,
 .vehicle-instrument,
+.tow-instrument,
 .maneuver-toast,
 .takeoff-toast,
 .shorebreak-toast,
@@ -3111,6 +3150,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .hud-drawer,
 .balance-instrument,
 .vehicle-instrument,
+.tow-instrument,
 .maneuver-toast,
 .takeoff-toast,
 .shorebreak-toast,
@@ -3129,7 +3169,8 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 }
 
 .balance-instrument,
-.vehicle-instrument {
+.vehicle-instrument,
+.tow-instrument {
   background: linear-gradient(105deg, rgba(3, 15, 20, .92), rgba(5, 22, 28, .86));
 }
 

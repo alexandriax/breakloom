@@ -5624,6 +5624,26 @@ export function shorelineRideOutProgress(coastalZ: number) {
   );
 }
 
+export const OPTIONAL_TOW_DURATION_SECONDS = 8.6;
+
+export function advanceOptionalTowProgress(
+  progress: number,
+  deltaSeconds: number,
+  durationSeconds = OPTIONAL_TOW_DURATION_SECONDS,
+) {
+  if (!Number.isFinite(progress) || !Number.isFinite(deltaSeconds)) return 0;
+  return Math.max(0, Math.min(1, progress + Math.max(0, deltaSeconds) / Math.max(.1, durationSeconds)));
+}
+
+export function optionalTowReleaseQuality(progress: number) {
+  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .82) / .2));
+}
+
+export function optionalTowReleaseRecommended(progress: number) {
+  const releaseProgress = clampValue(progress, 0, 1);
+  return releaseProgress >= .72 && releaseProgress <= .92;
+}
+
 export type GameStats = {
   phase: GamePhase;
   sessionIntro: number;
@@ -5739,6 +5759,12 @@ export type GameStats = {
   vehicleSlip: number;
   vehicleOffRoad: number;
   nearVan: boolean;
+  towAvailable: boolean;
+  towMode: boolean;
+  nearJetSki: boolean;
+  towProgress: number;
+  towReleaseQuality: number;
+  towBestRelease: boolean;
   inLineup: boolean;
   lineupOutsideMargin: number;
   lineupDirectionX: number;
@@ -5882,6 +5908,12 @@ export const INITIAL_STATS: GameStats = {
   vehicleSlip: 0,
   vehicleOffRoad: 0,
   nearVan: false,
+  towAvailable: false,
+  towMode: false,
+  nearJetSki: false,
+  towProgress: 0,
+  towReleaseQuality: 0,
+  towBestRelease: false,
   inLineup: false,
   lineupOutsideMargin: 0,
   lineupDirectionX: 0,

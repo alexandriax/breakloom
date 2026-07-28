@@ -74,6 +74,22 @@ invariant(
   sceneSource.includes("THREE.UniformsUtils.clone(THREE.UniformsLib.fog)"),
   "custom fog shaders no longer provide the uniforms the renderer refreshes",
 );
+invariant(
+  !sceneSource.includes("float longitude = atan(direction.z, direction.x)"),
+  "the atmosphere dome can split where longitude wraps",
+);
+invariant(
+  sceneSource.includes("vec2 cloudUv = direction.xz * 4.8"),
+  "cloud sampling no longer uses a continuous sky direction",
+);
+invariant(
+  sceneSource.includes("function OptionalTowCraft"),
+  "remote breaks no longer expose the optional tow craft",
+);
+invariant(
+  sceneSource.includes("Tow running · SPACE / RELEASE anytime"),
+  "tow riders cannot disengage on demand",
+);
 
 const quickTap = readBufferedControlEdge(false, false, 1, 0);
 const consumedQuickTap = readBufferedControlEdge(false, false, 1, quickTap.nextConsumedPresses);
@@ -112,6 +128,11 @@ console.log(JSON.stringify({
   atmosphere: {
     attachment: "stable",
     customFogUniforms: "complete",
+    skySampling: "seamless",
+  },
+  optionalTow: {
+    craft: "shore-launched",
+    release: "anytime",
   },
   inputBuffer: {
     quickTap: quickTap.pressed,
