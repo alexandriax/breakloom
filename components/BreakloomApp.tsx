@@ -4243,7 +4243,14 @@ export default function BreakloomApp() {
                       onClick={() => chooseBeach(destination)}
                     >
                       <i className="coast-art" aria-hidden="true">
-                        <Image src={`${ASSET_BASE}/icons/beaches/${destination.id}.webp`} alt="" width={256} height={256} sizes="112px" />
+                        <Image
+                          src={`${ASSET_BASE}/icons/beaches/${destination.id}.webp`}
+                          alt=""
+                          width={256}
+                          height={256}
+                          sizes="112px"
+                          loading={destination.id === beach.id ? "eager" : "lazy"}
+                        />
                       </i>
                       <strong>{destination.name}</strong>
                       <small>{destination.region} · {destination.country}</small>
