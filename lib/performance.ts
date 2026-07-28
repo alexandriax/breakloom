@@ -16,6 +16,18 @@ export function lowerRenderQuality(quality: RenderQuality): RenderQuality {
 }
 
 /**
+ * Resolution can react to the first expensive frame, but rebuilding scene
+ * geometry on a one-off spike creates more pressure. Require a second strike
+ * before changing the structural quality tier.
+ */
+export function renderQualityAfterPressure(
+  quality: RenderQuality,
+  pressureStrikes: number,
+) {
+  return pressureStrikes >= 2 ? lowerRenderQuality(quality) : quality;
+}
+
+/**
  * A long main-thread or GPU stall needs a decisive resolution reduction.
  * Small fixed steps take too many sampling windows to recover control latency,
  * so an emergency cut sheds half of the remaining DPR headroom at once.

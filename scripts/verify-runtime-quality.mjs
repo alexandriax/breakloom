@@ -3,6 +3,7 @@ import {
   emergencyRenderDpr,
   lowerRenderQuality,
   renderFrameSignal,
+  renderQualityAfterPressure,
   shadowMapSizeForQuality,
 } from "../lib/performance.ts";
 import { readBufferedControlEdge } from "../lib/input.ts";
@@ -25,6 +26,14 @@ invariant(
 invariant(lowerRenderQuality("high") === "balanced", "high quality cannot downgrade");
 invariant(lowerRenderQuality("balanced") === "reduced", "balanced quality cannot downgrade");
 invariant(lowerRenderQuality("reduced") === "reduced", "reduced quality is not a stable floor");
+invariant(
+  renderQualityAfterPressure("high", 1) === "high",
+  "a transient stall rebuilds scene geometry",
+);
+invariant(
+  renderQualityAfterPressure("high", 2) === "balanced",
+  "repeated stalls do not lower scene complexity",
+);
 invariant(shadowMapSizeForQuality("high") === 2048, "high-tier shadows lost detail");
 invariant(shadowMapSizeForQuality("balanced") === 1024, "balanced shadows exceed their budget");
 invariant(shadowMapSizeForQuality("reduced") === 512, "reduced shadows exceed their budget");
@@ -64,6 +73,8 @@ console.log(JSON.stringify({
     high: lowerRenderQuality("high"),
     balanced: lowerRenderQuality("balanced"),
     reduced: lowerRenderQuality("reduced"),
+    transientStall: renderQualityAfterPressure("high", 1),
+    repeatedStalls: renderQualityAfterPressure("high", 2),
   },
   shadowMaps: {
     high: shadowMapSizeForQuality("high"),
