@@ -87,7 +87,21 @@ invariant(
   "remote breaks no longer expose the optional tow craft",
 );
 invariant(
-  sceneSource.includes("Tow running · SPACE / RELEASE anytime"),
+  sceneSource.includes("available: true"),
+  "the optional tow is no longer available at every selected beach entry",
+);
+invariant(
+  sceneSource.includes("function TowCraftDriver")
+    && sceneSource.includes("<PremiumSurferBody"),
+  "the tow craft no longer uses the premium articulated surfer driver",
+);
+invariant(
+  sceneSource.includes("maximumTowSpeed")
+    && sceneSource.includes("towPopUpPending.current = true"),
+  "the live tow handoff lost its speed cap or protected pop-up transition",
+);
+invariant(
+  sceneSource.includes("LIVE PEAK LOCKED · SPACE / RELEASE + POP now"),
   "tow riders cannot disengage on demand",
 );
 

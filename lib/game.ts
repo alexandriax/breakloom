@@ -5624,7 +5624,7 @@ export function shorelineRideOutProgress(coastalZ: number) {
   );
 }
 
-export const OPTIONAL_TOW_DURATION_SECONDS = 8.6;
+export const OPTIONAL_TOW_DURATION_SECONDS = 16;
 
 export function advanceOptionalTowProgress(
   progress: number,
@@ -5636,12 +5636,12 @@ export function advanceOptionalTowProgress(
 }
 
 export function optionalTowReleaseQuality(progress: number) {
-  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .82) / .2));
+  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .88) / .1));
 }
 
 export function optionalTowReleaseRecommended(progress: number) {
   const releaseProgress = clampValue(progress, 0, 1);
-  return releaseProgress >= .72 && releaseProgress <= .92;
+  return releaseProgress >= .84 && releaseProgress <= .91;
 }
 
 export type GameStats = {

@@ -96,7 +96,7 @@ const supportedStanding = reachedSurfTrainingStep({
   hullPatchContact: .48,
 });
 const towProgressAfterOneSecond = advanceOptionalTowProgress(0, 1);
-const idealTowReleaseQuality = optionalTowReleaseQuality(.82);
+const idealTowReleaseQuality = optionalTowReleaseQuality(.88);
 
 if (
   arbitraryPopUp.progress < .99
@@ -107,14 +107,14 @@ if (
   || broadsideImpact.outcome !== "tumble"
   || unsupportedStanding !== 5
   || supportedStanding !== 6
-  || towProgressAfterOneSecond <= .1
-  || towProgressAfterOneSecond >= .13
+  || towProgressAfterOneSecond <= .06
+  || towProgressAfterOneSecond >= .065
   || idealTowReleaseQuality !== 1
-  || !optionalTowReleaseRecommended(.72)
-  || !optionalTowReleaseRecommended(.82)
-  || !optionalTowReleaseRecommended(.92)
-  || optionalTowReleaseRecommended(.7)
-  || optionalTowReleaseRecommended(.94)
+  || !optionalTowReleaseRecommended(.84)
+  || !optionalTowReleaseRecommended(.88)
+  || !optionalTowReleaseRecommended(.91)
+  || optionalTowReleaseRecommended(.82)
+  || optionalTowReleaseRecommended(.93)
   || optionalTowReleaseRecommended(.5)
   || BREAKLOOM_RELEASE.version !== 236
   || !launchSource.includes('id: "easy"')
@@ -131,8 +131,10 @@ if (
   || !worldMapSource.includes("[zone.access.lat, zone.access.lon]")
   || !worldMapSource.includes("Optional jetski tow available")
   || !worldMapSource.includes("map.fitBounds(mapBounds")
+  || !worldMapSource.includes("const pairedMinimum")
+  || !worldMapSource.includes("refreshMarkerLayout")
   || !launchSource.includes("tow-instrument")
-  || !launchSource.includes("paddling always remains available")
+  || !launchSource.includes("RELEASE disengages anytime")
   // The coast atlas, the map, and the peak list are first-screen decisions:
   // none of them may retreat behind an optional disclosure.
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')

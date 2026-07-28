@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowProgress, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, optionalTowReleaseQuality, optionalTowReleaseRecommended, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowProgress, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseQuality, optionalTowReleaseRecommended, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import { boundedSimulationDelta, emergencyRenderDpr, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { solarPositionAt } from "@/lib/solar";
@@ -794,6 +794,13 @@ type TowMotionState = {
   available: boolean;
   progress: number;
   speed: number;
+  duration: number;
+  targetWavePhase: number;
+  targetX: number;
+  targetZ: number;
+  returning: boolean;
+  returnProgress: number;
+  returnStart: THREE.Vector3;
 };
 
 function isMobileRenderer() {
@@ -10740,27 +10747,206 @@ function UnderwaterSuspendedMatter({
   );
 }
 
+function towPointOnCrest(
+  anchorX: number,
+  anchorZ: number,
+  elapsed: number,
+  targetPhase: number,
+  settings: SessionSettings,
+  character: BreakCharacter,
+) {
+  let x = anchorX;
+  let z = anchorZ;
+  let transport = primaryWaveVelocityAt(x, z, elapsed, settings, character);
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    const phaseError = primaryWavePhaseAt(x, z, elapsed, settings, character) - targetPhase;
+    const waveNumber = (Math.PI * 2) / Math.max(.1, transport.wavelength);
+    const normalX = transport.x / Math.max(.001, transport.speed);
+    const normalZ = transport.z / Math.max(.001, transport.speed);
+    x -= normalX * phaseError / waveNumber;
+    z -= normalZ * phaseError / waveNumber;
+    transport = primaryWaveVelocityAt(x, z, elapsed, settings, character);
+  }
+  return {
+    x,
+    z,
+    normalX: transport.x / Math.max(.001, transport.speed),
+    normalZ: transport.z / Math.max(.001, transport.speed),
+    speed: transport.speed,
+  };
+}
+
+function jetSkiPlanformGeometry(
+  width: number,
+  length: number,
+  depth: number,
+  bevel: number,
+) {
+  const halfWidth = width * .5;
+  const bow = length * .54;
+  const stern = -length * .46;
+  const shape = new THREE.Shape();
+  shape.moveTo(0, bow);
+  shape.bezierCurveTo(
+    halfWidth * .34,
+    bow - length * .06,
+    halfWidth * .88,
+    bow - length * .24,
+    halfWidth,
+    bow - length * .42,
+  );
+  shape.lineTo(halfWidth * .88, stern + length * .08);
+  shape.quadraticCurveTo(halfWidth * .64, stern, 0, stern);
+  shape.quadraticCurveTo(-halfWidth * .64, stern, -halfWidth * .88, stern + length * .08);
+  shape.lineTo(-halfWidth, bow - length * .42);
+  shape.bezierCurveTo(
+    -halfWidth * .88,
+    bow - length * .24,
+    -halfWidth * .34,
+    bow - length * .06,
+    0,
+    bow,
+  );
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    bevelSize: bevel,
+    bevelThickness: bevel,
+    curveSegments: 10,
+    steps: 1,
+  });
+  geometry.rotateX(Math.PI / 2);
+  geometry.translate(0, depth * .5, 0);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function TowCraftDriver({
+  playerMotion,
+  towMotion,
+  accent,
+  thermalKit,
+}: {
+  playerMotion: MutableRefObject<MotionState>;
+  towMotion: MutableRefObject<TowMotionState>;
+  accent: string;
+  thermalKit: ThermalKit;
+}) {
+  const ankleJointRef = useRef<THREE.Object3D | null>(null);
+  const driverMotion = useRef<MotionState>({ ...playerMotion.current, phase: "driving" });
+  const vehicleMotion = useRef<VehicleMotionState>({
+    speed: 0,
+    steer: 0,
+    throttle: 0,
+    driving: true,
+    door: 0,
+    transitionDirection: 0,
+    transitionProgress: 1,
+    transitionStartX: 0,
+    transitionStartZ: 0,
+    transitionStartHeading: 0,
+    brake: false,
+    wetness: 1,
+    offRoad: 0,
+    traction: 1,
+    slip: 0,
+    longitudinalG: 0,
+    lateralG: 0,
+    suspension: 0,
+  });
+  const previousHeading = useRef(towMotion.current.heading);
+
+  useFrame((_, delta) => {
+    const tow = towMotion.current;
+    Object.assign(driverMotion.current, playerMotion.current);
+    driverMotion.current.phase = "driving";
+    driverMotion.current.speed = tow.speed;
+    driverMotion.current.run = 0;
+    driverMotion.current.waterDepth = 0;
+    driverMotion.current.wetness = 1;
+    driverMotion.current.paddleEffort = 0;
+    driverMotion.current.paddleStroke = 0;
+    const yawDelta = Math.atan2(
+      Math.sin(tow.heading - previousHeading.current),
+      Math.cos(tow.heading - previousHeading.current),
+    );
+    const steer = THREE.MathUtils.clamp(yawDelta / Math.max(.01, delta) * .12, -1, 1);
+    vehicleMotion.current.speed = tow.speed;
+    vehicleMotion.current.steer = steer;
+    vehicleMotion.current.throttle = tow.active ? 1 : tow.returning ? .62 : 0;
+    vehicleMotion.current.longitudinalG = THREE.MathUtils.damp(
+      vehicleMotion.current.longitudinalG,
+      tow.active ? .08 : 0,
+      5,
+      delta,
+    );
+    vehicleMotion.current.lateralG = THREE.MathUtils.damp(
+      vehicleMotion.current.lateralG,
+      steer * Math.min(1, tow.speed / 10) * .42,
+      7,
+      delta,
+    );
+    vehicleMotion.current.suspension = Math.sin(performance.now() * .006) * .08;
+    previousHeading.current = tow.heading;
+  });
+
+  return (
+    <group position={[0, .78, -.28]} scale={.78}>
+      <PremiumSurferBody
+        motion={driverMotion}
+        vehicleMotion={vehicleMotion}
+        accent={accent}
+        ankleJointRef={ankleJointRef}
+        thermalKit={thermalKit}
+      />
+    </group>
+  );
+}
+
 function OptionalTowCraft({
   motion,
+  playerMotion,
   playerPosition,
   settings,
   character,
   accent,
+  thermalKit,
   mobile,
 }: {
   motion: MutableRefObject<TowMotionState>;
+  playerMotion: MutableRefObject<MotionState>;
   playerPosition: MutableRefObject<THREE.Vector3>;
   settings: SessionSettings;
   character: BreakCharacter;
   accent: string;
+  thermalKit: ThermalKit;
   mobile: boolean;
 }) {
   const craft = useRef<THREE.Group>(null);
   const rope = useRef<THREE.Mesh>(null);
   const wake = useRef<THREE.MeshBasicMaterial>(null);
   const midpoint = useRef(new THREE.Vector3());
+  const playerTowPoint = useRef(new THREE.Vector3());
   const ropeDirection = useRef(new THREE.Vector3());
   const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const hullGeometry = useMemo(
+    () => jetSkiPlanformGeometry(1.44, 3.65, .34, .08),
+    [],
+  );
+  const deckGeometry = useMemo(
+    () => jetSkiPlanformGeometry(1.22, 3.25, .32, .07),
+    [],
+  );
+  const cowlGeometry = useMemo(
+    () => jetSkiPlanformGeometry(.92, 1.7, .42, .06),
+    [],
+  );
+  useEffect(() => () => {
+    hullGeometry.dispose();
+    deckGeometry.dispose();
+    cowlGeometry.dispose();
+  }, [cowlGeometry, deckGeometry, hullGeometry]);
 
   useFrame(({ clock }, delta) => {
     const tow = motion.current;
@@ -10780,13 +10966,18 @@ function OptionalTowCraft({
         tow.active ? 12 : 5,
         delta,
       );
-      craft.current.rotation.z = Math.sin(clock.elapsedTime * 2.1 + tow.position.x * .04) * .025;
-      craft.current.rotation.x = Math.cos(clock.elapsedTime * 1.7 + tow.position.z * .05) * .018;
+      const speedLoad = THREE.MathUtils.clamp(tow.speed / 16, 0, 1);
+      craft.current.rotation.z = Math.sin(clock.elapsedTime * 2.1 + tow.position.x * .04)
+        * (.022 + speedLoad * .018);
+      craft.current.rotation.x = -.03 * speedLoad
+        + Math.cos(clock.elapsedTime * 1.7 + tow.position.z * .05) * .018;
     }
     if (wake.current) {
       wake.current.opacity = THREE.MathUtils.damp(
         wake.current.opacity,
-        tow.active ? THREE.MathUtils.clamp(.22 + tow.speed * .035, .26, .62) : .05,
+        tow.active || tow.returning
+          ? THREE.MathUtils.clamp(.2 + tow.speed * .035, .24, .65)
+          : .035,
         8,
         delta,
       );
@@ -10795,7 +10986,17 @@ function OptionalTowCraft({
     rope.current.visible = tow.available && tow.active;
     if (!rope.current.visible) return;
     const craftPoint = midpoint.current.set(tow.position.x, craftSurface + .25, tow.position.z);
-    const playerPoint = playerPosition.current;
+    const playerPoint = playerTowPoint.current.set(
+      playerPosition.current.x,
+      waveHeightAt(
+        playerPosition.current.x,
+        playerPosition.current.z,
+        clock.elapsedTime,
+        settings,
+        character,
+      ) + .36,
+      playerPosition.current.z,
+    );
     ropeDirection.current.copy(playerPoint).sub(craftPoint);
     const length = ropeDirection.current.length();
     rope.current.position.copy(craftPoint).addScaledVector(ropeDirection.current, .5);
@@ -10806,40 +11007,71 @@ function OptionalTowCraft({
   return (
     <>
       <group ref={craft} visible={false}>
-        <group rotation={[0, Math.PI, 0]}>
-          <mesh position={[0, .02, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-            <capsuleGeometry args={[.52, 1.85, mobile ? 4 : 7, mobile ? 8 : 14]} />
-            <meshStandardMaterial color="#f1f0e8" roughness={.28} metalness={.08} />
+        <group>
+          <mesh geometry={hullGeometry} position={[0, -.08, 0]} castShadow receiveShadow>
+            <meshPhysicalMaterial color="#e7ece9" roughness={.24} metalness={.16} clearcoat={.86} clearcoatRoughness={.2} />
           </mesh>
-          <mesh position={[0, .28, -.08]} castShadow>
-            <boxGeometry args={[.76, .34, 1.32]} />
-            <meshStandardMaterial color={accent} roughness={.34} metalness={.16} />
+          <mesh geometry={deckGeometry} position={[0, .18, -.08]} castShadow>
+            <meshPhysicalMaterial color={accent} roughness={.3} metalness={.12} clearcoat={.9} clearcoatRoughness={.16} />
           </mesh>
-          <mesh position={[0, .49, .17]} castShadow>
-            <boxGeometry args={[.48, .22, .8]} />
-            <meshStandardMaterial color="#15252a" roughness={.72} />
+          <mesh geometry={cowlGeometry} position={[0, .46, .72]} scale={[1, .72, 1]} castShadow>
+            <meshPhysicalMaterial color="#f4f5ef" roughness={.22} metalness={.12} clearcoat={1} clearcoatRoughness={.14} />
           </mesh>
-          <mesh position={[0, .69, -.48]} rotation={[-.25, 0, 0]} castShadow>
-            <boxGeometry args={[.5, .46, .08]} />
-            <meshPhysicalMaterial color="#a8e8e4" transmission={.35} transparent opacity={.72} roughness={.2} />
+          <mesh position={[0, .56, -.5]} rotation={[-.08, 0, 0]} castShadow>
+            <boxGeometry args={[.66, .25, 1.28]} />
+            <meshPhysicalMaterial color="#132227" roughness={.68} clearcoat={.18} />
           </mesh>
-          <group position={[0, 1.02, .28]}>
-            <mesh castShadow>
-              <capsuleGeometry args={[.18, .42, 4, 8]} />
-              <meshStandardMaterial color="#17272b" roughness={.76} />
+          <mesh position={[0, .51, -1.33]} castShadow>
+            <boxGeometry args={[1.12, .12, .46]} />
+            <meshStandardMaterial color="#25383d" roughness={.56} metalness={.1} />
+          </mesh>
+          <mesh position={[0, .72, .78]} rotation={[-.28, 0, 0]} castShadow>
+            <boxGeometry args={[.62, .52, .1]} />
+            <meshPhysicalMaterial color="#9adbd9" transmission={.32} transparent opacity={.78} roughness={.14} thickness={.04} />
+          </mesh>
+          <group position={[0, .82, .28]}>
+            <mesh rotation={[-.2, 0, 0]} castShadow>
+              <cylinderGeometry args={[.045, .06, .52, mobile ? 8 : 12]} />
+              <meshStandardMaterial color="#132329" roughness={.44} metalness={.55} />
             </mesh>
-            <mesh position={[0, .48, 0]} castShadow>
-              <sphereGeometry args={[.17, 10, 8]} />
-              <meshStandardMaterial color="#d39b78" roughness={.8} />
+            <mesh position={[0, .23, .05]} rotation={[0, 0, Math.PI / 2]} castShadow>
+              <cylinderGeometry args={[.035, .035, .92, 10]} />
+              <meshStandardMaterial color="#0b171b" roughness={.38} metalness={.68} />
+            </mesh>
+            <mesh position={[-.5, .23, .05]} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[.075, .075, .18, 10]} />
+              <meshStandardMaterial color="#1c2b2e" roughness={.88} />
+            </mesh>
+            <mesh position={[.5, .23, .05]} rotation={[0, 0, Math.PI / 2]}>
+              <cylinderGeometry args={[.075, .075, .18, 10]} />
+              <meshStandardMaterial color="#1c2b2e" roughness={.88} />
             </mesh>
           </group>
-          <mesh position={[0, -.08, 1.62]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
-            <planeGeometry args={[1.5, 3.8]} />
+          <mesh position={[0, -.08, -1.84]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[.14, .2, .24, 12]} />
+            <meshStandardMaterial color="#0c191d" roughness={.42} metalness={.62} />
+          </mesh>
+          <mesh position={[-.69, .03, -.2]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[.035, .035, 2.65, 8]} />
+            <meshStandardMaterial color="#101b1e" roughness={.52} metalness={.38} />
+          </mesh>
+          <mesh position={[.69, .03, -.2]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[.035, .035, 2.65, 8]} />
+            <meshStandardMaterial color="#101b1e" roughness={.52} metalness={.38} />
+          </mesh>
+          <TowCraftDriver
+            playerMotion={playerMotion}
+            towMotion={motion}
+            accent={accent}
+            thermalKit={thermalKit}
+          />
+          <mesh position={[0, -.09, -3.1]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+            <planeGeometry args={[1.8, 5.8]} />
             <meshBasicMaterial
               ref={wake}
               color="#b8fff5"
               transparent
-              opacity={.05}
+              opacity={.035}
               depthWrite={false}
               blending={THREE.AdditiveBlending}
               side={THREE.DoubleSide}
@@ -11118,15 +11350,6 @@ function Simulation({
   const boardSpec = BOARD_SPECS[settings.board];
   const assistProfile = SURF_ASSIST_PROFILES[settings.assist];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
-  const selectedZone = useMemo(
-    () => beach.zones.find((zone) => zone.name === zoneName)
-      ?? beach.zones.reduce((closest, zone) => {
-        const distance = Math.hypot(zone.lat - latitude, zone.lon - longitude);
-        const closestDistance = Math.hypot(closest.lat - latitude, closest.lon - longitude);
-        return distance < closestDistance ? zone : closest;
-      }),
-    [beach.zones, latitude, longitude, zoneName],
-  );
   const tideResponse = useMemo(
     () => tideResponseForBreak(settings.tide, character),
     [character, settings.tide],
@@ -11156,9 +11379,16 @@ function Simulation({
     position: new THREE.Vector3(10, 0, 4),
     heading: Math.PI,
     active: false,
-    available: selectedZone.access.towRecommended,
+    available: true,
     progress: 0,
     speed: 0,
+    duration: OPTIONAL_TOW_DURATION_SECONDS,
+    targetWavePhase: 0,
+    targetX: 0,
+    targetZ: SHORELINE_REFERENCE_Z - BREAK_OFFSHORE_OFFSET,
+    returning: false,
+    returnProgress: 0,
+    returnStart: new THREE.Vector3(10, 0, 4),
   });
   const worldFocus = useRef(new THREE.Vector3(0, 0, 35));
   const waterRide = useRef({
@@ -11280,6 +11510,7 @@ function Simulation({
   const consumedSprintPresses = useRef(0);
   const takeoffCommitAt = useRef(-1);
   const takeoffCommitQuality = useRef(.5);
+  const towPopUpPending = useRef(false);
   const popUpStartStamina = useRef(100);
   const popUpBody = useRef({
     progress: 0,
@@ -11947,9 +12178,39 @@ function Simulation({
     const towHomeX = 10;
     const towHomeZ = 4 + tideShift;
     if (!towMotion.current.active) {
-      towMotion.current.position.set(towHomeX, 0, towHomeZ);
-      towMotion.current.heading = Math.PI;
-      towMotion.current.speed = 0;
+      if (towMotion.current.returning) {
+        const previousTowX = towMotion.current.position.x;
+        const previousTowZ = towMotion.current.position.z;
+        towMotion.current.returnProgress = Math.min(
+          1,
+          towMotion.current.returnProgress + delta / 5.8,
+        );
+        const returnProgress = THREE.MathUtils.smootherstep(
+          towMotion.current.returnProgress,
+          0,
+          1,
+        );
+        const returnSide = character.peel < 0 ? -1 : 1;
+        towMotion.current.position.set(
+          towMotion.current.returnStart.x + returnSide * 54 * returnProgress,
+          0,
+          towMotion.current.returnStart.z
+            - Math.sin(returnProgress * Math.PI) * 24
+            + returnProgress * 5,
+        );
+        const velocityX = (towMotion.current.position.x - previousTowX) / Math.max(.001, delta);
+        const velocityZ = (towMotion.current.position.z - previousTowZ) / Math.max(.001, delta);
+        towMotion.current.speed = Math.hypot(velocityX, velocityZ);
+        towMotion.current.heading = Math.atan2(velocityX, velocityZ);
+        if (towMotion.current.returnProgress >= 1) {
+          towMotion.current.returning = false;
+          towMotion.current.speed = 0;
+        }
+      } else {
+        towMotion.current.position.set(towHomeX, 0, towHomeZ);
+        towMotion.current.heading = Math.PI;
+        towMotion.current.speed = 0;
+      }
     }
     const distanceToJetSki = Math.hypot(
       position.current.x - towMotion.current.position.x,
@@ -11957,6 +12218,7 @@ function Simulation({
     );
     const nearJetSki = towMotion.current.available
       && !towMotion.current.active
+      && !towMotion.current.returning
       && (currentPhase === "shore" || currentPhase === "wading")
       && distanceToJetSki < 4.8;
     const distanceToVan = Math.hypot(position.current.x - vanPosition.current.x, position.current.z - vanPosition.current.z);
@@ -11994,9 +12256,70 @@ function Simulation({
     diveLatch.current = diveEdge.nextLatch;
     consumedSprintPresses.current = diveEdge.nextConsumedPresses;
     const beginOptionalTow = () => {
+      const towSide = character.peel < 0 ? -1 : 1;
+      const targetX = towSide * 8;
+      let targetZ = tideShift - BREAK_OFFSHORE_OFFSET;
+      const crestArrivalProgress = .94;
+      const minimumArrival = OPTIONAL_TOW_DURATION_SECONDS * crestArrivalProgress;
+      const maximumArrival = 27.5 * crestArrivalProgress;
+      const phaseNow = primaryWavePhaseAt(
+        targetX,
+        targetZ,
+        t,
+        settings,
+        character,
+      );
+      const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
+      let targetWavePhase = Math.PI * .5
+        + Math.floor((phaseNow - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
+      while ((phaseNow - targetWavePhase) / angularSpeed < minimumArrival) {
+        targetWavePhase -= Math.PI * 2;
+      }
+      let primeWavePhase = targetWavePhase;
+      let primeWaveEnergy = waveCrestPropertiesAtPhase(targetWavePhase).energy;
+      for (let offset = 0; offset < 5; offset += 1) {
+        const candidate = targetWavePhase - offset * Math.PI * 2;
+        const candidateArrival = (phaseNow - candidate) / angularSpeed;
+        if (candidateArrival > maximumArrival) break;
+        const properties = waveCrestPropertiesAtPhase(candidate);
+        if (properties.energy > primeWaveEnergy) {
+          primeWavePhase = candidate;
+          primeWaveEnergy = properties.energy;
+        }
+        if (properties.surfable) {
+          primeWavePhase = candidate;
+          break;
+        }
+      }
+      const arrivalSeconds = THREE.MathUtils.clamp(
+        (phaseNow - primeWavePhase) / angularSpeed,
+        minimumArrival,
+        maximumArrival,
+      );
+      const duration = THREE.MathUtils.clamp(
+        arrivalSeconds / crestArrivalProgress,
+        OPTIONAL_TOW_DURATION_SECONDS,
+        27.5,
+      );
+      const releaseAt = t + duration * crestArrivalProgress;
+      for (let iteration = 0; iteration < 3; iteration += 1) {
+        targetZ -= waveBreakingGeometryAt(
+          targetX,
+          targetZ,
+          releaseAt,
+          settings,
+          character,
+        ).breakingCoordinate;
+      }
       towMotion.current.active = true;
       towMotion.current.progress = 0;
       towMotion.current.speed = 0;
+      towMotion.current.duration = duration;
+      towMotion.current.targetWavePhase = primeWavePhase;
+      towMotion.current.targetX = targetX;
+      towMotion.current.targetZ = targetZ;
+      towMotion.current.returning = false;
+      towMotion.current.returnProgress = 0;
       phase.current = "paddling";
       playerHeading.current = Math.PI;
       paddleHeading.current = Math.PI;
@@ -12305,17 +12628,72 @@ function Simulation({
           towMotion.current.progress = advanceOptionalTowProgress(
             towMotion.current.progress,
             delta,
+            towMotion.current.duration,
           );
-          const routeProgress = THREE.MathUtils.smootherstep(towMotion.current.progress, 0, 1);
           const towSide = character.peel < 0 ? -1 : 1;
-          const targetX = towSide * 5.5;
-          const targetZ = SHORELINE_REFERENCE_Z - BREAK_OFFSHORE_OFFSET - 7;
-          towMotion.current.position.set(
-            THREE.MathUtils.lerp(towHomeX, targetX, routeProgress)
-              + Math.sin(routeProgress * Math.PI) * towSide * 2.8,
-            0,
-            THREE.MathUtils.lerp(towHomeZ, targetZ, routeProgress),
+          const towProgress = towMotion.current.progress;
+          const outboundX = towSide * 25;
+          const outboundZ = towMotion.current.targetZ - 52;
+          const turnControlX = towSide * 47;
+          const turnControlZ = towMotion.current.targetZ - 49;
+          const turnExitX = towSide * 22;
+          const turnExitZ = towMotion.current.targetZ - 27;
+          if (towProgress < .52) {
+            const outboundProgress = THREE.MathUtils.smootherstep(towProgress, 0, .52);
+            towMotion.current.position.set(
+              THREE.MathUtils.lerp(towHomeX, outboundX, outboundProgress),
+              0,
+              THREE.MathUtils.lerp(towHomeZ, outboundZ, outboundProgress),
+            );
+          } else if (towProgress < .7) {
+            const turnProgress = THREE.MathUtils.smootherstep(towProgress, .52, .7);
+            const inverse = 1 - turnProgress;
+            towMotion.current.position.set(
+              inverse * inverse * outboundX
+                + 2 * inverse * turnProgress * turnControlX
+                + turnProgress * turnProgress * turnExitX,
+              0,
+              inverse * inverse * outboundZ
+                + 2 * inverse * turnProgress * turnControlZ
+                + turnProgress * turnProgress * turnExitZ,
+            );
+          } else {
+            const liveCrest = towPointOnCrest(
+              towMotion.current.targetX,
+              towMotion.current.targetZ,
+              t,
+              towMotion.current.targetWavePhase,
+              settings,
+              character,
+            );
+            const liveCraftX = liveCrest.x + liveCrest.normalX * 4.35;
+            const liveCraftZ = liveCrest.z + liveCrest.normalZ * 4.35;
+            const captureProgress = THREE.MathUtils.smootherstep(towProgress, .7, .78);
+            towMotion.current.position.set(
+              THREE.MathUtils.lerp(turnExitX, liveCraftX, captureProgress),
+              0,
+              THREE.MathUtils.lerp(turnExitZ, liveCraftZ, captureProgress),
+            );
+          }
+          const requestedTowX = towMotion.current.position.x;
+          const requestedTowZ = towMotion.current.position.z;
+          const requestedStepX = requestedTowX - previousTowX;
+          const requestedStepZ = requestedTowZ - previousTowZ;
+          const requestedStep = Math.hypot(requestedStepX, requestedStepZ);
+          const maximumTowSpeed = THREE.MathUtils.lerp(
+            12,
+            18,
+            THREE.MathUtils.smootherstep(towProgress, .42, .72),
           );
+          const maximumTowStep = maximumTowSpeed * delta;
+          if (requestedStep > maximumTowStep) {
+            const stepScale = maximumTowStep / Math.max(.001, requestedStep);
+            towMotion.current.position.set(
+              previousTowX + requestedStepX * stepScale,
+              0,
+              previousTowZ + requestedStepZ * stepScale,
+            );
+          }
           const towVelocityX = (towMotion.current.position.x - previousTowX) / Math.max(.001, delta);
           const towVelocityZ = (towMotion.current.position.z - previousTowZ) / Math.max(.001, delta);
           towMotion.current.speed = Math.hypot(towVelocityX, towVelocityZ);
@@ -12339,20 +12717,135 @@ function Simulation({
           towReleaseQuality = optionalTowReleaseQuality(towMotion.current.progress);
           towBestRelease = optionalTowReleaseRecommended(towMotion.current.progress);
           prompt = towBestRelease
-            ? "BEST POP-UP LINE · SPACE / RELEASE now"
-            : towMotion.current.progress < .62
-              ? "Tow running · SPACE / RELEASE anytime"
-              : towMotion.current.progress < .72
-                ? "Ideal peak approaching · get ready to release"
-                : "Peak passing · release or the tow will disengage";
+            ? "LIVE PEAK LOCKED · SPACE / RELEASE + POP now"
+            : towMotion.current.progress < .52
+              ? "Running outside the break · SPACE / RELEASE anytime"
+              : towMotion.current.progress < .7
+                ? "Turning onto a live wave · hold the tow"
+                : towMotion.current.progress < .78
+                  ? "Matching the selected crest · prepare to release"
+                  : "Live face approaching · release in the highlighted window";
           if (actionPressed || towMotion.current.progress >= 1) {
+            const releaseIntoWave = actionPressed
+              && towMotion.current.progress >= .8
+              && towReleaseQuality > .08;
             towMotion.current.active = false;
-            paddleVelocity.current.multiplyScalar(.82);
+            towMotion.current.returning = true;
+            towMotion.current.returnProgress = 0;
+            towMotion.current.returnStart.copy(towMotion.current.position);
+            paddleVelocity.current.multiplyScalar(releaseIntoWave ? .96 : .82);
             nextShorebreakAt.current = t + SURF_PHYSICS_TUNING.shorebreakLead;
             previousShorebreakPhaseError.current = Number.NaN;
-            prompt = towBestRelease
-              ? "Clean release · read the lift and pop when the board is supported"
-              : "Tow released · paddle and line up under your own power";
+            if (releaseIntoWave) {
+              const releaseGeometry = waveBreakingGeometryAt(
+                position.current.x,
+                position.current.z,
+                t,
+                settings,
+                character,
+              );
+              const safeReleaseCoordinate = THREE.MathUtils.clamp(
+                releaseGeometry.breakingCoordinate,
+                -24,
+                -7,
+              );
+              const releaseCorrection = releaseGeometry.breakingCoordinate
+                - safeReleaseCoordinate;
+              position.current.x += releaseGeometry.outsideDirectionX
+                * releaseCorrection;
+              position.current.z += releaseGeometry.outsideDirectionZ
+                * releaseCorrection;
+              const releaseTransport = primaryWaveVelocityAt(
+                position.current.x,
+                position.current.z,
+                t,
+                settings,
+                character,
+              );
+              const releaseNormalX = releaseTransport.x
+                / Math.max(.001, releaseTransport.speed);
+              const releaseNormalZ = releaseTransport.z
+                / Math.max(.001, releaseTransport.speed);
+              const releaseTangentX = releaseNormalZ;
+              const releaseTangentZ = -releaseNormalX;
+              const releaseLineSide = character.line === "LEFT"
+                ? -1
+                : character.line === "RIGHT"
+                  ? 1
+                  : character.peel < 0 ? -1 : 1;
+              const releaseNormalSpeed = Math.max(
+                releaseTransport.speed * .78,
+                paddleVelocity.current.x * releaseNormalX
+                  + paddleVelocity.current.y * releaseNormalZ,
+              );
+              const releaseTrimSpeed = releaseLineSide
+                * releaseTransport.speed
+                * .16;
+              paddleVelocity.current.set(
+                releaseNormalX * releaseNormalSpeed
+                  + releaseTangentX * releaseTrimSpeed,
+                releaseNormalZ * releaseNormalSpeed
+                  + releaseTangentZ * releaseTrimSpeed,
+              );
+              paddleHeading.current = Math.atan2(
+                releaseNormalX,
+                releaseNormalZ,
+              );
+              playerHeading.current = paddleHeading.current;
+              rideLineSide.current = releaseLineSide;
+              const towSurface = waveSurfaceFrameAt(
+                position.current.x,
+                position.current.z,
+                t,
+                settings,
+                character,
+              );
+              rideWavePhase.current = primaryWavePhaseAt(
+                position.current.x,
+                position.current.z,
+                t,
+                settings,
+                character,
+              );
+              towPopUpPending.current = true;
+              takeoffCommitAt.current = t;
+              takeoffCommitQuality.current = THREE.MathUtils.clamp(
+                .72 + towReleaseQuality * .27,
+                .72,
+                .99,
+              );
+              popUpStartStamina.current = stamina.current;
+              popUpBody.current.progress = 0;
+              popUpBody.current.velocity = 0;
+              stance.current = 0;
+              takeoffCommitProgress = 0;
+              rideCapture.current.overtaken = 0;
+              rideCapture.current.ahead = 0;
+              rideEngaged.current = true;
+              waveEngagement.current = THREE.MathUtils.clamp(
+                .88 + towReleaseQuality * .12,
+                0,
+                1,
+              );
+              outsideBreak.current = false;
+              unstableFor.current = 0;
+              railSlip.current = 0;
+              boardRollAngle.current *= .2;
+              boardRollRate.current = 0;
+              boardPitchAngle.current *= .25;
+              boardPitchRate.current = 0;
+              waterRide.current.elevation = towSurface.height + .16;
+              waterRide.current.velocity = 0;
+              waterRide.current.surfaceHeight = towSurface.height;
+              waterRide.current.contact = 1;
+              waterRide.current.engaged = true;
+              prompt = towBestRelease
+                ? "Peak release locked · popping up on the live face"
+                : "Tow released onto the shoulder · finish the pop-up";
+            } else {
+              towPopUpPending.current = false;
+              prompt = "Tow released · paddle and line up under your own power";
+            }
           }
         } else {
         const takeoffCommitting = takeoffCommitAt.current >= 0;
@@ -13284,10 +13777,12 @@ function Simulation({
           takeoffCommitProgress = 0;
           motion.current.takeoff = 1;
           paddleVelocity.current.set(0, 0);
+          towPopUpPending.current = false;
         };
 
         const shallowWashRecovery =
           proneFailure.failed
+            && !towPopUpPending.current
             && position.current.z - tideShift > -5.5;
         if (
           proneFailure.failed
@@ -13297,7 +13792,11 @@ function Simulation({
           takeoffOpportunity = 0;
           prompt =
             "Shallow wash - step off, keep hold of the board, and reset";
-        } else if (proneFailure.failed && !qaScenario) {
+        } else if (
+          proneFailure.failed
+            && !qaScenario
+            && !towPopUpPending.current
+        ) {
           takeoffOpportunity = 0;
           prompt = rollCapsizeRisk >= pitchOverRisk
             ? "The loaded rail passed its righting limit - protect your head"
@@ -13563,6 +14062,7 @@ function Simulation({
                   ? `Face rising ${Math.round(takeoffReading.physicalLift * 100)}% · paddle to match its speed`
                   : `POP is always available · ${waveReadCopy}`;
           if (actionPressed && !duckDiveActive) {
+            towPopUpPending.current = false;
             const popReading = proneInteraction;
             const engaged = popReading.outcome === "capture"
               && boardWaterContact > .24
@@ -13616,6 +14116,7 @@ function Simulation({
         if (
           proneFailure.failed
             && !qaScenario
+            && !towPopUpPending.current
             && shallowWashRecovery
         ) {
           phase.current = "wading";
@@ -13634,7 +14135,11 @@ function Simulation({
             motion.current.impact,
             .2 + proneFailure.power * .26,
           );
-        } else if (proneFailure.failed && !qaScenario) {
+        } else if (
+          proneFailure.failed
+            && !qaScenario
+            && !towPopUpPending.current
+        ) {
           phase.current = "wipeout";
           rideEngaged.current = false;
           takeoffCommitAt.current = -1;
@@ -18036,10 +18541,12 @@ function Simulation({
       <VehicleSurfaceEffects motion={vanMotion} targetPosition={vanPosition} heading={vanHeading} mobile={mobileRenderer} />
       <OptionalTowCraft
         motion={towMotion}
+        playerMotion={motion}
         playerPosition={position}
         settings={settings}
         character={character}
         accent={beach.palette[0]}
+        thermalKit={thermalKit}
         mobile={mobileRenderer}
       />
       <KinematicContactShadows

@@ -1734,7 +1734,7 @@ input:focus-visible {
 .tow-copy > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .tow-copy > small { color: var(--muted); font-size: 8px; line-height: 1.35; }
 .tow-track { position: relative; height: 5px; margin: 2px 0; border-radius: 4px; background: rgba(255, 255, 255, .11); }
-.tow-track .tow-window { position: absolute; inset: -2px 8% -2px 72%; border: 1px solid rgba(239, 197, 121, .72); background: rgba(239, 197, 121, .18); box-shadow: 0 0 10px rgba(239, 197, 121, .22); }
+.tow-track .tow-window { position: absolute; inset: -2px 9% -2px 84%; border: 1px solid rgba(239, 197, 121, .72); background: rgba(239, 197, 121, .18); box-shadow: 0 0 10px rgba(239, 197, 121, .22); }
 .tow-track > b { position: absolute; top: 50%; width: 9px; height: 9px; border: 2px solid white; border-radius: 50%; background: #16c8bd; box-shadow: 0 0 8px rgba(113, 225, 211, .76); transform: translate(-50%, -50%); transition: left .1s linear; }
 .tow-instrument.is-window .tow-track > b { background: #efc579; box-shadow: 0 0 11px rgba(239, 197, 121, .92); }
 
