@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Effects, Environment, Lightformer, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
-import { createContext, memo, MutableRefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, MutableRefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { ShaderPass } from "three-stdlib";
@@ -8035,6 +8035,7 @@ function DuneGrassField({
   const windAngle = THREE.MathUtils.degToRad(windDirection - coastHeading);
   const windVector = useMemo(() => new THREE.Vector2(Math.sin(windAngle), Math.cos(windAngle)).normalize(), [windAngle]);
   const uniforms = useMemo(() => ({
+    ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog),
     uTime: { value: 0 },
     uWind: { value: wind },
     uWindDirection: { value: windVector.clone() },
@@ -10155,10 +10156,11 @@ function VehicleSurfaceEffects({
   );
 }
 
+const ATMOSPHERE_BACKGROUND_ARGS: [THREE.ColorRepresentation] = ["#07101e"];
+const ATMOSPHERE_FOG_ARGS: [THREE.ColorRepresentation, number, number] = ["#07101e", 55, 240];
+
 function UnderwaterAtmosphere({
   motion,
-  backgroundRef,
-  fogRef,
   backgroundColor,
   fogColor,
   fogNear,
@@ -10167,8 +10169,6 @@ function UnderwaterAtmosphere({
   mobile,
 }: {
   motion: MutableRefObject<MotionState>;
-  backgroundRef: MutableRefObject<THREE.Color | null>;
-  fogRef: MutableRefObject<THREE.Fog | null>;
   backgroundColor: string;
   fogColor: string;
   fogNear: number;
@@ -10176,6 +10176,8 @@ function UnderwaterAtmosphere({
   light: number;
   mobile: boolean;
 }) {
+  const backgroundRef = useRef<THREE.Color>(null);
+  const fogRef = useRef<THREE.Fog>(null);
   const baseBackground = useMemo(() => new THREE.Color(backgroundColor), [backgroundColor]);
   const baseFog = useMemo(() => new THREE.Color(fogColor), [fogColor]);
   const underwaterBackground = useMemo(
@@ -10187,24 +10189,38 @@ function UnderwaterAtmosphere({
     [light],
   );
 
+  useLayoutEffect(() => {
+    const background = backgroundRef.current;
+    const fog = fogRef.current;
+    if (!background || !fog) return;
+    background.set(backgroundColor);
+    fog.color.set(fogColor);
+    fog.near = fogNear;
+    fog.far = fogFar;
+  }, [backgroundColor, fogColor, fogFar, fogNear]);
+
   useFrame((_, delta) => {
+    const background = backgroundRef.current;
+    const fog = fogRef.current;
+    if (!background || !fog) return;
     const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
-    if (backgroundRef.current) {
-      backgroundRef.current.lerpColors(baseBackground, underwaterBackground, depth);
-    }
-    if (fogRef.current) {
-      fogRef.current.color.lerpColors(baseFog, underwaterFog, depth);
-      fogRef.current.near = THREE.MathUtils.damp(fogRef.current.near, THREE.MathUtils.lerp(fogNear, .28, depth), 12, delta);
-      fogRef.current.far = THREE.MathUtils.damp(
-        fogRef.current.far,
-        THREE.MathUtils.lerp(fogFar, (mobile ? 12 : 17) + light * 4, depth),
-        depth > .04 ? 10 : 4.5,
-        delta,
-      );
-    }
+    background.lerpColors(baseBackground, underwaterBackground, depth);
+    fog.color.lerpColors(baseFog, underwaterFog, depth);
+    fog.near = THREE.MathUtils.damp(fog.near, THREE.MathUtils.lerp(fogNear, .28, depth), 12, delta);
+    fog.far = THREE.MathUtils.damp(
+      fog.far,
+      THREE.MathUtils.lerp(fogFar, (mobile ? 12 : 17) + light * 4, depth),
+      depth > .04 ? 10 : 4.5,
+      delta,
+    );
   });
 
-  return null;
+  return (
+    <>
+      <color ref={backgroundRef} attach="background" args={ATMOSPHERE_BACKGROUND_ARGS} />
+      <fog ref={fogRef} attach="fog" args={ATMOSPHERE_FOG_ARGS} />
+    </>
+  );
 }
 
 const CINEMATIC_GRADE_SHADER = {
@@ -10970,8 +10986,6 @@ function Simulation({
   onReady,
 }: SurfSceneProps) {
   const { camera } = useThree();
-  const backgroundRef = useRef<THREE.Color>(null);
-  const fogRef = useRef<THREE.Fog>(null);
   const boardSpec = BOARD_SPECS[settings.board];
   const assistProfile = SURF_ASSIST_PROFILES[settings.assist];
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
@@ -17644,12 +17658,8 @@ function Simulation({
 
   return (
     <>
-      <color ref={backgroundRef} attach="background" args={[backgroundColor]} />
-      <fog ref={fogRef} attach="fog" args={[fogColor, fogNear, fogFar]} />
       <UnderwaterAtmosphere
         motion={motion}
-        backgroundRef={backgroundRef}
-        fogRef={fogRef}
         backgroundColor={backgroundColor}
         fogColor={fogColor}
         fogNear={fogNear}

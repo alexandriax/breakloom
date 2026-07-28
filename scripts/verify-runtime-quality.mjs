@@ -7,10 +7,16 @@ import {
   shadowMapSizeForQuality,
 } from "../lib/performance.ts";
 import { readBufferedControlEdge } from "../lib/input.ts";
+import { readFileSync } from "node:fs";
 
 function invariant(condition, message) {
   if (!condition) throw new Error(`Runtime quality contract failed: ${message}`);
 }
+
+const sceneSource = readFileSync(
+  new URL("../components/SurfScene.tsx", import.meta.url),
+  "utf8",
+);
 
 const desktopEmergencyDpr = emergencyRenderDpr(1.7, 1);
 const mobileEmergencyDpr = emergencyRenderDpr(1.1, 0.82);
@@ -52,6 +58,22 @@ invariant(
   boundedSimulationDelta(Number.NaN) === 0,
   "invalid frame time reaches gameplay physics",
 );
+invariant(
+  sceneSource.includes('<fog ref={fogRef} attach="fog" args={ATMOSPHERE_FOG_ARGS} />'),
+  "coast changes can replace the active fog object mid-frame",
+);
+invariant(
+  sceneSource.includes('<color ref={backgroundRef} attach="background" args={ATMOSPHERE_BACKGROUND_ARGS} />'),
+  "coast changes can replace the active background object mid-frame",
+);
+invariant(
+  !sceneSource.includes('<fog ref={fogRef} attach="fog" args={[fogColor'),
+  "reactive fog arguments can desynchronize post-processing uniforms",
+);
+invariant(
+  sceneSource.includes("THREE.UniformsUtils.clone(THREE.UniformsLib.fog)"),
+  "custom fog shaders no longer provide the uniforms the renderer refreshes",
+);
 
 const quickTap = readBufferedControlEdge(false, false, 1, 0);
 const consumedQuickTap = readBufferedControlEdge(false, false, 1, quickTap.nextConsumedPresses);
@@ -86,6 +108,10 @@ console.log(JSON.stringify({
     overloaded: renderFrameSignal(.18),
     resumed: renderFrameSignal(.9),
     maximumSimulationStep: boundedSimulationDelta(.24),
+  },
+  atmosphere: {
+    attachment: "stable",
+    customFogUniforms: "complete",
   },
   inputBuffer: {
     quickTap: quickTap.pressed,
