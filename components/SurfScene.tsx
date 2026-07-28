@@ -21,8 +21,10 @@ export type ControlState = {
   right: boolean;
   sprint: boolean;
   action: boolean;
+  returnProne: boolean;
   sprintPresses: number;
   actionPresses: number;
+  returnPronePresses: number;
   moveX: number;
   moveY: number;
   balance: number;
@@ -96,6 +98,8 @@ const COAST_PLAYABLE_HALF_WIDTH = 560;
 const COAST_GEOMETRY_WIDTH = 1600;
 const COAST_CHUNK_SPAN = 240;
 const COAST_CHUNK_SLOTS = [-1, 0, 1] as const;
+const SHORE_WALK_SPEED = 5.1;
+const SHORE_RUN_SPEED = 9.2;
 const OCEAN_RENDER_WIDTH = 620;
 const WATER_SIDE_LIMIT = COAST_PLAYABLE_HALF_WIDTH;
 const OCEAN_PLANE_DEPTH = 1250;
@@ -10925,7 +10929,7 @@ function OptionalTowCraft({
 }) {
   const craft = useRef<THREE.Group>(null);
   const rope = useRef<THREE.Mesh>(null);
-  const wake = useRef<THREE.MeshBasicMaterial>(null);
+  const pickupMarker = useRef<THREE.MeshBasicMaterial>(null);
   const midpoint = useRef(new THREE.Vector3());
   const playerTowPoint = useRef(new THREE.Vector3());
   const ropeDirection = useRef(new THREE.Vector3());
@@ -10972,15 +10976,14 @@ function OptionalTowCraft({
       craft.current.rotation.x = -.03 * speedLoad
         + Math.cos(clock.elapsedTime * 1.7 + tow.position.z * .05) * .018;
     }
-    if (wake.current) {
-      wake.current.opacity = THREE.MathUtils.damp(
-        wake.current.opacity,
-        tow.active || tow.returning
-          ? THREE.MathUtils.clamp(.2 + tow.speed * .035, .24, .65)
-          : .035,
-        8,
-        delta,
-      );
+    if (pickupMarker.current) {
+      const pickupAvailable = tow.available
+        && !tow.active
+        && !tow.returning
+        && (playerMotion.current.phase === "shore" || playerMotion.current.phase === "wading");
+      pickupMarker.current.opacity = pickupAvailable
+        ? THREE.MathUtils.damp(pickupMarker.current.opacity, .28, 8, delta)
+        : 0;
     }
     if (!rope.current) return;
     rope.current.visible = tow.available && tow.active;
@@ -11068,7 +11071,7 @@ function OptionalTowCraft({
           <mesh position={[0, -.09, -3.1]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
             <planeGeometry args={[1.8, 5.8]} />
             <meshBasicMaterial
-              ref={wake}
+              ref={pickupMarker}
               color="#b8fff5"
               transparent
               opacity={.035}
@@ -11506,8 +11509,10 @@ function Simulation({
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
   const diveLatch = useRef(false);
+  const returnProneLatch = useRef(false);
   const consumedActionPresses = useRef(0);
   const consumedSprintPresses = useRef(0);
+  const consumedReturnPronePresses = useRef(0);
   const takeoffCommitAt = useRef(-1);
   const takeoffCommitQuality = useRef(.5);
   const towPopUpPending = useRef(false);
@@ -12255,6 +12260,15 @@ function Simulation({
     const divePressed = diveEdge.pressed;
     diveLatch.current = diveEdge.nextLatch;
     consumedSprintPresses.current = diveEdge.nextConsumedPresses;
+    const returnProneEdge = readBufferedControlEdge(
+      state.returnProne,
+      returnProneLatch.current,
+      state.returnPronePresses,
+      consumedReturnPronePresses.current,
+    );
+    const returnPronePressed = returnProneEdge.pressed;
+    returnProneLatch.current = returnProneEdge.nextLatch;
+    consumedReturnPronePresses.current = returnProneEdge.nextConsumedPresses;
     const beginOptionalTow = () => {
       const towSide = character.peel < 0 ? -1 : 1;
       const targetX = towSide * 8;
@@ -12423,7 +12437,7 @@ function Simulation({
         const coastalZ = position.current.z - tideShift;
         const drySand = THREE.MathUtils.smoothstep(coastalZ, 22, 46) * (1 - THREE.MathUtils.smoothstep(coastalZ, 65, 74));
         const surfacePace = 1 - drySand * .12;
-        const targetSpeed = (wantsRun ? 6.45 : 3.75) * surfacePace;
+        const targetSpeed = (wantsRun ? SHORE_RUN_SPEED : SHORE_WALK_SPEED) * surfacePace;
         const shoreMovementX = vanTransitionActive ? 0 : movementX;
         const shoreMovementZ = vanTransitionActive ? 0 : movementZ;
         const shoreInputLength = vanTransitionActive ? 0 : inputLength;
@@ -12434,7 +12448,7 @@ function Simulation({
         position.current.z += landVelocity.current.y * delta;
         position.current.z = THREE.MathUtils.clamp(position.current.z, 7.6 + tideShift, 88);
         speed = landVelocity.current.length();
-        runBlend = wantsRun ? THREE.MathUtils.smoothstep(speed, 3.6, 6) : 0;
+        runBlend = wantsRun ? THREE.MathUtils.smoothstep(speed, 4.8, 8.4) : 0;
         if (speed > .16) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), wantsRun ? 10 : 13, delta);
         prompt = nearJetSki
           ? "Optional tow ready · SPACE / TOW to connect, or keep paddling"
@@ -14265,7 +14279,7 @@ function Simulation({
           motion.current.proneTransition,
           {
             deltaSeconds: delta,
-            requested: divePressed,
+            requested: divePressed || returnPronePressed,
           },
         );
         motion.current.proneTransition = returnProne.progress;

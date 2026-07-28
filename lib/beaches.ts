@@ -89,6 +89,26 @@ export const BEACHES: Beach[] = [
     fallback: { waveHeight: 2.4, wavePeriod: 15, waveDirection: 330, waterTemperature: 25, windSpeed: 10 },
   },
   {
+    id: "mavericks",
+    name: "Mavericks",
+    region: "Half Moon Bay, California",
+    country: "USA",
+    lat: 37.4954, // Pillar Point beach access; the break is well offshore
+    lon: -122.49809,
+    zoom: 14,
+    heading: 250, // WSW-facing; fits confused by the Pillar Point breakwater
+    difficulty: 5,
+    breakType: "Deep-water reef",
+    palette: ["#50899b", "#a9a693"],
+    description: "Cold deep water and a dramatic reef ledge turn winter swell into a brutally powerful right peak.",
+    zones: [
+      { name: "Mushrooms", lat: 37.4961, lon: -122.5023, note: "Outside staging zone", access: { name: "Mushrooms harbor entry", lat: 37.49555, lon: -122.4982, towRecommended: true } },
+      { name: "The Bowl", lat: 37.4944, lon: -122.5005, note: "Main takeoff ledge", access: { name: "The Bowl harbor entry", lat: 37.4953, lon: -122.498, towRecommended: true } },
+      { name: "Pillar Point", lat: 37.4946, lon: -122.4949, note: "Inside shoulder", access: { name: "Pillar Point beach entry", lat: 37.49485, lon: -122.49456, towRecommended: false } },
+    ],
+    fallback: { waveHeight: 3.1, wavePeriod: 15, waveDirection: 285, waterTemperature: 13, windSpeed: 17 },
+  },
+  {
     id: "teahupoo",
     name: "Teahupoʻo",
     region: "Tahiti Iti",
@@ -269,26 +289,6 @@ export const BEACHES: Beach[] = [
       { name: "Shish Kabobs", lat: -17.8842, lon: 177.1945, note: "Fast inside section", access: { name: "Shish Kabobs · Tavarua entry", lat: -17.85746, lon: 177.20266, towRecommended: true } },
     ],
     fallback: { waveHeight: 2.3, wavePeriod: 16, waveDirection: 205, waterTemperature: 28, windSpeed: 12 },
-  },
-  {
-    id: "mavericks",
-    name: "Mavericks",
-    region: "Half Moon Bay, California",
-    country: "USA",
-    lat: 37.4954, // Pillar Point beach access; the break is well offshore
-    lon: -122.49809,
-    zoom: 14,
-    heading: 250, // WSW-facing; fits confused by the Pillar Point breakwater
-    difficulty: 5,
-    breakType: "Deep-water reef",
-    palette: ["#50899b", "#a9a693"],
-    description: "Cold deep water and a dramatic reef ledge turn winter swell into a brutally powerful right peak.",
-    zones: [
-      { name: "Mushrooms", lat: 37.4961, lon: -122.5023, note: "Outside staging zone", access: { name: "Mushrooms harbor entry", lat: 37.49555, lon: -122.4982, towRecommended: true } },
-      { name: "The Bowl", lat: 37.4944, lon: -122.5005, note: "Main takeoff ledge", access: { name: "The Bowl harbor entry", lat: 37.4953, lon: -122.498, towRecommended: true } },
-      { name: "Pillar Point", lat: 37.4946, lon: -122.4949, note: "Inside shoulder", access: { name: "Pillar Point beach entry", lat: 37.49485, lon: -122.49456, towRecommended: false } },
-    ],
-    fallback: { waveHeight: 3.1, wavePeriod: 15, waveDirection: 285, waterTemperature: 13, windSpeed: 17 },
   },
   {
     id: "raglan",

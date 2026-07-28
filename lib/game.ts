@@ -1076,6 +1076,7 @@ export const BOARD_SPECS: Record<BoardType, {
   name: string;
   profile: string;
   description: string;
+  construction: string;
   length: number;
   width: number;
   mass: number;
@@ -1091,6 +1092,7 @@ export const BOARD_SPECS: Record<BoardType, {
     name: "Apex 6'2",
     profile: "Performance",
     description: "Fast rail changes and the highest maneuver ceiling.",
+    construction: "Hard shell · PU foam core · fiberglass · polyester resin",
     length: 2.5,
     width: 0.32,
     mass: 3.2,
@@ -1106,6 +1108,7 @@ export const BOARD_SPECS: Record<BoardType, {
     name: "Drift Twin 5'8",
     profile: "Flow / Speed",
     description: "Carries speed through soft sections with loose twin-fin flow.",
+    construction: "Hard shell · EPS foam core · fiberglass · epoxy resin",
     length: 2.3,
     width: 0.39,
     mass: 3.6,
@@ -1121,6 +1124,7 @@ export const BOARD_SPECS: Record<BoardType, {
     name: "Horizon 9'1",
     profile: "Trim / Stability",
     description: "Effortless paddle power, steady trim, and true nose rides.",
+    construction: "Hard shell · PU foam core · wood stringer · fiberglass · polyester resin",
     length: 3.45,
     width: 0.43,
     mass: 7.2,
