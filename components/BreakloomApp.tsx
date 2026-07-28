@@ -4293,7 +4293,7 @@ export default function BreakloomApp() {
                     longitude={longitude}
                     onSelect={(lat, lon, label) => {
                       // A tap on a peak marker selects that peak; a tap on open
-                      // water is the surfer choosing their own paddle-out.
+                      // water is the surfer choosing their own surf peak.
                       const peak = beach.zones.find((zone) => zone.name === label);
                       chooseSpot(peak ?? { name: CUSTOM_SPOT, lat, lon, note: "Chosen from the map" });
                     }}
@@ -4302,7 +4302,7 @@ export default function BreakloomApp() {
                     <span><Waves /> {beach.breakType}</span>
                     <span><Compass /> {breakLineLabel(breakCharacter.line)} · {breakCharacter.kind}</span>
                     <span><Gauge /> Commitment {breakDemand(breakCharacter)}/5</span>
-                    <span><Crosshair /> {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
+                    <span><Crosshair /> Peak {latitude.toFixed(3)}, {longitude.toFixed(3)}</span>
                   </div>
                 </div>
 

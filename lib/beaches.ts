@@ -25,6 +25,7 @@ export type Beach = {
   name: string;
   region: string;
   country: string;
+  /** Land-side reference used to identify and frame the coast on the map. */
   lat: number;
   lon: number;
   zoom: number;
@@ -54,6 +55,10 @@ export type Beach = {
  * - then reconciled with how the break is known to sit. Where a headland,
  * breakwater or reef sits seaward of the peak, both fits mislead, and the
  * comment says so.
+ *
+ * A coast's top-level `lat` / `lon` is deliberately a point on land. Playable
+ * `zones` are offshore surf peaks. Keeping those roles separate lets the map
+ * show an honest coastline without moving real breaks onto the beach.
  */
 export const BEACHES: Beach[] = [
   {
@@ -61,8 +66,8 @@ export const BEACHES: Beach[] = [
     name: "Banzai Pipeline",
     region: "North Shore, Oʻahu",
     country: "Hawaiʻi",
-    lat: 21.6652,
-    lon: -158.0528,
+    lat: 21.66511,
+    lon: -158.05191,
     zoom: 15,
     heading: 322, // NNW-facing North Shore; both fits agree (312/327)
     difficulty: 5,
@@ -163,8 +168,8 @@ export const BEACHES: Beach[] = [
     name: "Uluwatu",
     region: "Bali",
     country: "Indonesia",
-    lat: -8.8149,
-    lon: 115.0877,
+    lat: -8.81506,
+    lon: 115.08847,
     zoom: 15,
     heading: 245, // WSW-facing Bukit reef; fits confused by the cliff
     difficulty: 4,
@@ -183,7 +188,7 @@ export const BEACHES: Beach[] = [
     name: "Lower Trestles",
     region: "San Clemente, California",
     country: "USA",
-    lat: 33.3817,
+    lat: 33.38276,
     lon: -117.5889,
     zoom: 15,
     heading: 210, // SW-facing; both fits agree (191/202)
@@ -204,7 +209,7 @@ export const BEACHES: Beach[] = [
     region: "Les Landes",
     country: "France",
     lat: 43.6647,
-    lon: -1.4477,
+    lon: -1.44329,
     zoom: 14,
     heading: 275, // W-facing Landes beach; both fits agree (269/283)
     difficulty: 4,
@@ -223,7 +228,7 @@ export const BEACHES: Beach[] = [
     name: "Nazaré",
     region: "Leiria",
     country: "Portugal",
-    lat: 39.6017,
+    lat: 39.60422,
     lon: -9.0852,
     zoom: 14,
     heading: 270, // W-facing canyon beach; both fits agree (257/250)
@@ -243,8 +248,8 @@ export const BEACHES: Beach[] = [
     name: "Cloudbreak",
     region: "Mamanuca Islands",
     country: "Fiji",
-    lat: -17.884,
-    lon: 177.1884,
+    lat: -17.85769, // Tavarua Island; Cloudbreak itself requires boat access
+    lon: 177.20237,
     zoom: 14,
     heading: 210, // SW-facing outer reef; coastline fit agrees (194)
     difficulty: 5,
@@ -263,8 +268,8 @@ export const BEACHES: Beach[] = [
     name: "Mavericks",
     region: "Half Moon Bay, California",
     country: "USA",
-    lat: 37.4946,
-    lon: -122.5001,
+    lat: 37.4954, // Pillar Point beach access; the break is well offshore
+    lon: -122.49809,
     zoom: 14,
     heading: 250, // WSW-facing; fits confused by the Pillar Point breakwater
     difficulty: 5,
@@ -283,8 +288,8 @@ export const BEACHES: Beach[] = [
     name: "Raglan",
     region: "Waikato",
     country: "New Zealand",
-    lat: -37.821,
-    lon: 174.7998,
+    lat: -37.82258,
+    lon: 174.80096,
     zoom: 14,
     heading: 310, // NW-facing points; fits say 341/355, was 247 - about 65 out
     difficulty: 3,
@@ -303,8 +308,8 @@ export const BEACHES: Beach[] = [
     name: "Chicama",
     region: "La Libertad",
     country: "Peru",
-    lat: -7.7043,
-    lon: -79.4501,
+    lat: -7.70571,
+    lon: -79.44928,
     zoom: 14,
     heading: 230, // SW-facing desert point; fits confused by the harbour mole
     difficulty: 3,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { CircleMarker, LeafletMouseEvent } from "leaflet";
+import type { CircleMarker, LeafletMouseEvent, Polyline } from "leaflet";
 import type { Beach } from "@/lib/beaches";
 
 type WorldMapProps = {
@@ -16,6 +16,7 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
   const onSelectRef = useRef(onSelect);
   const coordinatesRef = useRef({ latitude, longitude });
   const selectionRef = useRef<CircleMarker | null>(null);
+  const selectionRouteRef = useRef<Polyline | null>(null);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -24,7 +25,11 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
   useEffect(() => {
     coordinatesRef.current = { latitude, longitude };
     selectionRef.current?.setLatLng([latitude, longitude]);
-  }, [latitude, longitude]);
+    selectionRouteRef.current?.setLatLngs([
+      [beach.lat, beach.lon],
+      [latitude, longitude],
+    ]);
+  }, [beach.lat, beach.lon, latitude, longitude]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -50,7 +55,23 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
       }).addTo(map);
       L.control.zoom({ position: "bottomright" }).addTo(map);
 
-      const zoneLine = L.polyline(
+      const coastMarker = L.circleMarker([beach.lat, beach.lon], {
+        radius: 8,
+        color: "rgba(5,20,27,.95)",
+        weight: 3,
+        fillColor: "#efc579",
+        fillOpacity: 1,
+        bubblingMouseEvents: false,
+      }).addTo(map);
+      coastMarker.bindTooltip(`<b>${beach.name}</b><br>Coast reference`, {
+        direction: "top",
+        opacity: 0.95,
+      });
+      coastMarker.on("click", (event) => {
+        L.DomEvent.stopPropagation(event);
+      });
+
+      L.polyline(
         beach.zones.map((zone) => [zone.lat, zone.lon] as [number, number]),
         { color: "#7ff7eb", weight: 3, opacity: 0.75, dashArray: "2 8" },
       ).addTo(map);
@@ -62,6 +83,7 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
           weight: 2,
           fillColor: "#0fd0bf",
           fillOpacity: 0.9,
+          bubblingMouseEvents: false,
         }).addTo(map);
         marker.bindTooltip(`<b>${zone.name}</b><br>${zone.note}`, {
           direction: "top",
@@ -82,23 +104,46 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
         fillColor: "#ff6f4f",
         fillOpacity: 0.95,
         className: "map-pulse",
+        bubblingMouseEvents: false,
       }).addTo(map);
+      selection.bindTooltip("<b>Selected surf peak</b>", {
+        direction: "top",
+        opacity: 0.95,
+      });
       selectionRef.current = selection;
+
+      const selectionRoute = L.polyline(
+        [
+          [beach.lat, beach.lon],
+          [selected.latitude, selected.longitude],
+        ],
+        { color: "#efc579", weight: 2, opacity: 0.72, dashArray: "4 8" },
+      ).addTo(map).bringToBack();
+      selectionRouteRef.current = selectionRoute;
+      coastMarker.bringToFront();
+      selection.bringToFront();
 
       map.on("click", (event: LeafletMouseEvent) => {
         selection.setLatLng(event.latlng);
-        onSelectRef.current(event.latlng.lat, event.latlng.lng, "Custom shoreline");
+        selectionRoute.setLatLngs([
+          [beach.lat, beach.lon],
+          event.latlng,
+        ]);
+        onSelectRef.current(event.latlng.lat, event.latlng.lng, "Custom surf peak");
       });
 
-      if (beach.zones.length > 1) {
-        map.fitBounds(zoneLine.getBounds().pad(0.38), { animate: false });
-      }
+      const mapBounds = L.latLngBounds([
+        [beach.lat, beach.lon],
+        ...beach.zones.map((zone) => [zone.lat, zone.lon] as [number, number]),
+      ]);
+      map.fitBounds(mapBounds.pad(0.28), { animate: false });
       window.setTimeout(() => {
         if (!disposed) map.invalidateSize();
       }, 50);
 
       cleanup = () => {
         selectionRef.current = null;
+        selectionRouteRef.current = null;
         map.remove();
       };
     });
@@ -111,11 +156,19 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
 
   return (
     <div className="map-shell">
-      <div ref={containerRef} className="world-map" aria-label={`Interactive map of ${beach.name}`} />
+      <div
+        ref={containerRef}
+        className="world-map"
+        aria-label={`Interactive coastline and surf peak map of ${beach.name}`}
+      />
       <div className="map-crosshair" aria-hidden="true">
         <span />
       </div>
-      <div className="map-guidance">Tap the shoreline to set your paddle-out</div>
+      <div className="map-guidance" aria-hidden="true">
+        <span><i className="is-coast" /> Coast</span>
+        <span><i className="is-peak" /> Surf peaks</span>
+        <span><i className="is-selected" /> Selected</span>
+      </div>
     </div>
   );
 }

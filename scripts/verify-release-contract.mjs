@@ -16,6 +16,10 @@ const launchStyles = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const worldMapSource = readFileSync(
+  new URL("../components/WorldMap.tsx", import.meta.url),
+  "utf8",
+);
 
 const liveFace = {
   boardHeading: 0,
@@ -108,6 +112,10 @@ if (
   || !launchSource.includes('className="board-grid"')
   || !launchSource.includes('className="setup-panel"')
   || !launchStyles.includes(".conditions-strip")
+  || !worldMapSource.includes("Coast reference")
+  || !worldMapSource.includes("Selected surf peak")
+  || !worldMapSource.includes("[beach.lat, beach.lon]")
+  || !worldMapSource.includes("map.fitBounds(mapBounds")
   // The coast atlas, the map, and the peak list are first-screen decisions:
   // none of them may retreat behind an optional disclosure.
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
