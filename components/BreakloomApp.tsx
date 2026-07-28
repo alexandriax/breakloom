@@ -632,7 +632,7 @@ const TRAINING_STEPS = [
   { title: "Match the face", detail: "Paddle until board speed along the wave normal reaches at least 66% of the live face target." },
   { title: "Stand on support", detail: "Space always stands, but this lesson advances only when real polygon pressure supports the landing." },
   { title: "Track the pocket", detail: "Set a rail and shift nose/tail pressure; the resulting speed and turn carry the board across the face." },
-  { title: "Set the rail", detail: "Turns are read from your actual board path. Compress and release only when a live lip can redirect momentum." },
+  { title: "Set the rail", detail: "Turns are read from your actual board path. On keyboard, SPACE drops you back to belly paddling; controller A can still compress and release only when a live lip can redirect momentum." },
   { title: "Finish clean", detail: "Stay composed through the inside section." },
 ] as const;
 
@@ -645,8 +645,10 @@ const EMPTY_CONTROLS: ControlState = {
   right: false,
   sprint: false,
   action: false,
+  returnProne: false,
   sprintPresses: 0,
   actionPresses: 0,
+  returnPronePresses: 0,
   moveX: 0,
   moveY: 0,
   balance: 0,
@@ -1706,6 +1708,7 @@ export default function BreakloomApp() {
       controls.current.right = false;
       controls.current.sprint = false;
       controls.current.action = false;
+      controls.current.returnProne = false;
       controls.current.balance = 0;
       controls.current.moveX = 0;
       controls.current.moveY = 0;
@@ -1785,8 +1788,12 @@ export default function BreakloomApp() {
         controls.current.sprint = true;
       }
       if (key === " ") {
-        if (!event.repeat) controls.current.actionPresses += 1;
+        if (!event.repeat) {
+          controls.current.actionPresses += 1;
+          controls.current.returnPronePresses += 1;
+        }
         controls.current.action = true;
+        controls.current.returnProne = true;
       }
       if (key === "c" && !event.repeat) {
         controls.current.lookYaw = 0;
@@ -1810,7 +1817,10 @@ export default function BreakloomApp() {
       if (key === "q" && controls.current.balance < 0) controls.current.balance = 0;
       if (key === "e" && controls.current.balance > 0) controls.current.balance = 0;
       if (key === "shift") controls.current.sprint = false;
-      if (key === " ") controls.current.action = false;
+      if (key === " ") {
+        controls.current.action = false;
+        controls.current.returnProne = false;
+      }
     };
     window.addEventListener("keydown", onKeyDown, { passive: false });
     window.addEventListener("keyup", onKeyUp);
@@ -3002,6 +3012,7 @@ export default function BreakloomApp() {
       right: false,
       sprint: false,
       action: false,
+      returnProne: false,
       gamepadMoveX: 0,
       gamepadMoveY: 0,
       gamepadAction: false,
@@ -3033,7 +3044,7 @@ export default function BreakloomApp() {
 
   const openPhotoMode = () => {
     clearAnalogMovement();
-    controls.current = { ...controls.current, forward: false, back: false, left: false, right: false, sprint: false, action: false };
+    controls.current = { ...controls.current, forward: false, back: false, left: false, right: false, sprint: false, action: false, returnProne: false };
     setPhotoStatus(photoFile.current ? "ready" : "idle");
     setPhotoMode(true);
     haptic(5);
@@ -3811,7 +3822,7 @@ export default function BreakloomApp() {
               }
             : {
                 cue: stats.speed > .6 ? "BOARD GLIDING" : "STANDING · NO WAVE POWER",
-                detail: "Q/E shifts body weight toward the torque target. Hold SPACE to lower your center of mass and restore static righting margin without adding speed · SHIFT returns prone.",
+                detail: "Q/E shifts body weight toward the torque target. Press SPACE to transfer back to belly paddling while the board keeps its momentum · SHIFT remains an alternate return-prone control.",
                 rotation: 90,
                 tone: "balance",
               }
@@ -5324,9 +5335,9 @@ export default function BreakloomApp() {
                     <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.towMode ? "Tow path is guided; use the camera to read the peak" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : takeoffCommitted ? "W/S places fore-aft foot pressure during the pop-up" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {(stats.phase === "riding" || takeoffCommitted) && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
-                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Release anytime; in the live window this also starts the pop-up" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? "Compress and extend; only live lip support can release the board" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Release anytime; in the live window this also starts the pop-up" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? gamepadConnected ? "Compress and extend; only live lip support can release the board" : "Return to belly paddling while keeping the board's momentum" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
                     {stats.phase === "paddling" && !stats.towMode && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
-                    {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Return prone anytime without changing the board&apos;s momentum</strong></p>}
+                    {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>{gamepadConnected ? "Return prone anytime without changing the board's momentum" : "Alternate return-prone control"}</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
                   </div>
@@ -5579,7 +5590,7 @@ export default function BreakloomApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{stats.phase === "paddling" ? "The nose, tail, and both rails sample the live polygon surface · Q/E shifts prone body weight toward the marker" : standingOnBoard && stats.trickCharge <= .04 ? "A/D applies roll torque · Q/E counterweights · SPACE compresses the body · SHIFT returns prone" : ridingOut ? "Keep steering and counterweighting · wave pressure and wipeout risk remain live until the shallow dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Counter unwanted roll and pitch; rail authority returns only when the hull reconnects with water" : "The board is tracing its own lip path; separation and reconnection will name the result" : stats.trickCharge > .04 ? "Your legs are storing compression; extension redirects the board only when its loaded tail still has live lip support" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D creates board roll · W/S shifts nose-to-tail pressure · Q/E arrests unwanted roll"}</small>
+            <small>{stats.phase === "paddling" ? "The nose, tail, and both rails sample the live polygon surface · Q/E shifts prone body weight toward the marker" : standingOnBoard && stats.trickCharge <= .04 ? gamepadConnected ? "A/D applies roll torque · Q/E counterweights · A compresses the body · LB returns prone" : "A/D applies roll torque · Q/E counterweights · SPACE returns to belly paddling · SHIFT also returns prone" : ridingOut ? "Keep steering and counterweighting · wave pressure and wipeout risk remain live until the shallow dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Counter unwanted roll and pitch; rail authority returns only when the hull reconnects with water" : "The board is tracing its own lip path; separation and reconnection will name the result" : stats.trickCharge > .04 ? "Your legs are storing compression; extension redirects the board only when its loaded tail still has live lip support" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D creates board roll · W/S shifts nose-to-tail pressure · Q/E arrests unwanted roll"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -5676,8 +5687,8 @@ export default function BreakloomApp() {
                     <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : takeoffCommitted ? "place pop-up foot pressure" : "paddle / brake"}</span>
                   </>
                 )}
-                <span><kbd>SPACE</kbd> {stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "compress · release only with lip support" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
-                {(stats.phase === "paddling" || stats.phase === "riding") && <span><kbd>SHIFT</kbd> {stats.phase === "riding" ? "return prone anytime" : "duck dive anytime · cue marks timing"}</span>}
+                <span><kbd>SPACE</kbd> {stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "drop to belly paddle" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                {(stats.phase === "paddling" || stats.phase === "riding") && <span><kbd>SHIFT</kbd> {stats.phase === "riding" ? "alternate return prone" : "duck dive anytime · cue marks timing"}</span>}
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{stats.phase === "riding" || stats.phase === "paddling" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
               </>

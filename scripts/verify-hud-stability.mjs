@@ -67,6 +67,11 @@ invariant(
   "shore traversal no longer has the faster walk and run speeds",
 );
 invariant(
+  appSource.includes("controls.current.returnPronePresses += 1;")
+    && sceneSource.includes("requested: divePressed || returnPronePressed"),
+  "Space no longer starts the return-to-prone transition while riding",
+);
+invariant(
   sceneSource.includes("export default memo(SurfScene);"),
   "HUD telemetry can reconcile the full 3D scene",
 );

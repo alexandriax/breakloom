@@ -21,8 +21,10 @@ export type ControlState = {
   right: boolean;
   sprint: boolean;
   action: boolean;
+  returnProne: boolean;
   sprintPresses: number;
   actionPresses: number;
+  returnPronePresses: number;
   moveX: number;
   moveY: number;
   balance: number;
@@ -11508,8 +11510,10 @@ function Simulation({
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
   const diveLatch = useRef(false);
+  const returnProneLatch = useRef(false);
   const consumedActionPresses = useRef(0);
   const consumedSprintPresses = useRef(0);
+  const consumedReturnPronePresses = useRef(0);
   const takeoffCommitAt = useRef(-1);
   const takeoffCommitQuality = useRef(.5);
   const towPopUpPending = useRef(false);
@@ -12257,6 +12261,15 @@ function Simulation({
     const divePressed = diveEdge.pressed;
     diveLatch.current = diveEdge.nextLatch;
     consumedSprintPresses.current = diveEdge.nextConsumedPresses;
+    const returnProneEdge = readBufferedControlEdge(
+      state.returnProne,
+      returnProneLatch.current,
+      state.returnPronePresses,
+      consumedReturnPronePresses.current,
+    );
+    const returnPronePressed = returnProneEdge.pressed;
+    returnProneLatch.current = returnProneEdge.nextLatch;
+    consumedReturnPronePresses.current = returnProneEdge.nextConsumedPresses;
     const beginOptionalTow = () => {
       const towSide = character.peel < 0 ? -1 : 1;
       const targetX = towSide * 8;
@@ -14267,7 +14280,7 @@ function Simulation({
           motion.current.proneTransition,
           {
             deltaSeconds: delta,
-            requested: divePressed,
+            requested: divePressed || returnPronePressed,
           },
         );
         motion.current.proneTransition = returnProne.progress;
