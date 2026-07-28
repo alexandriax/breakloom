@@ -11,6 +11,18 @@ type WorldMapProps = {
   onSelect: (latitude: number, longitude: number, label: string) => void;
 };
 
+function accessForPeak(beach: Beach, latitude: number, longitude: number) {
+  const exact = beach.zones.find(
+    (zone) => Math.abs(zone.lat - latitude) < .00001 && Math.abs(zone.lon - longitude) < .00001,
+  );
+  if (exact) return exact.access;
+  return beach.zones.reduce((closest, zone) => {
+    const distance = Math.hypot(zone.lat - latitude, zone.lon - longitude);
+    const closestDistance = Math.hypot(closest.lat - latitude, closest.lon - longitude);
+    return distance < closestDistance ? zone : closest;
+  }).access;
+}
+
 export default function WorldMap({ beach, latitude, longitude, onSelect }: WorldMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onSelectRef = useRef(onSelect);
@@ -25,11 +37,12 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
   useEffect(() => {
     coordinatesRef.current = { latitude, longitude };
     selectionRef.current?.setLatLng([latitude, longitude]);
+    const access = accessForPeak(beach, latitude, longitude);
     selectionRouteRef.current?.setLatLngs([
-      [beach.lat, beach.lon],
+      [access.lat, access.lon],
       [latitude, longitude],
     ]);
-  }, [beach.lat, beach.lon, latitude, longitude]);
+  }, [beach, latitude, longitude]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -55,28 +68,40 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
       }).addTo(map);
       L.control.zoom({ position: "bottomright" }).addTo(map);
 
-      const coastMarker = L.circleMarker([beach.lat, beach.lon], {
-        radius: 8,
-        color: "rgba(5,20,27,.95)",
-        weight: 3,
-        fillColor: "#efc579",
-        fillOpacity: 1,
-        bubblingMouseEvents: false,
-      }).addTo(map);
-      coastMarker.bindTooltip(`<b>${beach.name}</b><br>Coast reference`, {
-        direction: "top",
-        opacity: 0.95,
-      });
-      coastMarker.on("click", (event) => {
-        L.DomEvent.stopPropagation(event);
-      });
-
-      L.polyline(
-        beach.zones.map((zone) => [zone.lat, zone.lon] as [number, number]),
-        { color: "#7ff7eb", weight: 3, opacity: 0.75, dashArray: "2 8" },
-      ).addTo(map);
-
+      const accessMarkers: CircleMarker[] = [];
       beach.zones.forEach((zone) => {
+        L.polyline(
+          [
+            [zone.access.lat, zone.access.lon],
+            [zone.lat, zone.lon],
+          ],
+          {
+            color: zone.access.towRecommended ? "#ff9d69" : "#efc579",
+            weight: zone.access.towRecommended ? 2.4 : 1.6,
+            opacity: zone.access.towRecommended ? .72 : .38,
+            dashArray: zone.access.towRecommended ? "3 7" : "2 8",
+          },
+        ).addTo(map).bringToBack();
+
+        const accessMarker = L.circleMarker([zone.access.lat, zone.access.lon], {
+          radius: zone.access.towRecommended ? 9 : 7,
+          color: zone.access.towRecommended ? "#ff9d69" : "rgba(5,20,27,.95)",
+          weight: 3,
+          fillColor: "#efc579",
+          fillOpacity: 1,
+          bubblingMouseEvents: false,
+        }).addTo(map);
+        accessMarker.bindTooltip(
+          `<b>${zone.access.name}</b><br>${zone.name} beach access`
+          + (zone.access.towRecommended ? "<br>Optional jetski tow available" : ""),
+          { direction: "top", opacity: 0.95 },
+        );
+        accessMarker.on("click", (event) => {
+          L.DomEvent.stopPropagation(event);
+          onSelectRef.current(zone.lat, zone.lon, zone.name);
+        });
+        accessMarkers.push(accessMarker);
+
         const marker = L.circleMarker([zone.lat, zone.lon], {
           radius: 7,
           color: "rgba(255,255,255,.92)",
@@ -112,29 +137,31 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
       });
       selectionRef.current = selection;
 
+      const selectedAccess = accessForPeak(beach, selected.latitude, selected.longitude);
       const selectionRoute = L.polyline(
         [
-          [beach.lat, beach.lon],
+          [selectedAccess.lat, selectedAccess.lon],
           [selected.latitude, selected.longitude],
         ],
         { color: "#efc579", weight: 2, opacity: 0.72, dashArray: "4 8" },
       ).addTo(map).bringToBack();
       selectionRouteRef.current = selectionRoute;
-      coastMarker.bringToFront();
+      accessMarkers.forEach((marker) => marker.bringToFront());
       selection.bringToFront();
 
       map.on("click", (event: LeafletMouseEvent) => {
         selection.setLatLng(event.latlng);
+        const nearestAccess = accessForPeak(beach, event.latlng.lat, event.latlng.lng);
         selectionRoute.setLatLngs([
-          [beach.lat, beach.lon],
+          [nearestAccess.lat, nearestAccess.lon],
           event.latlng,
         ]);
         onSelectRef.current(event.latlng.lat, event.latlng.lng, "Custom surf peak");
       });
 
       const mapBounds = L.latLngBounds([
-        [beach.lat, beach.lon],
         ...beach.zones.map((zone) => [zone.lat, zone.lon] as [number, number]),
+        ...beach.zones.map((zone) => [zone.access.lat, zone.access.lon] as [number, number]),
       ]);
       map.fitBounds(mapBounds.pad(0.28), { animate: false });
       window.setTimeout(() => {
@@ -159,13 +186,13 @@ export default function WorldMap({ beach, latitude, longitude, onSelect }: World
       <div
         ref={containerRef}
         className="world-map"
-        aria-label={`Interactive coastline and surf peak map of ${beach.name}`}
+        aria-label={`Interactive beach-entry and surf-peak map of ${beach.name}`}
       />
       <div className="map-crosshair" aria-hidden="true">
         <span />
       </div>
       <div className="map-guidance" aria-hidden="true">
-        <span><i className="is-coast" /> Coast</span>
+        <span><i className="is-coast" /> Beach entries</span>
         <span><i className="is-peak" /> Surf peaks</span>
         <span><i className="is-selected" /> Selected</span>
       </div>
