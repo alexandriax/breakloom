@@ -1013,6 +1013,7 @@ export default function BreakloomApp() {
   const [openSections, setOpenSections] = useState<LaunchSection[]>([]);
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
+  const [vanBoardPickerOpen, setVanBoardPickerOpen] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
   const [qaScenario, setQaScenario] = useState(false);
   const [sessionKey, setSessionKey] = useState(0);
@@ -2558,6 +2559,12 @@ export default function BreakloomApp() {
           assist: current.assist,
           board: current.board,
         });
+    haptic(7);
+  };
+
+  const selectBoardAtVan = (board: BoardType) => {
+    setSettings((current) => current.board === board ? current : { ...current, board });
+    setVanBoardPickerOpen(false);
     haptic(7);
   };
 
@@ -4145,6 +4152,13 @@ export default function BreakloomApp() {
   useEffect(() => () => {
     if (hudEventTransitionTimer.current !== null) window.clearTimeout(hudEventTransitionTimer.current);
   }, []);
+
+  useEffect(() => {
+    if (!stats.nearVan || stats.vehicleMode || rideToast || hudEventToast) {
+      setVanBoardPickerOpen(false);
+    }
+  }, [hudEventToast, rideToast, stats.nearVan, stats.vehicleMode]);
+
   const sessionIntroActive = !qaScenario && stats.sessionIntro < .999;
   const sessionIntroOpacity = stats.sessionIntro < .09
     ? stats.sessionIntro / .09
@@ -4758,7 +4772,7 @@ export default function BreakloomApp() {
 
       {screen === "game" && (
         <section
-          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
+          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
           style={gameUiStyle}
           data-qa-scenario={qaScenario ? "surf" : undefined}
           data-qa-phase={stats.phase}
@@ -5386,6 +5400,73 @@ export default function BreakloomApp() {
               <b>{hudEventToast?.value ?? ""}</b>
             </div>
           </div>
+
+          {stats.nearVan && !stats.vehicleMode && (
+            <div className="van-board-rack">
+              <button
+                type="button"
+                className="van-board-rack-trigger"
+                aria-expanded={vanBoardPickerOpen}
+                aria-controls="van-board-picker"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  setVanBoardPickerOpen((open) => !open);
+                  haptic(4);
+                }}
+              >
+                <Waves />
+                <span><small>VAN BOARD RACK</small><strong>{BOARD_SPECS[settings.board].name}</strong></span>
+                <ChevronDown />
+              </button>
+              {vanBoardPickerOpen && (
+                <section
+                  id="van-board-picker"
+                  className="van-board-picker"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="van-board-picker-title"
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <header>
+                    <div>
+                      <span>BREAKLOOM VAN</span>
+                      <h2 id="van-board-picker-title">SWAP YOUR BOARD</h2>
+                      <p>Choose a shape before heading back to the lineup.</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="van-board-picker-close"
+                      onClick={() => setVanBoardPickerOpen(false)}
+                      aria-label="Close board rack"
+                    >
+                      <X />
+                    </button>
+                  </header>
+                  <div className="van-board-options">
+                    {BOARD_OPTIONS.map((boardId) => {
+                      const board = BOARD_SPECS[boardId];
+                      const selected = settings.board === boardId;
+                      return (
+                        <button
+                          type="button"
+                          key={boardId}
+                          className={`van-board-option ${selected ? "is-selected" : ""}`}
+                          onClick={() => selectBoardAtVan(boardId)}
+                          aria-pressed={selected}
+                          style={{ "--board-color": board.color, "--board-accent": board.accent } as CSSProperties}
+                        >
+                          <i className={`board-shape is-${boardId}`} />
+                          <span><small>{board.profile}</small><strong>{board.name}</strong></span>
+                          <p>{board.description}</p>
+                          <em>{selected ? "EQUIPPED" : `SPEED ${Math.round(board.speed * 100)} · TURN ${Math.round(board.turn * 100)}`}</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
 
           {rideToast && (
             <div className={`ride-recap is-${rideToast.result}`} key={rideToast.id}>

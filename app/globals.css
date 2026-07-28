@@ -3302,6 +3302,120 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .hud-event-toast.is-accent span,
 .hud-event-toast.is-accent b { color: #f0bb7d; }
 
+.van-board-rack {
+  position: absolute;
+  z-index: 7;
+  left: 50%;
+  bottom: 18px;
+  width: min(330px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.van-board-rack-trigger {
+  width: 100%;
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border: 1px solid rgba(160, 247, 229, .42);
+  border-radius: 14px;
+  background: linear-gradient(105deg, rgba(3, 18, 24, .96), rgba(8, 43, 48, .94));
+  box-shadow: 0 13px 34px rgba(0, 0, 0, .34), inset 0 -2px rgba(101, 225, 204, .38);
+  color: #e3fff9;
+  cursor: pointer;
+  text-align: left;
+}
+
+.van-board-rack-trigger > svg:first-child { width: 22px; color: #8cf2df; }
+.van-board-rack-trigger > svg:last-child { width: 16px; color: rgba(222, 255, 249, .6); }
+.van-board-rack-trigger > span { min-width: 0; display: grid; gap: 2px; }
+.van-board-rack-trigger small,
+.van-board-picker header > div > span {
+  color: #91f5e2;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+.van-board-rack-trigger strong { overflow: hidden; font-size: 12px; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
+.van-board-rack-trigger:hover { border-color: rgba(181, 255, 240, .78); filter: brightness(1.08); }
+.van-board-rack-trigger:active { transform: scale(.985); }
+
+.van-board-picker {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  width: min(660px, calc(100vw - 32px));
+  max-height: min(510px, calc(100dvh - 106px));
+  padding: 17px;
+  overflow-y: auto;
+  border: 1px solid rgba(185, 255, 242, .26);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(4, 22, 28, .985), rgba(3, 12, 17, .99));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .58), inset 0 1px rgba(255, 255, 255, .08);
+  color: #edfffb;
+  transform: translateX(-50%);
+}
+
+.van-board-picker > header { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+.van-board-picker h2 { margin: 5px 0 4px; font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif; font-size: 26px; font-weight: 400; letter-spacing: .035em; line-height: .95; }
+.van-board-picker p { margin: 0; color: rgba(225, 248, 243, .62); font-size: 10px; line-height: 1.45; }
+.van-board-picker-close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(212, 255, 247, .2);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .04);
+  color: #d9fff7;
+  cursor: pointer;
+}
+.van-board-picker-close:hover { border-color: rgba(212, 255, 247, .55); background: rgba(127, 236, 218, .12); }
+.van-board-picker-close svg { width: 15px; }
+
+.van-board-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.van-board-option {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .035);
+  color: #effffb;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+.van-board-option:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--board-color) 68%, white 14%); }
+.van-board-option.is-selected { border-color: color-mix(in srgb, var(--board-color) 74%, white 10%); background: linear-gradient(145deg, color-mix(in srgb, var(--board-color) 18%, rgba(5, 20, 26, .92)), rgba(5, 17, 23, .92)); box-shadow: inset 0 -2px var(--board-accent); }
+.van-board-option .board-shape { margin-bottom: 1px; }
+.van-board-option > span { min-width: 0; display: grid; gap: 2px; }
+.van-board-option small { overflow: hidden; color: color-mix(in srgb, var(--board-color) 75%, white 16%); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-overflow: ellipsis; white-space: nowrap; }
+.van-board-option strong { overflow: hidden; font-size: 12px; letter-spacing: .025em; text-overflow: ellipsis; white-space: nowrap; }
+.van-board-option p { min-height: 42px; color: rgba(230, 250, 245, .58); font-size: 9px; line-height: 1.4; }
+.van-board-option em { color: rgba(220, 255, 248, .72); font-size: 8px; font-style: normal; font-weight: 900; letter-spacing: .075em; }
+.van-board-option.is-selected em { color: color-mix(in srgb, var(--board-color) 75%, white 20%); }
+
+.game-ui.is-van-board-picker .hud-vitals,
+.game-ui.is-van-board-picker .mechanics-guide,
+.game-ui.is-van-board-picker .paddle-out-controls,
+.game-ui.is-van-board-picker .duck-dive-alert,
+.game-ui.is-van-board-picker .paddle-training-instrument,
+.game-ui.is-van-board-picker .score-panel,
+.game-ui.is-van-board-picker .set-panel,
+.game-ui.is-van-board-picker .mobile-controls {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* A completion or event message owns the status lane. Supporting HUDs yield
    while it is visible so tips, telemetry, and recaps never stack visually. */
 .game-ui.has-hud-message .hud-vitals,
@@ -3310,12 +3424,24 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .game-ui.has-hud-message .duck-dive-alert,
 .game-ui.has-hud-message .paddle-training-instrument,
 .game-ui.has-hud-message .score-panel,
-.game-ui.has-hud-message .set-panel {
+.game-ui.has-hud-message .set-panel,
+.game-ui.has-hud-message .van-board-rack {
   visibility: hidden;
   opacity: 0;
+  pointer-events: none;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px), (hover: none) and (pointer: coarse), (max-width: 960px) and (orientation: landscape) {
+  .van-board-rack { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 164px); width: min(330px, calc(100vw - 22px)); }
+  .van-board-picker { max-height: calc(100dvh - 88px); padding: 14px; border-radius: 15px; }
+  .van-board-picker > header { margin-bottom: 10px; }
+  .van-board-picker h2 { font-size: 22px; }
+  .van-board-options { grid-template-columns: 1fr; gap: 7px; }
+  .van-board-option { grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 4px 9px; padding: 9px; }
+  .van-board-option .board-shape { grid-row: 1 / 3; margin: 0; }
+  .van-board-option p { grid-column: 2 / 4; min-height: 0; }
+  .van-board-option em { grid-column: 3; grid-row: 1; align-self: end; text-align: right; }
+
   .hud-event-slot {
     top: calc(max(7px, env(safe-area-inset-top)) + 126px);
     width: min(330px, calc(100vw - 22px));

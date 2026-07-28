@@ -33,6 +33,7 @@ const stableHudMarkup = appSource.slice(boundaryStart, boundaryEnd);
   'className="score-panel"',
   'className="set-panel"',
   'className="hud-event-slot"',
+  'className="van-board-rack"',
   "className={`tow-instrument",
   "className={`mobile-controls",
   'className="run-button"',
@@ -118,6 +119,20 @@ invariant(
   appSource.includes('hudEventVisible && !rideToast ? "is-visible" : ""'),
   "a fading event can overlap the ride recap",
 );
+invariant(
+  appSource.includes('stats.nearVan && !stats.vehicleMode'),
+  "the board rack is no longer restricted to the van",
+);
+invariant(
+  appSource.includes('const selectBoardAtVan = (board: BoardType)'),
+  "the board rack no longer updates the equipped board",
+);
+[
+  ".game-ui.has-hud-message .van-board-rack",
+  ".game-ui.is-van-board-picker .mobile-controls",
+].forEach((selector) => {
+  invariant(styles.includes(selector), `${selector} no longer yields to the active HUD surface`);
+});
 
 const destinationIds = [...beachesSource.matchAll(/^\s+id: "([^"]+)"/gm)].map((match) => match[1]);
 invariant(destinationIds[1] === "mavericks", "Mavericks is no longer second in the destination list");
@@ -133,7 +148,7 @@ invariant(
 );
 
 console.log(JSON.stringify({
-  persistentSurfaces: 8,
+  persistentSurfaces: 9,
   telemetryHz: Number((1 / reportInterval).toFixed(2)),
   telemetryPriority: "transition",
   sceneBoundary: "memoized",
