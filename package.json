@@ -11,7 +11,8 @@
     "build:sites": "npm run build",
     "start": "next dev",
     "test": "npm run verify:release && npm run build",
-    "verify:release": "npm run verify:takeoff && node --experimental-strip-types scripts/verify-release-contract.mjs",
+    "verify:release": "npm run verify:takeoff && npm run verify:runtime && node --experimental-strip-types scripts/verify-release-contract.mjs",
+    "verify:runtime": "node scripts/verify-hud-stability.mjs",
     "verify:takeoff": "node --experimental-strip-types scripts/verify-takeoff-window.mjs",
     "verify:zones": "node scripts/verify-surf-zones.mjs",
     "lint": "eslint . --ignore-pattern out --ignore-pattern .next --ignore-pattern dist"

@@ -4922,7 +4922,11 @@ export default function BreakloomApp() {
               <small><i /> {sessionFormat === "heat" ? "HEAT HORN ARMED · BEST TWO WAVES COUNT" : "OCEAN MODEL LOCKED · CONTROLS LIVE"}</small>
             </div>
           )}
-          <div className="hud-persistent-layer">
+          <div
+            className="hud-persistent-layer"
+            data-hud-stability="persistent"
+          >
+          {/* HUD_STABILITY_BOUNDARY: keep every live gameplay surface mounted in this paint layer. */}
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
@@ -5141,8 +5145,6 @@ export default function BreakloomApp() {
               </div>
             </div>
           )}
-          </div>
-
           <aside id="surf-computer" className="hud-drawer" aria-hidden={!hudMenuOpen}>
             <header>
               <div><Grid3X3 /><span>SURF COMPUTER</span><strong>{zoneLabel}</strong></div>
@@ -5605,6 +5607,8 @@ export default function BreakloomApp() {
                 <span className="touch-grip"><small>RAIL</small><strong>{Math.round(stats.railGrip * 100)}%</strong><i><b /></i></span>
               </div>
             )}
+          </div>
+          {/* HUD_STABILITY_BOUNDARY_END */}
           </div>
 
           {heatComplete && (
