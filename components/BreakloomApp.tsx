@@ -198,8 +198,8 @@ type DeviceOrientationPermissionApi = typeof DeviceOrientationEvent & {
 };
 
 /**
- * Deployment root. A GitHub Pages project site serves the game from a
- * repository subpath, and next/image does not prefix an unoptimized src.
+ * Deployment root for static hosts that serve the game from a subpath.
+ * next/image does not prefix an unoptimized src.
  */
 const ASSET_BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 

@@ -1040,8 +1040,7 @@ export class BreakloomAudio {
     const element = this.soundtrack;
     const track = this.soundtrackOrder[this.soundtrackIndex];
     if (!element || !track) return;
-    // Absolute from the deployment root, which is a repository subpath when the
-    // game is served from a GitHub Pages project site.
+    // Absolute from the configured deployment root when hosted under a subpath.
     element.src = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/audio/${track.file}.mp3`;
     this.onTrackChange?.(this.currentTrack());
     this.syncSoundtrackPlayback();
