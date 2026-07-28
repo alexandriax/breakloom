@@ -1,8 +1,11 @@
 import {
+  advanceOptionalTowProgress,
   evaluateBoardWaterInteraction,
   evaluatePopUpTransition,
   evaluateWaveTakeoff,
   INITIAL_STATS,
+  optionalTowReleaseQuality,
+  optionalTowReleaseRecommended,
   reachedSurfTrainingStep,
   BREAKLOOM_RELEASE,
 } from "../lib/game.ts";
@@ -14,6 +17,10 @@ const launchSource = readFileSync(
 );
 const launchStyles = readFileSync(
   new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
+const worldMapSource = readFileSync(
+  new URL("../components/WorldMap.tsx", import.meta.url),
   "utf8",
 );
 
@@ -88,6 +95,8 @@ const supportedStanding = reachedSurfTrainingStep({
   wavePressure: .34,
   hullPatchContact: .48,
 });
+const towProgressAfterOneSecond = advanceOptionalTowProgress(0, 1);
+const idealTowReleaseQuality = optionalTowReleaseQuality(.88);
 
 if (
   arbitraryPopUp.progress < .99
@@ -98,6 +107,15 @@ if (
   || broadsideImpact.outcome !== "tumble"
   || unsupportedStanding !== 5
   || supportedStanding !== 6
+  || towProgressAfterOneSecond <= .06
+  || towProgressAfterOneSecond >= .065
+  || idealTowReleaseQuality !== 1
+  || !optionalTowReleaseRecommended(.84)
+  || !optionalTowReleaseRecommended(.88)
+  || !optionalTowReleaseRecommended(.91)
+  || optionalTowReleaseRecommended(.82)
+  || optionalTowReleaseRecommended(.93)
+  || optionalTowReleaseRecommended(.5)
   || BREAKLOOM_RELEASE.version !== 236
   || !launchSource.includes('id: "easy"')
   || !launchSource.includes('id: "medium"')
@@ -108,6 +126,15 @@ if (
   || !launchSource.includes('className="board-grid"')
   || !launchSource.includes('className="setup-panel"')
   || !launchStyles.includes(".conditions-strip")
+  || !worldMapSource.includes("Beach entries")
+  || !worldMapSource.includes("Selected surf peak")
+  || !worldMapSource.includes("[zone.access.lat, zone.access.lon]")
+  || !worldMapSource.includes("Optional jetski tow available")
+  || !worldMapSource.includes("map.fitBounds(mapBounds")
+  || !worldMapSource.includes("const pairedMinimum")
+  || !worldMapSource.includes("refreshMarkerLayout")
+  || !launchSource.includes("tow-instrument")
+  || !launchSource.includes("RELEASE disengages anytime")
   // The coast atlas, the map, and the peak list are first-screen decisions:
   // none of them may retreat behind an optional disclosure.
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
@@ -127,4 +154,8 @@ console.log(JSON.stringify({
   broadsideLoad: broadsideImpact.crossWaveLoad,
   unsupportedStandingLesson: unsupportedStanding,
   supportedStandingLesson: supportedStanding,
+  optionalTow: {
+    progressAfterOneSecond: towProgressAfterOneSecond,
+    idealReleaseQuality: idealTowReleaseQuality,
+  },
 }, null, 2));

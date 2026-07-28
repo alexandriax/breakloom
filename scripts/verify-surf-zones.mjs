@@ -1,11 +1,12 @@
 /**
- * Checks that every surf zone in lib/beaches.ts is a place you could actually
- * paddle out: in the sea, and within a swim of land.
+ * Checks that every coast reference and per-peak beach entry in lib/beaches.ts
+ * is on land, while every surf peak is in the sea. Long entry-to-peak routes
+ * must advertise the optional tow rather than pretending to be a short paddle.
  *
  * Land and water are read from the same OpenStreetMap tiles the game renders,
  * where water is a flat #AAD3DF, so the check agrees with what a player sees on
- * the map. Any zone stranded in open ocean gets a suggested position pulled
- * back toward its nearest shoreline.
+ * the map. A coast accidentally placed at sea gets a landward suggestion, and
+ * any zone stranded in open ocean gets one pulled back toward its shoreline.
  *
  * It also cross-checks each coast's `heading` against the coastline two ways,
  * and warns when a recorded bearing disagrees with both - the failure mode that
@@ -33,12 +34,33 @@ const beaches = [];
 for (const block of source.split(/\n  \{\n    id: /).slice(1)) {
   const id = block.match(/^"([^"]+)"/)?.[1];
   const name = block.match(/name: "([^"]+)"/)?.[1];
+  const latitude = Number(block.match(/\n    lat: (-?[\d.]+)/)?.[1]);
+  const longitude = Number(block.match(/\n    lon: (-?[\d.]+)/)?.[1]);
   const heading = Number(block.match(/heading: (-?[\d.]+)/)?.[1]);
   // A bearing whose comment says the fits mislead is a deliberate override.
   const overridden = /heading:.*fits confused/.test(block);
-  const zones = [...block.matchAll(/\{ name: "([^"]+)", lat: (-?[\d.]+), lon: (-?[\d.]+), note: "([^"]*)" \}/g)]
-    .map((m) => ({ name: m[1], lat: Number(m[2]), lon: Number(m[3]) }));
-  if (id && zones.length) beaches.push({ id, name, heading, overridden, zones });
+  const zones = [...block.matchAll(
+    /\{ name: "([^"]+)", lat: (-?[\d.]+), lon: (-?[\d.]+), note: "([^"]*)", access: \{ name: "([^"]+)", lat: (-?[\d.]+), lon: (-?[\d.]+), towRecommended: (true|false) \} \}/g,
+  )].map((m) => ({
+    name: m[1],
+    lat: Number(m[2]),
+    lon: Number(m[3]),
+    access: {
+      name: m[5],
+      lat: Number(m[6]),
+      lon: Number(m[7]),
+      towRecommended: m[8] === "true",
+    },
+  }));
+  if (id && zones.length) beaches.push({
+    id,
+    name,
+    latitude,
+    longitude,
+    heading,
+    overridden,
+    zones,
+  });
 }
 
 const project = (lat, lon) => {
@@ -98,7 +120,9 @@ async function nearestLand(lat, lon) {
         lat: lat + (offset * Math.cos((angle * Math.PI) / 180)) / 111320,
         lon: lon + (offset * Math.sin((angle * Math.PI) / 180)) / (111320 * Math.cos((lat * Math.PI) / 180)),
       };
-      if (!(await isWater(point.lat, point.lon))) return Math.round(offset);
+      if (!(await isWater(point.lat, point.lon))) {
+        return { angle, distance: Math.round(offset), point };
+      }
     }
   }
   return null;
@@ -120,20 +144,56 @@ async function landDirection(lat, lon) {
   return null;
 }
 
-const repairs = [];
+const coastRepairs = [];
+const zoneRepairs = [];
 let failures = 0;
+const routeDistance = (from, to) => {
+  const north = (to.lat - from.lat) * 111320;
+  const east = (to.lon - from.lon) * 111320
+    * Math.cos((((from.lat + to.lat) * .5) * Math.PI) / 180);
+  return Math.hypot(north, east);
+};
 for (const beach of beaches) {
   console.log(`\n${beach.name}`);
+  const centerWet = await isWater(beach.latitude, beach.longitude);
+  console.log(`  ${centerWet ? "FAIL" : "ok  "}  Coast reference    ${centerWet ? "water" : "LAND "}`);
+  if (centerWet) {
+    failures += 1;
+    const found = await landDirection(beach.latitude, beach.longitude);
+    if (found) {
+      const inland = found.distance + 30;
+      const shoreLatitude = beach.latitude
+        + (inland * Math.cos((found.angle * Math.PI) / 180)) / 111320;
+      const shoreLongitude = beach.longitude
+        + (inland * Math.sin((found.angle * Math.PI) / 180))
+          / (111320 * Math.cos((beach.latitude * Math.PI) / 180));
+      coastRepairs.push({
+        beach: beach.id,
+        lat: Number(shoreLatitude.toFixed(5)),
+        lon: Number(shoreLongitude.toFixed(5)),
+      });
+    }
+  }
   for (const zone of beach.zones) {
+    const accessWet = await isWater(zone.access.lat, zone.access.lon);
+    const paddleDistance = routeDistance(zone.access, zone);
+    const remoteWithoutTow = paddleDistance > 900 && !zone.access.towRecommended;
+    if (accessWet || remoteWithoutTow) failures += 1;
+    console.log(
+      `  ${accessWet || remoteWithoutTow ? "FAIL" : "ok  "}  ${`${zone.name} entry`.padEnd(18)}`
+      + `${accessWet ? "water" : "LAND "}  ${Math.round(paddleDistance)} m route`
+      + `${zone.access.towRecommended ? " · optional tow" : ""}`,
+    );
     const wet = await isWater(zone.lat, zone.lon);
     const land = wet ? await nearestLand(zone.lat, zone.lon) : 0;
-    const ok = wet && land !== null && land <= 700;
+    const landDistance = typeof land === "object" && land ? land.distance : 0;
+    const ok = wet && land !== null && landDistance <= 700;
     if (!ok) {
       failures += 1;
       const found = wet ? await landDirection(zone.lat, zone.lon) : null;
       if (found) {
         const pull = found.distance - 140;
-        repairs.push({
+        zoneRepairs.push({
           beach: beach.id,
           zone: zone.name,
           lat: Number((zone.lat + (pull * Math.cos((found.angle * Math.PI) / 180)) / 111320).toFixed(4)),
@@ -143,7 +203,7 @@ for (const beach of beaches) {
     }
     console.log(
       `  ${ok ? "ok  " : "FAIL"}  ${zone.name.padEnd(18)} ${wet ? "water" : "LAND "}`
-      + `  ${land === null ? "open ocean, no land within 800 m" : `${land} m from the nearest land`}`,
+      + `  ${land === null ? "open ocean, no land within 800 m" : `${landDistance} m from the nearest land`}`,
     );
   }
 }
@@ -221,9 +281,17 @@ console.log(
     : "  (\"set\" marks a bearing deliberately set against the fits; see the comment in lib/beaches.ts.)",
 );
 
-console.log(failures === 0 ? "\nEvery paddle-out sits in the sea within a swim of land." : `\n${failures} zone(s) failed.`);
-if (repairs.length) {
-  console.log("\nSuggested positions, pulled shoreward from open water:");
-  for (const repair of repairs) console.log(`  ${repair.beach}/${repair.zone}: ${repair.lat}, ${repair.lon}`);
+console.log(
+  failures === 0
+    ? "\nEvery peak has its own land-side entry, every surf peak is in the sea, and remote routes offer an optional tow."
+    : `\n${failures} coast reference, beach entry, or surf peak check(s) failed.`,
+);
+if (coastRepairs.length) {
+  console.log("\nSuggested coast references, moved onto land:");
+  for (const repair of coastRepairs) console.log(`  ${repair.beach}: ${repair.lat}, ${repair.lon}`);
+}
+if (zoneRepairs.length) {
+  console.log("\nSuggested surf peaks, pulled shoreward from open water:");
+  for (const repair of zoneRepairs) console.log(`  ${repair.beach}/${repair.zone}: ${repair.lat}, ${repair.lon}`);
 }
 process.exit(failures === 0 ? 0 : 1);

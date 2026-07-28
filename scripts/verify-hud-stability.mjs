@@ -29,6 +29,7 @@ const stableHudMarkup = appSource.slice(boundaryStart, boundaryEnd);
   'className="score-panel"',
   'className="set-panel"',
   'className="hud-event-slot"',
+  "className={`tow-instrument",
   "className={`mobile-controls",
 ].forEach((token) => {
   invariant(stableHudMarkup.includes(token), `${token} escaped the persistent paint layer`);
@@ -36,6 +37,27 @@ const stableHudMarkup = appSource.slice(boundaryStart, boundaryEnd);
 invariant(
   appSource.indexOf('data-hud-stability="persistent"') < boundaryStart,
   "persistent HUD data marker no longer owns the stable boundary",
+);
+
+const sceneStart = appSource.indexOf("<SurfScene");
+const sceneEnd = appSource.indexOf("/>", sceneStart);
+invariant(sceneStart >= 0 && sceneEnd > sceneStart, "scene boundary is missing");
+const sceneMarkup = appSource.slice(sceneStart, sceneEnd);
+invariant(
+  sceneMarkup.includes("replayControl={sceneReplayControl}"),
+  "scene replay controls are recreated during HUD telemetry renders",
+);
+invariant(
+  !sceneMarkup.includes("replayControl={{"),
+  "an inline scene prop defeats the memoized render boundary",
+);
+invariant(
+  sceneSource.includes("export default memo(SurfScene);"),
+  "HUD telemetry can reconcile the full 3D scene",
+);
+invariant(
+  /startTransition\(\(\) =>\s*\{\s*setStats\(next\)/.test(appSource),
+  "live telemetry is no longer scheduled below direct input",
 );
 
 const stabilityStart = styles.indexOf("Live HUD paint stability");
@@ -81,8 +103,10 @@ invariant(
 );
 
 console.log(JSON.stringify({
-  persistentSurfaces: 7,
+  persistentSurfaces: 8,
   telemetryHz: Number((1 / reportInterval).toFixed(2)),
+  telemetryPriority: "transition",
+  sceneBoundary: "memoized",
   backdropSampling: false,
   compositedBoundary: "stable",
 }, null, 2));
