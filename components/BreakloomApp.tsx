@@ -44,7 +44,7 @@ import {
   Wind,
   X,
 } from "lucide-react";
-import { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BEACHES, DEFAULT_BEACH, getBreakCharacter, getCoastBiome, type Beach, type BreakCharacter, type SurfZone } from "@/lib/beaches";
 import {
   fallbackConditions,
@@ -3221,14 +3221,16 @@ export default function BreakloomApp() {
         haptic(reached === TRAINING_STEPS.length ? [12, 28, 12, 36, 24] : [8, 20, 12]);
       }
     }
-    setStats(next);
-    setPersonalBest((current) => {
-      const updated = {
-        score: Math.max(current.score, next.score),
-        distance: Math.max(current.distance, next.rideDistance),
-        combo: Math.max(current.combo, next.maxCombo),
-      };
-      return updated.score === current.score && updated.distance === current.distance && updated.combo === current.combo ? current : updated;
+    startTransition(() => {
+      setStats(next);
+      setPersonalBest((current) => {
+        const updated = {
+          score: Math.max(current.score, next.score),
+          distance: Math.max(current.distance, next.rideDistance),
+          combo: Math.max(current.combo, next.maxCombo),
+        };
+        return updated.score === current.score && updated.distance === current.distance && updated.combo === current.combo ? current : updated;
+      });
     });
   }, [settings.mode]);
   const liveMasteryThree = stats.rideResult === "clean"
@@ -4109,6 +4111,19 @@ export default function BreakloomApp() {
     "--intro-bar": `${Math.max(0, (1 - stats.sessionIntro) * 9).toFixed(2)}dvh`,
     opacity: THREEClamp(sessionIntroOpacity, 0, 1),
   } as CSSProperties;
+  const sceneReplayControl = useMemo<ReplayControl>(() => ({
+    paused: replayPaused,
+    speed: replaySpeed,
+    seekProgress: replaySeekProgress,
+    seekRequest: replaySeekRequest,
+    autoDirector: replayAutoDirector,
+  }), [
+    replayAutoDirector,
+    replayPaused,
+    replaySeekProgress,
+    replaySeekRequest,
+    replaySpeed,
+  ]);
 
   return (
     <main className={`breakloom ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle}>
@@ -4137,13 +4152,7 @@ export default function BreakloomApp() {
           photoExposure={photoExposure}
           replayMode={replayActive}
           replayRequest={replayRequest}
-          replayControl={{
-            paused: replayPaused,
-            speed: replaySpeed,
-            seekProgress: replaySeekProgress,
-            seekRequest: replaySeekRequest,
-            autoDirector: replayAutoDirector,
-          }}
+          replayControl={sceneReplayControl}
           captureRequest={captureRequest}
           onCapture={handleRideFrameCapture}
           onReplayReady={handleReplayReady}

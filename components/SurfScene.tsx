@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Effects, Environment, Lightformer, Sky, Sparkles, useGLTF, useTexture } from "@react-three/drei";
-import { createContext, MutableRefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, MutableRefObject, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { ShaderPass } from "three-stdlib";
@@ -17811,7 +17811,7 @@ function Simulation({
   );
 }
 
-export default function SurfScene(props: SurfSceneProps) {
+function SurfScene(props: SurfSceneProps) {
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const limits = useMemo(() => rendererLimits(mobileRenderer), [mobileRenderer]);
   const [renderQuality, setRenderQuality] = useState<RenderQuality>(mobileRenderer ? "balanced" : "high");
@@ -17846,3 +17846,5 @@ export default function SurfScene(props: SurfSceneProps) {
     </Canvas>
   );
 }
+
+export default memo(SurfScene);

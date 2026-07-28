@@ -38,6 +38,27 @@ invariant(
   "persistent HUD data marker no longer owns the stable boundary",
 );
 
+const sceneStart = appSource.indexOf("<SurfScene");
+const sceneEnd = appSource.indexOf("/>", sceneStart);
+invariant(sceneStart >= 0 && sceneEnd > sceneStart, "scene boundary is missing");
+const sceneMarkup = appSource.slice(sceneStart, sceneEnd);
+invariant(
+  sceneMarkup.includes("replayControl={sceneReplayControl}"),
+  "scene replay controls are recreated during HUD telemetry renders",
+);
+invariant(
+  !sceneMarkup.includes("replayControl={{"),
+  "an inline scene prop defeats the memoized render boundary",
+);
+invariant(
+  sceneSource.includes("export default memo(SurfScene);"),
+  "HUD telemetry can reconcile the full 3D scene",
+);
+invariant(
+  /startTransition\(\(\) =>\s*\{\s*setStats\(next\)/.test(appSource),
+  "live telemetry is no longer scheduled below direct input",
+);
+
 const stabilityStart = styles.indexOf("Live HUD paint stability");
 const stabilityEnd = styles.indexOf("v234 legibility floor");
 invariant(
@@ -83,6 +104,8 @@ invariant(
 console.log(JSON.stringify({
   persistentSurfaces: 7,
   telemetryHz: Number((1 / reportInterval).toFixed(2)),
+  telemetryPriority: "transition",
+  sceneBoundary: "memoized",
   backdropSampling: false,
   compositedBoundary: "stable",
 }, null, 2));
