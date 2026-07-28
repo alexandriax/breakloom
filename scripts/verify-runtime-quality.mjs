@@ -3,6 +3,7 @@ import {
   lowerRenderQuality,
   shadowMapSizeForQuality,
 } from "../lib/performance.ts";
+import { readBufferedControlEdge } from "../lib/input.ts";
 
 function invariant(condition, message) {
   if (!condition) throw new Error(`Runtime quality contract failed: ${message}`);
@@ -26,6 +27,17 @@ invariant(shadowMapSizeForQuality("high") === 2048, "high-tier shadows lost deta
 invariant(shadowMapSizeForQuality("balanced") === 1024, "balanced shadows exceed their budget");
 invariant(shadowMapSizeForQuality("reduced") === 512, "reduced shadows exceed their budget");
 
+const quickTap = readBufferedControlEdge(false, false, 1, 0);
+const consumedQuickTap = readBufferedControlEdge(false, false, 1, quickTap.nextConsumedPresses);
+const heldPress = readBufferedControlEdge(true, false, 0, 0);
+const resetSequence = readBufferedControlEdge(false, false, 0, 3);
+const firstPressAfterReset = readBufferedControlEdge(true, false, 1, resetSequence.nextConsumedPresses);
+invariant(quickTap.pressed, "a press released between frames is dropped");
+invariant(!consumedQuickTap.pressed, "a buffered press fires more than once");
+invariant(heldPress.pressed, "a normal held-button edge is dropped");
+invariant(!resetSequence.pressed, "resetting a control sequence creates a phantom press");
+invariant(firstPressAfterReset.pressed, "input does not recover after a sequence reset");
+
 console.log(JSON.stringify({
   emergencyDpr: {
     desktop: Number(desktopEmergencyDpr.toFixed(3)),
@@ -40,5 +52,10 @@ console.log(JSON.stringify({
     high: shadowMapSizeForQuality("high"),
     balanced: shadowMapSizeForQuality("balanced"),
     reduced: shadowMapSizeForQuality("reduced"),
+  },
+  inputBuffer: {
+    quickTap: quickTap.pressed,
+    duplicate: consumedQuickTap.pressed,
+    recoveredAfterReset: firstPressAfterReset.pressed,
   },
 }, null, 2));

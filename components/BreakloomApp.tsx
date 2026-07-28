@@ -637,6 +637,8 @@ const EMPTY_CONTROLS: ControlState = {
   right: false,
   sprint: false,
   action: false,
+  sprintPresses: 0,
+  actionPresses: 0,
   moveX: 0,
   moveY: 0,
   balance: 0,
@@ -1764,8 +1766,14 @@ export default function BreakloomApp() {
       if (key === "d" || key === "arrowright") controls.current.right = true;
       if (key === "q") controls.current.balance = -1;
       if (key === "e") controls.current.balance = 1;
-      if (key === "shift") controls.current.sprint = true;
-      if (key === " ") controls.current.action = true;
+      if (key === "shift") {
+        if (!event.repeat) controls.current.sprintPresses += 1;
+        controls.current.sprint = true;
+      }
+      if (key === " ") {
+        if (!event.repeat) controls.current.actionPresses += 1;
+        controls.current.action = true;
+      }
       if (key === "c" && !event.repeat) {
         controls.current.lookYaw = 0;
         controls.current.lookPitch = 0;
@@ -1813,6 +1821,8 @@ export default function BreakloomApp() {
     let replayLeftSeekButton = false;
     let replayRightSeekButton = false;
     let replayDirectorButton = false;
+    let actionButton = false;
+    let sprintButton = false;
 
     const clearGamepad = () => {
       controls.current.gamepadConnected = false;
@@ -1822,6 +1832,8 @@ export default function BreakloomApp() {
       controls.current.gamepadBalance = 0;
       controls.current.gamepadAction = false;
       controls.current.gamepadSprint = false;
+      actionButton = false;
+      sprintButton = false;
     };
 
     const poll = (now: number) => {
@@ -1856,6 +1868,12 @@ export default function BreakloomApp() {
       const balance = THREEClamp(rightTrigger - leftTrigger, -1, 1);
       const action = Boolean(gamepad.buttons[0]?.pressed || gamepad.buttons[2]?.pressed);
       const sprint = Boolean(gamepad.buttons[4]?.pressed || gamepad.buttons[10]?.pressed);
+      if (!paused && !photoMode && !replayActive) {
+        if (action && !actionButton) controls.current.actionPresses += 1;
+        if (sprint && !sprintButton) controls.current.sprintPresses += 1;
+      }
+      actionButton = action;
+      sprintButton = sprint;
       const hasActivity = Math.max(
         Math.abs(moveX),
         Math.abs(moveY),
@@ -1927,7 +1945,7 @@ export default function BreakloomApp() {
       clearGamepad();
       setGamepadConnected(false);
     };
-  }, [cycleReplayCamera, photoMode, replayActive, screen, seekReplay, stopReplay, toggleReplayPaused]);
+  }, [cycleReplayCamera, paused, photoMode, replayActive, screen, seekReplay, stopReplay, toggleReplayPaused]);
 
   useEffect(() => {
     const releaseAllControls = () => {
@@ -2794,6 +2812,12 @@ export default function BreakloomApp() {
     event.preventDefault();
     controls.current.gamepadActive = false;
     event.currentTarget.setPointerCapture(event.pointerId);
+    if (name === "action" && !controls.current.action) {
+      controls.current.actionPresses += 1;
+    }
+    if (name === "sprint" && !controls.current.sprint) {
+      controls.current.sprintPresses += 1;
+    }
     setControl(name, true);
     if (name === "action" || name === "sprint") haptic(9);
   };

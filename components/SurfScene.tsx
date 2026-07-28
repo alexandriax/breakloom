@@ -10,6 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
 import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { readBufferedControlEdge } from "@/lib/input";
 import { emergencyRenderDpr, lowerRenderQuality, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { solarPositionAt } from "@/lib/solar";
 
@@ -20,6 +21,8 @@ export type ControlState = {
   right: boolean;
   sprint: boolean;
   action: boolean;
+  sprintPresses: number;
+  actionPresses: number;
   moveX: number;
   moveY: number;
   balance: number;
@@ -11086,6 +11089,8 @@ function Simulation({
   const finishAt = useRef(-1);
   const actionLatch = useRef(false);
   const diveLatch = useRef(false);
+  const consumedActionPresses = useRef(0);
+  const consumedSprintPresses = useRef(0);
   const takeoffCommitAt = useRef(-1);
   const takeoffCommitQuality = useRef(.5);
   const popUpStartStamina = useRef(100);
@@ -11759,12 +11764,26 @@ function Simulation({
     const vanTransitionActive = t < vanControlLockedUntil.current;
 
     const actionDown = state.action || state.gamepadAction;
-    const actionPressed = actionDown && !actionLatch.current;
-    const actionReleased = !actionDown && actionLatch.current;
-    actionLatch.current = actionDown;
+    const actionEdge = readBufferedControlEdge(
+      actionDown,
+      actionLatch.current,
+      state.actionPresses,
+      consumedActionPresses.current,
+    );
+    const actionPressed = actionEdge.pressed;
+    const actionReleased = actionEdge.released;
+    actionLatch.current = actionEdge.nextLatch;
+    consumedActionPresses.current = actionEdge.nextConsumedPresses;
     const diveDown = state.sprint || state.gamepadSprint;
-    const divePressed = diveDown && !diveLatch.current;
-    diveLatch.current = diveDown;
+    const diveEdge = readBufferedControlEdge(
+      diveDown,
+      diveLatch.current,
+      state.sprintPresses,
+      consumedSprintPresses.current,
+    );
+    const divePressed = diveEdge.pressed;
+    diveLatch.current = diveEdge.nextLatch;
+    consumedSprintPresses.current = diveEdge.nextConsumedPresses;
     const beginPhysicalBoardRelease = (sample: {
       compression: number;
       extensionSpeed: number;
