@@ -10,6 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
 import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { emergencyRenderDpr, lowerRenderQuality, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -86,8 +87,6 @@ export type ReplayControl = {
   seekRequest: number;
   autoDirector: boolean;
 };
-type RenderQuality = "reduced" | "balanced" | "high";
-
 const RenderQualityContext = createContext<RenderQuality>("high");
 
 const COAST_PLAYABLE_HALF_WIDTH = 560;
@@ -236,10 +235,25 @@ function AdaptiveRenderer({
       return;
     }
     if (delta > .12) {
+      const emergencyDpr = emergencyRenderDpr(
+        currentDpr.current,
+        limits.minimum,
+      );
+      if (Math.abs(emergencyDpr - currentDpr.current) >= .025) {
+        currentDpr.current = emergencyDpr;
+        setDpr(emergencyDpr);
+      }
+      const emergencyQuality = lowerRenderQuality(currentQuality.current);
+      if (emergencyQuality !== currentQuality.current) {
+        currentQuality.current = emergencyQuality;
+        onQualityChange(emergencyQuality);
+      }
       meter.elapsed = 0;
       meter.frames = 0;
       meter.jankFrames = 0;
-      meter.warmup = .7;
+      meter.goodWindows = 0;
+      meter.badWindows = 1;
+      meter.warmup = 1.15;
       return;
     }
     meter.elapsed += Math.min(delta, .05);
@@ -10945,6 +10959,8 @@ function Simulation({
   );
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const renderQuality = useRenderQuality();
+  const castDynamicShadows = !mobileRenderer && renderQuality !== "reduced";
+  const shadowMapSize = shadowMapSizeForQuality(renderQuality);
   const reducedMotion = useMemo(() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
   const birdCount = mobileRenderer
     ? renderQuality === "reduced" ? 1 : renderQuality === "high" ? 3 : 2
@@ -17622,9 +17638,11 @@ function Simulation({
         position={lightingSunPosition}
         intensity={(0.45 + light * 2.2) * directLight * daylightStrength}
         color={sunLightColor}
-        castShadow={!mobileRenderer}
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        castShadow={castDynamicShadows}
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
+        shadow-bias={-0.00035}
+        shadow-normalBias={0.035}
         shadow-camera-far={100}
         shadow-camera-left={-35}
         shadow-camera-right={35}
