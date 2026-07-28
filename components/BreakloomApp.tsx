@@ -80,7 +80,7 @@ import {
 } from "@/lib/game";
 import { SOUNDTRACK, BreakloomAudio, type NowPlaying } from "@/lib/audio";
 import TideSparkline from "./TideSparkline";
-import type { CameraMode, ControlState, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
+import type { CameraMode, ControlState, ReplayControl, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 
 const SurfScene = dynamic(() => import("./SurfScene"), { ssr: false });
 const WorldMap = dynamic(() => import("./WorldMap"), {
