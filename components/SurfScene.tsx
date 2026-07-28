@@ -10929,7 +10929,7 @@ function OptionalTowCraft({
 }) {
   const craft = useRef<THREE.Group>(null);
   const rope = useRef<THREE.Mesh>(null);
-  const wake = useRef<THREE.MeshBasicMaterial>(null);
+  const pickupMarker = useRef<THREE.MeshBasicMaterial>(null);
   const midpoint = useRef(new THREE.Vector3());
   const playerTowPoint = useRef(new THREE.Vector3());
   const ropeDirection = useRef(new THREE.Vector3());
@@ -10976,15 +10976,14 @@ function OptionalTowCraft({
       craft.current.rotation.x = -.03 * speedLoad
         + Math.cos(clock.elapsedTime * 1.7 + tow.position.z * .05) * .018;
     }
-    if (wake.current) {
-      wake.current.opacity = THREE.MathUtils.damp(
-        wake.current.opacity,
-        tow.active || tow.returning
-          ? THREE.MathUtils.clamp(.2 + tow.speed * .035, .24, .65)
-          : .035,
-        8,
-        delta,
-      );
+    if (pickupMarker.current) {
+      const pickupAvailable = tow.available
+        && !tow.active
+        && !tow.returning
+        && (playerMotion.current.phase === "shore" || playerMotion.current.phase === "wading");
+      pickupMarker.current.opacity = pickupAvailable
+        ? THREE.MathUtils.damp(pickupMarker.current.opacity, .28, 8, delta)
+        : 0;
     }
     if (!rope.current) return;
     rope.current.visible = tow.available && tow.active;
@@ -11072,7 +11071,7 @@ function OptionalTowCraft({
           <mesh position={[0, -.09, -3.1]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
             <planeGeometry args={[1.8, 5.8]} />
             <meshBasicMaterial
-              ref={wake}
+              ref={pickupMarker}
               color="#b8fff5"
               transparent
               opacity={.035}

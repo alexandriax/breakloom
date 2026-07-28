@@ -72,6 +72,11 @@ invariant(
   "Space no longer starts the return-to-prone transition while riding",
 );
 invariant(
+  sceneSource.includes("const pickupAvailable = tow.available")
+    && sceneSource.includes("pickupAvailable\n        ? THREE.MathUtils.damp(pickupMarker.current.opacity, .28, 8, delta)\n        : 0"),
+  "the tow pickup marker no longer disappears while available or remains during a tow",
+);
+invariant(
   sceneSource.includes("export default memo(SurfScene);"),
   "HUD telemetry can reconcile the full 3D scene",
 );
