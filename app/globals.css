@@ -2167,6 +2167,33 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .dive-button span { align-self: end; font-size: 8px; }
   .dive-button small { align-self: start; color: rgba(255, 239, 212, .7); font-size: 8px; }
   .dive-button:active { transform: scale(.94); filter: brightness(1.12); animation: none; }
+  .run-button {
+    position: absolute;
+    z-index: 3;
+    bottom: calc(100% + 9px);
+    left: 50%;
+    min-width: 94px;
+    height: 38px;
+    display: grid;
+    grid-template-columns: 17px auto;
+    grid-template-rows: 1fr 1fr;
+    align-items: center;
+    column-gap: 5px;
+    padding: 5px 11px;
+    transform: translateX(-50%);
+    border: 1px solid rgba(142, 247, 222, .58);
+    border-radius: 19px;
+    background: linear-gradient(120deg, rgba(30, 125, 118, .96), rgba(8, 59, 68, .98));
+    box-shadow: 0 10px 28px rgba(2, 24, 28, .42), 0 0 16px rgba(91, 231, 210, .13);
+    color: #dbfff8;
+    font-weight: 900;
+    letter-spacing: .1em;
+    touch-action: none;
+  }
+  .run-button svg { grid-row: 1 / 3; width: 16px; pointer-events: none; }
+  .run-button span { align-self: end; font-size: 9px; }
+  .run-button small { align-self: start; color: rgba(207, 255, 246, .66); font-size: 8px; }
+  .run-button:active { transform: translateX(-50%) scale(.94); filter: brightness(1.12); }
   .action-charge { position: absolute; z-index: 1; inset: -5px; border-radius: 50%; background: conic-gradient(#c9fff5 var(--trick-charge, 0deg), rgba(255, 255, 255, .08) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px)); pointer-events: none; filter: drop-shadow(0 0 5px rgba(121, 244, 224, .62)); }
   .action-button > span, .action-button > svg { position: relative; z-index: 2; }
   .action-button:active { transform: scale(0.94); filter: brightness(1.12); }
@@ -3274,6 +3301,19 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .hud-event-toast.is-accent > svg,
 .hud-event-toast.is-accent span,
 .hud-event-toast.is-accent b { color: #f0bb7d; }
+
+/* A completion or event message owns the status lane. Supporting HUDs yield
+   while it is visible so tips, telemetry, and recaps never stack visually. */
+.game-ui.has-hud-message .hud-vitals,
+.game-ui.has-hud-message .mechanics-guide,
+.game-ui.has-hud-message .paddle-out-controls,
+.game-ui.has-hud-message .duck-dive-alert,
+.game-ui.has-hud-message .paddle-training-instrument,
+.game-ui.has-hud-message .score-panel,
+.game-ui.has-hud-message .set-panel {
+  visibility: hidden;
+  opacity: 0;
+}
 
 @media (max-width: 720px) {
   .hud-event-slot {

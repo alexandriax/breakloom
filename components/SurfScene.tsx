@@ -96,6 +96,8 @@ const COAST_PLAYABLE_HALF_WIDTH = 560;
 const COAST_GEOMETRY_WIDTH = 1600;
 const COAST_CHUNK_SPAN = 240;
 const COAST_CHUNK_SLOTS = [-1, 0, 1] as const;
+const SHORE_WALK_SPEED = 5.1;
+const SHORE_RUN_SPEED = 9.2;
 const OCEAN_RENDER_WIDTH = 620;
 const WATER_SIDE_LIMIT = COAST_PLAYABLE_HALF_WIDTH;
 const OCEAN_PLANE_DEPTH = 1250;
@@ -12423,7 +12425,7 @@ function Simulation({
         const coastalZ = position.current.z - tideShift;
         const drySand = THREE.MathUtils.smoothstep(coastalZ, 22, 46) * (1 - THREE.MathUtils.smoothstep(coastalZ, 65, 74));
         const surfacePace = 1 - drySand * .12;
-        const targetSpeed = (wantsRun ? 6.45 : 3.75) * surfacePace;
+        const targetSpeed = (wantsRun ? SHORE_RUN_SPEED : SHORE_WALK_SPEED) * surfacePace;
         const shoreMovementX = vanTransitionActive ? 0 : movementX;
         const shoreMovementZ = vanTransitionActive ? 0 : movementZ;
         const shoreInputLength = vanTransitionActive ? 0 : inputLength;
@@ -12434,7 +12436,7 @@ function Simulation({
         position.current.z += landVelocity.current.y * delta;
         position.current.z = THREE.MathUtils.clamp(position.current.z, 7.6 + tideShift, 88);
         speed = landVelocity.current.length();
-        runBlend = wantsRun ? THREE.MathUtils.smoothstep(speed, 3.6, 6) : 0;
+        runBlend = wantsRun ? THREE.MathUtils.smoothstep(speed, 4.8, 8.4) : 0;
         if (speed > .16) playerHeading.current = dampAngle(playerHeading.current, Math.atan2(landVelocity.current.x, landVelocity.current.y), wantsRun ? 10 : 13, delta);
         prompt = nearJetSki
           ? "Optional tow ready · SPACE / TOW to connect, or keep paddling"

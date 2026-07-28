@@ -12,6 +12,10 @@ const styles = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const beachesSource = readFileSync(
+  new URL("../lib/beaches.ts", import.meta.url),
+  "utf8",
+);
 
 function invariant(condition, message) {
   if (!condition) throw new Error(`HUD stability contract failed: ${message}`);
@@ -31,6 +35,7 @@ const stableHudMarkup = appSource.slice(boundaryStart, boundaryEnd);
   'className="hud-event-slot"',
   "className={`tow-instrument",
   "className={`mobile-controls",
+  'className="run-button"',
 ].forEach((token) => {
   invariant(stableHudMarkup.includes(token), `${token} escaped the persistent paint layer`);
 });
@@ -50,6 +55,11 @@ invariant(
 invariant(
   !sceneMarkup.includes("replayControl={{"),
   "an inline scene prop defeats the memoized render boundary",
+);
+invariant(
+  sceneSource.includes("const SHORE_WALK_SPEED = 5.1;")
+    && sceneSource.includes("const SHORE_RUN_SPEED = 9.2;"),
+  "shore traversal no longer has the faster walk and run speeds",
 );
 invariant(
   sceneSource.includes("export default memo(SurfScene);"),
@@ -91,6 +101,26 @@ for (const match of stabilityCss.matchAll(/(?:-webkit-)?backdrop-filter:\s*([^;]
 
 const persistentLayerBlock = stabilityCss.match(/\.hud-persistent-layer\s*\{([^}]+)\}/)?.[1] ?? "";
 invariant(!/\b(?:opacity|filter)\s*:/.test(persistentLayerBlock), "the persistent layer can be faded or filtered");
+
+[
+  ".game-ui.has-hud-message .hud-vitals",
+  ".game-ui.has-hud-message .mechanics-guide",
+  ".game-ui.has-hud-message .paddle-out-controls",
+  ".game-ui.has-hud-message .duck-dive-alert",
+].forEach((selector) => {
+  invariant(styles.includes(selector), `${selector} no longer yields to a priority message`);
+});
+invariant(
+  appSource.includes('rideToast || hudEventToast ? "has-hud-message" : ""'),
+  "the HUD no longer declares its priority-message state",
+);
+invariant(
+  appSource.includes('hudEventVisible && !rideToast ? "is-visible" : ""'),
+  "a fading event can overlap the ride recap",
+);
+
+const destinationIds = [...beachesSource.matchAll(/^\s+id: "([^"]+)"/gm)].map((match) => match[1]);
+invariant(destinationIds[1] === "mavericks", "Mavericks is no longer second in the destination list");
 
 const reportCadence = sceneSource.match(
   /t\s*-\s*lastStatsAt\.current\s*>\s*(0?\.\d+)/,

@@ -2842,7 +2842,7 @@ export default function BreakloomApp() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
-  const endMobileDive = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const endMobileSprint = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setControl("sprint", false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -4110,6 +4110,12 @@ export default function BreakloomApp() {
         hudEventTransitionTimer.current = null;
       }, 34);
     };
+    if (rideToast) {
+      hudEventToastRef.current = null;
+      setHudEventVisible(false);
+      setHudEventToast(null);
+      return;
+    }
     const current = hudEventToastRef.current;
     if (!hudEventCandidate) {
       if (!current) return;
@@ -4134,7 +4140,7 @@ export default function BreakloomApp() {
     hudEventTransitionTimer.current = window.setTimeout(() => {
       reveal(hudEventCandidate);
     }, 220);
-  }, [hudEventCandidate]);
+  }, [hudEventCandidate, rideToast]);
 
   useEffect(() => () => {
     if (hudEventTransitionTimer.current !== null) window.clearTimeout(hudEventTransitionTimer.current);
@@ -4752,7 +4758,7 @@ export default function BreakloomApp() {
 
       {screen === "game" && (
         <section
-          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""}`}
+          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
           style={gameUiStyle}
           data-qa-scenario={qaScenario ? "surf" : undefined}
           data-qa-phase={stats.phase}
@@ -5371,7 +5377,7 @@ export default function BreakloomApp() {
 
           <div className="hud-event-slot" aria-live="polite" aria-atomic="true">
             <div
-              className={`hud-event-toast is-${hudEventToast?.tone ?? "accent"} ${hudEventVisible ? "is-visible" : ""}`}
+              className={`hud-event-toast is-${hudEventToast?.tone ?? "accent"} ${hudEventVisible && !rideToast ? "is-visible" : ""}`}
               data-event-key={hudEventToast?.key}
             >
               {hudEventToast?.kind === "maneuver" ? <Sparkles /> : <Waves />}
@@ -5602,7 +5608,7 @@ export default function BreakloomApp() {
             <div
               className="analog-stick"
               role="group"
-              aria-label="Analog movement stick. Drag partway to walk or fully to run."
+              aria-label={stats.phase === "shore" || stats.phase === "wading" ? "Analog movement stick. Hold RUN while moving to sprint." : "Analog movement stick."}
               onPointerDown={updateJoystick}
               onPointerMove={updateJoystick}
               onPointerUp={endJoystick}
@@ -5611,7 +5617,7 @@ export default function BreakloomApp() {
             >
               <span className="analog-ring" />
               <span ref={joystickKnob} className="analog-knob"><i /></span>
-              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE / RUN" : "MOVE / STEER"}</small>
+              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE" : "MOVE / STEER"}</small>
             </div>
             <div className={`mobile-balance-stack ${motionBalanceActive ? "is-motion" : ""}`}>
               {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
@@ -5670,6 +5676,21 @@ export default function BreakloomApp() {
                 </div>
               )}
             </div>
+            {(stats.phase === "shore" || stats.phase === "wading") && (
+              <button
+                type="button"
+                className="run-button"
+                aria-label="Hold to run faster across the beach"
+                onPointerDown={(event) => beginControl(event, "sprint")}
+                onPointerUp={endMobileSprint}
+                onPointerCancel={endMobileSprint}
+                onLostPointerCapture={() => setControl("sprint", false)}
+              >
+                <Gauge />
+                <span>RUN</span>
+                <small>HOLD</small>
+              </button>
+            )}
             {(
               (stats.phase === "paddling" && !takeoffCommitted && !stats.towMode)
               || stats.phase === "riding"
@@ -5687,8 +5708,8 @@ export default function BreakloomApp() {
                       ? `Prepare to duck dive. Shorebreak arrives in ${stats.shorebreakSeconds.toFixed(1)} seconds. Aim the nose into the wall and tap when this control flashes.`
                     : "Duck dive now. Timing and board depth determine whether an incoming wall passes overhead."}
                 onPointerDown={(event) => beginControl(event, "sprint")}
-                onPointerUp={endMobileDive}
-                onPointerCancel={endMobileDive}
+                onPointerUp={endMobileSprint}
+                onPointerCancel={endMobileSprint}
                 onLostPointerCapture={() => setControl("sprint", false)}
                 aria-disabled={stats.phase === "paddling" && stats.duckDiveActive}
               >
