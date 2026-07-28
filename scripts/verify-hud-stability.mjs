@@ -16,6 +16,10 @@ const beachesSource = readFileSync(
   new URL("../lib/beaches.ts", import.meta.url),
   "utf8",
 );
+const gameSource = readFileSync(
+  new URL("../lib/game.ts", import.meta.url),
+  "utf8",
+);
 
 function invariant(condition, message) {
   if (!condition) throw new Error(`HUD stability contract failed: ${message}`);
@@ -136,6 +140,18 @@ invariant(
 
 const destinationIds = [...beachesSource.matchAll(/^\s+id: "([^"]+)"/gm)].map((match) => match[1]);
 invariant(destinationIds[1] === "mavericks", "Mavericks is no longer second in the destination list");
+
+[
+  "Hard shell · PU foam core · fiberglass · polyester resin",
+  "Hard shell · EPS foam core · fiberglass · epoxy resin",
+  "Hard shell · PU foam core · wood stringer · fiberglass · polyester resin",
+].forEach((construction) => {
+  invariant(gameSource.includes(construction), `${construction} is no longer declared for the board rack`);
+});
+invariant(
+  appSource.includes("no soft foamies"),
+  "the board rack no longer clarifies that it has no soft foamies",
+);
 
 const reportCadence = sceneSource.match(
   /t\s*-\s*lastStatsAt\.current\s*>\s*(0?\.\d+)/,

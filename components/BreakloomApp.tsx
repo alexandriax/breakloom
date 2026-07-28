@@ -4460,7 +4460,7 @@ export default function BreakloomApp() {
                   <span className="step-number" aria-hidden="true">3</span>
                   <div className="step-title">
                     <h2 id="step-board-title">Choose your board</h2>
-                    <p>Shape changes how you paddle, turn, and hold a line.</p>
+                    <p>Shape changes how you paddle, turn, and hold a line. This rack is hard-shell only—no soft foamies.</p>
                   </div>
                 </div>
                 <div className="board-grid">
@@ -4482,6 +4482,7 @@ export default function BreakloomApp() {
                           <strong>{board.name}</strong>
                         </span>
                         <p>{board.description}</p>
+                        <span className="board-construction"><small>CONSTRUCTION</small><span>{board.construction}</span></span>
                         <span className="board-stats">
                           {([
                             ["Speed", board.speed],
@@ -5431,7 +5432,7 @@ export default function BreakloomApp() {
                     <div>
                       <span>BREAKLOOM VAN</span>
                       <h2 id="van-board-picker-title">SWAP YOUR BOARD</h2>
-                      <p>Choose a shape before heading back to the lineup.</p>
+                      <p>Choose a hard-shell shape before heading back to the lineup. No soft foamies in this rack.</p>
                     </div>
                     <button
                       type="button"
@@ -5458,6 +5459,7 @@ export default function BreakloomApp() {
                           <i className={`board-shape is-${boardId}`} />
                           <span><small>{board.profile}</small><strong>{board.name}</strong></span>
                           <p>{board.description}</p>
+                          <small className="van-board-material">{board.construction}</small>
                           <em>{selected ? "EQUIPPED" : `SPEED ${Math.round(board.speed * 100)} · TURN ${Math.round(board.turn * 100)}`}</em>
                         </button>
                       );

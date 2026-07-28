@@ -3400,6 +3400,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .van-board-option small { overflow: hidden; color: color-mix(in srgb, var(--board-color) 75%, white 16%); font-size: 8px; font-weight: 900; letter-spacing: .1em; text-overflow: ellipsis; white-space: nowrap; }
 .van-board-option strong { overflow: hidden; font-size: 12px; letter-spacing: .025em; text-overflow: ellipsis; white-space: nowrap; }
 .van-board-option p { min-height: 42px; color: rgba(230, 250, 245, .58); font-size: 9px; line-height: 1.4; }
+.van-board-option .van-board-material { overflow: visible; color: rgba(218, 255, 247, .68); font-size: 8px; font-weight: 700; letter-spacing: .035em; line-height: 1.35; text-overflow: clip; white-space: normal; }
 .van-board-option em { color: rgba(220, 255, 248, .72); font-size: 8px; font-style: normal; font-weight: 900; letter-spacing: .075em; }
 .van-board-option.is-selected em { color: color-mix(in srgb, var(--board-color) 75%, white 20%); }
 
@@ -3440,6 +3441,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .van-board-option { grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; gap: 4px 9px; padding: 9px; }
   .van-board-option .board-shape { grid-row: 1 / 3; margin: 0; }
   .van-board-option p { grid-column: 2 / 4; min-height: 0; }
+  .van-board-option .van-board-material { grid-column: 2 / 4; }
   .van-board-option em { grid-column: 3; grid-row: 1; align-self: end; text-align: right; }
 
   .hud-event-slot {
@@ -4291,6 +4293,27 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   -webkit-line-clamp: 3;
 }
 
+.board-construction {
+  display: grid;
+  gap: 2px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.board-construction small {
+  color: color-mix(in srgb, var(--board-color) 74%, white 16%);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.board-construction > span {
+  color: rgba(226, 248, 243, .68);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .board-stats {
   display: grid;
   gap: 5px;
@@ -4846,6 +4869,7 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .board-card { grid-template-columns: 56px minmax(0, 1fr); align-items: center; column-gap: 14px; }
   .board-card .board-shape { grid-row: 1 / 3; }
   .board-card p { grid-column: 2; }
+  .board-construction { grid-column: 2; }
   .board-stats { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 14px; }
   .conditions-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .condition.is-lead { grid-column: 1 / -1; }
