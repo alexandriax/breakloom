@@ -2,9 +2,12 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = process.cwd();
-const dist = resolve(root, "dist");
-const client = resolve(dist, "client");
+const output = resolve(root, "out");
 const failures = [];
+const repositoryName = process.env.GITHUB_REPOSITORY?.split("/")[1] ?? "";
+const isProjectPage =
+  process.env.GITHUB_ACTIONS === "true" && !repositoryName.endsWith(".github.io");
+const basePath = isProjectPage ? `/${repositoryName}` : "";
 
 async function filesBelow(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -16,7 +19,7 @@ async function filesBelow(directory) {
 }
 
 async function requireFile(relativePath) {
-  const path = resolve(dist, relativePath);
+  const path = resolve(output, relativePath);
   try {
     const details = await stat(path);
     if (!details.isFile() || details.size === 0) failures.push(`${relativePath} is empty`);
@@ -26,13 +29,11 @@ async function requireFile(relativePath) {
 }
 
 const requiredFiles = [
-  ".openai/hosting.json",
-  "server/index.js",
-  "client/index.html",
-  "client/404.html",
-  "client/favicon.svg",
-  "client/manifest.webmanifest",
-  "client/sw.js",
+  "index.html",
+  "404.html",
+  "favicon.svg",
+  "manifest.webmanifest",
+  "sw.js",
 ];
 await Promise.all(requiredFiles.map(requireFile));
 
@@ -45,26 +46,23 @@ const release = releaseMatch
   ? { version: Number(releaseMatch[1]), channel: releaseMatch[2] }
   : { version: 0, channel: "UNKNOWN" };
 
-const hosting = JSON.parse(await readFile(resolve(dist, ".openai/hosting.json"), "utf8"));
-if (!/^appgprj_[a-f0-9]+$/.test(hosting.project_id ?? "")) {
-  failures.push("Sites project_id is missing or malformed");
+function artifactPathForReference(reference) {
+  let path = decodeURIComponent(reference.split(/[?#]/)[0]);
+  if (basePath && (path === basePath || path === `${basePath}/`)) return "index.html";
+  if (basePath && path.startsWith(`${basePath}/`)) path = path.slice(basePath.length);
+  return path.replace(/^\/+/, "");
 }
 
-const worker = await readFile(resolve(dist, "server/index.js"), "utf8");
-if (!worker.includes("env.ASSETS.fetch") || !worker.includes('url.pathname = "/index.html"')) {
-  failures.push("Sites worker does not provide asset serving with navigation fallback");
-}
-
-const indexHtml = await readFile(resolve(client, "index.html"), "utf8");
+const indexHtml = await readFile(resolve(output, "index.html"), "utf8");
 const localReferences = new Set(
   [...indexHtml.matchAll(/(?:src|href)="([^"]+)"/g)]
     .map((match) => match[1])
     .filter((reference) => reference.startsWith("/") && !reference.startsWith("//"))
-    .map((reference) => decodeURIComponent(reference.split(/[?#]/)[0]))
-    .filter((reference) => reference !== "/"),
+    .map(artifactPathForReference)
+    .filter(Boolean),
 );
 for (const reference of localReferences) {
-  await requireFile(`client${reference}`);
+  await requireFile(reference);
 }
 
 // Every track the player can shuffle into has to actually ship.
@@ -75,17 +73,17 @@ if (!soundtrackBlock) {
 } else {
   const tracks = [...soundtrackBlock[1].matchAll(/file:\s*"([^"]+)"/g)].map((match) => match[1]);
   if (tracks.length === 0) failures.push("SOUNDTRACK is empty");
-  await Promise.all(tracks.map((track) => requireFile(`client/audio/${track}.mp3`)));
+  await Promise.all(tracks.map((track) => requireFile(`audio/${track}.mp3`)));
 }
 
-const manifest = JSON.parse(await readFile(resolve(client, "manifest.webmanifest"), "utf8"));
+const manifest = JSON.parse(await readFile(resolve(output, "manifest.webmanifest"), "utf8"));
 for (const icon of manifest.icons ?? []) {
   if (typeof icon.src === "string") {
-    await requireFile(`client/${icon.src.replace(/^\/+/, "")}`);
+    await requireFile(artifactPathForReference(icon.src));
   }
 }
 
-const files = await filesBelow(dist);
+const files = await filesBelow(output);
 const sizedFiles = await Promise.all(files.map(async (path) => ({
   path,
   size: (await stat(path)).size,
@@ -101,7 +99,7 @@ const soundtrack = sizedFiles.filter((file) => /[\\/]audio[\\/][^\\/]+\.mp3$/.te
 const soundtrackBytes = soundtrack.reduce((total, file) => total + file.size, 0);
 const shellBytes = totalBytes - soundtrackBytes;
 
-if (shellBytes > 10 * 1024 * 1024) failures.push("Sites app shell exceeds the 10 MiB release budget");
+if (shellBytes > 10 * 1024 * 1024) failures.push("App shell exceeds the 10 MiB release budget");
 if (soundtrackBytes > 18 * 1024 * 1024) failures.push("Soundtrack exceeds the 18 MiB release budget");
 if (javascriptBytes > 3 * 1024 * 1024) failures.push("JavaScript exceeds the 3 MiB release budget");
 if (largestJavascriptBytes > 1.6 * 1024 * 1024) {
@@ -111,7 +109,7 @@ if (largestJavascriptBytes > 1.6 * 1024 * 1024) {
 const searchableFiles = sizedFiles.filter((file) => /\.(?:html|js|json|webmanifest)$/.test(file.path));
 const searchableContents = await Promise.all(searchableFiles.map((file) => readFile(file.path, "utf8")));
 if (searchableContents.some((content) => /https?:\/\/(?:localhost|127\.0\.0\.1)/.test(content))) {
-  failures.push("Sites artifact contains a localhost URL");
+  failures.push("Static artifact contains a localhost URL");
 }
 const releaseNeedle = `version:${release.version},channel:"${release.channel}"`;
 if (!searchableContents.some((content) => content.includes(releaseNeedle))) {
@@ -119,11 +117,12 @@ if (!searchableContents.some((content) => content.includes(releaseNeedle))) {
 }
 
 if (failures.length > 0) {
-  throw new Error(`Sites release artifact failed:\n- ${failures.join("\n- ")}`);
+  throw new Error(`Static release artifact failed:\n- ${failures.join("\n- ")}`);
 }
 
 console.log(JSON.stringify({
   release,
+  basePath,
   files: sizedFiles.length,
   localReferences: localReferences.size,
   totalBytes,

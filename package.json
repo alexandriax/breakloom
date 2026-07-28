@@ -7,8 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/build-sites.mjs && node scripts/verify-sites-artifact.mjs",
-    "build:sites": "npm run build",
+    "build": "next build && node scripts/verify-static-artifact.mjs",
     "start": "next dev",
     "test": "npm run verify:release && npm run build",
     "verify:release": "npm run verify:takeoff && npm run verify:runtime && node --experimental-strip-types scripts/verify-release-contract.mjs",
