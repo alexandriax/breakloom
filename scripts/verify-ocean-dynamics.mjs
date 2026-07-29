@@ -54,6 +54,13 @@ let zoneCount = 0;
 let minimumJacobian = Infinity;
 let maximumDerivativeError = 0;
 let maximumPhaseAdvectionError = 0;
+const HIGH_SWELL_CASES = [
+  ["pipeline", "First Reef", 5.5, 15],
+  ["teahupoo", "The Bowl", 5, 16],
+  ["rockaway", "Beach 92nd", 4.2, 13],
+  ["jeffreys-bay", "Supertubes", 5, 15],
+  ["nazare", "Praia do Norte", 9, 17],
+];
 
 for (const beach of BEACHES) {
   const settings = sessionFor(beach);
@@ -335,6 +342,86 @@ for (const beach of BEACHES) {
   }
 }
 
+for (
+  const [
+    coastId,
+    zoneName,
+    significantHeight,
+    peakPeriod,
+  ] of HIGH_SWELL_CASES
+) {
+  const beach = BEACHES.find((candidate) => candidate.id === coastId);
+  if (!beach) throw new Error(`Missing high-swell coast ${coastId}`);
+  const settings = {
+    ...sessionFor(beach),
+    waveHeight: significantHeight,
+    wavePeriod: peakPeriod,
+    swellHeight: significantHeight * .9,
+    swellPeriod: peakPeriod,
+    windSpeed: Math.max(9, beach.fallback.windSpeed),
+  };
+  const character = getBreakCharacter(coastId, zoneName);
+  const temporalHeights = [];
+  const regimes = new Set();
+  const offshoreRegimes = new Set();
+  const nearshoreRegimes = new Set();
+  for (let step = 0; step <= 16; step += 1) {
+    const time = step * peakPeriod / 12;
+    const temporalSurface = sampleCoastWaveSurface(
+      0,
+      -180,
+      time,
+      settings,
+      character,
+    );
+    temporalHeights.push(temporalSurface.height);
+    for (
+      const z of [-1000, -520, -260, -140, -82, -48, -28, -16]
+    ) {
+      const surface = sampleCoastWaveSurface(
+        0,
+        z,
+        time,
+        settings,
+        character,
+      );
+      regimes.add(surface.regime);
+      if (z <= -520) offshoreRegimes.add(surface.regime);
+      if (z >= -48) nearshoreRegimes.add(surface.regime);
+      if (
+        !Number.isFinite(surface.height)
+        || surface.horizontalJacobianMargin <= .015
+        || Math.abs(surface.height)
+          > significantHeight * 1.65 + .25
+      ) {
+        throw new Error(
+          `${coastId}/${zoneName} produced an unstable high-swell surface`,
+        );
+      }
+    }
+  }
+  if (
+    Math.max(...temporalHeights) - Math.min(...temporalHeights)
+      < significantHeight * .35
+  ) {
+    throw new Error(
+      `${coastId}/${zoneName} high swell rose and fell too little to be traveling water`,
+    );
+  }
+  if (
+    [...offshoreRegimes].every(
+      (regime) => regime === "breaking" || regime === "broken",
+    )
+    || [...nearshoreRegimes].every(
+      (regime) => regime === "deep" || regime === "shoaling",
+    )
+  ) {
+    throw new Error(
+      `${coastId}/${zoneName} high swell lost its offshore-to-break transition`,
+    );
+  }
+}
+
 if (coastBreakSignatures.size < BEACHES.length) {
   throw new Error(
     "Coast-specific bathymetry stopped producing distinct break signatures",
@@ -382,5 +469,6 @@ console.log("ocean dynamics verified", {
   maximumDerivativeError: `${(maximumDerivativeError * 100).toFixed(2)}%`,
   maximumPhaseAdvectionError:
     maximumPhaseAdvectionError.toExponential(2),
+  highSwellCases: HIGH_SWELL_CASES.length,
   benchmarkMilliseconds: benchmarkMilliseconds.toFixed(1),
 });
