@@ -41,6 +41,9 @@ for (const token of [
   "breakerShapeDerivative",
   "groupReal",
   "normalizedGroupEnvelope",
+  "horizontalDisplacement",
+  "horizontalSlopeBudget",
+  "horizontalShoreAnchor",
   "for (int index = 0; index < 28; index++)",
 ]) {
   assert.ok(
@@ -61,8 +64,9 @@ for (const token of [
 }
 
 assert.ok(
-  fragment.includes("normalize(vWorldNormal)"),
-  "fragment shading no longer uses the displaced surface normal",
+  fragment.includes("normalize(vWorldNormal)")
+    && fragment.includes("cross(dFdx(vWorldPosition), dFdy(vWorldPosition))"),
+  "fragment shading no longer combines analytic water normals with the displaced mesh silhouette",
 );
 assert.ok(
   !vertex.includes("crestEnergy("),
@@ -81,12 +85,12 @@ assert.ok(
   "the visual ocean diverged into a separate Gerstner model",
 );
 assert.ok(
-  source.includes("<LineupWaveSetVolume"),
-  "the physical overturning breaker volume is no longer rendered",
+  !source.includes("<LineupWaveSetVolume"),
+  "the detached lineup ribbon was layered back over the ocean mesh",
 );
 assert.ok(
-  source.includes("<BreakingWave"),
-  "the board-level surfable face volume is no longer rendered",
+  !source.includes("<BreakingWave"),
+  "the detached board-level ribbon was layered back over the ocean mesh",
 );
 
 console.log("ocean shader contract verified");

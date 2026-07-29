@@ -55,6 +55,7 @@ import {
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
   resolveLineupFromBreakingGeometry,
+  resolvePopUpLandingSupport,
   resolveSurfboardFailureRelease,
   resolveSurfboardLeashReaction,
   resolveSurfboardLeashTorque,
@@ -1126,6 +1127,69 @@ const flatWater = evaluateWaveTakeoff({
 });
 if (flatWater.surfable || flatWater.opportunity !== 0) {
   throw new Error("Flat water must not produce physical takeoff opportunity");
+}
+
+const strictPopUpSupport = resolvePopUpLandingSupport({
+  lostCrest: false,
+  boardStillEngaged: true,
+  interactionOutcome: "capture",
+  waterContact: .86,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+  crestOvertaken: .22,
+  surfableFace: true,
+  faceEnvelope: .5,
+  physicalLift: .62,
+  waveContact: .74,
+});
+const readableFaceGrace = resolvePopUpLandingSupport({
+  lostCrest: false,
+  boardStillEngaged: false,
+  interactionOutcome: "glide",
+  waterContact: .58,
+  rollCapsizeRisk: .34,
+  pitchOverRisk: .32,
+  crestOvertaken: .62,
+  surfableFace: true,
+  faceEnvelope: .2,
+  physicalLift: .3,
+  waveContact: .16,
+});
+const flatPopUpSupport = resolvePopUpLandingSupport({
+  lostCrest: false,
+  boardStillEngaged: false,
+  interactionOutcome: "stand",
+  waterContact: .9,
+  rollCapsizeRisk: .05,
+  pitchOverRisk: .05,
+  crestOvertaken: 0,
+  surfableFace: false,
+  faceEnvelope: 0,
+  physicalLift: 0,
+  waveContact: 0,
+});
+const passedCrestSupport = resolvePopUpLandingSupport({
+  lostCrest: true,
+  boardStillEngaged: true,
+  interactionOutcome: "capture",
+  waterContact: .9,
+  rollCapsizeRisk: .05,
+  pitchOverRisk: .05,
+  crestOvertaken: .95,
+  surfableFace: true,
+  faceEnvelope: .4,
+  physicalLift: .7,
+  waveContact: .8,
+});
+if (
+  strictPopUpSupport !== 1
+  || readableFaceGrace < .46
+  || flatPopUpSupport !== 0
+  || passedCrestSupport !== 0
+) {
+  throw new Error(
+    "Pop-up landing no longer accepts a readable moving face while rejecting flat water and a lost crest",
+  );
 }
 
 const sharedBoardWater = {

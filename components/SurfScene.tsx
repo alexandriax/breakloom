@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -965,6 +965,8 @@ const OCEAN_VERTEX = /* glsl */ `
     float gradientZ = 0.0;
     float swellElevation = 0.0;
     float windElevation = 0.0;
+    vec2 horizontalDisplacement = vec2(0.0);
+    float horizontalSlopeBudget = 0.0;
     float dominantComponentPhase = 0.0;
     vec2 dominantComponentGradient = vec2(0.0);
     float groupReal = 0.0;
@@ -1003,6 +1005,21 @@ const OCEAN_VERTEX = /* glsl */ `
         + travel.g * contourGradient.x;
       float phaseGradientZ = travel.g
         * contourGradient.y;
+      float localWaveNumber = max(
+        .0001,
+        length(vec2(phaseGradientX, phaseGradientZ))
+      );
+      float coth = 1.0 / max(.08, tanh(localWaveNumber * depth));
+      float horizontalAmplitude = amplitude * min(2.5, coth);
+      vec2 localDirection = vec2(
+        phaseGradientX,
+        phaseGradientZ
+      ) / localWaveNumber;
+      horizontalDisplacement -= horizontalAmplitude
+        * sine
+        * localDirection;
+      horizontalSlopeBudget += horizontalAmplitude
+        * localWaveNumber;
       surfaceHeight += elevation;
       gradientX -= amplitude * sine * phaseGradientX;
       gradientZ -= amplitude * sine * phaseGradientZ;
@@ -1069,10 +1086,10 @@ const OCEAN_VERTEX = /* glsl */ `
     float thrice = dominantPhase * 3.0;
     float fourthPhase = dominantPhase * 4.0;
     float fifthPhase = dominantPhase * 5.0;
-    float shapeAmplitude = localSignificantHeight * .29
+    float shapeAmplitude = localSignificantHeight * .5
       * uBreakerPower
       * shapeActivation
-      * (.55 + crestEnergy * .63);
+      * (.42 + crestEnergy * .7);
     float breakerShape = second * cos(twice)
       + asymmetry * sin(twice)
       + third * cos(thrice)
@@ -1089,9 +1106,24 @@ const OCEAN_VERTEX = /* glsl */ `
     gradientZ += shapeAmplitude * breakerShapeDerivative
       * dominantGradient.y;
 
+    float horizontalScale = min(
+      1.0,
+      .64 / max(.0001, horizontalSlopeBudget)
+    );
+    // Restore the rounded, weight-bearing mesh silhouette from main without
+    // restoring its fixed crest loop. Horizontal orbital displacement comes
+    // from these same finite-depth components and stays Jacobian-bounded.
+    p.x += horizontalDisplacement.x * horizontalScale;
+    p.y -= horizontalDisplacement.y * horizontalScale;
     surfaceHeight += uTide * .3;
     p.z += surfaceHeight;
     float shoreAnchor = smoothstep(-5.0, 1.0, contourCoordinate);
+    float horizontalShoreAnchor = smoothstep(
+      -18.0,
+      1.0,
+      contourCoordinate
+    );
+    p.xy = mix(p.xy, position.xy, horizontalShoreAnchor);
     p.z = mix(p.z, uTide * .3, shoreAnchor);
     gradientX *= 1.0 - shoreAnchor;
     gradientZ *= 1.0 - shoreAnchor;
@@ -1101,9 +1133,9 @@ const OCEAN_VERTEX = /* glsl */ `
       / max(.08, rawSignificantHeight * .5);
     float crestSignal = .5 + .5 * cos(dominantPhase);
     float breakActivation = shapeActivation
-      * smoothstep(.42, .86, crestSignal)
-      * (.18 + brokenProgress * .82)
-      * (.24 + crestEnergy * .76);
+      * smoothstep(.3, .76, crestSignal)
+      * (.52 + brokenProgress * .48)
+      * (.46 + crestEnergy * .54);
     vBreaker = breakActivation;
     vSwellRead = smoothstep(
       .12,
@@ -1167,7 +1199,19 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 deep = mix(offshore, abyss, depth);
     float crestLight = smoothstep(-.2, .95, vHeight) * (1.0 - depth);
     vec3 color = mix(deep, lagoon, crestLight * .48);
-    vec3 surfaceNormal = normalize(vWorldNormal);
+    vec3 analyticNormal = normalize(vWorldNormal);
+    vec3 geometricNormal = normalize(
+      cross(dFdx(vWorldPosition), dFdy(vWorldPosition))
+    );
+    if (dot(geometricNormal, analyticNormal) < 0.0) {
+      geometricNormal *= -1.0;
+    }
+    // Main's strongest visual cue was real mesh-normal shading. Blend that
+    // silhouette back in while retaining the analytic physical normal used by
+    // the shared spectrum and gameplay.
+    vec3 surfaceNormal = normalize(
+      mix(analyticNormal, geometricNormal, .78)
+    );
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
     bool underwaterSide = !gl_FrontFacing;
     if (underwaterSide) surfaceNormal *= -1.0;
@@ -1248,15 +1292,23 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec2 waveSurface = vec2(dot(vSurface, waveTangent), dot(vSurface, waveDir));
     float foamBase = noise(waveSurface * vec2(.35, .12) + vec2(uTime * .48, -uTime * .08));
     float foamDetail = noise(waveSurface * vec2(1.18, .48) + vec2(-uTime * .74, uTime * .12));
-    float breakerFoam = vBreaker * smoothstep(.42, .78, foamBase) * (.48 + foamDetail * .42);
+    // Breaking water belongs to the displaced ocean, not to a stack of
+    // translucent cards. Keep a continuous aerated base on the physical crest
+    // and use noise only to perforate/detail it.
+    float breakerFoam = vBreaker
+      * (
+        .28
+        + smoothstep(.36, .78, foamBase) * .46
+        + foamDetail * .18
+      );
     float foamLace = smoothstep(.57, .74, foamDetail) * (1.0 - smoothstep(.82, .96, foamDetail));
     breakerFoam += vBreaker * foamLace * (.1 + vChop * .14);
     float crestFoam = crestGate * smoothstep(.42, .8, foamDetail) * .82;
     float shorePulse = sin(vSurface.x * .2 + uTime * 1.7 + noise(vSurface * .08) * 4.0) * .5 + .5;
     float shoreFoam = smoothstep(4.2, 10.5, vSurface.y) * smoothstep(.27, .72, shorePulse) * .64;
-    float foam = clamp(max(max(crestFoam, breakerFoam), shoreFoam), 0.0, .72);
+    float foam = clamp(max(max(crestFoam, breakerFoam), shoreFoam), 0.0, .88);
     vec3 foamColor = mix(vec3(.63, .88, .84), vec3(.91, 1.0, .97), uLight);
-    color = mix(color, foamColor, foam * .68);
+    color = mix(color, foamColor, foam * .82);
     color = mix(color, vec3(.018, .041, .065), uCloud * .2);
     color *= .91 + noise(vSurface * 3.1 + uTime * .08) * .09;
 
@@ -1451,8 +1503,8 @@ function Ocean({
     ? quality === "reduced" ? 80 : quality === "high" ? 140 : 108
     : quality === "reduced" ? 180 : quality === "balanced" ? 224 : 280;
   const offshoreSegments = mobile
-    ? quality === "reduced" ? 128 : quality === "high" ? 224 : 184
-    : quality === "reduced" ? 190 : quality === "balanced" ? 238 : 280;
+    ? quality === "reduced" ? 144 : quality === "high" ? 260 : 204
+    : quality === "reduced" ? 260 : quality === "balanced" ? 340 : 420;
   const subsurfaceCrossShoreSegments = Math.max(48, Math.round(crossShoreSegments * .62));
   const subsurfaceOffshoreSegments = Math.max(64, Math.round(offshoreSegments * .6));
   const uniforms = useMemo(
@@ -1991,6 +2043,9 @@ function nearestWaveCrestPointAt(
   };
 }
 
+// Retained as a low-detail fallback, but not layered over the physical ocean:
+// the separate plane reads as a ribbon and can cross the actual mesh crest.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function LineupWaveSetVolume({
   settings,
   character,
@@ -3101,6 +3156,9 @@ const BREAKING_FOAM_FRAGMENT = /* glsl */ `
   }
 `;
 
+// Retained for a future volumetric/low-detail tier. The ride now uses the
+// continuous ocean mesh itself so the visible face and hull contact coincide.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function BreakingWave({
   motion,
   settings,
@@ -5404,8 +5462,8 @@ function WaveReadingGuide({
 const FOOTPRINT_COUNT = 36;
 const CARVE_TRACK_COUNT = 64;
 const IMPACT_RING_COUNT = 10;
-const BREAKING_FOAM_PATCH_LIMIT = 72;
-const BREAKING_MIST_LIMIT = 112;
+const BREAKING_FOAM_PATCH_LIMIT = 40;
+const BREAKING_MIST_LIMIT = 88;
 
 function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; mobile: boolean }) {
   const quality = useRenderQuality();
@@ -5776,10 +5834,10 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       const side = index === 0 ? -1 : 1;
       const sideLoad = side === loadedSide ? railEnergy : railEnergy * .08;
       const energy = THREE.MathUtils.clamp(sideLoad + impactEnergy * (state.impact > .55 ? 1 : side === loadedSide ? .72 : .28), 0, 1.15);
-      const targetSheetOpacity = riding ? (.025 + energy * .46) * waterContact : 0;
+      const targetSheetOpacity = riding ? (.012 + energy * .18) * waterContact : 0;
       material.opacity = THREE.MathUtils.damp(material.opacity, targetSheetOpacity, targetSheetOpacity > material.opacity ? 13 : 6, delta);
-      const widthScale = .34 + energy * .82;
-      const heightScale = .18 + energy * 1.02;
+      const widthScale = .24 + energy * .46;
+      const heightScale = .12 + energy * .56;
       sheet.scale.x = THREE.MathUtils.damp(sheet.scale.x, widthScale, 10, delta);
       sheet.scale.y = THREE.MathUtils.damp(sheet.scale.y, heightScale, 10, delta);
       sheet.position.x = THREE.MathUtils.damp(sheet.position.x, side * (.27 + energy * .11), 11, delta);
@@ -5788,7 +5846,9 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       sheet.rotation.x = THREE.MathUtils.damp(sheet.rotation.x, -.44 - energy * .18, 9, delta);
       sheet.rotation.y = THREE.MathUtils.damp(sheet.rotation.y, side * (.16 + energy * .2), 9, delta);
       sheet.rotation.z = THREE.MathUtils.damp(sheet.rotation.z, side * (-.26 - energy * .28), 9, delta);
-      sheet.visible = material.opacity > .004;
+      // The tall alpha cards read as detached grey fins beside the board.
+      // Fine spray particles and the mesh-bound foam carry this cue cleanly.
+      sheet.visible = false;
     });
     const carvePressure = THREE.MathUtils.clamp(
       railEnergy * (.58 + (1 - state.slip) * .42)
@@ -5802,15 +5862,15 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
       if (!fan || !material) return;
       const side = index === 0 ? -1 : 1;
       const sideEnergy = side === loadedSide ? carvePressure : carvePressure * (.035 + state.slip * .1);
-      const fanOpacity = riding ? sideEnergy * (.28 + (1 - state.slip) * .18) : 0;
+      const fanOpacity = riding ? sideEnergy * (.1 + (1 - state.slip) * .1) : 0;
       material.opacity = THREE.MathUtils.damp(
         material.opacity,
         fanOpacity,
         fanOpacity > material.opacity ? 14 : 5.5,
         delta,
       );
-      const fanWidth = .42 + sideEnergy * 1.14;
-      const fanLength = .28 + sideEnergy * 1.35 + Math.max(0, state.speed - 8) * .022;
+      const fanWidth = .3 + sideEnergy * .62;
+      const fanLength = .2 + sideEnergy * .78 + Math.max(0, state.speed - 8) * .014;
       fan.position.x = THREE.MathUtils.damp(fan.position.x, side * (.22 + sideEnergy * .12), 11, delta);
       fan.position.y = THREE.MathUtils.damp(fan.position.y, .026 + state.maneuverLift * .08, 12, delta);
       fan.position.z = THREE.MathUtils.damp(fan.position.z, -.54 - fanLength * .68, 10, delta);
@@ -5822,7 +5882,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
         9,
         delta,
       );
-      fan.visible = material.opacity > .003;
+      fan.visible = false;
     });
     const speedPressure = THREE.MathUtils.smootherstep(state.speed, 7.2, 16.5);
     const finCavitation = riding
@@ -6117,7 +6177,13 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
         </mesh>
       ))}
       {[0, 1].map((index) => (
-        <mesh key={index} position={[0, 0.045, -1.3 - index * 1.85]} rotation={[-Math.PI / 2, 0, 0]} scale={[1 + index * 0.6, 1.45 + index * 0.85, 1]}>
+        <mesh
+          key={index}
+          position={[0, 0.045, -1.3 - index * 1.85]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          scale={[1 + index * 0.6, 1.45 + index * 0.85, 1]}
+          visible={false}
+        >
           <ringGeometry args={[0.3, 0.78, 28]} />
           <meshBasicMaterial
             ref={(material) => { wakeMaterials.current[index + 2] = material; }}
@@ -6172,7 +6238,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
             side={THREE.DoubleSide}
             transparent
             opacity={0}
-            alphaTest={.018}
+            alphaTest={.055}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
@@ -6198,7 +6264,7 @@ function WaterInteraction({ motion, settings, mobile }: { motion: MutableRefObje
             side={THREE.DoubleSide}
             transparent
             opacity={0}
-            alphaTest={.014}
+            alphaTest={.055}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
@@ -6290,11 +6356,11 @@ function BreakingWhitewaterField({
     [character, settings.tide],
   );
   const patchCount = mobile
-    ? quality === "reduced" ? 24 : quality === "high" ? 40 : 32
-    : quality === "reduced" ? 42 : quality === "balanced" ? 56 : BREAKING_FOAM_PATCH_LIMIT;
+    ? quality === "reduced" ? 14 : quality === "high" ? 26 : 20
+    : quality === "reduced" ? 24 : quality === "balanced" ? 32 : BREAKING_FOAM_PATCH_LIMIT;
   const mistCount = mobile
-    ? quality === "reduced" ? 30 : quality === "high" ? 54 : 42
-    : quality === "reduced" ? 58 : quality === "balanced" ? 82 : BREAKING_MIST_LIMIT;
+    ? quality === "reduced" ? 26 : quality === "high" ? 48 : 36
+    : quality === "reduced" ? 46 : quality === "balanced" ? 68 : BREAKING_MIST_LIMIT;
   const foamMesh = useRef<THREE.InstancedMesh>(null);
   const mist = useRef<THREE.Points>(null);
   const mistMaterial = useRef<THREE.PointsMaterial>(null);
@@ -6342,18 +6408,15 @@ function BreakingWhitewaterField({
       body.addColorStop(.82, "rgba(191,244,236,.38)");
       body.addColorStop(1, "rgba(184,237,230,0)");
       context.fillStyle = body;
+      // Keep the wake silhouette soft and continuous. The old point-to-point
+      // outline exposed dozens of individual transparent planes as large
+      // triangular shards when the camera looked down the breaking line.
       context.beginPath();
-      context.moveTo(7, 20);
-      for (let section = 0; section <= 16; section += 1) {
-        const x = 7 + section * 15.1;
-        const y = 15 + seededRandom(section, 711) * 24;
-        context.lineTo(x, y);
-      }
-      for (let section = 16; section >= 0; section -= 1) {
-        const x = 7 + section * 15.1;
-        const y = 95 + seededRandom(section, 712) * 22;
-        context.lineTo(x, y);
-      }
+      context.moveTo(5, 64);
+      context.bezierCurveTo(17, 24, 65, 12, 128, 18);
+      context.bezierCurveTo(190, 10, 239, 28, 251, 62);
+      context.bezierCurveTo(239, 98, 188, 111, 126, 102);
+      context.bezierCurveTo(62, 114, 17, 96, 5, 64);
       context.closePath();
       context.fill();
       context.globalCompositeOperation = "destination-out";
@@ -6491,9 +6554,9 @@ function BreakingWhitewaterField({
       patch.vx = normalX * advection + tangentX * sideDrift;
       patch.vz = normalZ * advection + tangentZ * sideDrift;
       patch.heading = Math.atan2(normalX, normalZ);
-      patch.width = 2.4 + Math.random() * 2.8 + settings.waveHeight * .34 + impactBoost * .6;
-      patch.length = 1.5 + Math.random() * 2.2 + breakEnergy * 1.25 + impactBoost * .9;
-      patch.maxAge = (mobile ? 3.5 : 4.5) + Math.random() * (mobile ? 1.7 : 2.5) + breakEnergy * .65;
+      patch.width = 1.1 + Math.random() * 1.8 + settings.waveHeight * .18 + impactBoost * .34;
+      patch.length = .58 + Math.random() * 1.05 + breakEnergy * .58 + impactBoost * .42;
+      patch.maxAge = (mobile ? 1.65 : 2.15) + Math.random() * (mobile ? 1.05 : 1.45) + breakEnergy * .38;
       patch.age = patch.maxAge;
       patch.intensity = THREE.MathUtils.clamp(.46 + breakEnergy * .46 + impactBoost * .18 + Math.random() * .16, .48, 1.2);
       patch.seed = Math.random() * Math.PI * 2;
@@ -6507,7 +6570,7 @@ function BreakingWhitewaterField({
     };
 
     if (riding) {
-      emission.current += delta * (5.2 + breakEnergy * 7.4 + state.sectionPressure * 1.4 + state.whitewater * 5.2);
+      emission.current += delta * (2.8 + breakEnergy * 3.6 + state.sectionPressure * .8 + state.whitewater * 2.4);
       const burstLimit = mobile ? 2 : 4;
       let emitted = 0;
       while (emission.current >= 1 && emitted < burstLimit) {
@@ -6549,8 +6612,8 @@ function BreakingWhitewaterField({
         dummy.position.set(patch.x, surface + .06, patch.z);
         dummy.rotation.set(-Math.PI / 2, 0, -patch.heading + Math.sin(elapsed * .44 + patch.seed) * .026);
         dummy.scale.set(
-          patch.width * (1 + progress * .72) * fade,
-          patch.length * (1 + progress * 1.45) * fade,
+          patch.width * (1 + progress * .34) * fade,
+          patch.length * (1 + progress * .78) * fade,
           1,
         );
         foamTint.copy(foamColor).multiplyScalar(fade * patch.intensity);
@@ -6609,13 +6672,19 @@ function BreakingWhitewaterField({
 
   return (
     <group>
-      <instancedMesh ref={foamMesh} args={[undefined, undefined, patchCount]} frustumCulled={false} renderOrder={3.85}>
+      <instancedMesh
+        ref={foamMesh}
+        args={[undefined, undefined, patchCount]}
+        frustumCulled={false}
+        renderOrder={3.85}
+        visible={false}
+      >
         <planeGeometry args={[1, 1]} />
         <meshBasicMaterial
           map={foamTexture}
           transparent
-          opacity={.72}
-          alphaTest={.018}
+          opacity={.46}
+          alphaTest={.035}
           depthWrite={false}
           side={THREE.DoubleSide}
         />
@@ -14475,19 +14544,25 @@ function Simulation({
                   ? "Wave passed underneath - finish the front foot and balance"
                   : `Front foot landing - ${stance.current > .14 ? "nose pressure" : stance.current < -.14 ? "tail pressure" : "centered pressure"} carries into the ride`;
           if (takeoffCommitProgress >= .995) {
-            const standingSupported = !lostCrest
-              && boardStillEngaged
-              && caughtInteraction.outcome !== "tumble"
-              && boardWaterContact > .24
-              && rollCapsizeRisk < .84
-              && pitchOverRisk < .86
-              && rideCapture.current.overtaken < .76;
+            const landingSupport = resolvePopUpLandingSupport({
+              lostCrest,
+              boardStillEngaged,
+              interactionOutcome: caughtInteraction.outcome,
+              waterContact: boardWaterContact,
+              rollCapsizeRisk,
+              pitchOverRisk,
+              crestOvertaken: rideCapture.current.overtaken,
+              surfableFace: caughtReading.surfable,
+              faceEnvelope: caughtReading.faceEnvelope,
+              physicalLift: caughtReading.physicalLift,
+              waveContact: caughtInteraction.waveContact,
+            });
             const planingMatch = THREE.MathUtils.clamp(
               currentNormalSpeed / Math.max(.1, catchTransport.speed * .72),
               0,
               1,
             );
-            if (standingSupported) {
+            if (landingSupport > 0) {
               const committedQuality = THREE.MathUtils.clamp(
                 takeoffCommitQuality.current * .44
                   + caughtReading.quality * .25
@@ -14500,7 +14575,10 @@ function Simulation({
               enterRide(
                 committedQuality,
                 catchTransport,
-                waveEngagement.current,
+                Math.max(
+                  waveEngagement.current,
+                  landingSupport < 1 ? landingSupport : .46,
+                ),
               );
             } else {
               takeoffCommitAt.current = -1;
@@ -18962,21 +19040,6 @@ function Simulation({
         hazeColor={fogColor}
         visibility={fogFar}
         rain={weather.kind === "rain" ? weather.intensity : 0}
-      />
-      <LineupWaveSetVolume
-        settings={settings}
-        character={character}
-        focusPosition={worldFocus}
-        light={light}
-        cloudCover={cloudCover}
-      />
-      <BreakingWave
-        motion={motion}
-        settings={settings}
-        character={character}
-        focusPosition={worldFocus}
-        light={light}
-        cloudCover={cloudCover}
       />
       <BeachLife
         beach={beach}

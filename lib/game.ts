@@ -1207,6 +1207,20 @@ export type WaveTakeoffReading = {
   positionQuality: number;
 };
 
+export type PopUpLandingSupportSample = {
+  lostCrest: boolean;
+  boardStillEngaged: boolean;
+  interactionOutcome: "stand" | "glide" | "capture" | "tumble";
+  waterContact: number;
+  rollCapsizeRisk: number;
+  pitchOverRisk: number;
+  crestOvertaken: number;
+  surfableFace: boolean;
+  faceEnvelope: number;
+  physicalLift: number;
+  waveContact: number;
+};
+
 export type BoardWaterSample = {
   boardHeading: number;
   velocityX: number;
@@ -7148,6 +7162,48 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
     headingQuality,
     positionQuality,
   };
+}
+
+/**
+ * Resolves the body-to-board handoff at the end of a pop-up.
+ *
+ * The strict capture path remains fully physical. A second, narrow grace path
+ * accepts a visibly rising surfable face when the animation finishes a few
+ * frames after the peak contact sample. It prevents a valid SPACE press from
+ * being discarded because the crest moved during the body animation, while
+ * still rejecting flat water, a lost crest, or a tumbling hull.
+ */
+export function resolvePopUpLandingSupport(
+  sample: PopUpLandingSupportSample,
+) {
+  const waterContact = clampValue(sample.waterContact, 0, 1);
+  const rollRisk = clampValue(sample.rollCapsizeRisk, 0, 1);
+  const pitchRisk = clampValue(sample.pitchOverRisk, 0, 1);
+  const overtaken = clampValue(sample.crestOvertaken, 0, 1.4);
+  if (
+    sample.lostCrest
+    || sample.interactionOutcome === "tumble"
+    || waterContact <= .16
+    || rollRisk >= .9
+    || pitchRisk >= .91
+    || overtaken >= .9
+  ) {
+    return 0;
+  }
+  if (
+    sample.boardStillEngaged
+    && waterContact > .24
+    && rollRisk < .84
+    && pitchRisk < .86
+    && overtaken < .76
+  ) {
+    return 1;
+  }
+  const readableFace = sample.surfableFace
+    && sample.faceEnvelope > .035
+    && sample.physicalLift > .06
+    && sample.waveContact > .025;
+  return readableFace ? .48 : 0;
 }
 
 /**

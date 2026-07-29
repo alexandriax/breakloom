@@ -1350,10 +1350,14 @@ export function waveBreakerResponseAt(
   const shapeActivation = breakingProgress * shoreFade;
   const realizedCrestEnergy = clamp(crestEnergy, 0, 1);
   const shapeAmplitude = Math.max(0, localSignificantHeight)
-    * .29
+    // Preserve the readable height and drive of the earlier mesh while the
+    // underlying spectrum supplies spacing and travel. This remains a broad,
+    // bounded Stokes correction—not the old fifth-power needle—and is applied
+    // to the same surface sampled by rendering and gameplay.
+    * .5
     * power
     * shapeActivation
-    * (.55 + realizedCrestEnergy * .63);
+    * (.42 + realizedCrestEnergy * .7);
   const second = .28 + steepness * .17 + hollow * .1;
   const asymmetry = .08 + hollow * .2 + steepness * .045;
   const third = .045 + hollow * .07 + steepness * .035;

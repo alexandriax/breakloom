@@ -162,14 +162,26 @@ visible group at the solved bathymetric breaker contour, so its countdown and
 energy no longer promise a wave that cancels out on screen or measure a
 shoreline phase that cannot yet break.
 
-Because a single-valued height field cannot geometrically overturn, the break
-also has a synchronized explicit face/lip volume. It follows the solved
-finite-depth crest through the physical breaker band, pitches shoreward,
-collapses its whitewater down the face, and leaves the aerated trail offshore.
-During an engaged ride, a smaller board-level section of the same face remains
-anchored to the sampled water and propagation frame, making the slope, lip,
-foam pressure, and board position readable together instead of drawing a flat
-decal under the surfer.
+The first attempt to restore the visual lip layered separate lineup and
+board-local face planes over this surface. In play they read as translucent
+ribbons, crossed the actual mesh crest, and made the board appear to surf a
+different wave. The hybrid model removes those overlays. The finite-depth
+components now displace the continuous ocean mesh both vertically and
+horizontally with a positive-Jacobian limit; a stronger but broad bounded
+Stokes correction restores the readable height and drive of the main-branch
+waves. Shading blends the analytic water normal with the displaced triangle
+normal, so the wall has geometric weight without returning to the fixed
+mountain sequence. The current surface remains non-overturning, but the crest,
+face, foam, hull support, and ride forces are once again one mesh.
+Breaker aeration is now shaded directly on that crest; the broad instanced
+foam cards and oversized board-side spray/ring cards are suppressed in favor
+of mesh-bound lace, a narrow board wake, and fine particles.
+
+Pop-up completion also has a narrow physical grace path. A real, visibly
+rising face can retain capture when the body animation lands a few frames
+after peak support, while flat water, a lost crest, excessive roll/pitch, and
+a tumbling hull still reject the stand. This restores responsive controls
+without reinstating unconditional flat-water surfing.
 
 The optional tow now solves the offshore-most physical
 `Hs / (0.78 × depth)` contour rather than subtracting a dimensionless HUD
@@ -204,6 +216,8 @@ Automated release verification now checks:
 - every one of the 13 coasts and 41 zones for finite values, non-flat motion,
   natural breaking transitions, and bounded crest height;
 - positive horizontal mapping margin to prevent Gerstner-style foldover;
+- bounded GPU horizontal displacement and geometric-normal shading on the
+  continuous ocean mesh, with detached lineup/board ribbon invocations banned;
 - analytic surface rise and normal against numerical derivatives;
 - dominant phase advection against local celerity;
 - bounded orbital velocities and agreement between gameplay and ocean samples;
@@ -220,7 +234,8 @@ Automated release verification now checks:
 - acceleration-limited tow motion, bounded rope stretch, physical contour
   staging, live face-gated release, next-crest reacquisition, and rejection of
   flat release water;
-- unsupported pop-ups returning prone and engaged-breaker-only whitewater;
+- readable-face pop-up grace with flat water/lost crests still rejected, plus
+  engaged-breaker-only whitewater;
 - deterministic, identity-preserving 28-component GPU packing, bounded
   CPU/GPU height interpolation error, and coast-specific contour signatures;
   and
@@ -240,10 +255,10 @@ dynamics solver. The next realism gains should build on it:
 1. Extend the crest-localized bore into a full Eulerian foam transport texture
    so detached whitewater can merge, spread, and decay across multiple waves
    rather than using a shader signal plus rider-local particle persistence.
-2. Replace the current synchronized explicit lip meshes with a local
-   signed-distance or particle-level-set air/water volume for fully volumetric
-   tube closure, splash-sheet breakup, entrained air, and view-correct
-   refraction through an overturning lip.
+2. Add a local signed-distance or particle-level-set air/water volume for true
+   overturning tube closure, splash-sheet breakup, entrained air, and
+   view-correct refraction. It must grow directly from the continuous mesh
+   crest rather than returning as a detached face plane.
 3. Extend the packed bathymetry window or use a clipmap when the player travels
    far alongshore, reducing local linearization error at the distant mesh edge.
 4. Calibrate each zone from measured bathymetric grids and buoy spectra where
