@@ -34,6 +34,11 @@ for (const token of [
   "travel.r",
   "first.g * uTime",
   "vWorldNormal",
+  "uBreakerPower",
+  "uBreakerSteepness",
+  "uBreakerHollow",
+  "breakerShapeDerivative",
+  "for (int index = 0; index < 28; index++)",
 ]) {
   assert.ok(
     vertex.includes(token),

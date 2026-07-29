@@ -143,6 +143,10 @@ export type WaveSamplingOptions = {
   breakingIndex?: number;
   maximumCombinedSteepness?: number;
   maximumHorizontalSlope?: number;
+  /** Break-specific nonlinear shape controls, centered around 1. */
+  breakerPower?: number;
+  breakerSteepness?: number;
+  breakerHollow?: number;
   gradientStep?: number;
   includeComponents?: boolean;
 };
@@ -204,6 +208,11 @@ export type WaveSurfaceSample = {
   depth: number;
   localSignificantHeight: number;
   breakingRatio: number;
+  breakingProgress: number;
+  brokenProgress: number;
+  whitewater: number;
+  breakerVelocityX: number;
+  breakerVelocityZ: number;
   regime: WaveRegime;
   horizontalJacobianMargin: number;
   dominant: DominantWaveState | null;
@@ -268,6 +277,26 @@ function positiveOr(value: number | undefined, fallback: number) {
 
 function wrapDegrees(value: number) {
   return ((value + 180) % 360 + 360) % 360 - 180;
+}
+
+/**
+ * Folds a marine bearing into the seaward-to-shoreward half-plane used by the
+ * coastal simulation. Forecast grids occasionally report energy from behind
+ * the local coastline (or use a "from" bearing whose ambiguity puts a
+ * component over land). Letting that sign pass through makes crests propagate
+ * offshore and can pull a surfboard backwards. A real nearshore component is
+ * refracted into the incoming hemisphere instead.
+ */
+export function coastalIncomingDirectionDegrees(value: number) {
+  const wrapped = wrapDegrees(value);
+  const folded = wrapped > 90
+    ? 180 - wrapped
+    : wrapped < -90
+      ? -180 - wrapped
+      : wrapped;
+  // Preserve strongly oblique swell without allowing a numerically stationary
+  // cross-shore component at exactly ninety degrees.
+  return clamp(folded, -88, 88);
 }
 
 function wrapRadians(value: number) {
@@ -822,7 +851,7 @@ export function buildWaveComponentBank(input: WaveSpectrumInput): WaveComponentB
       const directionUnit = (localIndex + .12 + random() * .76) / partition.count;
       const directionOffset = spectralQuantile(directionUnit)
         * partition.directionalSpreadDegrees;
-      const directionDegrees = wrapDegrees(
+      const directionDegrees = coastalIncomingDirectionDegrees(
         partition.directionDegrees + directionOffset,
       );
       const directionRadians = directionDegrees * Math.PI / 180;
@@ -893,7 +922,9 @@ export function waveSpectrumInputFromMarine(
   seed?: number | string,
 ): WaveSpectrumInput {
   const localDirection = (direction: number | undefined, fallback: number) =>
-    wrapDegrees(finiteOr(direction, fallback) - conditions.coastHeading);
+    coastalIncomingDirectionDegrees(
+      finiteOr(direction, fallback) - conditions.coastHeading,
+    );
   const swellPartitions: WavePartitionInput[] = [];
   const addSwell = (
     label: string,
@@ -1247,14 +1278,142 @@ function heightFromTerms(terms: readonly LocalTerm[]) {
   );
 }
 
+function smoothUnit(edge0: number, edge1: number, value: number) {
+  const unit = clamp((value - edge0) / Math.max(1e-9, edge1 - edge0), 0, 1);
+  return unit * unit * (3 - 2 * unit);
+}
+
+export type WaveBreakerResponse = {
+  breakingProgress: number;
+  brokenProgress: number;
+  shapeActivation: number;
+  heightOffset: number;
+  phaseDerivative: number;
+  whitewater: number;
+};
+
+/**
+ * A bounded Stokes-like breaker correction shared by surface sampling and the
+ * GPU shader. The second and third bound harmonics sharpen the crest while the
+ * quadrature term makes the shoreward face steeper than the back. Unlike the
+ * old depth-only attenuation, this creates a pitched face before dissipation
+ * turns it into a bore.
+ */
+export function waveBreakerResponseAt(
+  breakingRatio: number,
+  localSignificantHeight: number,
+  dominantPhase: number,
+  _crestEnergy: number,
+  options: Pick<
+    WaveSamplingOptions,
+    "breakerPower" | "breakerSteepness" | "breakerHollow"
+  > = {},
+): WaveBreakerResponse {
+  const power = clamp(positiveOr(options.breakerPower, 1), .62, 1.55);
+  const steepness = clamp(positiveOr(options.breakerSteepness, .78), .38, 1.3);
+  const hollow = clamp(positiveOr(options.breakerHollow, .45), .08, 1.1);
+  const breakingProgress = smoothUnit(.68, 1.06, breakingRatio);
+  const brokenProgress = smoothUnit(1.02, 1.82, breakingRatio);
+  const shoreFade = 1 - smoothUnit(4.8, 9.5, breakingRatio);
+  const shapeActivation = breakingProgress * shoreFade;
+  const shapeAmplitude = Math.max(0, localSignificantHeight)
+    * .29
+    * power
+    * shapeActivation;
+  const second = .28 + steepness * .17 + hollow * .1;
+  const asymmetry = .08 + hollow * .2 + steepness * .045;
+  const third = .045 + hollow * .07 + steepness * .035;
+  const fourth = .035 + hollow * .05;
+  const fifth = .018 + hollow * .03;
+  const twice = dominantPhase * 2;
+  const thrice = dominantPhase * 3;
+  const fourthPhase = dominantPhase * 4;
+  const fifthPhase = dominantPhase * 5;
+  const shape = second * Math.cos(twice)
+    + asymmetry * Math.sin(twice)
+    + third * Math.cos(thrice)
+    + fourth * Math.cos(fourthPhase)
+    + fifth * Math.cos(fifthPhase);
+  const shapeDerivative = -2 * second * Math.sin(twice)
+    + 2 * asymmetry * Math.cos(twice)
+    - 3 * third * Math.sin(thrice)
+    - 4 * fourth * Math.sin(fourthPhase)
+    - 5 * fifth * Math.sin(fifthPhase);
+  const crestSignal = .5 + .5 * Math.cos(dominantPhase);
+  const whitewater = shapeActivation
+    * smoothUnit(.42, .86, crestSignal)
+    * (.18 + brokenProgress * .82);
+  return {
+    breakingProgress,
+    brokenProgress,
+    shapeActivation,
+    heightOffset: shapeAmplitude * shape,
+    phaseDerivative: shapeAmplitude * shapeDerivative,
+    whitewater,
+  };
+}
+
+function heightFromLocal(
+  bank: WaveComponentBank,
+  local: ReturnType<typeof localTermsAt>,
+  options: WaveSamplingOptions,
+) {
+  const dominant = dominantStateAt(bank, local.terms);
+  const response = waveBreakerResponseAt(
+    local.breakingRatio,
+    local.localSignificantHeight,
+    dominant?.phase ?? 0,
+    dominant?.crestEnergy ?? 0,
+    options,
+  );
+  return heightFromTerms(local.terms) + response.heightOffset;
+}
+
 export function normalizedSpectralEnvelopeAtPhase(
   bank: WaveComponentBank,
   carrierPhase: number,
 ) {
   const rawEnergy = envelopeRawAtCarrierPhase(bank, carrierPhase);
-  const range = bank.envelopeEnergyMax - bank.envelopeEnergyMin;
-  const energy = range > 1e-9
-    ? clamp((rawEnergy - bank.envelopeEnergyMin) / range, 0, 1)
+  const dominant = bank.components[bank.dominantComponentId];
+  const groupComponents = dominant
+    ? bank.components
+        .filter(
+          (component) => component.partitionId === dominant.partitionId
+            && component.id !== dominant.id,
+        )
+        .map((component) => {
+          const projection = component.directionX * dominant.directionX
+            + component.directionZ * dominant.directionZ;
+          const carrierRatio = component.referenceWaveNumber
+            * projection
+            / Math.max(1e-9, dominant.referenceWaveNumber);
+          return {
+            component,
+            carrierRatio,
+            beatPeriod: 1 / Math.max(1e-6, Math.abs(carrierRatio - 1)),
+          };
+        })
+    : [];
+  // Pick a real neighboring spectral line whose interference produces a
+  // roughly 10–12-wave group. This keeps sets broad enough to read and surf,
+  // while their phase remains seeded by the actual realized spectrum.
+  const groupComponent = groupComponents.reduce<
+    (typeof groupComponents)[number] | null
+  >((best, candidate) => (
+    !best
+      || Math.abs(candidate.beatPeriod - 11)
+        < Math.abs(best.beatPeriod - 11)
+      ? candidate
+      : best
+  ), null);
+  const groupRelativePhase = dominant && groupComponent
+    ? groupComponent.component.phaseOffset
+      + groupComponent.carrierRatio
+        * (carrierPhase - dominant.phaseOffset)
+      - carrierPhase
+    : 0;
+  const energy = groupComponent
+    ? .5 + .5 * Math.cos(groupRelativePhase)
     : .5;
   return {
     envelope: Math.sqrt(Math.max(0, rawEnergy)),
@@ -1349,7 +1508,15 @@ export function sampleWaveSurface(
   options: WaveSamplingOptions = {},
 ): WaveSurfaceSample {
   const local = localTermsAt(bank, source, x, z, elapsed, options);
-  const height = heightFromTerms(local.terms);
+  const dominant = dominantStateAt(bank, local.terms);
+  const breaker = waveBreakerResponseAt(
+    local.breakingRatio,
+    local.localSignificantHeight,
+    dominant?.phase ?? 0,
+    dominant?.crestEnergy ?? 0,
+    options,
+  );
+  const height = heightFromTerms(local.terms) + breaker.heightOffset;
   let timeDerivative = 0;
   let gradientX = 0;
   let horizontalVelocityX = 0;
@@ -1421,6 +1588,17 @@ export function sampleWaveSurface(
       });
     }
   }
+  const dominantTerm = dominant
+    ? local.terms.find(
+        (term) => term.component.id === dominant.componentId,
+      )
+    : undefined;
+  if (dominantTerm) {
+    timeDerivative -= breaker.phaseDerivative
+      * dominantTerm.component.angularFrequency;
+    gradientX += breaker.phaseDerivative
+      * dominantTerm.geometry.alongshoreWaveNumber;
+  }
   const gradientStep = clamp(
     positiveOr(options.gradientStep, .18),
     .025,
@@ -1443,7 +1621,7 @@ export function sampleWaveSurface(
     options,
   );
   const gradientZ = (
-    heightFromTerms(after.terms) - heightFromTerms(before.terms)
+    heightFromLocal(bank, after, options) - heightFromLocal(bank, before, options)
   ) / (2 * gradientStep);
   if (!isDepthProfile(source)) {
     const left = localTermsAt(
@@ -1463,11 +1641,10 @@ export function sampleWaveSurface(
       options,
     );
     gradientX = (
-      heightFromTerms(right.terms) - heightFromTerms(left.terms)
+      heightFromLocal(bank, right, options) - heightFromLocal(bank, left, options)
     ) / (2 * gradientStep);
   }
   const normalLength = Math.hypot(gradientX, 1, gradientZ);
-  const dominant = dominantStateAt(bank, local.terms);
   const dominantDepthRatio = dominant
     ? local.depth / Math.max(1e-9, dominant.wavelength)
     : 1;
@@ -1489,6 +1666,12 @@ export function sampleWaveSurface(
     horizontalVelocityX *= velocityScale;
     horizontalVelocityZ *= velocityScale;
   }
+  const breakerVelocityScale = breaker.whitewater
+    * (.48 + breaker.brokenProgress * .28);
+  const breakerVelocityX = (dominant?.celerityX ?? 0)
+    * breakerVelocityScale;
+  const breakerVelocityZ = (dominant?.celerityZ ?? 0)
+    * breakerVelocityScale;
   return {
     height,
     displacementX,
@@ -1506,6 +1689,11 @@ export function sampleWaveSurface(
     depth: local.depth,
     localSignificantHeight: local.localSignificantHeight,
     breakingRatio: local.breakingRatio,
+    breakingProgress: breaker.breakingProgress,
+    brokenProgress: breaker.brokenProgress,
+    whitewater: breaker.whitewater,
+    breakerVelocityX,
+    breakerVelocityZ,
     regime,
     horizontalJacobianMargin: 1 - horizontalSlopeBudget,
     dominant,

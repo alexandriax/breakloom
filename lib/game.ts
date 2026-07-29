@@ -25,7 +25,7 @@ export const OUTER_PADDLE_LIMIT_Z = -900;
 // between the crest and the inside. Set energy can move it farther outside.
 export const BREAK_OFFSHORE_OFFSET = 24;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
-const SURFABLE_CREST_ENERGY = .22;
+const SURFABLE_CREST_ENERGY = .45;
 
 /**
  * Assistance changes how forgiving the surfer's technique is, not the wave
@@ -1256,6 +1256,9 @@ export type SurfboardDynamicsSample = {
   surfaceSlopeZ: number;
   waveVelocityX: number;
   waveVelocityZ: number;
+  /** Surface-particle flow, kept separate from crest propagation. */
+  waterVelocityX?: number;
+  waterVelocityZ?: number;
   currentVelocityX: number;
   currentVelocityZ: number;
   waveContact: number;
@@ -5001,16 +5004,16 @@ export function advanceSurfboardDynamics(
   const rightX = Math.cos(heading);
   const rightZ = -Math.sin(heading);
 
-  // Surface particles move far slower than the crest itself. A small orbital
-  // component gives the board moving water to react against without making the
-  // phase speed a conveyor belt.
+  // Surface particles move far slower than the crest itself. Keep their
+  // oscillating orbital flow out of the propagation vector so a half-cycle can
+  // never reverse the wave normal or the board's capture frame.
   const orbitalCoupling = hullContact * (.035 + contact * (
     .09 + Math.max(0, sample.waveHeight) * .018
   ));
   const waterVelocityX = sample.currentVelocityX
-    + sample.waveVelocityX * orbitalCoupling;
+    + (sample.waterVelocityX ?? 0) * orbitalCoupling;
   const waterVelocityZ = sample.currentVelocityZ
-    + sample.waveVelocityZ * orbitalCoupling;
+    + (sample.waterVelocityZ ?? 0) * orbitalCoupling;
   const relativeX = state.velocityX - waterVelocityX;
   const relativeZ = state.velocityZ - waterVelocityZ;
   const forwardSpeed = relativeX * forwardX + relativeZ * forwardZ;
@@ -5644,6 +5647,32 @@ export function shorelineRideOutProgress(coastalZ: number) {
 
 export const OPTIONAL_TOW_DURATION_SECONDS = 16;
 
+export function stageOptionalTowCrestAtBreaker(
+  anchorX: number,
+  anchorZ: number,
+  crestX: number,
+  crestZ: number,
+  normalX: number,
+  normalZ: number,
+  maximumNormalOffset = 3.5,
+) {
+  const normalLength = Math.max(.001, Math.hypot(normalX, normalZ));
+  const unitNormalX = normalX / normalLength;
+  const unitNormalZ = normalZ / normalLength;
+  const normalOffset = (crestX - anchorX) * unitNormalX
+    + (crestZ - anchorZ) * unitNormalZ;
+  const stagedNormalOffset = clampValue(
+    normalOffset,
+    -Math.abs(maximumNormalOffset),
+    Math.abs(maximumNormalOffset),
+  );
+  return {
+    x: crestX + (stagedNormalOffset - normalOffset) * unitNormalX,
+    z: crestZ + (stagedNormalOffset - normalOffset) * unitNormalZ,
+    normalOffset: stagedNormalOffset,
+  };
+}
+
 export function advanceOptionalTowProgress(
   progress: number,
   deltaSeconds: number,
@@ -5654,12 +5683,181 @@ export function advanceOptionalTowProgress(
 }
 
 export function optionalTowReleaseQuality(progress: number) {
-  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .88) / .1));
+  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .9) / .08));
 }
 
 export function optionalTowReleaseRecommended(progress: number) {
   const releaseProgress = clampValue(progress, 0, 1);
-  return releaseProgress >= .84 && releaseProgress <= .91;
+  return releaseProgress >= .88 && releaseProgress <= .92;
+}
+
+export type OptionalTowReleaseFaceSample = {
+  breakingRatio: number;
+  crestPhaseError: number;
+  faceSlope: number;
+  surfaceRise: number;
+  whitewater: number;
+};
+
+/**
+ * Scores the face that is physically under the tow surfer. Progress alone
+ * cannot prove that the craft caught its intended crest: frame pressure,
+ * oblique swell, and route lag can all move the nominal window away from the
+ * rendered wave. The score therefore requires a depth-limited front face and
+ * measured slope, lift, or crest-localized whitewater.
+ */
+export function optionalTowReleaseFaceQuality(
+  sample: OptionalTowReleaseFaceSample,
+) {
+  const phaseError = Math.atan2(
+    Math.sin(sample.crestPhaseError),
+    Math.cos(sample.crestPhaseError),
+  );
+  const frontFace = smoothstep(-.08, .18, phaseError)
+    * (1 - smoothstep(1.25, 1.9, phaseError));
+  const depthLimited = smoothstep(.6, .82, sample.breakingRatio)
+    * (1 - smoothstep(1.4, 1.9, sample.breakingRatio));
+  const physicalFace = Math.max(
+    smoothstep(.006, .06, sample.faceSlope),
+    smoothstep(.01, .3, sample.surfaceRise),
+    smoothstep(.04, .28, sample.whitewater),
+  );
+  return clampValue(
+    frontFace
+      * depthLimited
+      * (.35 + physicalFace * .65),
+    0,
+    1,
+  );
+}
+
+export function optionalTowReleasePhysicallySupported(
+  requested: boolean,
+  progress: number,
+  quality: number,
+  breakingRatio: number,
+  faceQuality = 1,
+) {
+  return requested
+    && progress >= .8
+    && quality > .08
+    && breakingRatio >= .6
+    && breakingRatio <= 1.9
+    && faceQuality >= .08;
+}
+
+export type OptionalTowCraftState = {
+  x: number;
+  z: number;
+  velocityX: number;
+  velocityZ: number;
+  heading: number;
+};
+
+export function advanceOptionalTowCraft(
+  state: OptionalTowCraftState,
+  desiredX: number,
+  desiredZ: number,
+  deltaSeconds: number,
+  maximumSpeed: number,
+  maximumAcceleration = 6.2,
+): OptionalTowCraftState & { speed: number; acceleration: number } {
+  const delta = clampValue(deltaSeconds, .001, .05);
+  let requestedVelocityX = (desiredX - state.x) / delta;
+  let requestedVelocityZ = (desiredZ - state.z) / delta;
+  const requestedSpeed = Math.hypot(
+    requestedVelocityX,
+    requestedVelocityZ,
+  );
+  const speedLimit = Math.max(.1, maximumSpeed);
+  if (requestedSpeed > speedLimit) {
+    const scale = speedLimit / requestedSpeed;
+    requestedVelocityX *= scale;
+    requestedVelocityZ *= scale;
+  }
+  let changeX = requestedVelocityX - state.velocityX;
+  let changeZ = requestedVelocityZ - state.velocityZ;
+  const requestedChange = Math.hypot(changeX, changeZ);
+  const maximumChange = Math.max(.1, maximumAcceleration) * delta;
+  if (requestedChange > maximumChange) {
+    const scale = maximumChange / requestedChange;
+    changeX *= scale;
+    changeZ *= scale;
+  }
+  const velocityX = state.velocityX + changeX;
+  const velocityZ = state.velocityZ + changeZ;
+  const speed = Math.hypot(velocityX, velocityZ);
+  return {
+    x: state.x + velocityX * delta,
+    z: state.z + velocityZ * delta,
+    velocityX,
+    velocityZ,
+    heading: speed > .05
+      ? Math.atan2(velocityX, velocityZ)
+      : state.heading,
+    speed,
+    acceleration: Math.hypot(changeX, changeZ) / delta,
+  };
+}
+
+export type OptionalTowRopeState = {
+  x: number;
+  z: number;
+  velocityX: number;
+  velocityZ: number;
+};
+
+export function advanceOptionalTowRope(
+  state: OptionalTowRopeState,
+  craft: OptionalTowCraftState,
+  deltaSeconds: number,
+  ropeLength = 7,
+): OptionalTowRopeState & { ropeDistance: number } {
+  const delta = clampValue(deltaSeconds, .001, .05);
+  const forwardX = Math.sin(craft.heading);
+  const forwardZ = Math.cos(craft.heading);
+  const desiredX = craft.x - forwardX * ropeLength;
+  const desiredZ = craft.z - forwardZ * ropeLength;
+  const damping = 1 - Math.exp(-4.8 * delta);
+  let velocityX = state.velocityX + (
+    craft.velocityX + (desiredX - state.x) * 2.15
+      - state.velocityX
+  ) * damping;
+  let velocityZ = state.velocityZ + (
+    craft.velocityZ + (desiredZ - state.z) * 2.15
+      - state.velocityZ
+  ) * damping;
+  let x = state.x + velocityX * delta;
+  let z = state.z + velocityZ * delta;
+  let ropeX = x - craft.x;
+  let ropeZ = z - craft.z;
+  let ropeDistance = Math.hypot(ropeX, ropeZ);
+  const maximumStretch = ropeLength + .8;
+  if (ropeDistance > maximumStretch) {
+    const normalX = ropeX / ropeDistance;
+    const normalZ = ropeZ / ropeDistance;
+    x = craft.x + normalX * maximumStretch;
+    z = craft.z + normalZ * maximumStretch;
+    const separatingSpeed = (
+      velocityX - craft.velocityX
+    ) * normalX + (
+      velocityZ - craft.velocityZ
+    ) * normalZ;
+    if (separatingSpeed > 0) {
+      velocityX -= normalX * separatingSpeed;
+      velocityZ -= normalZ * separatingSpeed;
+    }
+    ropeX = x - craft.x;
+    ropeZ = z - craft.z;
+    ropeDistance = Math.hypot(ropeX, ropeZ);
+  }
+  return {
+    x,
+    z,
+    velocityX,
+    velocityZ,
+    ropeDistance,
+  };
 }
 
 export type GameStats = {
@@ -6280,6 +6478,104 @@ export function waveBreakingCoordinateAt(
   ).breakingCoordinate;
 }
 
+export type WaveBreakingContour = WaveBreakingGeometryReading & {
+  z: number;
+  targetRatio: number;
+  ratioError: number;
+};
+
+/**
+ * Finds the offshore-most physical depth-limited break contour. This solves in
+ * world space against Hs/(gamma*d); the dimensionless coaching coordinate is
+ * deliberately not treated as a distance.
+ */
+export function findWaveBreakingContourAt(
+  x: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+  targetRatio = .9,
+): WaveBreakingContour {
+  const target = clampValue(targetRatio, .7, 1.6);
+  const offshoreZ = -360;
+  const shorewardZ = SHORELINE_REFERENCE_Z
+    + shorelineShiftForTide(settings.tide)
+    - 2;
+  const samples = 120;
+  let previousZ = offshoreZ;
+  let previous = waveBreakingGeometryAt(
+    x,
+    previousZ,
+    elapsed,
+    settings,
+    character,
+  );
+  let bestZ = previousZ;
+  let best = previous;
+  let bestError = Math.abs((previous.breakingRatio ?? 0) - target);
+  for (let index = 1; index <= samples; index += 1) {
+    const z = offshoreZ
+      + (shorewardZ - offshoreZ) * index / samples;
+    const reading = waveBreakingGeometryAt(
+      x,
+      z,
+      elapsed,
+      settings,
+      character,
+    );
+    const ratio = reading.breakingRatio ?? 0;
+    const error = Math.abs(ratio - target);
+    if (error < bestError) {
+      bestZ = z;
+      best = reading;
+      bestError = error;
+    }
+    const previousRatio = previous.breakingRatio ?? 0;
+    if (previousRatio <= target && ratio >= target) {
+      let lowZ = previousZ;
+      let highZ = z;
+      let low = previous;
+      let high = reading;
+      for (let iteration = 0; iteration < 14; iteration += 1) {
+        const middleZ = (lowZ + highZ) * .5;
+        const middle = waveBreakingGeometryAt(
+          x,
+          middleZ,
+          elapsed,
+          settings,
+          character,
+        );
+        if ((middle.breakingRatio ?? 0) < target) {
+          lowZ = middleZ;
+          low = middle;
+        } else {
+          highZ = middleZ;
+          high = middle;
+        }
+      }
+      const lowError = Math.abs((low.breakingRatio ?? 0) - target);
+      const highError = Math.abs((high.breakingRatio ?? 0) - target);
+      const resolved = lowError <= highError
+        ? { z: lowZ, reading: low, error: lowError }
+        : { z: highZ, reading: high, error: highError };
+      return {
+        ...resolved.reading,
+        z: resolved.z,
+        targetRatio: target,
+        ratioError: resolved.error,
+      };
+    }
+    previousZ = z;
+    previous = reading;
+  }
+  return {
+    ...best,
+    z: bestZ,
+    targetRatio: target,
+    ratioError: bestError,
+  };
+}
+
 export type LineupGeometryReading = {
   outsideBreak: boolean;
   breakingCoordinate: number;
@@ -6537,6 +6833,11 @@ export function waveSurfaceFrameAt(
     verticalVelocity: surface.verticalVelocity,
     depth: surface.depth,
     breakingRatio: surface.breakingRatio,
+    breakingProgress: surface.breakingProgress,
+    brokenProgress: surface.brokenProgress,
+    whitewater: surface.whitewater,
+    breakerVelocityX: surface.breakerVelocityX,
+    breakerVelocityZ: surface.breakerVelocityZ,
     regime: surface.regime,
   };
 }
@@ -6670,11 +6971,12 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
   const paddleQuality = Math.max(0, Math.min(1, sample.paddleDrive));
   const breakSupport = .52 + Math.max(0, Math.min(1, sample.breakProgress)) * .48;
   const opportunity = surfable
-    ? faceEnvelope
-      * (.18 + physicalLift * .82)
+    ? Math.min(1, faceEnvelope
+      * (.2 + physicalLift * .8)
       * breakSupport
       * (.7 + headingQuality * .3)
       * (.72 + paddleQuality * .28)
+      * 1.08)
     : 0;
   const idealFaceDistance = 2.7 + Math.min(1.8, waveHeight * .45);
   const positionQuality = 1 - smoothstep(
@@ -6758,13 +7060,20 @@ export function primaryWaveVelocityAt(
   return {
     x: dominant?.celerityX ?? 0,
     z: dominant?.celerityZ ?? 0,
+    propagationX: dominant?.celerityX ?? 0,
+    propagationZ: dominant?.celerityZ ?? 0,
     speed: phaseSpeed,
     wavelength: dominant?.wavelength
       ?? deepWaterWavelengthForPeriod(settings.wavePeriod),
     waterX: surface.horizontalVelocityX,
     waterZ: surface.horizontalVelocityZ,
+    breakerX: surface.breakerVelocityX,
+    breakerZ: surface.breakerVelocityZ,
     verticalVelocity: surface.verticalVelocity,
     breakingRatio: surface.breakingRatio,
+    breakingProgress: surface.breakingProgress,
+    brokenProgress: surface.brokenProgress,
+    whitewater: surface.whitewater,
     regime: surface.regime,
   };
 }

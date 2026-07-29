@@ -3,6 +3,7 @@ import { performance } from "node:perf_hooks";
 
 import {
   buildWaveComponentBank,
+  coastalIncomingDirectionDegrees,
   createWaveDepthProfile,
   deserializeWaveComponentBank,
   dominantCrestPropertiesAtPhase,
@@ -158,6 +159,35 @@ close(
   "marine partitions remain inside total significant height",
 );
 assert.equal(marineBank.partitions.length, 4);
+assert.equal(
+  coastalIncomingDirectionDegrees(70 - 322),
+  72,
+  "a forecast bearing from behind the coast must refract into the incoming hemisphere",
+);
+assert.equal(
+  coastalIncomingDirectionDegrees(322 - 70),
+  -72,
+  "incoming-direction folding must preserve the alongshore side",
+);
+const obliqueCoastalBank = buildWaveComponentBank(
+  waveSpectrumInputFromMarine({
+    waveHeight: 2.1,
+    wavePeriod: 8,
+    waveDirection: 70,
+    swellHeight: 2.1,
+    swellPeriod: 8,
+    swellDirection: 70,
+    windSpeed: 17,
+    windDirection: 48,
+    coastHeading: 322,
+  }, "pipeline-oblique-live-direction"),
+);
+assert.ok(
+  obliqueCoastalBank.components.every(
+    (component) => component.directionZ > 0,
+  ),
+  "no nearshore spectral component may propagate out of the beach",
+);
 
 const omega = TAU / 12;
 const deepWaveNumber = solveFiniteDepthWaveNumber(omega, 200);

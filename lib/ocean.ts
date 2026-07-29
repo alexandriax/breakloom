@@ -292,6 +292,9 @@ export function sampleCoastWaveSurface(
       breakingIndex: .78,
       maximumCombinedSteepness: .42,
       maximumHorizontalSlope: .64,
+      breakerPower: character?.power ?? 1,
+      breakerSteepness: character?.steepness ?? .78,
+      breakerHollow: character?.hollow ?? .45,
     },
   );
   const gradientX = core.gradientX

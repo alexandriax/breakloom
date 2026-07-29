@@ -19,10 +19,15 @@ shoals over the local bottom, and is depth- and steepness-limited as it breaks.
 Natural interference between nearby frequencies creates non-repeating sets
 and lulls without switching the rest of the ocean off.
 
-The board now receives the sampled water's slope, vertical rise, and orbital
-velocity rather than treating crest travel speed as water velocity. This
-makes takeoff timing, lift, rail loading, and acceleration follow the same
-moving wave that is visible on screen.
+The board now keeps three velocities distinct: crest celerity defines the
+stable wave normal and capture frame, orbital flow drives water-relative hull
+drag, and breaking-bore transport drives whitewater. This prevents the
+orbital half-cycle from reversing the interpreted wave direction. Forecast
+bearings that resolve behind a local coastline are also refracted into the
+incoming half-plane, so an oblique or ambiguous marine bearing cannot make a
+surfable crest run back out to sea. Takeoff timing, lift, rail loading, and
+acceleration therefore follow the same moving wave that is visible on screen
+without turning crest speed into a conveyor.
 
 ## Why the old waves behaved unnaturally
 
@@ -71,9 +76,14 @@ important: multiplying position by a locally changing `k` introduces phase
 jumps and waves that appear to breathe in place.
 
 Group velocity controls shoaling. Combined steepness and a 0.78 depth-limited
-breaking index prevent foldover and unbounded peaks. The sampled surface
+breaking index prevent foldover and unbounded peaks. As the ratio approaches
+breaking, bounded second-through-fifth bound harmonics sharpen the crest and
+pitch its shoreward face. Their amplitude and asymmetry respond to each
+break's power, steepness, and hollow character, then decay into a
+crest-localized bore/whitewater field after breaking. The sampled surface
 provides analytic height, time derivative, gradient, normal, orbital
-velocity, celerity, wavelength, breaking ratio, and regime.
+velocity, celerity, bore velocity, wavelength, breaking ratio, break progress,
+whitewater, and regime.
 
 ### Coast-specific bathymetry
 
@@ -93,17 +103,33 @@ comes from bottom geometry instead of coast-name branches in the wave shader.
 
 ### Shared rendering and surfing physics
 
-The renderer receives an energy-preserving 20-component subset of the CPU
-bank, component parameters, integrated travel phase, local shoaling,
-steepness limits, depth limits, and a local bathymetry table. The shader
-advances every component with its own angular frequency and shades with the
-analytic displaced-surface normal. It no longer contains the fixed crest
-sequence, the artificial crest spike, or a second Gerstner ocean.
+The renderer receives the exact same 28-component realization as the CPU
+bank—without dropping components, regenerating amplitudes, or changing
+phases—plus integrated travel phase, local shoaling, steepness limits, depth
+limits, and adaptive bathymetry tables. The shader advances every component
+with its own angular frequency, applies the same nonlinear breaker transform,
+and shades with the displaced-surface normal. It no longer contains the fixed
+crest sequence, the artificial crest spike, or a second Gerstner ocean.
 
-Surfing samples the same field. Board response uses orbital water velocity,
-surface slope, and exact vertical surface rise; crest celerity remains the
-speed of the wave form and is not injected as water flow. Stable spectral
-crest IDs replace ordinal positions in the old repeating set.
+Surfing samples the same field. Board response uses orbital water velocity
+for drag, surface slope and exact vertical surface rise for gravity and
+support, crest celerity for wave identity and pressure direction, and bore
+transport for broken-water load. Stable spectral crest IDs replace ordinal
+positions in the old repeating set.
+
+The optional tow now solves the offshore-most physical
+`Hs / (0.78 × depth)` contour rather than subtracting a dimensionless HUD
+coordinate from world metres. Craft motion is acceleration- and speed-limited;
+a damped seven-metre rope carries the surfer without per-frame position
+snapping. During crest acquisition the craft stages at that breaker contour
+instead of chasing an oblique crest a full wavelength offshore. The green
+release cue requires the live board position to measure a depth-limited front
+face, crest phase, slope/rise, and crest-localized whitewater; elapsed tow
+progress alone cannot light it. If a crest passes, the tow acquires the next
+one instead of auto-releasing into flat water. Release only commits a pop-up
+while that physical support remains. A pop-up that loses support settles back
+to prone, and rider whitewater emission requires both an engaged ride and real
+crest-localized breaking water.
 
 ## Expected coast behavior
 
@@ -127,9 +153,17 @@ Automated release verification now checks:
 - analytic surface rise and normal against numerical derivatives;
 - dominant phase advection against local celerity;
 - bounded orbital velocities and agreement between gameplay and ocean samples;
-- non-repeating wave groups and realistic takeoff opportunities;
-- deterministic, energy-preserving GPU packing and coast-specific contour
-  signatures; and
+- spectral-beat sets with three-to-eight surfable waves and bounded lulls;
+- stable crest direction across a full orbital cycle, including explicit
+  regression coverage for reversing particle flow and behind-coast forecast
+  bearings;
+- acceleration-limited tow motion, bounded rope stretch, physical contour
+  staging, live face-gated release, next-crest reacquisition, and rejection of
+  flat release water;
+- unsupported pop-ups returning prone and engaged-breaker-only whitewater;
+- deterministic, identity-preserving 28-component GPU packing, bounded
+  CPU/GPU height interpolation error, and coast-specific contour signatures;
+  and
 - a source contract preventing the fixed 24-crest loop, fifth-power mountain
   spike, or separate Gerstner ocean from returning.
 
@@ -143,17 +177,17 @@ shading, and renderer startup without the prior clustered mountain artifact.
 This is a coherent physical foundation, not a full computational-fluid-
 dynamics solver. The next realism gains should build on it:
 
-1. Add a separate foam and whitewater transport field so broken-wave energy
-   moves shoreward, spreads, decays, and pushes the surfer rather than existing
-   mainly as crest shading.
-2. Add nonlinear bound harmonics derived from component steepness for more
-   asymmetric troughs and pitching lips, while retaining the energy and
-   foldover limits.
+1. Extend the crest-localized bore into a full Eulerian foam transport texture
+   so detached whitewater can merge, spread, and decay across multiple waves
+   rather than using a shader signal plus rider-local particle persistence.
+2. Add a dedicated overturning lip/air-water volume for true plunging geometry;
+   a single-valued height field can pitch steeply but cannot represent a
+   physically curled surface above itself.
 3. Extend the packed bathymetry window or use a clipmap when the player travels
    far alongshore, reducing local linearization error at the distant mesh edge.
 4. Calibrate each zone from measured bathymetric grids and buoy spectra where
    licensing and resolution allow, then compare virtual breakpoint and
    celerity against video or instrumented references.
-5. Replace the board's remaining point-sample contacts with several pressure
-   samples across the hull and fins for more accurate trim, rail engagement,
-   cavitation, and recovery in turbulent whitewater.
+5. Extend the current four hull contacts into distributed pressure and fin
+   samples for more accurate trim, rail engagement, cavitation, and recovery
+   in turbulent whitewater.

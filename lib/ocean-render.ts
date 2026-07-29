@@ -9,6 +9,7 @@ import {
 import {
   coastWaveModelAt,
   oceanLocationFor,
+  worldToBathymetryZ,
   type OceanSessionLike,
 } from "./ocean.ts";
 import {
@@ -16,6 +17,7 @@ import {
   groupVelocity,
   solveFiniteDepthWaveNumber,
   varianceToSignificantHeight,
+  waveBreakerResponseAt,
   type WaveComponent,
   type WaveComponentBank,
   type WaveComponentKind,
@@ -23,7 +25,7 @@ import {
   type WaveSpectrumPartition,
 } from "./waves.ts";
 
-export const MAX_RENDER_WAVE_COMPONENTS = 20;
+export const MAX_RENDER_WAVE_COMPONENTS = 28;
 export const OCEAN_TRAVEL_CHANNELS = 4;
 export const OCEAN_COMPONENT_PARAMETER_ROWS = 2;
 export const OCEAN_BATHYMETRY_ROWS = 2;
@@ -36,9 +38,11 @@ const MAXIMUM_COMBINED_STEEPNESS = .44;
  * and ledges while four wide offshore intervals keep the WebGL table compact.
  */
 export const OCEAN_BATHYMETRY_COASTAL_Z = new Float32Array([
-  -1260, -1050, -860, -700, -565, -450, -355, -278,
-  -216, -166, -126, -96, -73, -55, -40, -28,
-  -19, -12, -7, -3, 0, 2, 4, 6,
+  -1260, -1050, -860, -700, -565, -450, -355, -310,
+  -278, -244, -216, -190, -166, -145, -126, -111,
+  -96, -84, -73, -68, -64, -60, -55, -51,
+  -47, -44, -40, -34, -28, -23, -19, -15,
+  -12, -9, -7, -3, 0, 2, 4, 6,
 ]);
 
 export type RenderWaveComponent = {
@@ -218,37 +222,41 @@ function buildRenderComponentBank(
   referenceDepth: number,
 ): RenderComponentBank {
   const capacity = Math.min(MAX_RENDER_WAVE_COMPONENTS, bank.components.length);
-  const quotas = partitionQuotas(bank.partitions, capacity);
-  const selected: WaveComponent[] = [];
-  for (const partition of bank.partitions) {
-    const candidates = bank.components.filter(
-      (component) => component.partitionId === partition.id,
-    );
-    const quota = Math.min(candidates.length, quotas.get(partition.id) ?? 0);
-    selected.push(...evenlySpacedComponents(
-      candidates,
-      quota,
-      bank.dominantComponentId,
-    ));
+  const selected: WaveComponent[] = bank.components.length <= capacity
+    ? [...bank.components]
+    : [];
+  if (selected.length === 0) {
+    const quotas = partitionQuotas(bank.partitions, capacity);
+    for (const partition of bank.partitions) {
+      const candidates = bank.components.filter(
+        (component) => component.partitionId === partition.id,
+      );
+      const quota = Math.min(candidates.length, quotas.get(partition.id) ?? 0);
+      selected.push(...evenlySpacedComponents(
+        candidates,
+        quota,
+        bank.dominantComponentId,
+      ));
+    }
   }
   // Defensive cap for malformed imported banks.
   selected.splice(capacity);
 
-  const partitionCounts = new Map<number, number>();
-  for (const component of selected) {
-    partitionCounts.set(
-      component.partitionId,
-      (partitionCounts.get(component.partitionId) ?? 0) + 1,
-    );
-  }
-  const partitionById = new Map(
-    bank.partitions.map((partition) => [partition.id, partition]),
-  );
   const components: RenderWaveComponent[] = selected.map((component, id) => {
-    const partition = partitionById.get(component.partitionId);
-    const count = partitionCounts.get(component.partitionId) ?? 1;
-    const variance = (partition?.variance ?? component.variance) / count;
-    const amplitude = Math.sqrt(2 * variance);
+    const downsampled = bank.components.length > capacity;
+    const partition = bank.partitions.find(
+      (candidate) => candidate.id === component.partitionId,
+    );
+    const selectedPartitionCount = selected.filter(
+      (candidate) => candidate.partitionId === component.partitionId,
+    ).length;
+    const variance = downsampled
+      ? (partition?.variance ?? component.variance)
+        / Math.max(1, selectedPartitionCount)
+      : component.variance;
+    const amplitude = downsampled
+      ? Math.sqrt(2 * variance)
+      : component.amplitude;
     const referenceWaveNumber = solveFiniteDepthWaveNumber(
       component.angularFrequency,
       referenceDepth,
@@ -484,26 +492,23 @@ function buildBathymetryTable(
 }
 
 function adaptiveTravelProfile(profile: WaveDepthProfile) {
-  const steepest = profile.knots
+  const additions = profile.knots
     .slice(0, -1)
     .map((start, index) => {
       const end = profile.knots[index + 1];
       const span = end.z - start.z;
       return {
-        start: start.z,
-        end: end.z,
         z: (start.z + end.z) * .5,
-        score: span > 4
-          ? Math.abs(end.depth - start.depth) / span * Math.min(24, span)
+        score: span > 3
+          ? Math.abs(end.depth - start.depth)
+            + Math.min(24, span) * .012
           : 0,
       };
     })
-    .sort((a, b) => b.score - a.score || a.z - b.z)[0];
-  const additions = steepest && steepest.score > .05
-    ? [-.5, 0, .5].map(
-        (offset) => steepest.z + offset * (steepest.end - steepest.start) * .5,
-      )
-    : [];
+    .sort((a, b) => b.score - a.score || a.z - b.z)
+    .slice(0, Math.max(0, 32 - profile.knots.length))
+    .filter((interval) => interval.score > .04)
+    .map((interval) => interval.z);
   const contour = [
     ...profile.knots.map((knot) => knot.z),
     ...additions,
@@ -630,6 +635,77 @@ export function samplePackedBathymetry(
     contourGradientZ: derivatives[1],
     depthGradientX: derivatives[2],
     depthGradientZ: derivatives[3],
+  };
+}
+
+/**
+ * CPU reconstruction of the vertex shader's vertical surface. It is used by
+ * contract tests to ensure gameplay and rendering carry the same realized
+ * components, phases, shoaling limit, and nonlinear breaker shape.
+ */
+export function samplePackedOceanHeight(
+  state: OceanRenderState,
+  x: number,
+  worldZ: number,
+  elapsed: number,
+  settings: OceanSessionLike,
+  character: BreakCharacter,
+) {
+  const coastalZ = worldToBathymetryZ(worldZ, settings.tide);
+  const bathymetry = samplePackedBathymetry(state, coastalZ);
+  const profileDeltaX = x - state.profileX;
+  const contourCoordinate = bathymetry.contourCoordinate
+    + bathymetry.contourGradientX * profileDeltaX;
+  const aggregate = samplePackedAggregate(state, contourCoordinate);
+  const depth = Math.max(.08, aggregate.depth);
+  const breakingRatio = aggregate.rawSignificantHeight
+    / Math.max(.04, BREAKING_INDEX * depth);
+  const depthScale = Math.min(
+    1,
+    BREAKING_INDEX * depth
+      / Math.max(.0001, aggregate.rawSignificantHeight),
+  );
+  const amplitudeScale = Math.min(
+    depthScale,
+    aggregate.steepnessScale,
+  );
+  let height = 0;
+  let dominantPhase = 0;
+  for (const component of state.componentBank.components) {
+    const travel = samplePackedTravel(
+      state,
+      component.id,
+      contourCoordinate,
+    );
+    const phase = component.alongshoreWaveNumber * x
+      + travel.phaseIntegral
+      - component.angularFrequency * elapsed
+      + component.phaseOffset;
+    height += travel.amplitude * amplitudeScale * Math.cos(phase);
+    if (component.id === state.componentBank.dominantIndex) {
+      dominantPhase = phase;
+    }
+  }
+  const localSignificantHeight = aggregate.rawSignificantHeight
+    * amplitudeScale;
+  const breaker = waveBreakerResponseAt(
+    breakingRatio,
+    localSignificantHeight,
+    dominantPhase,
+    0,
+    {
+      breakerPower: character.power,
+      breakerSteepness: character.steepness,
+      breakerHollow: character.hollow,
+    },
+  );
+  return {
+    height: height + breaker.heightOffset + settings.tide * .3,
+    depth,
+    breakingRatio,
+    breakingProgress: breaker.breakingProgress,
+    brokenProgress: breaker.brokenProgress,
+    whitewater: breaker.whitewater,
   };
 }
 

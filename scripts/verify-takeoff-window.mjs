@@ -2,6 +2,8 @@ import {
   advanceBoardHeaveDynamics,
   advanceBoardPitchDynamics,
   advanceBoardRollDynamics,
+  advanceOptionalTowCraft,
+  advanceOptionalTowRope,
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
   advancePopUpBodyTransition,
@@ -28,10 +30,13 @@ import {
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
+  findWaveBreakingContourAt,
   INITIAL_STATS,
   paddleStrokeWorkDelta,
   paddlingStaminaDelta,
   popUpStaminaDelta,
+  optionalTowReleasePhysicallySupported,
+  optionalTowReleaseFaceQuality,
   primaryWaveVelocityAt,
   readCrestTimingMechanics,
   readDuckDiveCue,
@@ -75,6 +80,7 @@ import {
   rideRailInputFromPaddleSteer,
   SHALLOW_DISMOUNT_Z,
   shorelineRideOutProgress,
+  stageOptionalTowCrestAtBreaker,
   stabilizeHeadingGuideDegrees,
   surfboardLandingSucceeded,
   surfboardReleaseVerticalImpulse,
@@ -292,6 +298,231 @@ if (
   );
 }
 
+const physicalTowContour = findWaveBreakingContourAt(
+  8,
+  12,
+  settings,
+  character,
+  .9,
+);
+const stagedTowCrest = stageOptionalTowCrestAtBreaker(
+  8,
+  -48,
+  31,
+  -82,
+  .6,
+  .8,
+);
+const stagedTowTangentX = stagedTowCrest.x - 8
+  - stagedTowCrest.normalOffset * .6;
+const stagedTowTangentZ = stagedTowCrest.z + 48
+  - stagedTowCrest.normalOffset * .8;
+const originalTowNormalOffset = (31 - 8) * .6 + (-82 + 48) * .8;
+const originalTowTangentX = 31 - 8 - originalTowNormalOffset * .6;
+const originalTowTangentZ = -82 + 48 - originalTowNormalOffset * .8;
+const supportedTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: .94,
+  crestPhaseError: .58,
+  faceSlope: .075,
+  surfaceRise: .28,
+  whitewater: .14,
+});
+const flatTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: .94,
+  crestPhaseError: -.8,
+  faceSlope: 0,
+  surfaceRise: -.12,
+  whitewater: 0,
+});
+if (
+  physicalTowContour.ratioError > .002
+  || Math.abs((physicalTowContour.breakingRatio ?? 0) - .9) > .002
+  || Math.abs(stagedTowCrest.normalOffset) > 3.500001
+  || Math.abs(stagedTowTangentX - originalTowTangentX) > 1e-9
+  || Math.abs(stagedTowTangentZ - originalTowTangentZ) > 1e-9
+  || supportedTowFaceQuality < .65
+  || flatTowFaceQuality !== 0
+  || !optionalTowReleasePhysicallySupported(
+    true,
+    .88,
+    .9,
+    .9,
+    supportedTowFaceQuality,
+  )
+  || optionalTowReleasePhysicallySupported(true, .88, .9, .9, 0)
+  || optionalTowReleasePhysicallySupported(true, .88, .9, .4, 1)
+  || optionalTowReleasePhysicallySupported(true, .88, .9, 2, 1)
+  || optionalTowReleasePhysicallySupported(false, .88, .9, .9, 1)
+) {
+  throw new Error(
+    "Tow targeting no longer requires a physical depth-limited front face or rejects unsupported release water",
+  );
+}
+
+const landwardForecastTransport = primaryWaveVelocityAt(
+  -8,
+  physicalTowContour.z,
+  12,
+  {
+    ...settings,
+    waveDirection: 70,
+    swellDirection: 70,
+    coastHeading: 322,
+  },
+  {
+    ...character,
+    kind: "reef",
+    coastId: "pipeline",
+    zoneName: "First Reef",
+  },
+);
+if (
+  landwardForecastTransport.z <= .05
+  || landwardForecastTransport.propagationZ <= .05
+) {
+  throw new Error(
+    "A forecast bearing behind the local coast regained offshore/backwards surf propagation",
+  );
+}
+
+let towCraft = {
+  x: 10,
+  z: 4,
+  velocityX: 0,
+  velocityZ: 0,
+  heading: Math.PI,
+};
+let towSurfer = {
+  x: 10,
+  z: 7,
+  velocityX: 0,
+  velocityZ: 0,
+};
+let maximumTowSpeed = 0;
+let maximumTowAcceleration = 0;
+let maximumRopeDistance = 0;
+let maximumSurferVelocityStep = 0;
+for (let frame = 0; frame < 16 * 60; frame += 1) {
+  const progress = frame / (16 * 60 - 1);
+  const desiredX = 10 + Math.sin(progress * Math.PI) * 24;
+  const desiredZ = 4 - progress * 112;
+  const nextCraft = advanceOptionalTowCraft(
+    towCraft,
+    desiredX,
+    desiredZ,
+    1 / 60,
+    10.5 + progress * 4,
+  );
+  const priorSurferVelocityX = towSurfer.velocityX;
+  const priorSurferVelocityZ = towSurfer.velocityZ;
+  const nextSurfer = advanceOptionalTowRope(
+    towSurfer,
+    nextCraft,
+    1 / 60,
+    7,
+  );
+  maximumTowSpeed = Math.max(maximumTowSpeed, nextCraft.speed);
+  maximumTowAcceleration = Math.max(
+    maximumTowAcceleration,
+    nextCraft.acceleration,
+  );
+  maximumRopeDistance = Math.max(
+    maximumRopeDistance,
+    nextSurfer.ropeDistance,
+  );
+  maximumSurferVelocityStep = Math.max(
+    maximumSurferVelocityStep,
+    Math.hypot(
+      nextSurfer.velocityX - priorSurferVelocityX,
+      nextSurfer.velocityZ - priorSurferVelocityZ,
+    ),
+  );
+  towCraft = nextCraft;
+  towSurfer = nextSurfer;
+}
+if (
+  maximumTowSpeed > 14.51
+  || maximumTowAcceleration > 6.21
+  || maximumRopeDistance > 7.801
+  || maximumSurferVelocityStep > .8
+) {
+  throw new Error(
+    "Tow craft or rope motion regained a speed cap snap, stretch teleport, or frame impulse",
+  );
+}
+
+let orbitalReversed = false;
+let minimumPropagationAlignment = 1;
+let minimumBoardHeadingAlignment = 1;
+const referenceTowTransport = primaryWaveVelocityAt(
+  8,
+  physicalTowContour.z,
+  0,
+  settings,
+  character,
+);
+const referenceTowNormalX = referenceTowTransport.x
+  / referenceTowTransport.speed;
+const referenceTowNormalZ = referenceTowTransport.z
+  / referenceTowTransport.speed;
+const referenceTowHeading = Math.atan2(
+  referenceTowNormalX,
+  referenceTowNormalZ,
+);
+for (let index = 0; index < 80; index += 1) {
+  const elapsed = index * settings.wavePeriod / 80;
+  const transport = primaryWaveVelocityAt(
+    8,
+    physicalTowContour.z,
+    elapsed,
+    settings,
+    character,
+  );
+  const propagationAlignment = (
+    transport.x * referenceTowNormalX
+      + transport.z * referenceTowNormalZ
+  ) / Math.max(.001, transport.speed);
+  minimumPropagationAlignment = Math.min(
+    minimumPropagationAlignment,
+    propagationAlignment,
+  );
+  if (
+    transport.waterX * referenceTowNormalX
+      + transport.waterZ * referenceTowNormalZ < -.02
+  ) {
+    orbitalReversed = true;
+  }
+  const boardReading = evaluateBoardWaterInteraction({
+    boardHeading: referenceTowHeading,
+    velocityX: referenceTowNormalX * 2,
+    velocityZ: referenceTowNormalZ * 2,
+    waveVelocityX: transport.x,
+    waveVelocityZ: transport.z,
+    slopeX: -referenceTowNormalX * .16,
+    slopeZ: -referenceTowNormalZ * .16,
+    surfaceRise: .35,
+    surfaceLift: .6,
+    crestDistance: 3,
+    crestEnergy: .8,
+    crestSurfable: true,
+    boardStability: 1,
+    waveHeight: 2,
+  });
+  minimumBoardHeadingAlignment = Math.min(
+    minimumBoardHeadingAlignment,
+    boardReading.headingAlignment,
+  );
+}
+if (
+  !orbitalReversed
+  || minimumPropagationAlignment < .995
+  || minimumBoardHeadingAlignment < .995
+) {
+  throw new Error(
+    "Crest propagation and reversing orbital flow became conflated, allowing a backward capture frame",
+  );
+}
+
 const centerBreakCoordinate = waveBreakingCoordinateAt(
   0,
   -18,
@@ -482,9 +713,11 @@ const surfableCount = setCycle.filter(
 if (
   setCycle[0].crestSequenceLength !== 0
   || surfableCount < 8
-  || surfableCount > 42
+  || surfableCount > 60
+  || longestSurfableRun < 3
   || longestSurfableRun > 8
   || longestLull < 3
+  || longestLull > 8
   || firstHalf === secondHalf
   || Math.max(...setCycle.map((crest) => crest.crestEnergy)) < .5
 ) {

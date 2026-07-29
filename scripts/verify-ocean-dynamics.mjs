@@ -2,6 +2,7 @@ import { BEACHES, getBreakCharacter } from "../lib/beaches.ts";
 import {
   primaryWavePhaseAt,
   primaryWaveVelocityAt,
+  findWaveBreakingContourAt,
   waveBreakingGeometryAt,
   waveCrestPropertiesAtPhase,
   waveSurfaceFrameAt,
@@ -330,9 +331,11 @@ for (const beach of BEACHES) {
       .join(",");
     if (
       surfableCount < 6
-      || surfableCount > 52
-      || longestSurfableRun > 9
+      || surfableCount > 60
+      || longestSurfableRun < 3
+      || longestSurfableRun > 8
       || longestLull < 3
+      || longestLull > 8
       || firstHalf === secondHalf
     ) {
       throw new Error(
@@ -361,10 +364,24 @@ for (
     windSpeed: Math.max(9, beach.fallback.windSpeed),
   };
   const character = getBreakCharacter(coastId, zoneName);
+  const breakingContour = findWaveBreakingContourAt(
+    0,
+    0,
+    settings,
+    character,
+    .95,
+  );
+  if (breakingContour.ratioError > .002) {
+    throw new Error(
+      `${coastId}/${zoneName} could not locate the physical breaker contour`,
+    );
+  }
   const temporalHeights = [];
   const regimes = new Set();
   const offshoreRegimes = new Set();
   const nearshoreRegimes = new Set();
+  let maximumBreakerSlope = 0;
+  let maximumWhitewater = 0;
   for (let step = 0; step <= 16; step += 1) {
     const time = step * peakPeriod / 12;
     const temporalSurface = sampleCoastWaveSurface(
@@ -375,6 +392,24 @@ for (
       character,
     );
     temporalHeights.push(temporalSurface.height);
+    const breakerSurface = sampleCoastWaveSurface(
+      0,
+      breakingContour.z,
+      time,
+      settings,
+      character,
+    );
+    maximumBreakerSlope = Math.max(
+      maximumBreakerSlope,
+      Math.hypot(
+        breakerSurface.gradientX,
+        breakerSurface.gradientZ,
+      ),
+    );
+    maximumWhitewater = Math.max(
+      maximumWhitewater,
+      breakerSurface.whitewater,
+    );
     for (
       const z of [-1000, -520, -260, -140, -82, -48, -28, -16]
     ) {
@@ -418,6 +453,14 @@ for (
   ) {
     throw new Error(
       `${coastId}/${zoneName} high swell lost its offshore-to-break transition`,
+    );
+  }
+  if (
+    maximumBreakerSlope < .105
+    || maximumWhitewater < .08
+  ) {
+    throw new Error(
+      `${coastId}/${zoneName} reached breaking depth without a pitched face and crest-localized whitewater`,
     );
   }
 }
