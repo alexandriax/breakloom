@@ -11,6 +11,11 @@ import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
 import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowProgress, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, maximumSetBreakOffset, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseQuality, optionalTowReleaseRecommended, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
+import {
+  createOceanRenderState,
+  OCEAN_BATHYMETRY_COASTAL_Z,
+  type FloatTextureTable,
+} from "@/lib/ocean-render";
 import { boundedSimulationDelta, emergencyRenderDpr, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { solarPositionAt } from "@/lib/solar";
 
@@ -853,26 +858,19 @@ function seededRandom(index: number, salt = 0) {
 
 const OCEAN_VERTEX = /* glsl */ `
   uniform float uTime;
-  uniform float uHeight;
-  uniform float uPeriod;
-  uniform float uSwellHeight;
-  uniform float uSwellPeriod;
-  uniform float uSwellDirection;
-  uniform float uCurrent;
-  uniform float uWaveDirection;
-  uniform float uCurrentDirection;
-  uniform float uWindDirection;
-  uniform float uCoastHeading;
   uniform float uTide;
-  uniform float uTideFaceScale;
-  uniform float uBreakShift;
-  uniform float uWind;
-  uniform float uPeel;
-  uniform float uPower;
-  uniform float uSteepness;
-  uniform float uHollow;
-  uniform float uVariability;
   uniform float uCenterX;
+  uniform float uProfileX;
+  uniform float uComponentCount;
+  uniform float uTravelKnotCount;
+  uniform float uTravelWidth;
+  uniform float uBathymetryWidth;
+  uniform sampler2D uComponentParameters;
+  uniform sampler2D uTravel;
+  uniform sampler2D uAggregate;
+  uniform sampler2D uBathymetry;
+  uniform float uTravelKnots[32];
+  uniform float uBathymetryKnots[24];
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
@@ -880,196 +878,151 @@ const OCEAN_VERTEX = /* glsl */ `
   varying float vSwellRead;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
+  varying vec3 vWorldNormal;
 
   const float PI = 3.14159265359;
+  const float MAX_COMPONENTS = 20.0;
 
-  vec2 coastalVector(float bearing) {
-    float angle = radians(bearing - uCoastHeading);
-    return vec2(sin(angle), cos(angle));
+  float bathymetryIndex(float coastalZ) {
+    float result = 0.0;
+    if (coastalZ <= uBathymetryKnots[0]) return 0.0;
+    for (int index = 0; index < 23; index++) {
+      float low = uBathymetryKnots[index];
+      float high = uBathymetryKnots[index + 1];
+      if (coastalZ >= low) {
+        result = float(index)
+          + clamp((coastalZ - low) / max(.0001, high - low), 0.0, 1.0);
+      }
+    }
+    return min(result, 23.0);
   }
 
-  float crestEnergy(float crestIndex) {
-    float ordinal = mod(-crestIndex, 24.0);
-    if (ordinal < 0.0) ordinal += 24.0;
-    if (ordinal < .5) return .12;
-    if (ordinal < 1.5) return .16;
-    if (ordinal < 2.5) return .20;
-    if (ordinal < 3.5) return .14;
-    if (ordinal < 4.5) return .18;
-    if (ordinal < 5.5) return .24;
-    if (ordinal < 6.5) return .29;
-    if (ordinal < 7.5) return .42;
-    if (ordinal < 8.5) return .64;
-    if (ordinal < 9.5) return .86;
-    if (ordinal < 10.5) return .72;
-    if (ordinal < 11.5) return .48;
-    if (ordinal < 12.5) return .22;
-    if (ordinal < 13.5) return .15;
-    if (ordinal < 14.5) return .11;
-    if (ordinal < 15.5) return .17;
-    if (ordinal < 16.5) return .25;
-    if (ordinal < 17.5) return .34;
-    if (ordinal < 18.5) return .53;
-    if (ordinal < 19.5) return .78;
-    if (ordinal < 20.5) return .61;
-    if (ordinal < 21.5) return .39;
-    if (ordinal < 22.5) return .23;
-    return .16;
-  }
-
-  float travelingSetEnergy(float phase) {
-    float crestCoordinate = (phase - PI * .5) / (PI * 2.0);
-    float lowerCrest = floor(crestCoordinate);
-    float blend = smoothstep(0.0, 1.0, fract(crestCoordinate));
-    return mix(crestEnergy(lowerCrest), crestEnergy(lowerCrest + 1.0), blend);
-  }
-
-  float gerstner(
-    inout vec3 point,
-    vec2 origin,
-    vec2 direction,
-    float wavelength,
-    float amplitude,
-    float steepness,
-    float phaseSpeed,
-    float phaseOffset
-  ) {
-    float waveNumber = PI * 2.0 / wavelength;
-    // Travel in the supplied swell direction. Positive coastal Y points toward
-    // shore, so subtracting time makes the crest advance landward.
-    float phase = dot(origin, direction) * waveNumber - uTime * phaseSpeed + phaseOffset;
-    float sine = sin(phase);
-    float cosine = cos(phase);
-    float horizontal = steepness * amplitude;
-    point.x += direction.x * horizontal * cosine;
-    point.y += direction.y * horizontal * cosine;
-    point.z += amplitude * sine;
-    return sine;
+  float travelIndex(float contourCoordinate) {
+    float result = 0.0;
+    if (contourCoordinate <= uTravelKnots[0]) return 0.0;
+    for (int index = 0; index < 31; index++) {
+      if (float(index + 1) >= uTravelKnotCount) continue;
+      float low = uTravelKnots[index];
+      float high = uTravelKnots[index + 1];
+      if (contourCoordinate >= low) {
+        result = float(index)
+          + clamp(
+            (contourCoordinate - low) / max(.0001, high - low),
+            0.0,
+            1.0
+          );
+      }
+    }
+    return min(result, max(0.0, uTravelKnotCount - 1.0));
   }
 
   void main() {
     vec2 origin = position.xy;
     vec2 surfaceOrigin = vec2(origin.x + uCenterX, -origin.y + ${OCEAN_CENTER_Z.toFixed(1)});
     vec3 p = position;
-    float angularSpeed = PI * 2.0 / max(4.0, uPeriod);
-    vec2 waveDir = coastalVector(uWaveDirection);
-    vec2 swellDir = coastalVector(uSwellDirection);
-    vec2 currentDir = coastalVector(uCurrentDirection);
-    vec2 windDir = coastalVector(uWindDirection);
-    float section = sin(surfaceOrigin.x * .07 + uTime * .05) * uVariability * 2.3;
-    float breakCoord = surfaceOrigin.y + surfaceOrigin.x * uPeel * .16 + section + ${BREAK_OFFSHORE_OFFSET.toFixed(1)} - uBreakShift;
-    float curve = waveDir.x * .0019 * surfaceOrigin.x * surfaceOrigin.x;
-    vec2 curvedOrigin = vec2(surfaceOrigin.x, breakCoord + curve);
-    float shallowCompression = mix(
+    float coastalZ = surfaceOrigin.y - ${SHORELINE_REFERENCE_Z.toFixed(1)};
+    float bathymetryCoordinate = bathymetryIndex(coastalZ);
+    float bathymetryU = (bathymetryCoordinate + .5) / uBathymetryWidth;
+    vec4 bathymetryValue = texture2D(
+      uBathymetry,
+      vec2(bathymetryU, .25)
+    );
+    vec4 bathymetryDerivative = texture2D(
+      uBathymetry,
+      vec2(bathymetryU, .75)
+    );
+    float profileDeltaX = surfaceOrigin.x - uProfileX;
+    float contourCoordinate = bathymetryValue.x
+      + bathymetryDerivative.x * profileDeltaX;
+    float depth = max(
+      .08,
+      bathymetryValue.y
+        + bathymetryDerivative.z * profileDeltaX
+    );
+    vec2 contourGradient = bathymetryDerivative.xy;
+    float travelCoordinate = travelIndex(contourCoordinate);
+    float travelU = (travelCoordinate + .5) / uTravelWidth;
+    vec4 aggregate = texture2D(
+      uAggregate,
+      vec2(travelU, .5)
+    );
+    float rawSignificantHeight = max(.0001, aggregate.x);
+    float breakingRatio = rawSignificantHeight
+      / max(.04, .78 * depth);
+    float depthScale = min(
       1.0,
-      mix(.34, .18, clamp(uSteepness, 0.0, 1.0)),
-      smoothstep(-108.0, 9.0, breakCoord)
+      .78 * depth / rawSignificantHeight
     );
-    float primaryWavelength = clamp(1.56 * uPeriod * uPeriod, 48.0, 320.0) * shallowCompression;
-    vec2 primaryDirection = normalize(vec2(.095 + uPeel * .075 + waveDir.x * .42 + currentDir.x * .035, max(.45, waveDir.y)));
-    float primaryPhase = dot(curvedOrigin, primaryDirection) * (PI * 2.0 / primaryWavelength) - uTime * angularSpeed;
-    float setEnergy = travelingSetEnergy(primaryPhase);
-    float setLift = .78 + setEnergy * .34;
-    float setBreakOffset = smoothstep(.38, .9, setEnergy)
-      * (2.2 + min(3.8, max(0.0, uHeight * uTideFaceScale) * 1.15));
-    float dynamicBreakCoord = breakCoord + setBreakOffset;
-    float shore = .72 + smoothstep(-85.0, 8.0, dynamicBreakCoord) * (.58 + uSteepness * .24);
-    float amplitude = max(.12, uHeight * .78) * uPower * uTideFaceScale;
-    float swellPeriod = max(4.0, uSwellPeriod);
-    float swellWavelength = clamp(1.56 * swellPeriod * swellPeriod, 64.0, 520.0);
-    // Swell height is supplied as physical crest-to-trough height. Half of it
-    // is the displacement amplitude; do not clamp it to the independently
-    // adjustable breaking-face setting.
-    float swellAmplitude = max(0.0, uSwellHeight * .5);
-    // The API reports crest-to-trough swell height. Preserve that height in
-    // deep water, then add only the expected shoaling gain near the bank.
-    float swellShoaling = 1.0 + smoothstep(-85.0, 8.0, dynamicBreakCoord) * .18;
-    float windChop = clamp(uWind / 24.0, .12, 1.45);
-    float currentBend = clamp(uCurrent / 4.0, 0.0, 1.0);
+    float amplitudeScale = min(depthScale, aggregate.y);
+    float surfaceHeight = 0.0;
+    float gradientX = 0.0;
+    float gradientZ = 0.0;
+    float swellElevation = 0.0;
+    float windElevation = 0.0;
 
-    float primary = gerstner(
-      p,
-      curvedOrigin,
-      primaryDirection,
-      primaryWavelength,
-      amplitude * .64 * shore * setLift,
-      clamp(.46 + uSteepness * .32, .58, .88),
-      angularSpeed,
-      0.0
-    );
-    float primaryShoaling = smoothstep(-96.0, 9.0, dynamicBreakCoord);
-    float primaryNonlinearity = clamp(
-      primaryShoaling
-        * (.18 + uSteepness * .32 + uHollow * .18)
-        * (.70 + setEnergy * .30),
-      0.0,
-      .9
-    );
-    float crestRidge = pow(max(0.0, primary), 5.0);
-    float troughDraw = pow(max(0.0, -primary), 2.0);
-    float shapedPrimary = primary
-      - primaryNonlinearity * .48 * cos(primaryPhase * 2.0)
-      - primaryNonlinearity * .22 * sin(primaryPhase * 3.0)
-      + primaryNonlinearity * .72 * crestRidge
-      - primaryNonlinearity * .12 * troughDraw;
-    // gerstner() already supplied the fundamental. Add only the nonlinear
-    // harmonics here so the rendered surface matches waveHeightAt() exactly.
-    p.z += amplitude * .64 * shore * setLift * (shapedPrimary - primary);
-    float liveSwell = gerstner(
-      p,
-      surfaceOrigin,
-      normalize(vec2(swellDir.x, max(.28, swellDir.y))),
-      swellWavelength,
-      swellAmplitude * swellShoaling,
-      clamp(.28 + uSteepness * .08, .3, .42),
-      PI * 2.0 / swellPeriod,
-      1.7
-    );
-    float crossSwell = gerstner(
-      p,
-      surfaceOrigin,
-      normalize(vec2(waveDir.x + waveDir.y * .62, max(.28, waveDir.y - waveDir.x * .62)) + currentDir * (.12 + currentBend * .12)),
-      47.5,
-      amplitude * .11,
-      .42,
-      angularSpeed * 2.7,
-      0.0
-    );
-    float windWave = gerstner(
-      p,
-      surfaceOrigin,
-      normalize(windDir + vec2(0.0, .15)),
-      mix(8.5, 5.4, windChop / 1.45),
-      .035 + windChop * .065,
-      .34,
-      1.7 + windChop * 1.2,
-      2.4
-    );
-    vec2 windTangent = vec2(-windDir.y, windDir.x);
-    float capillary = sin(dot(surfaceOrigin, windDir) * 1.35 + dot(surfaceOrigin, windTangent) * .78 + uTime * (2.2 + windChop)) * (.018 + windChop * .018);
-    p.z += uTide * .3 + capillary;
-    // Pin the final swash vertices to the beach edge. Gerstner horizontal
-    // displacement is physically useful offshore but must not pull the finite
-    // mesh edge away from the sand and expose a false water/sand/water seam.
-    float horizontalShoreAnchor = smoothstep(-36.0, 8.0, surfaceOrigin.y);
-    float verticalShoreAnchor = smoothstep(-18.0, 8.0, surfaceOrigin.y);
-    p.xy = mix(p.xy, position.xy, horizontalShoreAnchor);
-    p.z = mix(p.z, uTide * .3, verticalShoreAnchor);
+    for (int index = 0; index < 20; index++) {
+      if (float(index) >= uComponentCount) continue;
+      float parameterU = (float(index) + .5) / MAX_COMPONENTS;
+      vec4 first = texture2D(
+        uComponentParameters,
+        vec2(parameterU, .25)
+      );
+      vec4 second = texture2D(
+        uComponentParameters,
+        vec2(parameterU, .75)
+      );
+      vec4 travel = texture2D(
+        uTravel,
+        vec2(
+          travelU,
+          (float(index) + .5) / max(1.0, uComponentCount)
+        )
+      );
+      float amplitude = travel.a * amplitudeScale;
+      float phase = first.a * surfaceOrigin.x
+        + travel.r
+        - first.g * uTime
+        + first.b;
+      float cosine = cos(phase);
+      float sine = sin(phase);
+      float elevation = amplitude * cosine;
+      float phaseGradientX = first.a
+        + travel.g * contourGradient.x;
+      float phaseGradientZ = travel.g
+        * contourGradient.y;
+      surfaceHeight += elevation;
+      gradientX -= amplitude * sine * phaseGradientX;
+      gradientZ -= amplitude * sine * phaseGradientZ;
+      if (second.a < .5) {
+        swellElevation += elevation;
+      } else {
+        windElevation += abs(elevation);
+      }
+    }
+
+    surfaceHeight += uTide * .3;
+    p.z += surfaceHeight;
+    float shoreAnchor = smoothstep(-5.0, 1.0, contourCoordinate);
+    p.z = mix(p.z, uTide * .3, shoreAnchor);
+    gradientX *= 1.0 - shoreAnchor;
+    gradientZ *= 1.0 - shoreAnchor;
 
     vHeight = p.z;
-    vCrest = shapedPrimary * shore;
-    vBreaker = smoothstep(-28.0, 12.0, dynamicBreakCoord)
-      * smoothstep(mix(.9, .74, uHollow), 1.5, shapedPrimary)
-      * setLift
-      * (.72 + uHollow * .34);
-    // Long, unbroken swell lines need to remain readable well before they
-    // reach the sandbar. This is an optical ridge only; foam still comes
-    // exclusively from vBreaker in shallow water.
-    float deepWaterRead = 1.0 - smoothstep(-92.0, -20.0, dynamicBreakCoord);
-    vSwellRead = pow(max(0.0, liveSwell), 3.2) * deepWaterRead;
-    vChop = abs(liveSwell) * .38 + abs(crossSwell) * .24 + abs(windWave) * windChop;
+    vCrest = (surfaceHeight - uTide * .3)
+      / max(.08, rawSignificantHeight * .5);
+    float breakActivation = smoothstep(.72, 1.12, breakingRatio)
+      * (1.0 - smoothstep(7.0, 13.0, breakingRatio));
+    vBreaker = breakActivation
+      * smoothstep(.08, .78, vCrest);
+    vSwellRead = smoothstep(
+      .12,
+      .82,
+      swellElevation / max(.08, rawSignificantHeight * .5)
+    ) * (1.0 - breakActivation * .8);
+    vChop = windElevation / max(.08, rawSignificantHeight);
     vSurface = surfaceOrigin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
+    vWorldNormal = normalize(vec3(-gradientX, 1.0, -gradientZ));
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
   }
 `;
@@ -1096,6 +1049,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
   varying float vSwellRead;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
+  varying vec3 vWorldNormal;
 
   float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -1122,7 +1076,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 deep = mix(offshore, abyss, depth);
     float crestLight = smoothstep(-.2, .95, vHeight) * (1.0 - depth);
     vec3 color = mix(deep, lagoon, crestLight * .48);
-    vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    vec3 surfaceNormal = normalize(vWorldNormal);
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
     bool underwaterSide = !gl_FrontFacing;
     if (underwaterSide) surfaceNormal *= -1.0;
@@ -1264,6 +1218,7 @@ const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
   varying float vChop;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
+  varying vec3 vWorldNormal;
 
   float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -1283,7 +1238,7 @@ const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
   }
 
   void main() {
-    vec3 surfaceNormal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
+    vec3 surfaceNormal = normalize(vWorldNormal);
     if (surfaceNormal.y > 0.0) surfaceNormal *= -1.0;
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float facing = max(.055, abs(dot(surfaceNormal, viewDirection)));
@@ -1303,6 +1258,49 @@ const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
     gl_FragColor = vec4(color, .995);
   }
 `;
+
+function createOceanFloatTexture(table: FloatTextureTable) {
+  const texture = new THREE.DataTexture(
+    table.data,
+    table.width,
+    table.height,
+    THREE.RGBAFormat,
+    THREE.FloatType,
+  );
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function updateOceanFloatTexture(
+  texture: THREE.DataTexture,
+  table: FloatTextureTable,
+) {
+  texture.image = {
+    data: table.data,
+    width: table.width,
+    height: table.height,
+  };
+  texture.needsUpdate = true;
+}
+
+function paddedOceanKnots(
+  knots: ArrayLike<number>,
+  capacity: number,
+) {
+  const values = new Float32Array(capacity);
+  const count = Math.min(capacity, knots.length);
+  for (let index = 0; index < count; index += 1) {
+    values[index] = knots[index];
+  }
+  const finalValue = count > 0 ? values[count - 1] : 0;
+  values.fill(finalValue, count);
+  return values;
+}
 
 function Ocean({
   settings,
@@ -1332,10 +1330,32 @@ function Ocean({
   const material = useRef<THREE.ShaderMaterial>(null);
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
-  const tideResponse = useMemo(
-    () => tideResponseForBreak(settings.tide, character),
-    [character, settings.tide],
+  const renderState = useMemo(
+    () => createOceanRenderState(
+      settings,
+      character,
+      0,
+    ),
+    [character, settings],
   );
+  const renderStateRef = useRef(renderState);
+  const renderTextures = useMemo(() => ({
+    parameters: createOceanFloatTexture(
+      renderState.componentBank.parameters,
+    ),
+    travel: createOceanFloatTexture(renderState.travel),
+    aggregate: createOceanFloatTexture(renderState.aggregate),
+    bathymetry: createOceanFloatTexture(renderState.bathymetry),
+  }), [renderState]);
+  useEffect(() => {
+    renderStateRef.current = renderState;
+  }, [renderState]);
+  useEffect(() => () => {
+    renderTextures.parameters.dispose();
+    renderTextures.travel.dispose();
+    renderTextures.aggregate.dispose();
+    renderTextures.bathymetry.dispose();
+  }, [renderTextures]);
   const crossShoreSegments = mobile
     ? quality === "reduced" ? 80 : quality === "high" ? 140 : 108
     : quality === "reduced" ? 180 : quality === "balanced" ? 224 : 280;
@@ -1358,24 +1378,46 @@ function Ocean({
       uWindDirection: { value: settings.windDirection },
       uCoastHeading: { value: settings.coastHeading },
       uTide: { value: settings.tide },
-      uTideFaceScale: { value: tideResponse.faceScale },
-      uBreakShift: { value: tideResponse.breakShift },
       uLight: { value: 1 },
       uCloud: { value: 0 },
       uWind: { value: settings.windSpeed },
       uRain: { value: 0 },
       uVisibility: { value: 240 },
-      uPeel: { value: character.peel },
-      uPower: { value: character.power * tideResponse.powerScale },
-      uSteepness: { value: character.steepness * tideResponse.steepnessScale },
-      uHollow: { value: character.hollow * tideResponse.hollowScale },
-      uVariability: { value: character.variability * tideResponse.variabilityScale },
       uCenterX: { value: 0 },
+      uProfileX: { value: renderState.profileX },
+      uComponentCount: {
+        value: renderState.componentBank.count,
+      },
+      uTravelKnotCount: {
+        value: renderState.travel.contourKnots.length,
+      },
+      uTravelWidth: { value: renderState.travel.width },
+      uBathymetryWidth: {
+        value: renderState.bathymetry.width,
+      },
+      uTravelKnots: {
+        value: paddedOceanKnots(
+          renderState.travel.contourKnots,
+          32,
+        ),
+      },
+      uBathymetryKnots: {
+        value: paddedOceanKnots(
+          OCEAN_BATHYMETRY_COASTAL_Z,
+          24,
+        ),
+      },
+      uComponentParameters: {
+        value: renderTextures.parameters,
+      },
+      uTravel: { value: renderTextures.travel },
+      uAggregate: { value: renderTextures.aggregate },
+      uBathymetry: { value: renderTextures.bathymetry },
       uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
       uSunColor: { value: new THREE.Color("#fff0ca") },
       uHazeColor: { value: new THREE.Color("#78979c") },
     }),
-    [character, settings, tideResponse],
+    [renderState, renderTextures, settings],
   );
 
   const tideShift = shorelineShiftForTide(settings.tide);
@@ -1391,6 +1433,48 @@ function Ocean({
       subsurface.current.position.z = ocean.current?.position.z ?? OCEAN_CENTER_Z + tideShift;
     }
     const values = material.current.uniforms;
+    const renderFocusX = ocean.current?.position.x
+      ?? focusPosition.current.x;
+    if (
+      Math.abs(
+        renderFocusX - renderStateRef.current.profileX,
+      ) >= 18
+    ) {
+      const nextRenderState = createOceanRenderState(
+        settings,
+        character,
+        renderFocusX,
+      );
+      renderStateRef.current = nextRenderState;
+      updateOceanFloatTexture(
+        renderTextures.parameters,
+        nextRenderState.componentBank.parameters,
+      );
+      updateOceanFloatTexture(
+        renderTextures.travel,
+        nextRenderState.travel,
+      );
+      updateOceanFloatTexture(
+        renderTextures.aggregate,
+        nextRenderState.aggregate,
+      );
+      updateOceanFloatTexture(
+        renderTextures.bathymetry,
+        nextRenderState.bathymetry,
+      );
+      values.uProfileX.value = nextRenderState.profileX;
+      values.uComponentCount.value =
+        nextRenderState.componentBank.count;
+      values.uTravelKnotCount.value =
+        nextRenderState.travel.contourKnots.length;
+      values.uTravelWidth.value = nextRenderState.travel.width;
+      values.uBathymetryWidth.value =
+        nextRenderState.bathymetry.width;
+      values.uTravelKnots.value = paddedOceanKnots(
+        nextRenderState.travel.contourKnots,
+        32,
+      );
+    }
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
     values.uPeriod.value = settings.wavePeriod;
@@ -1403,18 +1487,11 @@ function Ocean({
     values.uWindDirection.value = settings.windDirection;
     values.uCoastHeading.value = settings.coastHeading;
     values.uTide.value = settings.tide;
-    values.uTideFaceScale.value = THREE.MathUtils.lerp(values.uTideFaceScale.value, tideResponse.faceScale, .035);
-    values.uBreakShift.value = THREE.MathUtils.lerp(values.uBreakShift.value, tideResponse.breakShift, .035);
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uWind.value = settings.windSpeed;
     values.uRain.value = rain;
     values.uVisibility.value = visibility;
-    values.uPeel.value = THREE.MathUtils.lerp(values.uPeel.value, character.peel, .035);
-    values.uPower.value = THREE.MathUtils.lerp(values.uPower.value, character.power * tideResponse.powerScale, .035);
-    values.uSteepness.value = THREE.MathUtils.lerp(values.uSteepness.value, character.steepness * tideResponse.steepnessScale, .035);
-    values.uHollow.value = THREE.MathUtils.lerp(values.uHollow.value, character.hollow * tideResponse.hollowScale, .035);
-    values.uVariability.value = THREE.MathUtils.lerp(values.uVariability.value, character.variability * tideResponse.variabilityScale, .035);
     values.uCenterX.value = ocean.current?.position.x ?? focusPosition.current.x;
     values.uSunDirection.value.set(...sunPosition).normalize();
     values.uSunColor.value.set(sunColor);
