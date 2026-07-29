@@ -1150,9 +1150,20 @@ export type SessionSettings = {
   waveHeight: number;
   wavePeriod: number;
   waveDirection: number;
+  windWaveHeight?: number;
+  windWavePeriod?: number;
+  windWavePeakPeriod?: number;
+  windWaveDirection?: number;
   swellHeight: number;
   swellPeriod: number;
   swellDirection: number;
+  swellPeakPeriod?: number;
+  secondarySwellHeight?: number;
+  secondarySwellPeriod?: number;
+  secondarySwellDirection?: number;
+  tertiarySwellHeight?: number;
+  tertiarySwellPeriod?: number;
+  tertiarySwellDirection?: number;
   currentStrength: number;
   currentDirection: number;
   windSpeed: number;
@@ -6124,9 +6135,20 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
     waveHeight: conditions.waveHeight,
     wavePeriod: conditions.wavePeriod,
     waveDirection: conditions.waveDirection,
+    windWaveHeight: conditions.windWaveHeight,
+    windWavePeriod: conditions.windWavePeriod,
+    windWavePeakPeriod: conditions.windWavePeakPeriod,
+    windWaveDirection: conditions.windWaveDirection,
     swellHeight: conditions.swellHeight,
     swellPeriod: conditions.swellPeriod,
     swellDirection: conditions.swellDirection,
+    swellPeakPeriod: conditions.swellPeakPeriod,
+    secondarySwellHeight: conditions.secondarySwellHeight,
+    secondarySwellPeriod: conditions.secondarySwellPeriod,
+    secondarySwellDirection: conditions.secondarySwellDirection,
+    tertiarySwellHeight: conditions.tertiarySwellHeight,
+    tertiarySwellPeriod: conditions.tertiarySwellPeriod,
+    tertiarySwellDirection: conditions.tertiarySwellDirection,
     currentStrength: conditions.currentVelocity,
     currentDirection: conditions.currentDirection,
     windSpeed: conditions.windSpeed,
