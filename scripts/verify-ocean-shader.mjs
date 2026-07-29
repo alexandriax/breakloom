@@ -31,6 +31,7 @@ for (const token of [
   "uTravel",
   "uAggregate",
   "uBathymetry",
+  "uDominantPartitionTag",
   "travel.r",
   "first.g * uTime",
   "vWorldNormal",
@@ -38,6 +39,8 @@ for (const token of [
   "uBreakerSteepness",
   "uBreakerHollow",
   "breakerShapeDerivative",
+  "groupReal",
+  "normalizedGroupEnvelope",
   "for (int index = 0; index < 28; index++)",
 ]) {
   assert.ok(
@@ -76,6 +79,14 @@ assert.ok(
 assert.ok(
   !vertex.includes("gerstner("),
   "the visual ocean diverged into a separate Gerstner model",
+);
+assert.ok(
+  source.includes("<LineupWaveSetVolume"),
+  "the physical overturning breaker volume is no longer rendered",
+);
+assert.ok(
+  source.includes("<BreakingWave"),
+  "the board-level surfable face volume is no longer rendered",
 );
 
 console.log("ocean shader contract verified");

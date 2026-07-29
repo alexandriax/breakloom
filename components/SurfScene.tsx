@@ -9,7 +9,7 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, maximumSetBreakOffset, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveCrestPropertiesAtPhase, waveEnergyForPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -864,6 +864,7 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uProfileX;
   uniform float uComponentCount;
   uniform float uDominantIndex;
+  uniform float uDominantPartitionTag;
   uniform float uBreakerPower;
   uniform float uBreakerSteepness;
   uniform float uBreakerHollow;
@@ -964,8 +965,13 @@ const OCEAN_VERTEX = /* glsl */ `
     float gradientZ = 0.0;
     float swellElevation = 0.0;
     float windElevation = 0.0;
-    float dominantPhase = 0.0;
-    vec2 dominantGradient = vec2(0.0);
+    float dominantComponentPhase = 0.0;
+    vec2 dominantComponentGradient = vec2(0.0);
+    float groupReal = 0.0;
+    float groupImaginary = 0.0;
+    vec2 groupDerivativeReal = vec2(0.0);
+    vec2 groupDerivativeImaginary = vec2(0.0);
+    float groupVariance = 0.0;
 
     for (int index = 0; index < 28; index++) {
       if (float(index) >= uComponentCount) continue;
@@ -1001,19 +1007,51 @@ const OCEAN_VERTEX = /* glsl */ `
       gradientX -= amplitude * sine * phaseGradientX;
       gradientZ -= amplitude * sine * phaseGradientZ;
       if (abs(float(index) - uDominantIndex) < .5) {
-        dominantPhase = phase;
-        dominantGradient = vec2(
+        dominantComponentPhase = phase;
+        dominantComponentGradient = vec2(
           phaseGradientX,
           phaseGradientZ
         );
       }
-      if (second.a < .5) {
+      if (abs(second.a - uDominantPartitionTag) < .25) {
+        groupReal += amplitude * cosine;
+        groupImaginary += amplitude * sine;
+        groupDerivativeReal -= amplitude
+          * sine
+          * vec2(phaseGradientX, phaseGradientZ);
+        groupDerivativeImaginary += amplitude
+          * cosine
+          * vec2(phaseGradientX, phaseGradientZ);
+        groupVariance += amplitude * amplitude * .5;
+      }
+      if (second.a > 0.0) {
         swellElevation += elevation;
       } else {
         windElevation += abs(elevation);
       }
     }
 
+    float groupMagnitudeSquared = groupReal * groupReal
+      + groupImaginary * groupImaginary;
+    float dominantPhase = groupMagnitudeSquared > .00000001
+      ? atan(groupImaginary, groupReal)
+      : dominantComponentPhase;
+    vec2 dominantGradient = groupMagnitudeSquared > .00000001
+      ? (
+          groupReal * groupDerivativeImaginary
+            - groupImaginary * groupDerivativeReal
+        ) / groupMagnitudeSquared
+      : dominantComponentGradient;
+    float groupSignificantHeight = 4.0
+      * sqrt(max(0.0, groupVariance));
+    float normalizedGroupEnvelope = sqrt(
+      max(0.0, groupMagnitudeSquared)
+    ) / max(.05, groupSignificantHeight * .5);
+    float crestEnergy = smoothstep(
+      .28,
+      1.05,
+      normalizedGroupEnvelope
+    );
     float breakingProgress = smoothstep(.68, 1.06, breakingRatio);
     float brokenProgress = smoothstep(1.02, 1.82, breakingRatio);
     float shoreFade = 1.0 - smoothstep(4.8, 9.5, breakingRatio);
@@ -1032,7 +1070,9 @@ const OCEAN_VERTEX = /* glsl */ `
     float fourthPhase = dominantPhase * 4.0;
     float fifthPhase = dominantPhase * 5.0;
     float shapeAmplitude = localSignificantHeight * .29
-      * uBreakerPower * shapeActivation;
+      * uBreakerPower
+      * shapeActivation
+      * (.55 + crestEnergy * .63);
     float breakerShape = second * cos(twice)
       + asymmetry * sin(twice)
       + third * cos(thrice)
@@ -1062,7 +1102,8 @@ const OCEAN_VERTEX = /* glsl */ `
     float crestSignal = .5 + .5 * cos(dominantPhase);
     float breakActivation = shapeActivation
       * smoothstep(.42, .86, crestSignal)
-      * (.18 + brokenProgress * .82);
+      * (.18 + brokenProgress * .82)
+      * (.24 + crestEnergy * .76);
     vBreaker = breakActivation;
     vSwellRead = smoothstep(
       .12,
@@ -1441,6 +1482,9 @@ function Ocean({
       uDominantIndex: {
         value: renderState.componentBank.dominantIndex,
       },
+      uDominantPartitionTag: {
+        value: renderState.componentBank.dominantPartitionTag,
+      },
       uBreakerPower: { value: character.power },
       uBreakerSteepness: { value: character.steepness },
       uBreakerHollow: { value: character.hollow },
@@ -1523,6 +1567,8 @@ function Ocean({
         nextRenderState.componentBank.count;
       values.uDominantIndex.value =
         nextRenderState.componentBank.dominantIndex;
+      values.uDominantPartitionTag.value =
+        nextRenderState.componentBank.dominantPartitionTag;
       values.uTravelKnotCount.value =
         nextRenderState.travel.contourKnots.length;
       values.uTravelWidth.value = nextRenderState.travel.width;
@@ -1622,8 +1668,11 @@ const LINEUP_CREST_VERTEX = /* glsl */ `
     transformed.x = across;
     transformed.y = heightFraction * uFaceHeight;
     transformed.z = -(section + curvedSection + across * uPeel * .16);
-    transformed.z -= heightFraction * (.06 + uFaceHeight * .055);
-    transformed.z -= lip * lip * uCurl * (.18 + uFaceHeight * .22);
+    // The crest pitches in the propagation direction while the aerated wake
+    // trails offshore. Keeping these signs physical prevents the face from
+    // reading as a vertical card leaning backward into the swell.
+    transformed.z += heightFraction * (.06 + uFaceHeight * .055);
+    transformed.z += lip * lip * uCurl * (.18 + uFaceHeight * .22);
     transformed.z += feather * (.018 + uEnergy * .035) * heightFraction;
 
     float normalRipple = cos(across * .18 + uSeed * 5.7 + uTime * .55) * .05 * heightFraction;
@@ -1675,7 +1724,7 @@ const LINEUP_CREST_FRAGMENT = /* glsl */ `
     float lowerFade = smoothstep(.015, .24, vUv.y);
     float topFeather = 1.0 - smoothstep(.986, 1.0, vUv.y);
     float alpha = uOpacity * sideFade * lowerFade * topFeather;
-    alpha *= .56 + fresnel * .34 + foam * .36;
+    alpha *= .88 + fresnel * .24 + foam * .18;
     if (alpha < .004) discard;
     gl_FragColor = vec4(color, alpha);
   }
@@ -1686,6 +1735,7 @@ const LINEUP_WHITEWATER_VERTEX = /* glsl */ `
   uniform float uFaceHeight;
   uniform float uSpan;
   uniform float uTrail;
+  uniform float uCurl;
   uniform float uEnergy;
   uniform float uSeed;
   uniform float uCenterX;
@@ -1713,11 +1763,15 @@ const LINEUP_WHITEWATER_VERTEX = /* glsl */ `
 
     vec3 transformed;
     transformed.x = across + crossCurrent * wake * (.035 + uEnergy * .07);
-    transformed.y = uFaceHeight * .7
-      + .055
+    float fallingLip = 1.0 - smoothstep(.015, .34, wake);
+    float aeratedSurface = (1.0 - wake) * uFaceHeight * .045;
+    transformed.y = uFaceHeight * .82 * fallingLip
+      + aeratedSurface
+      + .035
       - wake * .018
       + scallop * (.012 + wake * .022);
     transformed.z = -(section + curvedSection + across * uPeel * .16);
+    transformed.z += uCurl * (.12 + uFaceHeight * .18);
     transformed.z -= trail;
     transformed.z += scallop * wake * (.08 + uTrail * .018);
 
@@ -1780,10 +1834,11 @@ const LINEUP_WHITEWATER_FRAGMENT = /* glsl */ `
     float sideFade = smoothstep(0.0, .055, vUv.x)
       * (1.0 - smoothstep(.945, 1.0, vUv.x));
     float tailFade = 1.0 - smoothstep(.68, 1.0, vWake);
-    float breakPresence = smoothstep(.2, .76, uEnergy) * smoothstep(.3, .84, uBreak);
+    float breakPresence = (.24 + smoothstep(.12, .82, uEnergy) * .76)
+      * smoothstep(.22, .8, uBreak);
     float distanceFade = 1.0 - smoothstep(190.0, 430.0, length(cameraPosition - vWorldPosition));
     float alpha = foam * sideFade * tailFade * breakPresence * distanceFade;
-    alpha *= uOpacity * (2.25 + uEnergy * 1.35);
+    alpha *= uOpacity * (1.18 + uEnergy * 1.02);
     if (alpha < .006) discard;
 
     vec3 shadowFoam = mix(vec3(.42, .69, .7), vec3(.69, .89, .84), uLight);
@@ -1837,7 +1892,7 @@ const LINEUP_SPINDRIFT_VERTEX = /* glsl */ `
       + lift
       - settle;
     transformed.z = -(section + curvedSection + across * uPeel * .16);
-    transformed.z -= uCurl * (.14 + uFaceHeight * .17);
+    transformed.z += uCurl * (.14 + uFaceHeight * .17);
     transformed.z += uWindNormal * windTravel + position.z * (.045 + life * .08);
 
     vec4 viewPosition = modelViewMatrix * vec4(transformed, 1.0);
@@ -1878,17 +1933,71 @@ const LINEUP_SPINDRIFT_FRAGMENT = /* glsl */ `
   }
 `;
 
-// Retained as a lightweight fallback for future low-detail render tiers.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function nearestWaveCrestPointAt(
+  anchorX: number,
+  anchorZ: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character: BreakCharacter,
+  crestOffset = 0,
+) {
+  const anchorPhase = primaryWavePhaseAt(
+    anchorX,
+    anchorZ,
+    elapsed,
+    settings,
+    character,
+  );
+  const nearestCrest = Math.round(
+    (anchorPhase - Math.PI * .5) / (Math.PI * 2),
+  );
+  const targetPhase = Math.PI * .5
+    + (nearestCrest + crestOffset) * Math.PI * 2;
+  let x = anchorX;
+  let z = anchorZ;
+  let transport = primaryWaveVelocityAt(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    const phaseError = primaryWavePhaseAt(
+      x,
+      z,
+      elapsed,
+      settings,
+      character,
+    ) - targetPhase;
+    const waveNumber = (Math.PI * 2)
+      / Math.max(.1, transport.wavelength);
+    const speed = Math.max(.01, transport.speed);
+    x -= transport.x / speed * phaseError / waveNumber;
+    z -= transport.z / speed * phaseError / waveNumber;
+    transport = primaryWaveVelocityAt(
+      x,
+      z,
+      elapsed,
+      settings,
+      character,
+    );
+  }
+  return {
+    x,
+    z,
+    transport,
+    targetPhase,
+  };
+}
+
 function LineupWaveSetVolume({
-  motion,
   settings,
   character,
   focusPosition,
   light,
   cloudCover,
 }: {
-  motion: MutableRefObject<MotionState>;
   settings: SessionSettings;
   character: BreakCharacter;
   focusPosition: MutableRefObject<THREE.Vector3>;
@@ -1898,6 +2007,11 @@ function LineupWaveSetVolume({
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
   const { gl } = useThree();
+  const breakerAnchor = useRef({
+    x: Number.NaN,
+    z: -48,
+    refreshAt: -1,
+  });
   const crestCount = mobile
     ? quality === "reduced" ? 2 : 3
     : quality === "high" ? 4 : 3;
@@ -1952,66 +2066,94 @@ function LineupWaveSetVolume({
   useFrame(({ clock }, delta) => {
     const elapsed = clock.elapsedTime;
     const focus = focusPosition.current;
-    const tideShift = shorelineShiftForTide(settings.tide);
     const anchorX = focus.x;
-    const anchorZ = Math.min(focus.z, tideShift - 3);
-    const anchorPhase = primaryWavePhaseAt(anchorX, anchorZ, elapsed, settings, character);
-    const nearestCrest = Math.round((anchorPhase - Math.PI * .5) / (Math.PI * 2));
-
+    if (
+      elapsed >= breakerAnchor.current.refreshAt
+      || Math.abs(anchorX - breakerAnchor.current.x) >= 8
+    ) {
+      const contour = findWaveBreakingContourAt(
+        anchorX,
+        elapsed,
+        settings,
+        character,
+        .9,
+      );
+      breakerAnchor.current = {
+        x: anchorX,
+        z: contour.z,
+        refreshAt: elapsed + .8,
+      };
+    }
+    const anchorZ = breakerAnchor.current.z;
     crestOffsets.forEach((offset, index) => {
       const group = groups.current[index];
       const material = materials.current[index];
       if (!group || !material) return;
 
-      const targetPhase = Math.PI * .5 + (nearestCrest + offset) * Math.PI * 2;
-      let sampleX = anchorX;
-      let sampleZ = anchorZ;
-      let transport = primaryWaveVelocityAt(sampleX, sampleZ, elapsed, settings, character);
-      let phaseError = primaryWavePhaseAt(sampleX, sampleZ, elapsed, settings, character) - targetPhase;
-      let waveNumber = (Math.PI * 2) / transport.wavelength;
-      sampleX -= transport.x / transport.speed * phaseError / waveNumber;
-      sampleZ -= transport.z / transport.speed * phaseError / waveNumber;
-
-      for (let iteration = 0; iteration < 2; iteration += 1) {
-        transport = primaryWaveVelocityAt(sampleX, sampleZ, elapsed, settings, character);
-        phaseError = primaryWavePhaseAt(sampleX, sampleZ, elapsed, settings, character) - targetPhase;
-        waveNumber = (Math.PI * 2) / transport.wavelength;
-        sampleX -= transport.x / transport.speed * phaseError / waveNumber;
-        sampleZ -= transport.z / transport.speed * phaseError / waveNumber;
-      }
-
-      transport = primaryWaveVelocityAt(sampleX, sampleZ, elapsed, settings, character);
+      const crestPoint = nearestWaveCrestPointAt(
+        anchorX,
+        anchorZ,
+        elapsed,
+        settings,
+        character,
+        offset,
+      );
+      const sampleX = crestPoint.x;
+      const sampleZ = crestPoint.z;
+      const transport = crestPoint.transport;
       const normalX = transport.x / transport.speed;
       const normalZ = transport.z / transport.speed;
       const setState = waveSetStateAt(sampleX, sampleZ, elapsed, settings, character);
-      const coastalZ = sampleZ - tideShift;
-      const shoaling = THREE.MathUtils.smoothstep(coastalZ, -112, -8);
-      const shoreFade = 1 - THREE.MathUtils.smoothstep(coastalZ, 4, 15);
+      const surface = waveSurfaceFrameAt(
+        sampleX,
+        sampleZ,
+        elapsed,
+        settings,
+        character,
+      );
+      const breakEntry = THREE.MathUtils.smoothstep(
+        surface.breakingRatio,
+        .6,
+        .98,
+      );
+      const breakExit = 1 - THREE.MathUtils.smoothstep(
+        surface.breakingRatio,
+        2.15,
+        4.8,
+      );
+      const breakBand = breakEntry * breakExit;
       const distanceToFocus = Math.hypot(sampleX - focus.x, sampleZ - focus.z);
       const distanceFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, 275, 430);
-      const riderSuppression = motion.current.phase === "riding"
-        ? THREE.MathUtils.smoothstep(distanceToFocus, 17, 38)
-        : 1;
-      const energy = setState.energy;
+      const energy = setState.crestEnergy;
       const windAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
+      const forecastFaceHeight = settings.waveHeight
+        * tideResponse.faceScale
+        * character.power
+        * (.34 + breakBand * .66)
+        * (.62 + energy * .68);
+      const visibleCrestHeight = Math.max(
+        0,
+        surface.height - settings.tide * .3,
+      ) * 1.72;
       const faceHeight = THREE.MathUtils.clamp(
-        settings.waveHeight
-          * tideResponse.faceScale
-          * character.power
-          * (.2 + shoaling * .72)
-          * (.56 + energy * .64),
-        .16,
-        4.6,
+        Math.max(forecastFaceHeight, visibleCrestHeight),
+        .32,
+        6.2,
       );
-      const targetOpacity = (.11 + energy * .34)
-        * (.42 + shoaling * .58)
-        * shoreFade
+      // Even a lull member still pitches and aerates when it reaches the
+      // bottom-controlled break. Energy changes scale and violence; it must
+      // not make an otherwise physical breaker visually disappear.
+      const targetOpacity = (.52 + energy * .42)
+        * breakBand
         * distanceFade
-        * riderSuppression;
-      const surfaceY = waveHeightAt(sampleX, sampleZ, elapsed, settings, character);
+        * (surface.regime === "deep" ? 0 : 1);
 
       group.visible = targetOpacity > .004;
-      group.position.set(sampleX, surfaceY - faceHeight * .7, sampleZ);
+      group.position.set(
+        sampleX,
+        surface.height - faceHeight * .5,
+        sampleZ,
+      );
       group.rotation.y = Math.atan2(normalX, normalZ);
 
       const values = material.uniforms;
@@ -2027,7 +2169,7 @@ function LineupWaveSetVolume({
         values.uTrail.value,
         THREE.MathUtils.clamp(
           (1.45 + settings.waveHeight * 1.65)
-            * (.28 + shoaling * .72)
+            * (.18 + breakBand * .82)
             * (.36 + energy * .86),
           1.15,
           13.5,
@@ -2037,7 +2179,10 @@ function LineupWaveSetVolume({
       );
       values.uCurl.value = THREE.MathUtils.damp(
         values.uCurl.value,
-        (.12 + shoaling * (.32 + character.hollow * .42)) * (.55 + energy * .45),
+        (
+          .08
+            + breakBand * (.34 + character.hollow * .5)
+        ) * (.48 + energy * .52),
         6,
         delta,
       );
@@ -2049,7 +2194,12 @@ function LineupWaveSetVolume({
       values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, 7, delta);
       values.uLight.value = light;
       values.uCloud.value = cloudCover / 100;
-      values.uBreak.value = THREE.MathUtils.damp(values.uBreak.value, shoaling, 6, delta);
+      values.uBreak.value = THREE.MathUtils.damp(
+        values.uBreak.value,
+        Math.max(breakBand, surface.whitewater),
+        6,
+        delta,
+      );
       values.uWind.value = THREE.MathUtils.damp(values.uWind.value, settings.windSpeed, 5, delta);
       values.uWindCross.value = Math.sin(windAngle);
       values.uWindNormal.value = Math.cos(windAngle);
@@ -2735,8 +2885,9 @@ const BREAKING_WAVE_VERTEX = /* glsl */ `
     float edge = smoothstep(0.0, .09, uv.x) * smoothstep(0.0, .09, 1.0 - uv.x);
     vec3 p = position;
     float concave = pow(heightRatio, 1.42);
+    float shoulderHeight = .62 + pocket * .38;
     p.x += uSide * (curl * lip * .58 + section * lip * .18);
-    p.y = concave * faceHeight;
+    p.y = concave * faceHeight * shoulderHeight;
     p.y += sin(heightRatio * 3.14159) * pocket * faceHeight * .055;
     p.y += section * lip * faceHeight * .1;
     p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
@@ -2800,7 +2951,9 @@ const BREAKING_WAVE_FRAGMENT = /* glsl */ `
     color *= .9 + faceNoise * .13;
     color = mix(color, vec3(.006, .07, .09), vSection * (.12 + verticalDepth * .16));
 
-    float lipFoam = vFoam * smoothstep(.16, .72, faceNoise) * (.66 + veinNoise * .5 + vSection * .35);
+    float lipFoam = vFoam
+      * (.42 + smoothstep(.16, .72, faceNoise) * .58)
+      * (.72 + veinNoise * .38 + vSection * .3);
     float streaks = smoothstep(.7, .96, veinNoise) * smoothstep(.42, .95, vUv.y) * (.18 + vPocket * .36);
     float foam = clamp(max(lipFoam, streaks), 0.0, .96);
     vec3 foamColor = mix(vec3(.62, .88, .84), vec3(.94, 1.0, .98), uLight);
@@ -2948,18 +3101,18 @@ const BREAKING_FOAM_FRAGMENT = /* glsl */ `
   }
 `;
 
-// Retained as an optional low-poly fallback for constrained devices.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function BreakingWave({
   motion,
   settings,
   character,
+  focusPosition,
   light,
   cloudCover,
 }: {
   motion: MutableRefObject<MotionState>;
   settings: SessionSettings;
   character: BreakCharacter;
+  focusPosition: MutableRefObject<THREE.Vector3>;
   light: number;
   cloudCover: number;
 }) {
@@ -3042,6 +3195,24 @@ function BreakingWave({
     const targetCurtain = riding
       ? THREE.MathUtils.clamp((state.waveQuality - .5 + effectiveHollow * .14) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .96)
       : 0;
+    const focus = focusPosition.current;
+    const transport = primaryWaveVelocityAt(
+      focus.x,
+      focus.z,
+      clock.elapsedTime,
+      settings,
+      character,
+    );
+    const surface = waveSurfaceFrameAt(
+      focus.x,
+      focus.z,
+      clock.elapsedTime,
+      settings,
+      character,
+    );
+    const transportSpeed = Math.max(.01, transport.speed);
+    const normalX = transport.x / transportSpeed;
+    const normalZ = transport.z / transportSpeed;
     const values = faceMaterial.current.uniforms;
     values.uTime.value = clock.elapsedTime;
     values.uWaveHeight.value = THREE.MathUtils.damp(
@@ -3058,6 +3229,15 @@ function BreakingWave({
     values.uLight.value = light;
     values.uCloud.value = cloudCover / 100;
     values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, riding ? 7 : 4, delta);
+    // The local wave mesh is authored with +Z pointing offshore. Put its
+    // mid-face on the actual board/surface sample and rotate -Z into the
+    // finite-depth propagation direction.
+    group.current.rotation.y = Math.atan2(-normalX, -normalZ);
+    group.current.position.set(
+      focus.x + normalX * 2.35,
+      surface.height - values.uWaveHeight.value * .72,
+      focus.z + normalZ * 2.35,
+    );
     const curtain = curtainMaterial.current.uniforms;
     curtain.uTime.value = clock.elapsedTime;
     curtain.uWaveHeight.value = values.uWaveHeight.value;
@@ -11518,6 +11698,11 @@ function Simulation({
     returnStart: new THREE.Vector3(10, 0, 4),
   });
   const worldFocus = useRef(new THREE.Vector3(0, 0, 35));
+  const visibleWaveForecastAnchor = useRef({
+    x: Number.NaN,
+    z: SHORELINE_REFERENCE_Z - BREAK_OFFSHORE_OFFSET,
+    refreshAt: -1,
+  });
   const waterRide = useRef({
     elevation: 0,
     velocity: 0,
@@ -12050,7 +12235,21 @@ function Simulation({
       if (qaStage.current < 4 && qaElapsed >= 7.4) {
         qaStage.current = 4;
         phase.current = "paddling";
-        position.current.set(-7, 0, -34);
+        const qaBreak = findWaveBreakingContourAt(
+          -7,
+          t,
+          settings,
+          character,
+          .9,
+        );
+        const qaCrest = nearestWaveCrestPointAt(
+          -7,
+          qaBreak.z,
+          t,
+          settings,
+          character,
+        );
+        position.current.set(qaCrest.x, 0, qaCrest.z);
         paddleHeading.current = 0;
         paddleYawRate.current = 0;
         playerHeading.current = 0;
@@ -12195,6 +12394,35 @@ function Simulation({
       settings,
       character,
     );
+    const forecastAnchor = visibleWaveForecastAnchor.current;
+    if (
+      t >= forecastAnchor.refreshAt
+      || !Number.isFinite(forecastAnchor.x)
+      || Math.abs(position.current.x - forecastAnchor.x) >= 6
+    ) {
+      const breakingContour = findWaveBreakingContourAt(
+        position.current.x,
+        t,
+        settings,
+        character,
+        .9,
+      );
+      forecastAnchor.x = position.current.x;
+      forecastAnchor.z = breakingContour.z;
+      forecastAnchor.refreshAt = t + .75;
+    }
+    const visibleSetForecast = phase.current === "riding"
+      ? {
+          secondsToPeak: setState.secondsToPeak,
+          crestEnergy: setState.nextSurfableEnergy,
+        }
+      : nextVisibleSurfableWaveAt(
+          forecastAnchor.x,
+          forecastAnchor.z,
+          t,
+          settings,
+          character,
+        );
     const localWaveTransport = primaryWaveVelocityAt(
       position.current.x,
       position.current.z,
@@ -12407,48 +12635,43 @@ function Simulation({
       const crestArrivalProgress = .94;
       const minimumArrival = OPTIONAL_TOW_DURATION_SECONDS * crestArrivalProgress;
       const maximumArrival = 27.5 * crestArrivalProgress;
-      const phaseNow = primaryWavePhaseAt(
+      let arrivalSeconds = minimumArrival;
+      let primeWavePhase = primaryWavePhaseAt(
         targetX,
         targetZ,
-        t,
+        t + minimumArrival,
         settings,
         character,
       );
-      const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
-      let targetWavePhase = Math.PI * .5
-        + Math.floor((phaseNow - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-      while ((phaseNow - targetWavePhase) / angularSpeed < minimumArrival) {
-        targetWavePhase -= Math.PI * 2;
-      }
-      let primeWavePhase = targetWavePhase;
-      let primeWaveEnergy = waveCrestPropertiesAtPhase(
-        targetWavePhase,
-        settings,
-        character,
-      ).energy;
-      for (let offset = 0; offset < 5; offset += 1) {
-        const candidate = targetWavePhase - offset * Math.PI * 2;
-        const candidateArrival = (phaseNow - candidate) / angularSpeed;
-        if (candidateArrival > maximumArrival) break;
-        const properties = waveCrestPropertiesAtPhase(
-          candidate,
+      let primeScore = -1;
+      // Choose the actual combined-spectrum crest that will be under the
+      // board at the breaker. A nominal dominant-component ordinal can be a
+      // trough after the rest of the partition interferes with it.
+      for (
+        let candidateArrival = minimumArrival;
+        candidateArrival <= maximumArrival + .001;
+        candidateArrival += .2
+      ) {
+        const candidate = waveSetStateAt(
+          targetX,
+          targetZ,
+          t + candidateArrival,
           settings,
           character,
         );
-        if (properties.energy > primeWaveEnergy) {
-          primeWavePhase = candidate;
-          primeWaveEnergy = properties.energy;
-        }
-        if (properties.surfable) {
-          primeWavePhase = candidate;
-          break;
-        }
+        const crestProximity = 1 - THREE.MathUtils.smoothstep(
+          Math.abs(candidate.crestPhaseError),
+          .08,
+          .62,
+        );
+        const score = candidate.crestEnergy
+          * (.32 + crestProximity * .68)
+          + (candidate.crestSurfable ? .12 : 0);
+        if (score <= primeScore) continue;
+        primeScore = score;
+        arrivalSeconds = candidateArrival;
+        primeWavePhase = candidate.crestPhase;
       }
-      const arrivalSeconds = THREE.MathUtils.clamp(
-        (phaseNow - primeWavePhase) / angularSpeed,
-        minimumArrival,
-        maximumArrival,
-      );
       const duration = THREE.MathUtils.clamp(
         arrivalSeconds / crestArrivalProgress,
         OPTIONAL_TOW_DURATION_SECONDS,
@@ -13286,14 +13509,19 @@ function Simulation({
           wavePeriod: settings.wavePeriod,
           boardNormalSpeed,
         });
-        const nextCrestEnergy = waveEnergyForPhase(
-          shorebreakSetState.crestPhase - Math.PI * 2,
+        const incomingCrestState = waveSetStateAt(
+          position.current.x,
+          position.current.z,
+          t + (
+            Number.isFinite(wallApproach.secondsToImpact)
+              ? wallApproach.secondsToImpact
+              : settings.wavePeriod
+          ),
           settings,
           character,
         );
-        const incomingCrestEnergy = wallApproach.currentCrestIsUpcoming
-          ? shorebreakSetState.crestEnergy
-          : nextCrestEnergy;
+        const incomingCrestEnergy =
+          incomingCrestState.crestEnergy;
         const approachBandLoad = resolveShorebreakBandLoad({
           breakingCoordinate: breakCoastalZ,
           crestEnergy: incomingCrestEnergy,
@@ -13457,16 +13685,13 @@ function Simulation({
           proneCrestPhaseError,
           localWaveTransport.wavelength,
         );
-        const proneCrest = takeoffCommitting
-          ? waveCrestPropertiesAtPhase(
-              proneCrestPhase,
-              settings,
-              character,
-            )
-          : {
-              energy: shorebreakSetState.crestEnergy,
-              surfable: shorebreakSetState.crestSurfable,
-            };
+        const proneCrestEnergy =
+          takeoffSurface.dominant?.crestEnergy
+            ?? shorebreakSetState.crestEnergy;
+        const proneCrest = {
+          energy: proneCrestEnergy,
+          surfable: proneCrestEnergy >= .45,
+        };
         boardCrestEnergy = proneCrest.energy;
         const openFaceSlope = Math.max(
           0,
@@ -13890,7 +14115,7 @@ function Simulation({
           ? takeoffReading.physicalLift > .32
             ? `Rising face · lift ${Math.round(takeoffReading.physicalLift * 100)}%`
             : `Surfable wall ${Math.max(0, crestDistance).toFixed(1)}m behind`
-          : `Next surfable wave ${Math.max(1, Math.ceil(setState.secondsToPeak))}s`;
+          : `Next surfable wave ${Math.max(1, Math.ceil(visibleSetForecast.secondsToPeak))}s`;
         const enterRide = (
           committedQuality: number,
           catchTransport: ReturnType<typeof primaryWaveVelocityAt>,
@@ -13918,12 +14143,14 @@ function Simulation({
             rideWavePhase.current,
             initialEngagement,
           );
-          const capturedCrest = waveCrestPropertiesAtPhase(
-            rideWavePhase.current,
+          const capturedCrest = waveSetStateAt(
+            position.current.x,
+            position.current.z,
+            t,
             settings,
             character,
           );
-          boardCrestEnergy = capturedCrest.energy;
+          boardCrestEnergy = capturedCrest.crestEnergy;
           const capturedWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
           const capturedPhaseError = Math.atan2(
             Math.sin(capturedPhase - rideWavePhase.current),
@@ -14586,12 +14813,8 @@ function Simulation({
             Math.sin(standingPhase - rideWavePhase.current),
             Math.cos(standingPhase - rideWavePhase.current),
           );
-          const standingCrest = waveCrestPropertiesAtPhase(
-            rideWavePhase.current,
-            settings,
-            character,
-          );
-          boardCrestEnergy = standingCrest.energy;
+          boardCrestEnergy =
+            standingSurface.dominant?.crestEnergy ?? 0;
           const standingSteer = rideRailInputFromPaddleSteer(steer)
             * returnProneFootSupport;
           stance.current = advanceSurfboardStance(
@@ -14625,8 +14848,8 @@ function Simulation({
               standingCrestPhaseError,
               standingTransport.wavelength,
             ),
-            crestEnergy: standingCrest.energy,
-            crestSurfable: standingCrest.surfable,
+            crestEnergy: boardCrestEnergy,
+            crestSurfable: boardCrestEnergy >= .45,
             boardStability: boardSpec.stability,
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
@@ -15463,12 +15686,6 @@ function Simulation({
           Math.sin(currentWavePhase - rideWavePhase.current),
           Math.cos(currentWavePhase - rideWavePhase.current),
         );
-        const rideCrest = waveCrestPropertiesAtPhase(
-          rideWavePhase.current,
-          settings,
-          character,
-        );
-        boardCrestEnergy = rideCrest.energy;
         // Face position is measured from the board's actual phase on the
         // polygon wave. W/S changes stance pressure below; it cannot move the
         // surfer through an invisible trough-to-lip lane.
@@ -15508,6 +15725,8 @@ function Simulation({
           settings,
           character,
         );
+        boardCrestEnergy =
+          rideSurface.dominant?.crestEnergy ?? 0;
         const faceDownhillSlope = Math.max(
           0,
           -(rideSurface.slopeX * waveNormalX + rideSurface.slopeZ * waveNormalZ),
@@ -15628,8 +15847,8 @@ function Simulation({
             crestPhaseError,
             waveTransport.wavelength,
           ),
-          crestEnergy: rideCrest.energy,
-          crestSurfable: rideCrest.surfable,
+          crestEnergy: boardCrestEnergy,
+          crestSurfable: boardCrestEnergy >= .45,
           boardStability: boardSpec.stability,
           boardLength: boardSpec.length,
           boardWidth: boardSpec.width,
@@ -18489,7 +18708,7 @@ function Simulation({
           || (phase.current === "paddling" && takeoffCommitAt.current >= 0)
           ? boardCrestEnergy
           : setState.energy,
-        nextSetSeconds: setState.secondsToPeak,
+        nextSetSeconds: visibleSetForecast.secondsToPeak,
         setWaveIndex: setState.setWaveIndex,
         setWaveCount: setState.waveCount,
         setActive: setState.setActive,
@@ -18501,7 +18720,7 @@ function Simulation({
         crestDistance: Number(crestDistance.toFixed(1)),
         crestOvertake: rideCapture.current.overtaken,
         crestAhead: rideCapture.current.ahead,
-        nextWaveEnergy: setState.nextSurfableEnergy,
+        nextWaveEnergy: visibleSetForecast.crestEnergy,
         waveSurfable,
         maneuver: maneuver.current,
         maneuverScore: maneuverScore.current,
@@ -18743,6 +18962,21 @@ function Simulation({
         hazeColor={fogColor}
         visibility={fogFar}
         rain={weather.kind === "rain" ? weather.intensity : 0}
+      />
+      <LineupWaveSetVolume
+        settings={settings}
+        character={character}
+        focusPosition={worldFocus}
+        light={light}
+        cloudCover={cloudCover}
+      />
+      <BreakingWave
+        motion={motion}
+        settings={settings}
+        character={character}
+        focusPosition={worldFocus}
+        light={light}
+        cloudCover={cloudCover}
       />
       <BeachLife
         beach={beach}

@@ -181,8 +181,14 @@ export type DominantWaveState = {
   crestId: string;
   crestEnergy: number;
   envelope: number;
+  angularFrequency: number;
+  propagationAngularFrequency: number;
+  /** Instantaneous analytic-phase gradient used by the breaker shape. */
   gradientX: number;
   gradientZ: number;
+  /** Stable spectral carrier gradient used for travel direction/celerity. */
+  propagationGradientX: number;
+  propagationGradientZ: number;
   directionX: number;
   directionZ: number;
   celerityX: number;
@@ -339,6 +345,30 @@ function spectralQuantile(unitValue: number) {
 export function significantHeightToVariance(significantHeight: number) {
   const height = positiveOr(significantHeight, 0);
   return (height / 4) ** 2;
+}
+
+/**
+ * Significant (roughly four-sigma) surface-slope steepness for a random sea.
+ *
+ * Spectral components do not all reach maximum slope at the same instant, so
+ * summing |a k| treats a natural random spectrum as one impossible,
+ * phase-aligned wall. Variances add, so the physical aggregate is the
+ * root-sum-square slope spectrum.
+ */
+export function significantSpectralSteepness(
+  components: readonly {
+    amplitude: number;
+    waveNumber: number;
+  }[],
+) {
+  return 2 * Math.sqrt(components.reduce(
+    (variance, component) => variance
+      + .5 * (
+        Math.max(0, component.amplitude)
+          * Math.max(0, component.waveNumber)
+      ) ** 2,
+    0,
+  ));
 }
 
 export function varianceToSignificantHeight(variance: number) {
@@ -1243,9 +1273,11 @@ function localTermsAt(
   const depthScale = rawSignificantHeight > 0
     ? Math.min(1, breakingIndex * depth / rawSignificantHeight)
     : 1;
-  const combinedSteepness = rawTerms.reduce(
-    (sum, term) => sum + term.amplitude * term.geometry.waveNumber,
-    0,
+  const combinedSteepness = significantSpectralSteepness(
+    rawTerms.map((term) => ({
+      amplitude: term.amplitude,
+      waveNumber: term.geometry.waveNumber,
+    })),
   );
   const steepnessScale = combinedSteepness > 0
     ? Math.min(
@@ -1303,7 +1335,7 @@ export function waveBreakerResponseAt(
   breakingRatio: number,
   localSignificantHeight: number,
   dominantPhase: number,
-  _crestEnergy: number,
+  crestEnergy: number,
   options: Pick<
     WaveSamplingOptions,
     "breakerPower" | "breakerSteepness" | "breakerHollow"
@@ -1316,10 +1348,12 @@ export function waveBreakerResponseAt(
   const brokenProgress = smoothUnit(1.02, 1.82, breakingRatio);
   const shoreFade = 1 - smoothUnit(4.8, 9.5, breakingRatio);
   const shapeActivation = breakingProgress * shoreFade;
+  const realizedCrestEnergy = clamp(crestEnergy, 0, 1);
   const shapeAmplitude = Math.max(0, localSignificantHeight)
     * .29
     * power
-    * shapeActivation;
+    * shapeActivation
+    * (.55 + realizedCrestEnergy * .63);
   const second = .28 + steepness * .17 + hollow * .1;
   const asymmetry = .08 + hollow * .2 + steepness * .045;
   const third = .045 + hollow * .07 + steepness * .035;
@@ -1342,7 +1376,8 @@ export function waveBreakerResponseAt(
   const crestSignal = .5 + .5 * Math.cos(dominantPhase);
   const whitewater = shapeActivation
     * smoothUnit(.42, .86, crestSignal)
-    * (.18 + brokenProgress * .82);
+    * (.18 + brokenProgress * .82)
+    * (.24 + realizedCrestEnergy * .76);
   return {
     breakingProgress,
     brokenProgress,
@@ -1460,8 +1495,12 @@ function dominantStateFromGeometry(
     crestId: crest.crestId,
     crestEnergy: crest.crestEnergy,
     envelope: crest.envelope,
+    angularFrequency: component.angularFrequency,
+    propagationAngularFrequency: component.angularFrequency,
     gradientX: geometry.alongshoreWaveNumber,
     gradientZ: geometry.crossShoreWaveNumber,
+    propagationGradientX: geometry.alongshoreWaveNumber,
+    propagationGradientZ: geometry.crossShoreWaveNumber,
     directionX: geometry.directionX,
     directionZ: geometry.directionZ,
     celerityX: geometry.directionX * geometry.celerity,
@@ -1471,16 +1510,151 @@ function dominantStateFromGeometry(
   } satisfies DominantWaveState;
 }
 
+/**
+ * Resolves the carrier phase from the complete dominant spectral partition.
+ *
+ * A single component can be at its mathematical crest while the rest of its
+ * partition cancels it, which previously let gameplay label a trough as a
+ * surfable set wave. The analytic partition signal keeps crest identity,
+ * envelope energy, direction, and celerity attached to the combined wave that
+ * is actually visible.
+ */
 function dominantStateAt(
   bank: WaveComponentBank,
   terms: readonly LocalTerm[],
 ) {
-  const term = terms.find(
+  const dominantTerm = terms.find(
     (candidate) => candidate.component.id === bank.dominantComponentId,
   );
-  return term
-    ? dominantStateFromGeometry(bank, term.component, term.geometry)
-    : null;
+  if (!dominantTerm) return null;
+  const partitionTerms = terms.filter(
+    (term) =>
+      term.component.partitionId === dominantTerm.component.partitionId,
+  );
+  if (partitionTerms.length < 2) {
+    return dominantStateFromGeometry(
+      bank,
+      dominantTerm.component,
+      dominantTerm.geometry,
+    );
+  }
+
+  let real = 0;
+  let imaginary = 0;
+  let derivativeRealX = 0;
+  let derivativeImaginaryX = 0;
+  let derivativeRealZ = 0;
+  let derivativeImaginaryZ = 0;
+  let derivativeRealTime = 0;
+  let derivativeImaginaryTime = 0;
+  let partitionVariance = 0;
+  let carrierGradientX = 0;
+  let carrierGradientZ = 0;
+  let carrierAngularFrequency = 0;
+  for (const term of partitionTerms) {
+    const cosine = Math.cos(term.geometry.phase);
+    const sine = Math.sin(term.geometry.phase);
+    const amplitude = term.amplitude;
+    real += amplitude * cosine;
+    imaginary += amplitude * sine;
+    derivativeRealX -= amplitude
+      * sine
+      * term.geometry.alongshoreWaveNumber;
+    derivativeImaginaryX += amplitude
+      * cosine
+      * term.geometry.alongshoreWaveNumber;
+    derivativeRealZ -= amplitude
+      * sine
+      * term.geometry.crossShoreWaveNumber;
+    derivativeImaginaryZ += amplitude
+      * cosine
+      * term.geometry.crossShoreWaveNumber;
+    derivativeRealTime += amplitude
+      * term.component.angularFrequency
+      * sine;
+    derivativeImaginaryTime -= amplitude
+      * term.component.angularFrequency
+      * cosine;
+    const varianceWeight = amplitude * amplitude * .5;
+    partitionVariance += varianceWeight;
+    carrierGradientX += varianceWeight
+      * term.geometry.alongshoreWaveNumber;
+    carrierGradientZ += varianceWeight
+      * term.geometry.crossShoreWaveNumber;
+    carrierAngularFrequency += varianceWeight
+      * term.component.angularFrequency;
+  }
+  const envelopeSquared = real * real + imaginary * imaginary;
+  if (envelopeSquared < 1e-8) {
+    return dominantStateFromGeometry(
+      bank,
+      dominantTerm.component,
+      dominantTerm.geometry,
+    );
+  }
+
+  const wrappedPhase = Math.atan2(imaginary, real);
+  const phase = wrappedPhase + Math.round(
+    (dominantTerm.geometry.phase - wrappedPhase) / TAU,
+  ) * TAU;
+  const gradientX = (
+    real * derivativeImaginaryX
+      - imaginary * derivativeRealX
+  ) / envelopeSquared;
+  const gradientZ = (
+    real * derivativeImaginaryZ
+      - imaginary * derivativeRealZ
+  ) / envelopeSquared;
+  const timeDerivative = (
+    real * derivativeImaginaryTime
+      - imaginary * derivativeRealTime
+  ) / envelopeSquared;
+  const analyticAngularFrequency = clamp(
+    -timeDerivative,
+    dominantTerm.component.angularFrequency * .55,
+    dominantTerm.component.angularFrequency * 1.65,
+  );
+  const carrierWeight = Math.max(1e-9, partitionVariance);
+  carrierGradientX /= carrierWeight;
+  carrierGradientZ /= carrierWeight;
+  carrierAngularFrequency /= carrierWeight;
+  const propagationMagnitude = Math.max(
+    1e-6,
+    Math.hypot(carrierGradientX, carrierGradientZ),
+  );
+  const celerity = carrierAngularFrequency
+    / propagationMagnitude;
+  const envelopeAmplitude = Math.sqrt(envelopeSquared);
+  const localPartitionHeight = varianceToSignificantHeight(
+    partitionVariance,
+  );
+  const normalizedEnvelope = envelopeAmplitude
+    / Math.max(.05, localPartitionHeight * .5);
+  const crestEnergy = smoothUnit(.28, 1.05, normalizedEnvelope);
+  const crestOrdinal = Math.round(phase / TAU);
+
+  return {
+    componentId: dominantTerm.component.id,
+    phase,
+    normalizedPhase: wrapRadians(phase),
+    crestOrdinal,
+    crestId:
+      `spectral:${bank.seed}:${bank.dominantComponentId}:${crestOrdinal}`,
+    crestEnergy,
+    envelope: normalizedEnvelope,
+    angularFrequency: analyticAngularFrequency,
+    propagationAngularFrequency: carrierAngularFrequency,
+    gradientX,
+    gradientZ,
+    propagationGradientX: carrierGradientX,
+    propagationGradientZ: carrierGradientZ,
+    directionX: carrierGradientX / propagationMagnitude,
+    directionZ: carrierGradientZ / propagationMagnitude,
+    celerityX: celerity * carrierGradientX / propagationMagnitude,
+    celerityZ: celerity * carrierGradientZ / propagationMagnitude,
+    celerity,
+    wavelength: TAU / propagationMagnitude,
+  } satisfies DominantWaveState;
 }
 
 export function sampleDominantWave(
@@ -1490,12 +1664,10 @@ export function sampleDominantWave(
   z: number,
   elapsed: number,
 ) {
-  const component = bank.components[bank.dominantComponentId];
-  if (!component) return null;
-  return dominantStateFromGeometry(
+  const local = localTermsAt(bank, source, x, z, elapsed, {});
+  return dominantStateAt(
     bank,
-    component,
-    localGeometryAt(component, source, x, z, elapsed),
+    local.terms,
   );
 }
 
@@ -1588,16 +1760,11 @@ export function sampleWaveSurface(
       });
     }
   }
-  const dominantTerm = dominant
-    ? local.terms.find(
-        (term) => term.component.id === dominant.componentId,
-      )
-    : undefined;
-  if (dominantTerm) {
+  if (dominant) {
     timeDerivative -= breaker.phaseDerivative
-      * dominantTerm.component.angularFrequency;
+      * dominant.angularFrequency;
     gradientX += breaker.phaseDerivative
-      * dominantTerm.geometry.alongshoreWaveNumber;
+      * dominant.gradientX;
   }
   const gradientStep = clamp(
     positiveOr(options.gradientStep, .18),

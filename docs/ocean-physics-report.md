@@ -29,6 +29,26 @@ surfable crest run back out to sea. Takeoff timing, lift, rail loading, and
 acceleration therefore follow the same moving wave that is visible on screen
 without turning crest speed into a conveyor.
 
+A second audit found two subtler sources of the reported “calm-water wipeout.”
+Gameplay and foam were following the phase and energy of one spectral
+component while the screen showed the sum of all 28; that component could be
+at a crest while its visible partition was in a trough. The safety limiter
+also added every component's maximum slope as though all 28 peaked
+simultaneously, suppressing short-period and multi-partition forecasts. Crest
+identity, energy, nonlinear breaking, takeoff, tow release, shorebreak load,
+and the surf radar now use the coherent complex sum of the dominant
+partition. The steepness limiter now adds spectral slope variance by
+root-sum-square. A surfable crest must therefore exist in the water that is
+actually drawn, and valid forecast energy is no longer flattened away.
+
+The follow-up replay also exposed an instrumentation trap: the radar sampled
+the surfer's current shore/paddle position rather than the physical breaker
+contour, while the QA preset changed summary period values without clearing a
+stale wind sea and peak-period override. It could therefore display an
+8.3-second swell while forecasting a different 15-second spectrum and a
+multi-minute lull. Radar forecasts are now anchored at the solved breakpoint,
+and the replay resets the complete partition description.
+
 ## Why the old waves behaved unnaturally
 
 1. **A fixed set loop.** A hard-coded 24-value energy sequence repeated
@@ -49,6 +69,19 @@ without turning crest speed into a conveyor.
    forces, and HUD wave identity used related but separate approximations.
    Crest celerity was also used as if it were the water particle velocity,
    over-driving the board.
+6. **Single-component crest identity.** Even after the first spectral pass,
+   one carrier component selected gameplay crests while the renderer summed
+   its whole partition. Destructive interference could therefore make a
+   nominal 100% crest visually absent.
+7. **Over-conservative slope limiting.** Adding `|a × k|` across all
+   components assumed an impossible phase-aligned maximum. It attenuated the
+   very short-period, crossed, and high-swell seas that most needed a readable
+   face.
+8. **Forecasting at the wrong place and from stale partitions.** The radar
+   searched at the player even when the player was still on shore, and the
+   visual test could retain live wind-sea and peak-period fields after changing
+   only the displayed swell period. The countdown, stated forecast, and
+   breaker could then refer to three different conditions.
 
 ## Replacement model
 
@@ -76,7 +109,10 @@ important: multiplying position by a locally changing `k` introduces phase
 jumps and waves that appear to breathe in place.
 
 Group velocity controls shoaling. Combined steepness and a 0.78 depth-limited
-breaking index prevent foldover and unbounded peaks. As the ratio approaches
+breaking index prevent foldover and unbounded peaks. Combined steepness is
+the significant spectral slope
+`2 × sqrt(sum(0.5 × (amplitude × wave number)²))`, rather than the sum of
+every component's theoretical maximum. As the ratio approaches
 breaking, bounded second-through-fifth bound harmonics sharpen the crest and
 pitch its shoreward face. Their amplitude and asymmetry respond to each
 break's power, steepness, and hollow character, then decay into a
@@ -117,6 +153,24 @@ support, crest celerity for wave identity and pressure direction, and bore
 transport for broken-water load. Stable spectral crest IDs replace ordinal
 positions in the old repeating set.
 
+The shared crest is the analytic phase of the complete dominant partition,
+not whichever individual component happened to be largest offshore. Its
+complex amplitude supplies the realized group energy, while a
+variance-weighted carrier supplies a stable propagation direction and
+celerity. The surf radar searches the next zero-phase crossing of this same
+visible group at the solved bathymetric breaker contour, so its countdown and
+energy no longer promise a wave that cancels out on screen or measure a
+shoreline phase that cannot yet break.
+
+Because a single-valued height field cannot geometrically overturn, the break
+also has a synchronized explicit face/lip volume. It follows the solved
+finite-depth crest through the physical breaker band, pitches shoreward,
+collapses its whitewater down the face, and leaves the aerated trail offshore.
+During an engaged ride, a smaller board-level section of the same face remains
+anchored to the sampled water and propagation frame, making the slope, lip,
+foam pressure, and board position readable together instead of drawing a flat
+decal under the surfer.
+
 The optional tow now solves the offshore-most physical
 `Hs / (0.78 × depth)` contour rather than subtracting a dimensionless HUD
 coordinate from world metres. Craft motion is acceleration- and speed-limited;
@@ -154,6 +208,12 @@ Automated release verification now checks:
 - dominant phase advection against local celerity;
 - bounded orbital velocities and agreement between gameplay and ocean samples;
 - spectral-beat sets with three-to-eight surfable waves and bounded lulls;
+- coherent visible-group crests that remain above the surface when labeled
+  surfable, with the radar forecast resolving the same future crest;
+- breakpoint-anchored radar timing and a QA spectrum that resets stale
+  peak-period and wind-sea partitions rather than changing display values only;
+- root-sum-square spectral steepness, preventing component count from
+  flattening a valid multi-partition forecast;
 - stable crest direction across a full orbital cycle, including explicit
   regression coverage for reversing particle flow and behind-coast forecast
   bearings;
@@ -180,9 +240,10 @@ dynamics solver. The next realism gains should build on it:
 1. Extend the crest-localized bore into a full Eulerian foam transport texture
    so detached whitewater can merge, spread, and decay across multiple waves
    rather than using a shader signal plus rider-local particle persistence.
-2. Add a dedicated overturning lip/air-water volume for true plunging geometry;
-   a single-valued height field can pitch steeply but cannot represent a
-   physically curled surface above itself.
+2. Replace the current synchronized explicit lip meshes with a local
+   signed-distance or particle-level-set air/water volume for fully volumetric
+   tube closure, splash-sheet breakup, entrained air, and view-correct
+   refraction through an overturning lip.
 3. Extend the packed bathymetry window or use a clipmap when the player travels
    far alongshore, reducing local linearization error at the distant mesh edge.
 4. Calibrate each zone from measured bathymetric grids and buoy spectra where

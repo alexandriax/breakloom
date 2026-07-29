@@ -3,6 +3,7 @@ import {
   primaryWavePhaseAt,
   primaryWaveVelocityAt,
   findWaveBreakingContourAt,
+  nextVisibleSurfableWaveAt,
   waveBreakingGeometryAt,
   waveCrestPropertiesAtPhase,
   waveSurfaceFrameAt,
@@ -382,8 +383,9 @@ for (
   const nearshoreRegimes = new Set();
   let maximumBreakerSlope = 0;
   let maximumWhitewater = 0;
-  for (let step = 0; step <= 16; step += 1) {
-    const time = step * peakPeriod / 12;
+  const visibleSurfableCrests = [];
+  for (let step = 0; step <= 288; step += 1) {
+    const time = step * peakPeriod / 24;
     const temporalSurface = sampleCoastWaveSurface(
       0,
       -180,
@@ -410,6 +412,22 @@ for (
       maximumWhitewater,
       breakerSurface.whitewater,
     );
+    const dominant = breakerSurface.dominant;
+    if (
+      dominant
+      && dominant.crestEnergy >= .52
+      && Math.abs(angleDifference(dominant.phase, 0)) <= .16
+    ) {
+      visibleSurfableCrests.push({
+        height: breakerSurface.height,
+        slope: Math.hypot(
+          breakerSurface.gradientX,
+          breakerSurface.gradientZ,
+        ),
+        whitewater: breakerSurface.whitewater,
+      });
+    }
+    if (step > 16 && step % 12 !== 0) continue;
     for (
       const z of [-1000, -520, -260, -140, -82, -48, -28, -16]
     ) {
@@ -436,6 +454,22 @@ for (
     }
   }
   if (
+    visibleSurfableCrests.length < 3
+    || visibleSurfableCrests.some((crest) => crest.height <= .08)
+  ) {
+    throw new Error(
+      `${coastId}/${zoneName} labeled a visually absent crest as surfable`,
+    );
+  }
+  const strongestVisibleCrest = visibleSurfableCrests.reduce(
+    (best, crest) => (
+      crest.slope + crest.whitewater * 2
+        > best.slope + best.whitewater * 2
+        ? crest
+        : best
+    ),
+  );
+  if (
     Math.max(...temporalHeights) - Math.min(...temporalHeights)
       < significantHeight * .35
   ) {
@@ -458,11 +492,60 @@ for (
   if (
     maximumBreakerSlope < .105
     || maximumWhitewater < .08
+    || strongestVisibleCrest.slope < .09
+    || strongestVisibleCrest.whitewater < .08
   ) {
     throw new Error(
-      `${coastId}/${zoneName} reached breaking depth without a pitched face and crest-localized whitewater`,
+      `${coastId}/${zoneName} reached breaking depth without a pitched face and crest-localized whitewater `
+        + `(all slope=${maximumBreakerSlope.toFixed(3)}, all foam=${maximumWhitewater.toFixed(3)}, `
+        + `surfable slope=${strongestVisibleCrest.slope.toFixed(3)}, `
+        + `surfable foam=${strongestVisibleCrest.whitewater.toFixed(3)})`,
     );
   }
+}
+
+const forecastBeach = BEACHES.find((beach) => beach.id === "pipeline");
+if (!forecastBeach) throw new Error("Missing Pipeline forecast regression coast");
+const forecastSettings = sessionFor(forecastBeach);
+const forecastCharacter = getBreakCharacter("pipeline", "First Reef");
+const forecastContour = findWaveBreakingContourAt(
+  0,
+  0,
+  forecastSettings,
+  forecastCharacter,
+  .9,
+);
+const visibleForecast = nextVisibleSurfableWaveAt(
+  0,
+  forecastContour.z,
+  0,
+  forecastSettings,
+  forecastCharacter,
+);
+if (
+  !Number.isFinite(visibleForecast.secondsToPeak)
+  || visibleForecast.secondsToPeak
+    > forecastSettings.wavePeriod * 48
+) {
+  throw new Error(
+    "visible-set forecast did not find a bounded surfable group crest",
+  );
+}
+const forecastCrest = sampleCoastWaveSurface(
+  0,
+  forecastContour.z,
+  visibleForecast.secondsToPeak,
+  forecastSettings,
+  forecastCharacter,
+);
+if (
+  !forecastCrest.dominant
+  || forecastCrest.dominant.crestEnergy < .45
+  || Math.abs(angleDifference(forecastCrest.dominant.phase, 0)) > .002
+) {
+  throw new Error(
+    "HUD forecast diverged from the next realized visible group crest",
+  );
 }
 
 if (coastBreakSignatures.size < BEACHES.length) {

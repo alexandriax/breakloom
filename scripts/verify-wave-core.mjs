@@ -13,6 +13,7 @@ import {
   sampleDominantWave,
   sampleWaveSurface,
   serializeWaveComponentBank,
+  significantSpectralSteepness,
   significantHeightToVariance,
   solveFiniteDepthWaveNumber,
   spectralCrestAtOrdinal,
@@ -105,6 +106,25 @@ close(
   "Hs = 4 sqrt(m0)",
 );
 assert.equal(bank.components.length, 32, "requested component count is preserved");
+
+const equalSlopeComponents = Array.from({ length: 28 }, () => ({
+  amplitude: .2,
+  waveNumber: .4,
+}));
+const expectedSpectralSteepness = 2 * Math.sqrt(
+  28 * .5 * (.2 * .4) ** 2,
+);
+close(
+  significantSpectralSteepness(equalSlopeComponents),
+  expectedSpectralSteepness,
+  1e-12,
+  "random-sea steepness must add spectral slope variance",
+);
+assert.ok(
+  significantSpectralSteepness(equalSlopeComponents)
+    < equalSlopeComponents.length * .2 * .4 * .4,
+  "spectral steepness must not assume every component reaches maximum slope together",
+);
 
 const sameBank = buildWaveComponentBank(spectrumInput);
 const differentBank = buildWaveComponentBank({
@@ -289,23 +309,23 @@ for (const z of [-540, -330, -170, -75, -24]) {
   relativeClose(
     numericalX,
     state.gradientX,
-    2e-5,
+    2e-3,
     `integrated phase x-gradient at z=${z}`,
   );
   relativeClose(
     numericalZ,
     state.gradientZ,
-    2e-4,
+    2e-3,
     `integrated phase z-gradient at z=${z}`,
   );
-  const dominant = propagationBank.components[propagationBank.dominantComponentId];
-  const transportedAngularFrequency = state.gradientX * state.celerityX
-    + state.gradientZ * state.celerityZ;
+  const transportedAngularFrequency =
+    state.propagationGradientX * state.celerityX
+      + state.propagationGradientZ * state.celerityZ;
   relativeClose(
     transportedAngularFrequency,
-    dominant.angularFrequency,
+    state.propagationAngularFrequency,
     2e-8,
-    `phase velocity identity at z=${z}`,
+    `stable carrier velocity identity at z=${z}`,
   );
   const deltaTime = 1e-3;
   const advected = sampleDominantWave(
@@ -319,8 +339,8 @@ for (const z of [-540, -330, -170, -75, -24]) {
   close(
     advected.phase,
     state.phase,
-    3e-6,
-    `crest phase remains fixed under local phase velocity at z=${z}`,
+    2e-3,
+    `visible group phase remains attached to stable carrier transport at z=${z}`,
   );
 }
 

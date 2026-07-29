@@ -6283,6 +6283,7 @@ function waveReadStateForPhase(
   phase: number,
   wavePeriod: number,
   bank: WaveComponentBank,
+  realizedCrestEnergy?: number,
 ) {
   const period = Math.max(4, wavePeriod);
   const angularSpeed = Math.PI * 2 / period;
@@ -6293,8 +6294,14 @@ function waveReadStateForPhase(
   const easedBlend = blend * blend * (3 - 2 * blend);
   const lowerEnergy = crestEnergyAtOrdinal(bank, lowerCrest);
   const upperEnergy = crestEnergyAtOrdinal(bank, lowerCrest + 1);
-  const energy = lowerEnergy + (upperEnergy - lowerEnergy) * easedBlend;
-  const currentCrestEnergy = crestEnergyAtOrdinal(bank, closestCrest);
+  const modeledEnergy = lowerEnergy
+    + (upperEnergy - lowerEnergy) * easedBlend;
+  const currentCrestEnergy = Number.isFinite(realizedCrestEnergy)
+    ? clampValue(realizedCrestEnergy ?? 0, 0, 1)
+    : crestEnergyAtOrdinal(bank, closestCrest);
+  const energy = Number.isFinite(realizedCrestEnergy)
+    ? currentCrestEnergy
+    : modeledEnergy;
   const crestPhase = Math.PI * .5 + closestCrest * Math.PI * 2;
   const crestPhaseError = Math.atan2(
     Math.sin(phase - crestPhase),
@@ -6353,11 +6360,142 @@ export function waveSetStateAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
+  const surface = sampleCoastWaveSurface(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
+  const phase = (surface.dominant?.phase ?? 0) + Math.PI * .5;
   return waveReadStateForPhase(
-    primaryWavePhaseAt(x, z, elapsed, settings, character),
+    phase,
     settings.wavePeriod,
     coastWaveModelAt(x, settings, character).bank,
+    surface.dominant?.crestEnergy,
   );
+}
+
+export type VisibleWaveForecast = {
+  secondsToPeak: number;
+  crestEnergy: number;
+};
+
+const VISIBLE_WAVE_FORECAST_CACHE = new WeakMap<
+  WaveComponentBank,
+  Map<string, VisibleWaveForecast>
+>();
+
+/**
+ * Forecasts the next crest from the same coherent dominant-partition signal
+ * that the ocean and board sample now.
+ *
+ * The older HUD forecast advanced a single component's deterministic ordinal
+ * pattern. Once rendering moved to the full partition, that could announce a
+ * high-energy wave while destructive interference left the visible surface
+ * calm. A bounded Newton search follows successive zero-phase crossings of
+ * the realized group instead. Results are cached in half-second/spatial
+ * buckets because the instruments do not need a frame-rate forecast.
+ */
+export function nextVisibleSurfableWaveAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+): VisibleWaveForecast {
+  const bank = coastWaveModelAt(x, settings, character).bank;
+  let bankCache = VISIBLE_WAVE_FORECAST_CACHE.get(bank);
+  if (!bankCache) {
+    bankCache = new Map();
+    VISIBLE_WAVE_FORECAST_CACHE.set(bank, bankCache);
+  }
+  const cacheKey = [
+    Math.round(x / 6),
+    Math.round(z / 6),
+    Math.floor(elapsed * 2),
+    Math.round(settings.tide * 20),
+  ].join(":");
+  const cached = bankCache.get(cacheKey);
+  if (cached) return cached;
+
+  const initial = sampleCoastDominantWave(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
+  if (!initial) {
+    return {
+      secondsToPeak: Number.POSITIVE_INFINITY,
+      crestEnergy: 0,
+    };
+  }
+  const tau = Math.PI * 2;
+  const currentPhaseError = Math.atan2(
+    Math.sin(initial.phase),
+    Math.cos(initial.phase),
+  );
+  if (
+    initial.crestEnergy >= SURFABLE_CREST_ENERGY
+    && Math.abs(currentPhaseError) <= .12
+  ) {
+    return {
+      secondsToPeak: 0,
+      crestEnergy: initial.crestEnergy,
+    };
+  }
+
+  const positivePhase = ((initial.phase % tau) + tau) % tau;
+  let targetOrdinal = Math.floor(initial.phase / tau);
+  let candidateTime = elapsed
+    + positivePhase / Math.max(.1, initial.angularFrequency);
+  let result: VisibleWaveForecast = {
+    secondsToPeak: Number.POSITIVE_INFINITY,
+    crestEnergy: initial.crestEnergy,
+  };
+  for (let offset = 0; offset < 48; offset += 1) {
+    const targetPhase = targetOrdinal * tau;
+    let candidate = sampleCoastDominantWave(
+      x,
+      z,
+      candidateTime,
+      settings,
+      character,
+    );
+    for (
+      let iteration = 0;
+      candidate && iteration < 3;
+      iteration += 1
+    ) {
+      candidateTime += (candidate.phase - targetPhase)
+        / Math.max(.1, candidate.angularFrequency);
+      candidate = sampleCoastDominantWave(
+        x,
+        z,
+        candidateTime,
+        settings,
+        character,
+      );
+    }
+    if (!candidate) break;
+    if (candidate.crestEnergy >= SURFABLE_CREST_ENERGY) {
+      result = {
+        secondsToPeak: Math.max(0, candidateTime - elapsed),
+        crestEnergy: candidate.crestEnergy,
+      };
+      break;
+    }
+    targetOrdinal -= 1;
+    candidateTime += tau / Math.max(
+      .1,
+      candidate.propagationAngularFrequency,
+    );
+  }
+  if (bankCache.size >= 512) bankCache.clear();
+  bankCache.set(cacheKey, result);
+  return result;
 }
 
 export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
@@ -6839,6 +6977,7 @@ export function waveSurfaceFrameAt(
     breakerVelocityX: surface.breakerVelocityX,
     breakerVelocityZ: surface.breakerVelocityZ,
     regime: surface.regime,
+    dominant: surface.dominant,
   };
 }
 

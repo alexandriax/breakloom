@@ -233,7 +233,7 @@ export function coastWaveModelAt(
 
 function transformDominant(
   dominant: DominantWaveState | null,
-  bank: WaveComponentBank,
+  _bank: WaveComponentBank,
   contourGradientX: number,
   contourGradientZ: number,
 ) {
@@ -241,23 +241,34 @@ function transformDominant(
   const gradientX = dominant.gradientX
     + dominant.gradientZ * contourGradientX;
   const gradientZ = dominant.gradientZ * contourGradientZ;
-  const gradientMagnitude = Math.max(
+  const propagationGradientX =
+    dominant.propagationGradientX
+      + dominant.propagationGradientZ * contourGradientX;
+  const propagationGradientZ =
+    dominant.propagationGradientZ * contourGradientZ;
+  const propagationMagnitude = Math.max(
     1e-9,
-    Math.hypot(gradientX, gradientZ),
+    Math.hypot(
+      propagationGradientX,
+      propagationGradientZ,
+    ),
   );
-  const component = bank.components[dominant.componentId];
-  const celerity = (component?.angularFrequency ?? 0)
-    / gradientMagnitude;
+  const celerity = dominant.propagationAngularFrequency
+    / propagationMagnitude;
   return {
     ...dominant,
     gradientX,
     gradientZ,
-    directionX: gradientX / gradientMagnitude,
-    directionZ: gradientZ / gradientMagnitude,
-    celerityX: celerity * gradientX / gradientMagnitude,
-    celerityZ: celerity * gradientZ / gradientMagnitude,
+    propagationGradientX,
+    propagationGradientZ,
+    directionX: propagationGradientX / propagationMagnitude,
+    directionZ: propagationGradientZ / propagationMagnitude,
+    celerityX: celerity
+      * propagationGradientX / propagationMagnitude,
+    celerityZ: celerity
+      * propagationGradientZ / propagationMagnitude,
     celerity,
-    wavelength: Math.PI * 2 / gradientMagnitude,
+    wavelength: Math.PI * 2 / propagationMagnitude,
   } satisfies DominantWaveState;
 }
 

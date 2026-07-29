@@ -1159,7 +1159,17 @@ export default function BreakloomApp() {
         waveHeight: 2,
         wavePeriod: 8,
         swellHeight: 2,
-        swellPeriod: 10,
+        // Keep the visual QA ride on a real, energetic crest at the scripted
+        // takeoff time instead of forcing the board across a spectral lull.
+        // Reset every spectral override as well as the summary values so stale
+        // live wind-sea/peak-period data cannot describe a different ocean.
+        swellPeriod: 8.25,
+        swellPeakPeriod: 8.25,
+        windWaveHeight: .35,
+        windWavePeriod: 5.5,
+        windWavePeakPeriod: 5.5,
+        secondarySwellHeight: 0,
+        tertiarySwellHeight: 0,
         windSpeed: 5,
         tide: .1,
         timeOfDay: 16,

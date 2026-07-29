@@ -88,6 +88,16 @@ for (const [coastId, zoneName, x] of CASES) {
   assert.ok(state.componentBank.count <= MAX_RENDER_WAVE_COMPONENTS);
   assert.equal(state.componentBank.count, MAX_RENDER_WAVE_COMPONENTS);
   assert.ok(state.componentBank.dominantIndex >= 0, `${label} lost dominant component`);
+  const dominantComponent =
+    state.componentBank.components[state.componentBank.dominantIndex];
+  const expectedDominantPartitionTag = (
+    dominantComponent.kind === "swell" ? 1 : -1
+  ) * (dominantComponent.partitionId + 1);
+  assert.equal(
+    state.componentBank.dominantPartitionTag,
+    expectedDominantPartitionTag,
+    `${label} lost its signed dominant spectral partition`,
+  );
   assert.ok(
     new Set(state.componentBank.components.map((component) => component.partitionId)).size >= 3,
     `${label} failed to preserve spectral partitions`,
@@ -103,6 +113,15 @@ for (const [coastId, zoneName, x] of CASES) {
     `${label} renderer did not retain the exact CPU realization`,
   );
   for (const component of state.componentBank.components) {
+    const packedPartitionTag = state.componentBank.parameters.data[
+      (MAX_RENDER_WAVE_COMPONENTS + component.id) * 4 + 3
+    ];
+    assert.equal(
+      packedPartitionTag,
+      (component.kind === "swell" ? 1 : -1)
+        * (component.partitionId + 1),
+      `${label} component ${component.id} lost its packed partition tag`,
+    );
     nearlyEqual(
       component.amplitude,
       sourceBank.components[component.sourceId].amplitude,

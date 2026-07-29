@@ -15,6 +15,7 @@ import {
 import {
   depthAt,
   groupVelocity,
+  significantSpectralSteepness,
   solveFiniteDepthWaveNumber,
   varianceToSignificantHeight,
   waveBreakerResponseAt,
@@ -74,13 +75,15 @@ export type RenderComponentBank = {
   count: number;
   capacity: number;
   dominantIndex: number;
+  dominantPartitionTag: number;
   significantHeight: number;
   totalVariance: number;
   components: RenderWaveComponent[];
   /**
    * Two RGBA rows:
    * 0 = amplitude, angular frequency, phase offset, alongshore k
-   * 1 = direction x, direction z, reference k, kind (0 swell / 1 wind)
+   * 1 = direction x, direction z, reference k,
+   *     signed partition tag (+swell / -wind sea)
    */
   parameters: FloatTextureTable;
 };
@@ -293,14 +296,22 @@ function buildRenderComponentBank(
     parameters[second] = component.directionX;
     parameters[second + 1] = component.directionZ;
     parameters[second + 2] = component.referenceWaveNumber;
-    parameters[second + 3] = component.kind === "swell" ? 0 : 1;
+    parameters[second + 3] = (
+      component.kind === "swell" ? 1 : -1
+    ) * (component.partitionId + 1);
   }
+  const dominantComponent = components.find(
+    (component) => component.sourceId === bank.dominantComponentId,
+  );
+  const dominantPartitionTag = dominantComponent
+    ? (dominantComponent.kind === "swell" ? 1 : -1)
+      * (dominantComponent.partitionId + 1)
+    : 0;
   return {
     count: components.length,
     capacity: MAX_RENDER_WAVE_COMPONENTS,
-    dominantIndex: components.findIndex(
-      (component) => component.sourceId === bank.dominantComponentId,
-    ),
+    dominantIndex: dominantComponent?.id ?? -1,
+    dominantPartitionTag,
     significantHeight: varianceToSignificantHeight(totalVariance),
     totalVariance,
     components,
@@ -396,16 +407,25 @@ function buildTravelTables(
 
   for (let knot = 0; knot < knotCount; knot += 1) {
     let variance = 0;
-    let combinedSteepness = 0;
+    const steepnessComponents: Array<{
+      amplitude: number;
+      waveNumber: number;
+    }> = [];
     for (const component of bank.components) {
       const texel = (component.id * knotCount + knot) * 4;
       const amplitude = travelData[texel + 3];
       const crossK = travelData[texel + 1];
       const localK = Math.hypot(component.alongshoreWaveNumber, crossK);
       variance += amplitude * amplitude * .5;
-      combinedSteepness += amplitude * localK;
+      steepnessComponents.push({
+        amplitude,
+        waveNumber: localK,
+      });
     }
     const rawSignificantHeight = varianceToSignificantHeight(variance);
+    const combinedSteepness = significantSpectralSteepness(
+      steepnessComponents,
+    );
     const steepnessScale = combinedSteepness > 0
       ? Math.min(1, MAXIMUM_COMBINED_STEEPNESS / combinedSteepness)
       : 1;
@@ -670,7 +690,9 @@ export function samplePackedOceanHeight(
     aggregate.steepnessScale,
   );
   let height = 0;
-  let dominantPhase = 0;
+  let groupReal = 0;
+  let groupImaginary = 0;
+  let groupVariance = 0;
   for (const component of state.componentBank.components) {
     const travel = samplePackedTravel(
       state,
@@ -681,18 +703,40 @@ export function samplePackedOceanHeight(
       + travel.phaseIntegral
       - component.angularFrequency * elapsed
       + component.phaseOffset;
-    height += travel.amplitude * amplitudeScale * Math.cos(phase);
-    if (component.id === state.componentBank.dominantIndex) {
-      dominantPhase = phase;
+    const amplitude = travel.amplitude * amplitudeScale;
+    height += amplitude * Math.cos(phase);
+    const partitionTag = (
+      component.kind === "swell" ? 1 : -1
+    ) * (component.partitionId + 1);
+    if (partitionTag === state.componentBank.dominantPartitionTag) {
+      groupReal += amplitude * Math.cos(phase);
+      groupImaginary += amplitude * Math.sin(phase);
+      groupVariance += amplitude * amplitude * .5;
     }
   }
+  const dominantPhase = Math.atan2(groupImaginary, groupReal);
+  const groupSignificantHeight = varianceToSignificantHeight(
+    groupVariance,
+  );
+  const normalizedEnvelope = Math.hypot(
+    groupReal,
+    groupImaginary,
+  ) / Math.max(.05, groupSignificantHeight * .5);
+  const energyUnit = clamp(
+    (normalizedEnvelope - .28) / (1.05 - .28),
+    0,
+    1,
+  );
+  const crestEnergy = energyUnit
+    * energyUnit
+    * (3 - 2 * energyUnit);
   const localSignificantHeight = aggregate.rawSignificantHeight
     * amplitudeScale;
   const breaker = waveBreakerResponseAt(
     breakingRatio,
     localSignificantHeight,
     dominantPhase,
-    0,
+    crestEnergy,
     {
       breakerPower: character.power,
       breakerSteepness: character.steepness,
