@@ -909,7 +909,9 @@ export function waveSpectrumInputFromMarine(
       peakPeriod: positiveOr(period, conditions.swellPeriod),
       directionDegrees: localDirection(direction, conditions.swellDirection),
       directionalSpreadDegrees: spread,
-      frequencySpread: label === "primary-swell" ? .075 : .095,
+      // A realistic but not monochromatic swell: enough bandwidth for
+      // naturally spaced 3–8 wave groups instead of twenty-wave walls.
+      frequencySpread: label === "primary-swell" ? .16 : .19,
       label,
     });
   };

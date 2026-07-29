@@ -4517,17 +4517,7 @@ function SurferModel({
         settings,
         character,
       );
-      const boardSurfaceLookback = .12;
-      const boardSurfaceRise = (
-        boardSurface.height
-          - waveHeightAt(
-            dynamics.worldPosition.x,
-            dynamics.worldPosition.z,
-            clock.elapsedTime - boardSurfaceLookback,
-            settings,
-            character,
-          )
-      ) / boardSurfaceLookback;
+      const boardSurfaceRise = boardSurface.surfaceRise;
       const boardTransport = primaryWaveVelocityAt(
         dynamics.worldPosition.x,
         dynamics.worldPosition.z,
@@ -4553,14 +4543,10 @@ function SurferModel({
             + boardSurface.slopeZ * boardWaveNormalZ
         ),
       );
-      const boardTideResponse = tideResponseForBreak(
-        settings.tide,
-        character,
-      );
       const boardBreakCoastalZ =
-        dynamics.worldPosition.z
-          - shorelineShiftForTide(settings.tide)
-          - boardTideResponse.breakShift;
+        Math.log(Math.max(.018, boardSurface.breakingRatio))
+          * 20
+          - 12;
       const boardWash =
         resolveSeparatedSurferBreakingWash({
           crestDistance: waveCrestDistanceAtPhase(
@@ -12290,12 +12276,20 @@ function Simulation({
         targetWavePhase -= Math.PI * 2;
       }
       let primeWavePhase = targetWavePhase;
-      let primeWaveEnergy = waveCrestPropertiesAtPhase(targetWavePhase).energy;
+      let primeWaveEnergy = waveCrestPropertiesAtPhase(
+        targetWavePhase,
+        settings,
+        character,
+      ).energy;
       for (let offset = 0; offset < 5; offset += 1) {
         const candidate = targetWavePhase - offset * Math.PI * 2;
         const candidateArrival = (phaseNow - candidate) / angularSpeed;
         if (candidateArrival > maximumArrival) break;
-        const properties = waveCrestPropertiesAtPhase(candidate);
+        const properties = waveCrestPropertiesAtPhase(
+          candidate,
+          settings,
+          character,
+        );
         if (properties.energy > primeWaveEnergy) {
           primeWavePhase = candidate;
           primeWaveEnergy = properties.energy;
@@ -12978,8 +12972,8 @@ function Simulation({
             submersion: proneDiveEnvelope,
             surfaceSlopeX: paddleSurface.slopeX,
             surfaceSlopeZ: paddleSurface.slopeZ,
-            waveVelocityX: localWaveTransport.x,
-            waveVelocityZ: localWaveTransport.z,
+            waveVelocityX: localWaveTransport.waterX,
+            waveVelocityZ: localWaveTransport.waterZ,
             currentVelocityX: currentX,
             currentVelocityZ: currentZ,
             boardLength: boardSpec.length,
@@ -13070,6 +13064,8 @@ function Simulation({
         });
         const nextCrestEnergy = waveEnergyForPhase(
           shorebreakSetState.crestPhase - Math.PI * 2,
+          settings,
+          character,
         );
         const incomingCrestEnergy = wallApproach.currentCrestIsUpcoming
           ? shorebreakSetState.crestEnergy
@@ -13238,7 +13234,11 @@ function Simulation({
           localWaveTransport.wavelength,
         );
         const proneCrest = takeoffCommitting
-          ? waveCrestPropertiesAtPhase(proneCrestPhase)
+          ? waveCrestPropertiesAtPhase(
+              proneCrestPhase,
+              settings,
+              character,
+            )
           : {
               energy: shorebreakSetState.crestEnergy,
               surfable: shorebreakSetState.crestSurfable,
@@ -13249,16 +13249,8 @@ function Simulation({
           -(takeoffSurface.slopeX * takeoffWaveNormalX + takeoffSurface.slopeZ * takeoffWaveNormalZ),
         );
         const breakProgress = THREE.MathUtils.smoothstep(breakCoastalZ, -150, -16);
-        const takeoffSurfaceLookback = .16;
-        const previousTakeoffHeight = waveHeightAt(
-          position.current.x,
-          position.current.z,
-          t - takeoffSurfaceLookback,
-          settings,
-          character,
-        );
         const surfaceRise = Math.max(
-          (takeoffSurface.height - previousTakeoffHeight) / takeoffSurfaceLookback,
+          takeoffSurface.surfaceRise,
           waterRide.current.velocity * .72,
         );
         const surfaceLift = takeoffSurface.height - settings.tide * .3;
@@ -13268,8 +13260,8 @@ function Simulation({
           boardHeading: paddleHeading.current,
           velocityX: paddleVelocity.current.x,
           velocityZ: paddleVelocity.current.y,
-          waveVelocityX: localWaveTransport.x,
-          waveVelocityZ: localWaveTransport.z,
+          waveVelocityX: localWaveTransport.waterX,
+          waveVelocityZ: localWaveTransport.waterZ,
           slopeX: takeoffSurface.slopeX,
           slopeZ: takeoffSurface.slopeZ,
           surfaceRise,
@@ -13497,8 +13489,8 @@ function Simulation({
           velocityX: paddleVelocity.current.x,
           velocityZ: paddleVelocity.current.y,
           heading: paddleHeading.current,
-          waveVelocityX: localWaveTransport.x,
-          waveVelocityZ: localWaveTransport.z,
+          waveVelocityX: localWaveTransport.waterX,
+          waveVelocityZ: localWaveTransport.waterZ,
           waveContact: proneInteraction.waveContact,
           waterContact: boardWaterContact,
           waveHeight: settings.waveHeight * tideResponse.faceScale,
@@ -13704,6 +13696,8 @@ function Simulation({
           );
           const capturedCrest = waveCrestPropertiesAtPhase(
             rideWavePhase.current,
+            settings,
+            character,
           );
           boardCrestEnergy = capturedCrest.energy;
           const capturedWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
@@ -13904,8 +13898,8 @@ function Simulation({
             boardHeading: paddleHeading.current,
             velocityX: paddleVelocity.current.x,
             velocityZ: paddleVelocity.current.y,
-            waveVelocityX: catchTransport.x,
-            waveVelocityZ: catchTransport.z,
+            waveVelocityX: catchTransport.waterX,
+            waveVelocityZ: catchTransport.waterZ,
             slopeX: caughtSurface.slopeX,
             slopeZ: caughtSurface.slopeZ,
             surfaceRise: caughtSurfaceRise,
@@ -14360,6 +14354,8 @@ function Simulation({
           );
           const standingCrest = waveCrestPropertiesAtPhase(
             rideWavePhase.current,
+            settings,
+            character,
           );
           boardCrestEnergy = standingCrest.energy;
           const standingSteer = rideRailInputFromPaddleSteer(steer)
@@ -14385,8 +14381,8 @@ function Simulation({
             boardHeading: rideHeading.current,
             velocityX: rideVelocity.current.x,
             velocityZ: rideVelocity.current.y,
-            waveVelocityX: standingTransport.x,
-            waveVelocityZ: standingTransport.z,
+            waveVelocityX: standingTransport.waterX,
+            waveVelocityZ: standingTransport.waterZ,
             slopeX: standingSurface.slopeX,
             slopeZ: standingSurface.slopeZ,
             surfaceRise: standingRise,
@@ -14794,8 +14790,8 @@ function Simulation({
               deltaSeconds: delta,
               surfaceSlopeX: standingSurface.slopeX,
               surfaceSlopeZ: standingSurface.slopeZ,
-              waveVelocityX: standingTransport.x,
-              waveVelocityZ: standingTransport.z,
+              waveVelocityX: standingTransport.waterX,
+              waveVelocityZ: standingTransport.waterZ,
               currentVelocityX: standingCurrentX,
               currentVelocityZ: standingCurrentZ,
               waveContact: standingReading.waveContact * boardWaterContact,
@@ -15233,6 +15229,8 @@ function Simulation({
         );
         const rideCrest = waveCrestPropertiesAtPhase(
           rideWavePhase.current,
+          settings,
+          character,
         );
         boardCrestEnergy = rideCrest.energy;
         // Face position is measured from the board's actual phase on the
@@ -15384,8 +15382,8 @@ function Simulation({
           boardHeading: rideHeading.current,
           velocityX: rideVelocity.current.x,
           velocityZ: rideVelocity.current.y,
-          waveVelocityX: waveTransport.x,
-          waveVelocityZ: waveTransport.z,
+          waveVelocityX: waveTransport.waterX,
+          waveVelocityZ: waveTransport.waterZ,
           slopeX: rideSurface.slopeX,
           slopeZ: rideSurface.slopeZ,
           surfaceRise: rideSurfaceRise,
@@ -15668,8 +15666,8 @@ function Simulation({
             deltaSeconds: delta,
             surfaceSlopeX: rideSurface.slopeX,
             surfaceSlopeZ: rideSurface.slopeZ,
-            waveVelocityX: waveTransport.x,
-            waveVelocityZ: waveTransport.z,
+            waveVelocityX: waveTransport.waterX,
+            waveVelocityZ: waveTransport.waterZ,
             currentVelocityX: rideCurrentX,
             currentVelocityZ: rideCurrentZ,
             waveContact: rideInteraction.waveContact
@@ -16488,17 +16486,7 @@ function Simulation({
           settings,
           character,
         );
-        const wipeoutSurfaceLookback = .12;
-        const wipeoutSurfaceRise = (
-          wipeoutSurface.height
-            - waveHeightAt(
-              position.current.x,
-              position.current.z,
-              t - wipeoutSurfaceLookback,
-              settings,
-              character,
-            )
-        ) / wipeoutSurfaceLookback;
+        const wipeoutSurfaceRise = wipeoutSurface.surfaceRise;
         const wipeoutFaceSlope = Math.max(
           0,
           -(
@@ -16507,9 +16495,9 @@ function Simulation({
           ),
         );
         const wipeoutBreakCoastalZ =
-          position.current.z
-            - tideShift
-            - tideResponse.breakShift;
+          Math.log(Math.max(.018, wipeoutSurface.breakingRatio))
+            * 20
+            - 12;
         const wipeoutCoastalZ =
           position.current.z - tideShift;
         const shallowRecovery =

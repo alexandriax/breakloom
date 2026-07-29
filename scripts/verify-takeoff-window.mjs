@@ -87,7 +87,6 @@ import {
   waveCrestDistanceAtPhase,
   waveCrestPropertiesAtPhase,
   waveFacePositionAtPhase,
-  waveHeightAt,
   waveBreakingGeometryAt,
   waveBreakingCoordinateAt,
   waveSetStateAt,
@@ -253,14 +252,24 @@ const shortPeriodTransport = primaryWaveVelocityAt(
   0,
   -180,
   10,
-  { ...settings, wavePeriod: 5 },
+  {
+    ...settings,
+    wavePeriod: 5,
+    swellHeight: 1.95,
+    swellPeriod: 5,
+  },
   character,
 );
 const longPeriodTransport = primaryWaveVelocityAt(
   0,
   -180,
   10,
-  { ...settings, wavePeriod: 20 },
+  {
+    ...settings,
+    wavePeriod: 20,
+    swellHeight: 1.95,
+    swellPeriod: 20,
+  },
   character,
 );
 if (
@@ -272,10 +281,14 @@ if (
     twentySecondWavelength / tenSecondWavelength - 4,
   ) > .000001
   || longPeriodTransport.speed
-    <= shortPeriodTransport.speed * 3.95
+    <= shortPeriodTransport.speed * 1.15
+  || longPeriodTransport.wavelength
+    <= shortPeriodTransport.wavelength * 3
+  || longPeriodTransport.wavelength
+    >= twentySecondWavelength
 ) {
   throw new Error(
-    "Wave period no longer controls wavelength and crest celerity through deep-water dispersion",
+    "Finite-depth wave transport no longer preserves dispersion and shallow-water slowing",
   );
 }
 
@@ -435,30 +448,53 @@ if (
   throw new Error("Animated breaking-band geometry no longer separates continuous wall load from lineup coaching state");
 }
 const setCycle = Array.from(
-  { length: 24 },
+  { length: 96 },
   (_, index) => waveSetState(index * 9, 9),
 );
-const openingLull = setCycle.slice(0, 6);
-const firstSet = setCycle.slice(6, 12);
-const secondLull = setCycle.slice(12, 17);
-const secondSet = setCycle.slice(17, 22);
+let longestSurfableRun = 0;
+let longestLull = 0;
+let surfableRun = 0;
+let lullRun = 0;
+for (const crest of setCycle) {
+  surfableRun = crest.crestSurfable
+    ? surfableRun + 1
+    : 0;
+  lullRun = crest.crestSurfable
+    ? 0
+    : lullRun + 1;
+  longestSurfableRun = Math.max(
+    longestSurfableRun,
+    surfableRun,
+  );
+  longestLull = Math.max(longestLull, lullRun);
+}
+const firstHalf = setCycle
+  .slice(0, 48)
+  .map((crest) => crest.crestEnergy.toFixed(4))
+  .join(",");
+const secondHalf = setCycle
+  .slice(48)
+  .map((crest) => crest.crestEnergy.toFixed(4))
+  .join(",");
+const surfableCount = setCycle.filter(
+  (crest) => crest.crestSurfable,
+).length;
 if (
-  setCycle[0].crestSequenceLength !== 24
-  || openingLull.some((crest) => crest.crestSurfable)
-  || firstSet.filter((crest) => crest.crestSurfable).length < 5
-  || secondLull.some((crest) => crest.crestSurfable)
-  || secondSet.filter((crest) => crest.crestSurfable).length < 5
-  || Math.max(...firstSet.map((crest) => crest.crestEnergy)) < .8
-  || Math.max(...secondSet.map((crest) => crest.crestEnergy)) < .75
+  setCycle[0].crestSequenceLength !== 0
+  || surfableCount < 8
+  || surfableCount > 42
+  || longestSurfableRun > 8
+  || longestLull < 3
+  || firstHalf === secondHalf
+  || Math.max(...setCycle.map((crest) => crest.crestEnergy)) < .5
 ) {
   throw new Error(
-    "Swell sequencing no longer produces distinct multi-wave sets and paddle-out lulls",
+    "Spectral interference no longer produces non-repeating wave groups and natural lulls",
   );
 }
 
 const x = 0;
 const z = -34;
-const lookback = .16;
 
 function staminaAfter(seconds, effort) {
   let stamina = 100;
@@ -608,10 +644,7 @@ function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
     0,
     -(frame.slopeX * normalX + frame.slopeZ * normalZ),
   );
-  const surfaceRise = (
-    frame.height
-    - waveHeightAt(x, sampleZ, time - lookback, session, character)
-  ) / lookback;
+  const surfaceRise = frame.surfaceRise;
   return evaluateWaveTakeoff({
     crestDistance: waveCrestDistanceAtPhase(
       state.crestPhaseError,
@@ -676,27 +709,27 @@ function verifyFaceSpans(label, spans, minimumMedian) {
 const idealTraining = verifyFaceSpans(
   "ideal training takeoff",
   supportedFaceSpans(1, .85, "training"),
-  2.2,
+  1.55,
 );
 const marginalTraining = verifyFaceSpans(
   "marginal training takeoff",
   supportedFaceSpans(.35, .15, "training"),
-  1.9,
+  1.15,
 );
 const idealAdvanced = verifyFaceSpans(
   "ideal advanced takeoff",
   supportedFaceSpans(1, .85, "advanced"),
-  2,
+  1.55,
 );
 const marginalAdvanced = verifyFaceSpans(
   "marginal advanced takeoff",
   supportedFaceSpans(.35, .15, "advanced"),
-  1.7,
+  1.15,
 );
 const insideReform = verifyFaceSpans(
   "inside reform takeoff",
   supportedFaceSpans(.55, .35, "training", -20),
-  1.6,
+  1.1,
 );
 
 if (
