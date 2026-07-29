@@ -13,6 +13,7 @@ import {
   coastWaveModelAt,
   sampleCoastWaveSurface,
 } from "../lib/ocean.ts";
+import { forecastFaceHeightForBreak } from "../lib/tide.ts";
 import {
   solveFiniteDepthWaveNumber,
   varianceToSignificantHeight,
@@ -85,6 +86,16 @@ for (const [coastId, zoneName, x] of CASES) {
 
   assert.equal(state.coastId, coastId);
   assert.equal(state.zoneName, zoneName);
+  nearlyEqual(
+    state.targetFaceHeight,
+    forecastFaceHeightForBreak(
+      SETTINGS.waveHeight,
+      SETTINGS.tide,
+      character,
+    ),
+    1e-12,
+    `${label} forecast/mesh face target`,
+  );
   assert.ok(state.componentBank.count <= MAX_RENDER_WAVE_COMPONENTS);
   assert.equal(state.componentBank.count, MAX_RENDER_WAVE_COMPONENTS);
   assert.ok(state.componentBank.dominantIndex >= 0, `${label} lost dominant component`);
@@ -254,6 +265,23 @@ for (const [coastId, zoneName, x] of CASES) {
         squaredSurfaceError += error * error;
         maximumSurfaceError = Math.max(maximumSurfaceError, error);
         comparisonCount += 1;
+        assert.ok(
+          Math.hypot(cpu.displacementX, cpu.displacementZ)
+            <= state.maximumHorizontalDisplacement + 1e-9,
+          `${label} CPU crest shifted away from board contact`,
+        );
+        assert.ok(
+          Math.hypot(gpu.displacementX, gpu.displacementZ)
+            <= state.maximumHorizontalDisplacement + 1e-9,
+          `${label} GPU crest shifted away from board contact`,
+        );
+        assert.ok(
+          cpu.whitewater >= 0
+            && cpu.whitewater <= 1
+            && gpu.whitewater >= 0
+            && gpu.whitewater <= 1,
+          `${label} produced invalid crest foam`,
+        );
       }
     }
   }

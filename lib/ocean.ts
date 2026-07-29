@@ -15,6 +15,7 @@ import {
   type WaveDepthProfile,
   type WaveSurfaceSample,
 } from "./waves.ts";
+import { forecastFaceHeightForBreak } from "./tide.ts";
 
 /**
  * The legacy scene places its dry-line at world z=8. Bathymetry is expressed
@@ -63,6 +64,16 @@ export type CoastWaveSurfaceSample = WaveSurfaceSample & {
   contourGradientX: number;
   contourGradientZ: number;
 };
+
+/**
+ * A single-valued ocean mesh cannot reproduce a true overturning lip. Keep
+ * enough orbital skew to read as a solid wave body while preventing the
+ * rendered crest from moving meters away from the Eulerian point sampled by
+ * the surfboard.
+ */
+export function maximumVisibleHorizontalDisplacement(faceHeight: number) {
+  return Math.max(.24, Math.min(.72, .18 + Math.max(0, faceHeight) * .1));
+}
 
 const PROFILE_WORLD_Z = [
   -1260, -1100, -940, -790, -650, -530, -430, -345, -275, -215,
@@ -280,6 +291,13 @@ export function sampleCoastWaveSurface(
   character?: BreakCharacter,
 ): CoastWaveSurfaceSample {
   const model = coastWaveModelAt(x, settings, character);
+  const targetFaceHeight = character
+    ? forecastFaceHeightForBreak(
+        settings.waveHeight,
+        settings.tide,
+        character,
+      )
+    : Math.max(0, settings.waveHeight);
   const coastalZ = worldToBathymetryZ(worldZ, settings.tide);
   const contourCoordinate = bathymetryContourCoordinateAt(
     model.coastId,
@@ -303,6 +321,7 @@ export function sampleCoastWaveSurface(
       breakingIndex: .78,
       maximumCombinedSteepness: .42,
       maximumHorizontalSlope: .64,
+      targetFaceHeight,
       breakerPower: character?.power ?? 1,
       breakerSteepness: character?.steepness ?? .78,
       breakerHollow: character?.hollow ?? .45,
@@ -320,11 +339,23 @@ export function sampleCoastWaveSurface(
     core.horizontalVelocityZ
       - contourGradient.x * horizontalVelocityX
   ) / safeContourZ;
-  const displacementX = core.displacementX;
-  const displacementZ = (
+  let displacementX = core.displacementX;
+  let displacementZ = (
     core.displacementZ
       - contourGradient.x * displacementX
   ) / safeContourZ;
+  const maximumDisplacement = maximumVisibleHorizontalDisplacement(
+    targetFaceHeight,
+  );
+  const displacementMagnitude = Math.hypot(
+    displacementX,
+    displacementZ,
+  );
+  const displacementScale = displacementMagnitude > maximumDisplacement
+    ? maximumDisplacement / displacementMagnitude
+    : 1;
+  displacementX *= displacementScale;
+  displacementZ *= displacementScale;
   const tideSurface = settings.tide * .3;
   return {
     ...core,
@@ -339,6 +370,8 @@ export function sampleCoastWaveSurface(
     horizontalVelocityZ,
     displacementX,
     displacementZ,
+    horizontalJacobianMargin:
+      1 - (1 - core.horizontalJacobianMargin) * displacementScale,
     dominant: transformDominant(
       core.dominant,
       model.bank,

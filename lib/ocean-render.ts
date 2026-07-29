@@ -8,10 +8,12 @@ import {
 } from "./bathymetry.ts";
 import {
   coastWaveModelAt,
+  maximumVisibleHorizontalDisplacement,
   oceanLocationFor,
   worldToBathymetryZ,
   type OceanSessionLike,
 } from "./ocean.ts";
+import { forecastFaceHeightForBreak } from "./tide.ts";
 import {
   depthAt,
   groupVelocity,
@@ -128,6 +130,8 @@ export type OceanRenderState = {
   zoneName: string;
   profileX: number;
   tide: number;
+  targetFaceHeight: number;
+  maximumHorizontalDisplacement: number;
   componentBank: RenderComponentBank;
   travel: RenderTravelTable;
   aggregate: RenderAggregateTable;
@@ -690,6 +694,9 @@ export function samplePackedOceanHeight(
     aggregate.steepnessScale,
   );
   let height = 0;
+  let horizontalDisplacementX = 0;
+  let horizontalDisplacementZ = 0;
+  let horizontalSlopeBudget = 0;
   let groupReal = 0;
   let groupImaginary = 0;
   let groupVariance = 0;
@@ -705,6 +712,26 @@ export function samplePackedOceanHeight(
       + component.phaseOffset;
     const amplitude = travel.amplitude * amplitudeScale;
     height += amplitude * Math.cos(phase);
+    const phaseGradientX = component.alongshoreWaveNumber
+      + travel.crossShoreWaveNumber
+        * bathymetry.contourGradientX;
+    const phaseGradientZ = travel.crossShoreWaveNumber
+      * bathymetry.contourGradientZ;
+    const localWaveNumber = Math.max(
+      .0001,
+      Math.hypot(phaseGradientX, phaseGradientZ),
+    );
+    const coth = 1 / Math.max(.08, Math.tanh(localWaveNumber * depth));
+    const horizontalAmplitude = amplitude * Math.min(2.5, coth);
+    horizontalDisplacementX -= horizontalAmplitude
+      * Math.sin(phase)
+      * phaseGradientX
+      / localWaveNumber;
+    horizontalDisplacementZ -= horizontalAmplitude
+      * Math.sin(phase)
+      * phaseGradientZ
+      / localWaveNumber;
+    horizontalSlopeBudget += horizontalAmplitude * localWaveNumber;
     const partitionTag = (
       component.kind === "swell" ? 1 : -1
     ) * (component.partitionId + 1);
@@ -737,14 +764,34 @@ export function samplePackedOceanHeight(
     localSignificantHeight,
     dominantPhase,
     crestEnergy,
+    Math.hypot(groupReal, groupImaginary),
     {
       breakerPower: character.power,
       breakerSteepness: character.steepness,
       breakerHollow: character.hollow,
+      targetFaceHeight: state.targetFaceHeight,
     },
   );
+  const horizontalSlopeScale = Math.min(
+    1,
+    .64 / Math.max(.0001, horizontalSlopeBudget),
+  );
+  horizontalDisplacementX *= horizontalSlopeScale;
+  horizontalDisplacementZ *= horizontalSlopeScale;
+  const horizontalMagnitude = Math.hypot(
+    horizontalDisplacementX,
+    horizontalDisplacementZ,
+  );
+  const horizontalMagnitudeScale =
+    horizontalMagnitude > state.maximumHorizontalDisplacement
+      ? state.maximumHorizontalDisplacement / horizontalMagnitude
+      : 1;
+  horizontalDisplacementX *= horizontalMagnitudeScale;
+  horizontalDisplacementZ *= horizontalMagnitudeScale;
   return {
     height: height + breaker.heightOffset + settings.tide * .3,
+    displacementX: horizontalDisplacementX,
+    displacementZ: horizontalDisplacementZ,
     depth,
     breakingRatio,
     breakingProgress: breaker.breakingProgress,
@@ -766,11 +813,19 @@ export function createOceanRenderState(
   );
   const { contourKnots, depths } = adaptiveTravelProfile(model.profile);
   const tables = buildTravelTables(componentBank, contourKnots, depths);
+  const targetFaceHeight = forecastFaceHeightForBreak(
+    settings.waveHeight,
+    settings.tide,
+    character,
+  );
   return {
     coastId: location.coastId,
     zoneName: location.zoneName,
     profileX: model.profileX,
     tide: settings.tide,
+    targetFaceHeight,
+    maximumHorizontalDisplacement:
+      maximumVisibleHorizontalDisplacement(targetFaceHeight),
     componentBank,
     travel: tables.travel,
     aggregate: tables.aggregate,

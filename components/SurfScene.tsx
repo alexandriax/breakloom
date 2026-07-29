@@ -868,6 +868,8 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uBreakerPower;
   uniform float uBreakerSteepness;
   uniform float uBreakerHollow;
+  uniform float uTargetFaceHeight;
+  uniform float uMaximumHorizontalDisplacement;
   uniform float uTravelKnotCount;
   uniform float uTravelWidth;
   uniform float uBathymetryWidth;
@@ -1073,6 +1075,8 @@ const OCEAN_VERTEX = /* glsl */ `
     float brokenProgress = smoothstep(1.02, 1.82, breakingRatio);
     float shoreFade = 1.0 - smoothstep(4.8, 9.5, breakingRatio);
     float shapeActivation = breakingProgress * shoreFade;
+    float faceActivation = smoothstep(.55, .82, breakingRatio)
+      * (1.0 - smoothstep(2.4, 5.2, breakingRatio));
     float localSignificantHeight = rawSignificantHeight * amplitudeScale;
     float second = .28 + uBreakerSteepness * .17
       + uBreakerHollow * .1;
@@ -1105,16 +1109,37 @@ const OCEAN_VERTEX = /* glsl */ `
       * dominantGradient.x;
     gradientZ += shapeAmplitude * breakerShapeDerivative
       * dominantGradient.y;
+    float targetCarrierAmplitude = max(0.0, uTargetFaceHeight)
+      * (.28 + crestEnergy * .24);
+    float carrierCorrection = max(
+      0.0,
+      targetCarrierAmplitude - sqrt(max(0.0, groupMagnitudeSquared))
+    ) * faceActivation;
+    surfaceHeight += carrierCorrection * cos(dominantPhase);
+    gradientX -= carrierCorrection * sin(dominantPhase)
+      * dominantGradient.x;
+    gradientZ -= carrierCorrection * sin(dominantPhase)
+      * dominantGradient.y;
 
     float horizontalScale = min(
       1.0,
       .64 / max(.0001, horizontalSlopeBudget)
     );
+    vec2 boundedHorizontalDisplacement =
+      horizontalDisplacement * horizontalScale;
+    float horizontalMagnitude = length(
+      boundedHorizontalDisplacement
+    );
+    boundedHorizontalDisplacement *= min(
+      1.0,
+      uMaximumHorizontalDisplacement
+        / max(.0001, horizontalMagnitude)
+    );
     // Restore the rounded, weight-bearing mesh silhouette from main without
     // restoring its fixed crest loop. Horizontal orbital displacement comes
     // from these same finite-depth components and stays Jacobian-bounded.
-    p.x += horizontalDisplacement.x * horizontalScale;
-    p.y -= horizontalDisplacement.y * horizontalScale;
+    p.x += boundedHorizontalDisplacement.x;
+    p.y -= boundedHorizontalDisplacement.y;
     surfaceHeight += uTide * .3;
     p.z += surfaceHeight;
     float shoreAnchor = smoothstep(-5.0, 1.0, contourCoordinate);
@@ -1133,7 +1158,7 @@ const OCEAN_VERTEX = /* glsl */ `
       / max(.08, rawSignificantHeight * .5);
     float crestSignal = .5 + .5 * cos(dominantPhase);
     float breakActivation = shapeActivation
-      * smoothstep(.3, .76, crestSignal)
+      * smoothstep(.45, .88, crestSignal)
       * (.52 + brokenProgress * .48)
       * (.46 + crestEnergy * .54);
     vBreaker = breakActivation;
@@ -1285,7 +1310,8 @@ const OCEAN_FRAGMENT = /* glsl */ `
     float forwardScatter = pow(max(0.0, dot(viewDirection, -normalize(uSunDirection))), 3.0);
     color += vec3(.05, .52, .43) * crestLight * forwardScatter * (.18 + uLight * .34);
 
-    float crestGate = smoothstep(.96, 1.58, vCrest) * smoothstep(.35, 1.2, uHeight);
+    float crestGate = smoothstep(.68, 1.24, vCrest)
+      * smoothstep(.35, 1.2, uHeight);
     float waveAngle = radians(uWaveDirection - uCoastHeading);
     vec2 waveDir = vec2(sin(waveAngle), cos(waveAngle));
     vec2 waveTangent = vec2(-waveDir.y, waveDir.x);
@@ -1293,17 +1319,27 @@ const OCEAN_FRAGMENT = /* glsl */ `
     float foamBase = noise(waveSurface * vec2(.35, .12) + vec2(uTime * .48, -uTime * .08));
     float foamDetail = noise(waveSurface * vec2(1.18, .48) + vec2(-uTime * .74, uTime * .12));
     // Breaking water belongs to the displaced ocean, not to a stack of
-    // translucent cards. Keep a continuous aerated base on the physical crest
-    // and use noise only to perforate/detail it.
-    float breakerFoam = vBreaker
+    // translucent cards. Aerate the high, steep lip while leaving the
+    // refractive mesh face visible below it; whitening the whole face reads
+    // as a flat ribbon even when the underlying geometry has real volume.
+    float lipElevation = smoothstep(.48, 1.18, vCrest);
+    float lipSteepness = smoothstep(.035, .32, faceSteepness);
+    float aeratedLip = vBreaker
+      * lipElevation
+      * (.42 + lipSteepness * .58);
+    float breakerFoam = aeratedLip
       * (
-        .28
-        + smoothstep(.36, .78, foamBase) * .46
-        + foamDetail * .18
+        .055
+        + smoothstep(.38, .8, foamBase) * .58
+        + foamDetail * .2
       );
     float foamLace = smoothstep(.57, .74, foamDetail) * (1.0 - smoothstep(.82, .96, foamDetail));
-    breakerFoam += vBreaker * foamLace * (.1 + vChop * .14);
-    float crestFoam = crestGate * smoothstep(.42, .8, foamDetail) * .82;
+    breakerFoam += aeratedLip * foamLace * (.14 + vChop * .16);
+    float crestFoam = crestGate
+      * (
+        .14
+        + smoothstep(.42, .8, foamDetail) * .7
+      );
     float shorePulse = sin(vSurface.x * .2 + uTime * 1.7 + noise(vSurface * .08) * 4.0) * .5 + .5;
     float shoreFoam = smoothstep(4.2, 10.5, vSurface.y) * smoothstep(.27, .72, shorePulse) * .64;
     float foam = clamp(max(max(crestFoam, breakerFoam), shoreFoam), 0.0, .88);
@@ -1540,6 +1576,12 @@ function Ocean({
       uBreakerPower: { value: character.power },
       uBreakerSteepness: { value: character.steepness },
       uBreakerHollow: { value: character.hollow },
+      uTargetFaceHeight: {
+        value: renderState.targetFaceHeight,
+      },
+      uMaximumHorizontalDisplacement: {
+        value: renderState.maximumHorizontalDisplacement,
+      },
       uTravelKnotCount: {
         value: renderState.travel.contourKnots.length,
       },
@@ -1621,6 +1663,10 @@ function Ocean({
         nextRenderState.componentBank.dominantIndex;
       values.uDominantPartitionTag.value =
         nextRenderState.componentBank.dominantPartitionTag;
+      values.uTargetFaceHeight.value =
+        nextRenderState.targetFaceHeight;
+      values.uMaximumHorizontalDisplacement.value =
+        nextRenderState.maximumHorizontalDisplacement;
       values.uTravelKnotCount.value =
         nextRenderState.travel.contourKnots.length;
       values.uTravelWidth.value = nextRenderState.travel.width;
@@ -3439,6 +3485,10 @@ const PADDLE_WALL_FRAGMENT = /* glsl */ `
   }
 `;
 
+// Retained only as a possible low-detail fallback. Drawing this player-local
+// plane over the physical ocean makes a crest look like a ribbon and can put
+// it tens of metres away from the break sampled by gameplay.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function PaddleOutShorebreak({ motion, settings, light, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; light: number; mobile: boolean }) {
   const group = useRef<THREE.Group>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
@@ -12052,6 +12102,8 @@ function Simulation({
   const previousCameraImpact = useRef(0);
   const qaStartedAt = useRef(-1);
   const qaStage = useRef(0);
+  const qaRideAt = useRef(-1);
+  const qaRideStartedAt = useRef(-1);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const sunTarget = useMemo(() => new THREE.Object3D(), []);
   const timeToHour = (value: string, fallback: number) => {
@@ -12302,8 +12354,6 @@ function Simulation({
         nextShorebreakAt.current = t + .34;
       }
       if (qaStage.current < 4 && qaElapsed >= 7.4) {
-        qaStage.current = 4;
-        phase.current = "paddling";
         const qaBreak = findWaveBreakingContourAt(
           -7,
           t,
@@ -12311,37 +12361,120 @@ function Simulation({
           character,
           .9,
         );
-        const qaCrest = nearestWaveCrestPointAt(
+        const qaArrival = nextVisibleSurfableWaveAt(
           -7,
           qaBreak.z,
           t,
           settings,
           character,
         );
-        position.current.set(qaCrest.x, 0, qaCrest.z);
-        paddleHeading.current = 0;
-        paddleYawRate.current = 0;
-        playerHeading.current = 0;
-        paddleVelocity.current.set(0, 1.8);
-        previousShorebreakPhaseError.current = Number.NaN;
-        nextShorebreakAt.current = t + 20;
-        takeoffCommitAt.current = t;
-        takeoffCommitQuality.current = .92;
-        popUpStartStamina.current = stamina.current;
-        popUpBody.current.progress = 0;
-        popUpBody.current.velocity = 0;
-        const qaTakeoffPhase = primaryWavePhaseAt(
-          position.current.x,
-          position.current.z,
+        // A fixed wall-clock teleport can put the board half a wavelength
+        // inside an already-spent crest. Start the pop only when a real,
+        // energetic spectral crest is about to reach the physical break.
+        if (
+          !Number.isFinite(qaArrival.secondsToPeak)
+          || qaArrival.secondsToPeak > 1.12
+        ) {
+          nextShorebreakAt.current = t + 20;
+        } else {
+          qaStage.current = 4;
+          qaRideAt.current = t + qaArrival.secondsToPeak;
+          phase.current = "paddling";
+          const qaCrest = nearestWaveCrestPointAt(
+            -7,
+            qaBreak.z,
+            t,
+            settings,
+            character,
+          );
+          const qaNormalX = qaCrest.transport.x
+            / Math.max(.001, qaCrest.transport.speed);
+          const qaNormalZ = qaCrest.transport.z
+            / Math.max(.001, qaCrest.transport.speed);
+          const qaFaceDistance = THREE.MathUtils.clamp(
+            2.8 + settings.waveHeight * .32,
+            3,
+            4.6,
+          );
+          position.current.set(
+            qaCrest.x + qaNormalX * qaFaceDistance,
+            0,
+            qaCrest.z + qaNormalZ * qaFaceDistance,
+          );
+          const qaFaceSurface = waveSurfaceFrameAt(
+            position.current.x,
+            position.current.z,
+            t,
+            settings,
+            character,
+          );
+          // The QA route teleports from the paddle-out to the takeoff. Reset
+          // the same heave state a real continuous paddle-in already carries,
+          // or the harness begins the pop-up buried under the new face.
+          waterRide.current.elevation = qaFaceSurface.height + .16;
+          waterRide.current.velocity = qaFaceSurface.verticalVelocity;
+          waterRide.current.surfaceHeight = qaFaceSurface.height;
+          waterRide.current.contact = 1;
+          waterRide.current.engaged = true;
+          paddleHeading.current = 0;
+          paddleYawRate.current = 0;
+          playerHeading.current = 0;
+          paddleVelocity.current.set(0, 1.8);
+          previousShorebreakPhaseError.current = Number.NaN;
+          nextShorebreakAt.current = t + 20;
+          takeoffCommitAt.current = t;
+          takeoffCommitQuality.current = .92;
+          popUpStartStamina.current = stamina.current;
+          popUpBody.current.progress = 0;
+          popUpBody.current.velocity = 0;
+          const qaTakeoffPhase = primaryWavePhaseAt(
+            position.current.x,
+            position.current.z,
+            t,
+            settings,
+            character,
+          );
+          rideWavePhase.current = Math.PI * .5
+            + Math.round(
+              (qaTakeoffPhase - Math.PI * .5) / (Math.PI * 2),
+            ) * Math.PI * 2;
+        }
+      }
+      if (
+        qaStage.current === 4
+        && qaRideAt.current >= 0
+        && t >= qaRideAt.current
+      ) {
+        qaStage.current = 5;
+        qaRideStartedAt.current = t;
+        const qaRideBreak = findWaveBreakingContourAt(
+          -7,
+          t,
+          settings,
+          character,
+          .9,
+        );
+        const qaRideCrest = nearestWaveCrestPointAt(
+          -7,
+          qaRideBreak.z,
           t,
           settings,
           character,
         );
-        rideWavePhase.current = Math.PI * .5
-          + Math.round((qaTakeoffPhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
-      }
-      if (qaStage.current < 5 && qaElapsed >= 8.55) {
-        qaStage.current = 5;
+        const qaRideNormalX = qaRideCrest.transport.x
+          / Math.max(.001, qaRideCrest.transport.speed);
+        const qaRideNormalZ = qaRideCrest.transport.z
+          / Math.max(.001, qaRideCrest.transport.speed);
+        const qaRideFaceDistance = THREE.MathUtils.clamp(
+          2.8 + settings.waveHeight * .32,
+          3,
+          4.6,
+        );
+        position.current.set(
+          qaRideCrest.x + qaRideNormalX * qaRideFaceDistance,
+          0,
+          qaRideCrest.z + qaRideNormalZ * qaRideFaceDistance,
+        );
         const transport = primaryWaveVelocityAt(
           position.current.x,
           position.current.z,
@@ -12354,8 +12487,10 @@ function Simulation({
         const tangentX = normalZ;
         const tangentZ = -normalX;
         rideLineSide.current = character.peel < 0 ? -1 : 1;
-        const trimSpeed = rideLineSide.current * transport.speed * .72;
-        const normalSpeed = transport.speed;
+        const trimSpeed = rideLineSide.current * transport.speed * .82;
+        // Enter slightly below phase speed so live face pressure completes the
+        // capture instead of the scripted board outrunning a shoaling crest.
+        const normalSpeed = transport.speed * .88;
         const qaRidePhase = primaryWavePhaseAt(
           position.current.x,
           position.current.z,
@@ -12365,6 +12500,18 @@ function Simulation({
         );
         rideWavePhase.current = Math.PI * .5
           + Math.round((qaRidePhase - Math.PI * .5) / (Math.PI * 2)) * Math.PI * 2;
+        const qaRideSurface = waveSurfaceFrameAt(
+          position.current.x,
+          position.current.z,
+          t,
+          settings,
+          character,
+        );
+        waterRide.current.elevation = qaRideSurface.height + .16;
+        waterRide.current.velocity = qaRideSurface.verticalVelocity;
+        waterRide.current.surfaceHeight = qaRideSurface.height;
+        waterRide.current.contact = 1;
+        waterRide.current.engaged = true;
         waveCrestOffset.current = 0;
         rideFacePosition.current = .24;
         rideCapture.current.overtaken = 0;
@@ -12432,8 +12579,15 @@ function Simulation({
     if (qaScenario) {
       if (currentPhase === "paddling") move = 1;
       if (currentPhase === "riding") {
-        steer = Math.sin(qaElapsed * .72) * .28;
-        move = .18;
+        const qaRideAge = Math.max(
+          0,
+          t - Math.max(0, qaRideStartedAt.current),
+        );
+        steer = qaRideAge < 2.8
+          ? rideLineSide.current * .42
+          : rideLineSide.current * .18
+            + Math.sin(qaElapsed * .72) * .12;
+        move = .08;
         balanceInput = Math.sin(qaElapsed * .61) * .08;
       }
     }
@@ -19103,7 +19257,6 @@ function Simulation({
         <WaveReadingGuide motion={motion} settings={settings} character={character} mobile={mobileRenderer} />
       </group>
       <group ref={player}>
-        <PaddleOutShorebreak motion={motion} settings={settings} light={light} mobile={mobileRenderer} />
         <WaterInteraction motion={motion} settings={settings} mobile={mobileRenderer} />
         <UnderwaterLightShafts motion={motion} light={light} cloudCover={cloudCover} mobile={mobileRenderer} />
         <UnderwaterSuspendedMatter motion={motion} settings={settings} mobile={mobileRenderer} />

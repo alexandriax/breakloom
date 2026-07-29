@@ -10,8 +10,10 @@ import {
 } from "../lib/game.ts";
 import {
   coastWaveModelAt,
+  maximumVisibleHorizontalDisplacement,
   sampleCoastWaveSurface,
 } from "../lib/ocean.ts";
+import { forecastFaceHeightForBreak } from "../lib/tide.ts";
 
 const TAU = Math.PI * 2;
 
@@ -504,6 +506,87 @@ for (
   }
 }
 
+let minimumForecastFaceRatio = Infinity;
+let maximumForecastFaceRatio = 0;
+for (const beach of BEACHES) {
+  const settings = sessionFor(beach);
+  const zone = beach.zones[0];
+  const character = getBreakCharacter(beach.id, zone.name);
+  const targetFaceHeight = forecastFaceHeightForBreak(
+    settings.waveHeight,
+    settings.tide,
+    character,
+  );
+  const breakingContour = findWaveBreakingContourAt(
+    0,
+    0,
+    settings,
+    character,
+    .9,
+  );
+  const realizedFaces = [];
+  let arrivalCursor = 0;
+  for (let crestIndex = 0; crestIndex < 8; crestIndex += 1) {
+    const next = nextVisibleSurfableWaveAt(
+      0,
+      breakingContour.z,
+      arrivalCursor,
+      settings,
+      character,
+    );
+    const arrivalTime = arrivalCursor + next.secondsToPeak;
+    const crest = sampleCoastWaveSurface(
+      0,
+      breakingContour.z,
+      arrivalTime,
+      settings,
+      character,
+    );
+    let troughHeight = Infinity;
+    for (let step = -30; step <= 30; step += 1) {
+      const surface = sampleCoastWaveSurface(
+        0,
+        breakingContour.z,
+        arrivalTime + step * settings.wavePeriod / 60,
+        settings,
+        character,
+      );
+      troughHeight = Math.min(troughHeight, surface.height);
+    }
+    realizedFaces.push(Math.max(0, crest.height - troughHeight));
+    const displacement = Math.hypot(
+      crest.displacementX,
+      crest.displacementZ,
+    );
+    if (
+      displacement
+        > maximumVisibleHorizontalDisplacement(targetFaceHeight) + 1e-9
+    ) {
+      throw new Error(
+        `${beach.id}/${zone.name} shifted its visible crest away from board contact`,
+      );
+    }
+    arrivalCursor = arrivalTime + settings.wavePeriod * .32;
+  }
+  realizedFaces.sort((left, right) => left - right);
+  const medianFace = realizedFaces[Math.floor(realizedFaces.length / 2)];
+  const faceRatio = medianFace / Math.max(.1, targetFaceHeight);
+  minimumForecastFaceRatio = Math.min(
+    minimumForecastFaceRatio,
+    faceRatio,
+  );
+  maximumForecastFaceRatio = Math.max(
+    maximumForecastFaceRatio,
+    faceRatio,
+  );
+  if (faceRatio < .82 || faceRatio > 1.65) {
+    throw new Error(
+      `${beach.id}/${zone.name} realized ${medianFace.toFixed(2)}m `
+        + `against a ${targetFaceHeight.toFixed(2)}m face forecast`,
+    );
+  }
+}
+
 const forecastBeach = BEACHES.find((beach) => beach.id === "pipeline");
 if (!forecastBeach) throw new Error("Missing Pipeline forecast regression coast");
 const forecastSettings = sessionFor(forecastBeach);
@@ -596,5 +679,7 @@ console.log("ocean dynamics verified", {
   maximumPhaseAdvectionError:
     maximumPhaseAdvectionError.toExponential(2),
   highSwellCases: HIGH_SWELL_CASES.length,
+  forecastFaceRatio:
+    `${minimumForecastFaceRatio.toFixed(2)}–${maximumForecastFaceRatio.toFixed(2)}`,
   benchmarkMilliseconds: benchmarkMilliseconds.toFixed(1),
 });

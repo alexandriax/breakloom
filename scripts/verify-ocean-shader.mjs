@@ -38,7 +38,11 @@ for (const token of [
   "uBreakerPower",
   "uBreakerSteepness",
   "uBreakerHollow",
+  "uTargetFaceHeight",
+  "uMaximumHorizontalDisplacement",
   "breakerShapeDerivative",
+  "targetCarrierAmplitude",
+  "boundedHorizontalDisplacement",
   "groupReal",
   "normalizedGroupEnvelope",
   "horizontalDisplacement",
@@ -91,6 +95,10 @@ assert.ok(
 assert.ok(
   !source.includes("<BreakingWave"),
   "the detached board-level ribbon was layered back over the ocean mesh",
+);
+assert.ok(
+  !source.includes("<PaddleOutShorebreak"),
+  "the player-local paddle-out ribbon was layered back over the ocean mesh",
 );
 
 console.log("ocean shader contract verified");

@@ -143,6 +143,12 @@ export type WaveSamplingOptions = {
   breakingIndex?: number;
   maximumCombinedSteepness?: number;
   maximumHorizontalSlope?: number;
+  /**
+   * Crest-to-trough face expected at the named break. The spectral sea remains
+   * untouched offshore; this only supplies the coherent carrier energy that
+   * shoaling set waves need as they stand up.
+   */
+  targetFaceHeight?: number;
   /** Break-specific nonlinear shape controls, centered around 1. */
   breakerPower?: number;
   breakerSteepness?: number;
@@ -176,6 +182,8 @@ export type WaveComponentState = {
 export type DominantWaveState = {
   componentId: number;
   phase: number;
+  /** Instantaneous amplitude of the complete dominant spectral partition. */
+  amplitude: number;
   normalizedPhase: number;
   crestOrdinal: number;
   crestId: string;
@@ -1319,6 +1327,7 @@ export type WaveBreakerResponse = {
   breakingProgress: number;
   brokenProgress: number;
   shapeActivation: number;
+  faceActivation: number;
   heightOffset: number;
   phaseDerivative: number;
   whitewater: number;
@@ -1336,9 +1345,13 @@ export function waveBreakerResponseAt(
   localSignificantHeight: number,
   dominantPhase: number,
   crestEnergy: number,
+  dominantEnvelopeAmplitude: number,
   options: Pick<
     WaveSamplingOptions,
-    "breakerPower" | "breakerSteepness" | "breakerHollow"
+    | "breakerPower"
+    | "breakerSteepness"
+    | "breakerHollow"
+    | "targetFaceHeight"
   > = {},
 ): WaveBreakerResponse {
   const power = clamp(positiveOr(options.breakerPower, 1), .62, 1.55);
@@ -1348,6 +1361,8 @@ export function waveBreakerResponseAt(
   const brokenProgress = smoothUnit(1.02, 1.82, breakingRatio);
   const shoreFade = 1 - smoothUnit(4.8, 9.5, breakingRatio);
   const shapeActivation = breakingProgress * shoreFade;
+  const faceActivation = smoothUnit(.55, .82, breakingRatio)
+    * (1 - smoothUnit(2.4, 5.2, breakingRatio));
   const realizedCrestEnergy = clamp(crestEnergy, 0, 1);
   const shapeAmplitude = Math.max(0, localSignificantHeight)
     // Preserve the readable height and drive of the earlier mesh while the
@@ -1377,17 +1392,38 @@ export function waveBreakerResponseAt(
     - 3 * third * Math.sin(thrice)
     - 4 * fourth * Math.sin(fourthPhase)
     - 5 * fifth * Math.sin(fifthPhase);
+  // A grouped sea can have the right statistical Hs yet cancel its dominant
+  // carrier exactly where the bathymetry says it should become surfable. Main
+  // avoided that with one oversized synthetic wave. Preserve the spectrum and
+  // its spacing, but restore only the missing first-harmonic face as the set
+  // shoals. Weak group crests stay smaller; strong set waves approach the face
+  // height shown in the forecast.
+  const targetCarrierAmplitude = Math.max(
+    0,
+    options.targetFaceHeight ?? 0,
+  ) * (.28 + realizedCrestEnergy * .24);
+  const carrierCorrection = Math.max(
+    0,
+    targetCarrierAmplitude - Math.max(0, dominantEnvelopeAmplitude),
+  ) * faceActivation;
+  const carrierShape = Math.cos(dominantPhase);
+  const carrierDerivative = -Math.sin(dominantPhase);
   const crestSignal = .5 + .5 * Math.cos(dominantPhase);
   const whitewater = shapeActivation
-    * smoothUnit(.42, .86, crestSignal)
-    * (.18 + brokenProgress * .82)
-    * (.24 + realizedCrestEnergy * .76);
+    * smoothUnit(.3, .76, crestSignal)
+    * (.52 + brokenProgress * .48)
+    * (.46 + realizedCrestEnergy * .54);
   return {
     breakingProgress,
     brokenProgress,
     shapeActivation,
-    heightOffset: shapeAmplitude * shape,
-    phaseDerivative: shapeAmplitude * shapeDerivative,
+    faceActivation,
+    heightOffset:
+      shapeAmplitude * shape
+      + carrierCorrection * carrierShape,
+    phaseDerivative:
+      shapeAmplitude * shapeDerivative
+      + carrierCorrection * carrierDerivative,
     whitewater,
   };
 }
@@ -1403,6 +1439,7 @@ function heightFromLocal(
     local.localSignificantHeight,
     dominant?.phase ?? 0,
     dominant?.crestEnergy ?? 0,
+    dominant?.amplitude ?? 0,
     options,
   );
   return heightFromTerms(local.terms) + response.heightOffset;
@@ -1488,12 +1525,14 @@ function dominantStateFromGeometry(
   bank: WaveComponentBank,
   component: WaveComponent,
   geometry: LocalGeometry,
+  amplitude = component.amplitude,
 ) {
   const phase = geometry.phase;
   const crest = dominantCrestPropertiesAtPhase(bank, phase);
   return {
     componentId: component.id,
     phase,
+    amplitude: Math.max(0, amplitude),
     normalizedPhase: wrapRadians(phase),
     crestOrdinal: crest.crestOrdinal,
     crestId: crest.crestId,
@@ -1540,6 +1579,7 @@ function dominantStateAt(
       bank,
       dominantTerm.component,
       dominantTerm.geometry,
+      dominantTerm.amplitude,
     );
   }
 
@@ -1594,6 +1634,7 @@ function dominantStateAt(
       bank,
       dominantTerm.component,
       dominantTerm.geometry,
+      dominantTerm.amplitude,
     );
   }
 
@@ -1640,6 +1681,7 @@ function dominantStateAt(
   return {
     componentId: dominantTerm.component.id,
     phase,
+    amplitude: envelopeAmplitude,
     normalizedPhase: wrapRadians(phase),
     crestOrdinal,
     crestId:
@@ -1690,6 +1732,7 @@ export function sampleWaveSurface(
     local.localSignificantHeight,
     dominant?.phase ?? 0,
     dominant?.crestEnergy ?? 0,
+    dominant?.amplitude ?? 0,
     options,
   );
   const height = heightFromTerms(local.terms) + breaker.heightOffset;
