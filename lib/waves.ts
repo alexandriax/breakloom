@@ -147,6 +147,20 @@ export type WaveDepthSource = WaveDepthProfile | WavePropagationField;
 
 export type WaveSamplingOptions = {
   breakingIndex?: number;
+  /**
+   * Physical local depth used for depth-limited amplitude, breaking onset,
+   * regime classification, and the reported surface depth. Phase travel,
+   * shoaling flux, and orbital geometry continue to use the propagation
+   * source depth so a fixed coast profile can remain globally continuous.
+   */
+  breakingDepth?: number;
+  /**
+   * Derivatives of breakingDepth in the source's x/z coordinates. They add
+   * the local seabed contribution to the otherwise phase/profile-derived
+   * surface normal without changing phase travel.
+   */
+  breakingDepthGradientX?: number;
+  breakingDepthGradientZ?: number;
   maximumCombinedSteepness?: number;
   maximumHorizontalSlope?: number;
   /**
@@ -1263,7 +1277,11 @@ function localTermsAt(
   options: WaveSamplingOptions,
 ) {
   const sourceSample = sourceSampleAt(source, x, z);
-  const depth = sourceSample.depth;
+  const propagationDepth = sourceSample.depth;
+  const breakingDepth = Math.max(
+    .05,
+    positiveOr(options.breakingDepth, propagationDepth),
+  );
   const rawTerms = bank.components.map((component) => {
     const geometry = localGeometryAt(component, source, x, z, elapsed);
     const referenceNormalFlux = geometry.referenceGroupVelocity
@@ -1295,7 +1313,10 @@ function localTermsAt(
     1.2,
   );
   const depthScale = rawSignificantHeight > 0
-    ? Math.min(1, breakingIndex * depth / rawSignificantHeight)
+    ? Math.min(
+        1,
+        breakingIndex * breakingDepth / rawSignificantHeight,
+      )
     : 1;
   const combinedSteepness = significantSpectralSteepness(
     rawTerms.map((term) => ({
@@ -1320,11 +1341,13 @@ function localTermsAt(
   }));
   return {
     terms,
-    depth,
+    depth: breakingDepth,
+    propagationDepth,
     signedOffshoreDistance: sourceSample.signedOffshoreDistance,
     rawSignificantHeight,
     localSignificantHeight: rawSignificantHeight * scale,
-    breakingRatio: rawSignificantHeight / Math.max(.05, breakingIndex * depth),
+    breakingRatio: rawSignificantHeight
+      / Math.max(.05, breakingIndex * breakingDepth),
   };
 }
 
@@ -1979,7 +2002,7 @@ export function sampleWaveSurface(
     .85,
   );
   const rawHorizontalSlope = local.terms.reduce((sum, term) => {
-    const kh = term.geometry.waveNumber * local.depth;
+    const kh = term.geometry.waveNumber * local.propagationDepth;
     const coth = 1 / Math.max(.08, Math.tanh(kh));
     const rawAmplitude = term.amplitude * Math.min(2.5, coth);
     return sum + rawAmplitude * term.geometry.waveNumber;
@@ -1998,7 +2021,7 @@ export function sampleWaveSurface(
     gradientX -= term.amplitude
       * sine
       * term.geometry.alongshoreWaveNumber;
-    const kh = term.geometry.waveNumber * local.depth;
+    const kh = term.geometry.waveNumber * local.propagationDepth;
     const coth = 1 / Math.max(.08, Math.tanh(kh));
     const orbitalSpeed = term.amplitude
       * term.component.angularFrequency
@@ -2066,7 +2089,7 @@ export function sampleWaveSurface(
     elapsed,
     options,
   );
-  const gradientZ = (
+  let gradientZ = (
     heightFromLocal(bank, after, options) - heightFromLocal(bank, before, options)
   ) / (2 * gradientStep);
   if (!isDepthProfile(source)) {
@@ -2089,6 +2112,58 @@ export function sampleWaveSurface(
     gradientX = (
       heightFromLocal(bank, right, options) - heightFromLocal(bank, left, options)
     ) / (2 * gradientStep);
+  }
+  const breakingDepthGradientX = finiteOr(
+    options.breakingDepthGradientX,
+    0,
+  );
+  const breakingDepthGradientZ = finiteOr(
+    options.breakingDepthGradientZ,
+    0,
+  );
+  if (
+    Math.abs(breakingDepthGradientX) > 1e-9
+    || Math.abs(breakingDepthGradientZ) > 1e-9
+  ) {
+    const depthStep = Math.max(.002, local.depth * .001);
+    const lowerDepth = Math.max(.05, local.depth - depthStep);
+    const upperDepth = local.depth + depthStep;
+    const lowerOptions = {
+      ...options,
+      breakingDepth: lowerDepth,
+      breakingDepthGradientX: 0,
+      breakingDepthGradientZ: 0,
+    };
+    const upperOptions = {
+      ...options,
+      breakingDepth: upperDepth,
+      breakingDepthGradientX: 0,
+      breakingDepthGradientZ: 0,
+    };
+    const lowerLocal = localTermsAt(
+      bank,
+      source,
+      x,
+      z,
+      elapsed,
+      lowerOptions,
+    );
+    const upperLocal = localTermsAt(
+      bank,
+      source,
+      x,
+      z,
+      elapsed,
+      upperOptions,
+    );
+    const heightDerivativeDepth = (
+      heightFromLocal(bank, upperLocal, upperOptions)
+        - heightFromLocal(bank, lowerLocal, lowerOptions)
+    ) / Math.max(1e-9, upperDepth - lowerDepth);
+    gradientX += heightDerivativeDepth
+      * breakingDepthGradientX;
+    gradientZ += heightDerivativeDepth
+      * breakingDepthGradientZ;
   }
   const normalLength = Math.hypot(gradientX, 1, gradientZ);
   const dominantDepthRatio = dominant

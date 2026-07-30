@@ -28,6 +28,10 @@ const surfSceneSource = readFileSync(
   new URL("../components/SurfScene.tsx", import.meta.url),
   "utf8",
 );
+const gameSource = readFileSync(
+  new URL("../lib/game.ts", import.meta.url),
+  "utf8",
+);
 
 const liveFace = {
   boardHeading: 0,
@@ -185,17 +189,31 @@ if (
   || !surfSceneSource.includes("optionalTowNavigableZ")
   || !surfSceneSource.includes("resolveOptionalTowHullAttitude")
   || !surfSceneSource.includes("advanceOptionalTowHullFloat")
-  || !surfSceneSource.includes("const displacementOriginY = hullAttitude.waterlineHeight")
-  || !surfSceneSource.includes("hullAttitude.minimumSafeElevation")
+  || !surfSceneSource.includes("const targetOriginY = displacementOriginY")
+  || !surfSceneSource.includes("const renderedPoseContactFloor = Math.max(")
+  || !surfSceneSource.includes("const minimumContactElevation = Math.max(")
+  || !surfSceneSource.includes("const hullAnticipationSeconds = .1")
+  || !surfSceneSource.includes("const anticipatedSupportElevation = Math.max(")
+  || !surfSceneSource.includes("const predictedContactVelocity = (")
+  || !surfSceneSource.includes("minimumContactElevation,")
+  || !surfSceneSource.includes("predictedContactVelocity,")
+  || surfSceneSource.includes("hullAttitude.minimumSafeElevation")
+  || gameSource.includes("minimumSafeElevation")
+  || gameSource.includes("maximumContactElevation")
+  || !gameSource.includes("referenceAcceleration")
+  || !gameSource.includes("const maximumRenderedAcceleration = 24")
+  || !gameSource.includes("predictedContactVelocity - previousWorldVelocity")
+  || !gameSource.includes("integrationVelocity = verticalVelocity")
+  || !gameSource.includes("OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION")
   || !surfSceneSource.includes("hullMinimumFreeboard")
   || surfSceneSource.includes("const hullSamples = [")
   || surfSceneSource.includes("requiredOriginY")
   || surfSceneSource.includes("hullBottomOffset")
   || !surfSceneSource.includes("craftTowAttachment")
   || surfSceneSource.includes('planeGeometry args={[1.8, 5.8]}')
-  || !surfSceneSource.includes("const safeCraftZ = navigableTowZAt(")
+  || !surfSceneSource.includes("const safeCraftZ = routeNavigableTowZAt(")
   || !surfSceneSource.includes("const resolvedCraftStep = {")
-  || !surfSceneSource.includes("const safeReturnZ = navigableTowZAt(")
+  || !surfSceneSource.includes("const safeReturnZ = routeNavigableTowZAt(")
   || !surfSceneSource.includes("const returnStep = advanceOptionalTowCraft(")
   || !launchSource.includes('requestedScenario === "tow"')
   || !launchSource.includes('data-qa-tow-progress=')
@@ -214,11 +232,11 @@ if (
   || !surfSceneSource.includes(
     "const towReleaseSupportActive = towPopUpPending.current",
   )
+  || !surfSceneSource.includes("candidateIndex < 12")
+  || !surfSceneSource.includes("towTakeoffScan")
+  || !surfSceneSource.includes("sampleCoastDominantWave")
   || !surfSceneSource.includes(
-    "for (let candidateIndex = 0; candidateIndex < 12; candidateIndex += 1)",
-  )
-  || !surfSceneSource.includes(
-    "desiredTowZ = navigableTowZAt(",
+    "desiredTowZ = routeNavigableTowZAt(",
   )
   || !surfSceneSource.includes("const SURFER_MODEL_SCALE = .86")
   || !surfSceneSource.includes("distanceToTarget: towTargetDistance")

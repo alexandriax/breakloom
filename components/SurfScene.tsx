@@ -10,13 +10,14 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import { shorelineReferenceAt } from "@/lib/bathymetry";
 import type { BoardType, GamePhase, GameStats, OptionalTowHullFloatState, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_HALF_LENGTH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
   OCEAN_BATHYMETRY_COASTAL_Z,
   type FloatTextureTable,
 } from "@/lib/ocean-render";
+import { sampleCoastDominantWave } from "@/lib/ocean";
 import { boundedSimulationDelta, emergencyRenderDpr, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { solarPositionAt } from "@/lib/solar";
 
@@ -104,6 +105,18 @@ const COAST_PLAYABLE_HALF_WIDTH = 560;
 const COAST_GEOMETRY_WIDTH = 1600;
 const COAST_CHUNK_SPAN = 240;
 const COAST_CHUNK_SLOTS = [-1, 0, 1] as const;
+const COAST_SURFACE_COLORS: Record<
+  CoastBiome,
+  readonly [drySand: string, wetSand: string]
+> = {
+  urban: ["#c0aa91", "#756a60"],
+  tropical: ["#e0c499", "#88735c"],
+  dune: ["#c7ad86", "#776b5e"],
+  rugged: ["#b49a7c", "#6f665e"],
+  cold: ["#a6a39a", "#606965"],
+  volcanic: ["#454744", "#252b2a"],
+  desert: ["#c08c62", "#725a49"],
+};
 const SHORE_WALK_SPEED = 5.1;
 const SHORE_RUN_SPEED = 9.2;
 const OCEAN_RENDER_WIDTH = 620;
@@ -112,7 +125,11 @@ const OCEAN_OFFSHORE_DEPTH = 1250;
 // The displaced ocean must continue past the nominal wet line so a raised
 // bore can settle into a thin swash sheet. Ending the mesh exactly at the
 // shoreline exposed the last row of triangles as a vertical polygon wall.
-const OCEAN_RUNUP_DEPTH = 12;
+// Across the full 620 m render patch at the playable alongshore limits, the
+// most curved configured point break can sit about 86 m landward of the scene
+// reference. Keep enough mesh for that shoreline, forecast run-up, and its
+// buried skirt so the last triangle row is never the visible water edge.
+const OCEAN_RUNUP_DEPTH = 100;
 const OCEAN_PLANE_DEPTH = OCEAN_OFFSHORE_DEPTH + OCEAN_RUNUP_DEPTH;
 const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z
   + OCEAN_RUNUP_DEPTH
@@ -880,7 +897,6 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uTime;
   uniform float uTide;
   uniform float uCenterX;
-  uniform float uProfileX;
   uniform float uComponentCount;
   uniform float uDominantIndex;
   uniform float uDominantPartitionTag;
@@ -892,18 +908,27 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform float uTravelKnotCount;
   uniform float uTravelWidth;
   uniform float uBathymetryWidth;
+  uniform float uBathymetryHeight;
+  uniform float uBathymetryXMin;
+  uniform float uBathymetryXStep;
+  uniform float uBathymetryXCount;
   uniform sampler2D uComponentParameters;
   uniform sampler2D uTravel;
   uniform sampler2D uAggregate;
   uniform sampler2D uBathymetry;
-  uniform float uTravelKnots[40];
-  uniform float uBathymetryKnots[48];
+  uniform float uTravelKnots[80];
+  uniform float uBathymetryKnots[80];
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
   varying float vChop;
   varying float vSwellRead;
-  varying float vShoreMask;
+  varying float vShoreDistance;
+  varying float vShoreCollapse;
+  varying float vShoreCoverage;
+  varying float vShoreBurial;
+  varying float vRunupPulse;
+  varying float vRunupReach;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
   varying vec3 vWorldNormal;
@@ -912,23 +937,45 @@ const OCEAN_VERTEX = /* glsl */ `
   const float MAX_COMPONENTS = 28.0;
 
   float bathymetryIndex(float coastalZ) {
-    float result = 0.0;
     if (coastalZ <= uBathymetryKnots[0]) return 0.0;
-    for (int index = 0; index < 47; index++) {
-      float low = uBathymetryKnots[index];
-      float high = uBathymetryKnots[index + 1];
-      if (coastalZ >= low) {
-        result = float(index)
-          + clamp((coastalZ - low) / max(.0001, high - low), 0.0, 1.0);
+    // OCEAN_BATHYMETRY_COASTAL_Z has a sparse deep-ocean prefix followed by
+    // regular 4 m, 2 m, and 1 m bands. Resolve those bands arithmetically so
+    // denser surf-zone depth does not add a 75-step search to every vertex.
+    if (coastalZ < -120.0) {
+      float result = 0.0;
+      for (int index = 0; index < 15; index++) {
+        float low = uBathymetryKnots[index];
+        float high = uBathymetryKnots[index + 1];
+        if (coastalZ >= low) {
+          result = float(index)
+            + clamp(
+              (coastalZ - low) / max(.0001, high - low),
+              0.0,
+              1.0
+            );
+        }
       }
+      return result;
     }
-    return min(result, 47.0);
+    if (coastalZ <= -60.0) {
+      return 15.0 + (coastalZ + 120.0) / 4.0;
+    }
+    if (coastalZ <= -12.0) {
+      return 30.0 + (coastalZ + 60.0) / 2.0;
+    }
+    if (coastalZ <= 6.0) {
+      return 54.0 + coastalZ + 12.0;
+    }
+    if (coastalZ <= 12.0) {
+      return 72.0 + (coastalZ - 6.0) / 2.0;
+    }
+    return 75.0;
   }
 
   float travelIndex(float contourCoordinate) {
     float result = 0.0;
     if (contourCoordinate <= uTravelKnots[0]) return 0.0;
-    for (int index = 0; index < 39; index++) {
+    for (int index = 0; index < 79; index++) {
       if (float(index + 1) >= uTravelKnotCount) continue;
       float low = uTravelKnots[index];
       float high = uTravelKnots[index + 1];
@@ -944,27 +991,345 @@ const OCEAN_VERTEX = /* glsl */ `
     return min(result, max(0.0, uTravelKnotCount - 1.0));
   }
 
+  // Re-evaluate only the depth-sensitive scalar height response. Component
+  // phases, travel, and raw sums are already known at this vertex, so the two
+  // calls used for dH/dD stay O(1) instead of repeating the 28-component loop.
+  float breakerHeightAtDepth(
+    float candidateDepth,
+    float rawSignificantHeight,
+    float steepnessScale,
+    float rawLinearHeight,
+    float rawGroupAmplitude,
+    float rawGroupVariance,
+    float dominantPhase,
+    float dominantWavelength
+  ) {
+    float safeDepth = max(.05, candidateDepth);
+    float candidateDepthScale = min(
+      1.0,
+      .78 * safeDepth / rawSignificantHeight
+    );
+    float candidateAmplitudeScale = min(
+      candidateDepthScale,
+      steepnessScale
+    );
+    float candidateBreakingRatio = rawSignificantHeight
+      / max(.04, .78 * safeDepth);
+    float candidateGroupAmplitude = rawGroupAmplitude
+      * candidateAmplitudeScale;
+    float candidateGroupSignificantHeight = 4.0
+      * sqrt(max(0.0, rawGroupVariance))
+      * candidateAmplitudeScale;
+    float candidateNormalizedEnvelope = candidateGroupAmplitude
+      / max(.05, candidateGroupSignificantHeight * .5);
+    float candidateCrestEnergy = smoothstep(
+      .28,
+      1.05,
+      candidateNormalizedEnvelope
+    );
+    float readableCrestEnergy = .24
+      + candidateCrestEnergy * .76;
+    float breakingProgress = smoothstep(
+      .68,
+      1.06,
+      candidateBreakingRatio
+    );
+    float shoreFade = 1.0 - smoothstep(
+      4.8,
+      9.5,
+      candidateBreakingRatio
+    );
+    float shapeActivation = breakingProgress * shoreFade;
+    float faceActivation = smoothstep(
+      .55,
+      .82,
+      candidateBreakingRatio
+    ) * (
+      1.0 - smoothstep(
+        2.4,
+        5.2,
+        candidateBreakingRatio
+      )
+    );
+    float washActivation = smoothstep(
+      1.35,
+      3.1,
+      candidateBreakingRatio
+    );
+    float localSignificantHeight = rawSignificantHeight
+      * candidateAmplitudeScale;
+    float second = .28 + uBreakerSteepness * .17
+      + uBreakerHollow * .1;
+    float asymmetry = .08 + uBreakerHollow * .2
+      + uBreakerSteepness * .045;
+    float third = .045 + uBreakerHollow * .07
+      + uBreakerSteepness * .035;
+    float fourth = .035 + uBreakerHollow * .05;
+    float fifth = .018 + uBreakerHollow * .03;
+    float twice = dominantPhase * 2.0;
+    float breakerShape = second * cos(twice)
+      + asymmetry * sin(twice)
+      + third * cos(dominantPhase * 3.0)
+      + fourth * cos(dominantPhase * 4.0)
+      + fifth * cos(dominantPhase * 5.0);
+    float shapeAmplitude = localSignificantHeight * .5
+      * uBreakerPower
+      * shapeActivation
+      * (.42 + readableCrestEnergy * .7)
+      * (
+        1.0
+          + smoothstep(
+            1.9,
+            2.5,
+            uTargetFaceHeight
+          ) * .32
+      );
+    float targetCarrierAmplitude = max(
+      0.0,
+      uTargetFaceHeight
+    ) * (.35 + readableCrestEnergy * .26);
+    float carrierCorrection = max(
+      0.0,
+      targetCarrierAmplitude - candidateGroupAmplitude
+    ) * faceActivation;
+    float largeWaveReachScale = 2.5
+      - smoothstep(4.5, 9.0, uTargetFaceHeight) * .8;
+    float faceReach = clamp(
+      uTargetFaceHeight * largeWaveReachScale,
+      3.0,
+      18.0
+    );
+    float resolvedWavelength = max(
+      faceReach * 2.2,
+      dominantWavelength
+    );
+    float referenceFacePhase = clamp(
+      PI * 2.0 * faceReach / resolvedWavelength,
+      .08,
+      1.2
+    );
+    float desiredFacePhase = clamp(
+      1.04 + uBreakerSteepness * .14
+        + uBreakerHollow * .08,
+      1.12,
+      1.36
+    );
+    float fullFaceCompression = clamp(
+      tan(desiredFacePhase * .5)
+        / max(.01, tan(referenceFacePhase * .5)),
+      1.0,
+      10.0
+    );
+    float activeFaceCompression = 1.0
+      + (fullFaceCompression - 1.0) * faceActivation;
+    float halfPhaseSine = sin(dominantPhase * .5);
+    float halfPhaseCosine = cos(dominantPhase * .5);
+    float compressedFacePhase = 2.0 * atan(
+      activeFaceCompression * halfPhaseSine,
+      halfPhaseCosine
+    );
+    float referenceHalfSine = sin(referenceFacePhase * .5);
+    float referenceHalfCosine = cos(referenceFacePhase * .5);
+    float compressedReferencePhase = 2.0 * atan(
+      activeFaceCompression * referenceHalfSine,
+      referenceHalfCosine
+    );
+    float characterWallRatio = .66
+      + smoothstep(
+        .55,
+        1.15,
+        uBreakerSteepness
+      ) * .14
+      + uBreakerHollow * .06;
+    float humanScaleWallRatio = uTargetFaceHeight >= 1.45
+      ? min(
+        .96,
+        max(.72, 1.76 / max(.1, uTargetFaceHeight))
+      )
+      : 0.0;
+    float desiredLocalWall = uTargetFaceHeight
+      * max(characterWallRatio, humanScaleWallRatio)
+      * faceActivation;
+    float shapeAtZero = second + third + fourth + fifth;
+    float shapeAtReference = second
+      * cos(referenceFacePhase * 2.0)
+      + asymmetry * sin(referenceFacePhase * 2.0)
+      + third * cos(referenceFacePhase * 3.0)
+      + fourth * cos(referenceFacePhase * 4.0)
+      + fifth * cos(referenceFacePhase * 5.0);
+    float currentCoherentWall = max(
+      0.0,
+      (
+        candidateGroupAmplitude + carrierCorrection
+      ) * (1.0 - cos(referenceFacePhase))
+        + shapeAmplitude * (
+          shapeAtZero - shapeAtReference
+        )
+    );
+    float wallShapeRange = max(
+      .08,
+      cos(referenceFacePhase)
+        - cos(compressedReferencePhase)
+    );
+    float referenceWallSupportRange = wallShapeRange
+      * tanh(1.0);
+    float existingNonlinearSupport = clamp(
+      1.0
+        - smoothstep(
+          .85,
+          1.18,
+          uBreakerSteepness
+        ) * .3
+        - uBreakerHollow * .15,
+      .5,
+      1.0
+    );
+    float humanScaleBoostActivation = smoothstep(
+      2.05,
+      2.25,
+      uTargetFaceHeight
+    ) * (
+      1.0 - smoothstep(
+        2.45,
+        3.1,
+        uTargetFaceHeight
+      )
+    );
+    float humanScaleSupportBoost = uTargetFaceHeight >= 1.9
+      ? 1.0 + (
+        1.0 - smoothstep(
+          .72,
+          1.05,
+          uBreakerSteepness
+        )
+      ) * 2.4 * humanScaleBoostActivation
+      : 1.0;
+    float rideableScaleActivation = smoothstep(
+      1.35,
+      1.65,
+      uTargetFaceHeight
+    ) * (
+      1.0 - smoothstep(
+        2.15,
+        2.65,
+        uTargetFaceHeight
+      )
+    );
+    float rideableWaveSupportBoost = 1.0
+      + rideableScaleActivation * 1.15;
+    float wallSupportAmplitude = clamp(
+      max(0.0, desiredLocalWall - currentCoherentWall)
+        / referenceWallSupportRange
+        * (.72 + readableCrestEnergy * .08)
+        * existingNonlinearSupport
+        * humanScaleSupportBoost
+        * rideableWaveSupportBoost,
+      0.0,
+      max(
+        .1,
+        uTargetFaceHeight * (
+          1.2
+            - smoothstep(
+              5.5,
+              11.0,
+              uTargetFaceHeight
+            ) * .5
+            + (
+              1.0 - smoothstep(
+                .72,
+                1.05,
+                uBreakerSteepness
+              )
+            ) * .8 * humanScaleBoostActivation
+        )
+      )
+    );
+    float unsidedWallSupportShape = cos(
+      compressedFacePhase
+    ) - cos(dominantPhase);
+    float rawWallSupportShape = min(
+      0.0,
+      unsidedWallSupportShape
+    );
+    float wallSupportTanh = tanh(
+      rawWallSupportShape / wallShapeRange
+    );
+    float wallSupportShape = wallShapeRange
+      * wallSupportTanh
+      + wallShapeRange * .1 * readableCrestEnergy;
+    float washAmplitude = clamp(
+      max(0.0, uTargetFaceHeight) * .14 + .1,
+      .14,
+      .72
+    ) * (.58 + candidateCrestEnergy * .42)
+      * washActivation;
+    float washShape = .78 * cos(dominantPhase)
+      + .22 * cos(twice);
+    return rawLinearHeight * candidateAmplitudeScale
+      + shapeAmplitude * breakerShape
+      + carrierCorrection * cos(dominantPhase)
+      + wallSupportAmplitude * wallSupportShape
+      + washAmplitude * washShape;
+  }
+
   void main() {
     vec2 origin = position.xy;
     vec2 surfaceOrigin = vec2(origin.x + uCenterX, -origin.y + ${OCEAN_CENTER_Z.toFixed(1)});
     vec3 p = position;
     float coastalZ = surfaceOrigin.y - ${SHORELINE_REFERENCE_Z.toFixed(1)};
     float bathymetryCoordinate = bathymetryIndex(coastalZ);
-    float bathymetryU = (bathymetryCoordinate + .5) / uBathymetryWidth;
-    vec4 bathymetryValue = texture2D(
-      uBathymetry,
-      vec2(bathymetryU, .25)
+    float bathymetryU = (bathymetryCoordinate + .5)
+      / uBathymetryWidth;
+    float bathymetryXCoordinate = clamp(
+      (surfaceOrigin.x - uBathymetryXMin)
+        / max(.001, uBathymetryXStep),
+      0.0,
+      max(0.0, uBathymetryXCount - 1.0)
     );
-    vec4 bathymetryDerivative = texture2D(
-      uBathymetry,
-      vec2(bathymetryU, .75)
+    float bathymetryXLow = floor(bathymetryXCoordinate);
+    float bathymetryXHigh = min(
+      max(0.0, uBathymetryXCount - 1.0),
+      bathymetryXLow + 1.0
     );
-    float profileDeltaX = surfaceOrigin.x - uProfileX;
-    float contourCoordinate = bathymetryValue.x
-      + bathymetryDerivative.x * profileDeltaX
-      + bathymetryValue.w
-        * profileDeltaX * profileDeltaX * .5;
-    float depth = .08;
+    float bathymetryXBlend = fract(bathymetryXCoordinate);
+    float bathymetryLowValueV = (
+      bathymetryXLow * 2.0 + .5
+    ) / uBathymetryHeight;
+    float bathymetryHighValueV = (
+      bathymetryXHigh * 2.0 + .5
+    ) / uBathymetryHeight;
+    float bathymetryLowDerivativeV = (
+      bathymetryXLow * 2.0 + 1.5
+    ) / uBathymetryHeight;
+    float bathymetryHighDerivativeV = (
+      bathymetryXHigh * 2.0 + 1.5
+    ) / uBathymetryHeight;
+    vec4 bathymetryValue = mix(
+      texture2D(
+        uBathymetry,
+        vec2(bathymetryU, bathymetryLowValueV)
+      ),
+      texture2D(
+        uBathymetry,
+        vec2(bathymetryU, bathymetryHighValueV)
+      ),
+      bathymetryXBlend
+    );
+    vec4 bathymetryDerivative = mix(
+      texture2D(
+        uBathymetry,
+        vec2(bathymetryU, bathymetryLowDerivativeV)
+      ),
+      texture2D(
+        uBathymetry,
+        vec2(bathymetryU, bathymetryHighDerivativeV)
+      ),
+      bathymetryXBlend
+    );
+    float contourCoordinate = bathymetryValue.x;
+    float shorelineZ = bathymetryValue.z;
+    float shoreDistance = coastalZ - shorelineZ;
+    vec2 shoreGradient = vec2(-bathymetryValue.w, 1.0);
     vec2 contourGradient = bathymetryDerivative.xy;
     float travelCoordinate = travelIndex(contourCoordinate);
     float travelU = (travelCoordinate + .5) / uTravelWidth;
@@ -972,16 +1337,17 @@ const OCEAN_VERTEX = /* glsl */ `
       uAggregate,
       vec2(travelU, .5)
     );
-    // The aggregate table is built from the same propagation profile as CPU
-    // sampling; bathymetry here locates the contour, while profile depth keeps
-    // shoaling and break onset numerically aligned.
-    depth = max(.08, aggregate.z);
+    // The packed profile depth governs orbital propagation. Breaking onset
+    // and depth-limited amplitude instead use the local 2D bathymetric depth,
+    // matching the CPU sampler on curved and alongshore-varying contours.
+    float propagationDepth = max(.08, aggregate.z);
+    float breakingDepth = max(.08, bathymetryValue.y);
     float rawSignificantHeight = max(.0001, aggregate.x);
     float breakingRatio = rawSignificantHeight
-      / max(.04, .78 * depth);
+      / max(.04, .78 * breakingDepth);
     float depthScale = min(
       1.0,
-      .78 * depth / rawSignificantHeight
+      .78 * breakingDepth / rawSignificantHeight
     );
     float amplitudeScale = min(depthScale, aggregate.y);
     float surfaceHeight = 0.0;
@@ -1034,7 +1400,10 @@ const OCEAN_VERTEX = /* glsl */ `
         .0001,
         length(vec2(phaseGradientX, phaseGradientZ))
       );
-      float coth = 1.0 / max(.08, tanh(localWaveNumber * depth));
+      float coth = 1.0 / max(
+        .08,
+        tanh(localWaveNumber * propagationDepth)
+      );
       float horizontalAmplitude = amplitude * min(2.5, coth);
       vec2 localDirection = vec2(
         phaseGradientX,
@@ -1067,7 +1436,7 @@ const OCEAN_VERTEX = /* glsl */ `
           * vec2(phaseGradientX, phaseGradientZ);
         groupVariance += varianceWeight;
         groupCarrierGradient += varianceWeight
-          * vec2(phaseGradientX, phaseGradientZ);
+          * vec2(first.a, travel.g);
       }
       if (second.a > 0.0) {
         swellElevation += elevation;
@@ -1078,6 +1447,15 @@ const OCEAN_VERTEX = /* glsl */ `
 
     float groupMagnitudeSquared = groupReal * groupReal
       + groupImaginary * groupImaginary;
+    float inverseAmplitudeScale = 1.0
+      / max(.000001, amplitudeScale);
+    float rawLinearHeight = surfaceHeight
+      * inverseAmplitudeScale;
+    float rawGroupAmplitude = sqrt(
+      max(0.0, groupMagnitudeSquared)
+    ) * inverseAmplitudeScale;
+    float rawGroupVariance = groupVariance
+      * inverseAmplitudeScale * inverseAmplitudeScale;
     float dominantPhase = groupMagnitudeSquared > .00000001
       ? atan(groupImaginary, groupReal)
       : dominantComponentPhase;
@@ -1109,13 +1487,10 @@ const OCEAN_VERTEX = /* glsl */ `
     float shapeActivation = breakingProgress * shoreFade;
     float faceActivation = smoothstep(.55, .82, breakingRatio)
       * (1.0 - smoothstep(2.4, 5.2, breakingRatio));
-    float shorePersistence = smoothstep(
-      -1.45,
-      .45,
-      -contourCoordinate
-    );
-    float washActivation = smoothstep(1.35, 3.1, breakingRatio)
-      * shorePersistence;
+    // This is breaking-water energy, not a wet/dry decision. The shoreline
+    // transition below uses physical distance from the modeled shoreline;
+    // phase-contour warping must never turn an offshore bar into dry land.
+    float washActivation = smoothstep(1.35, 3.1, breakingRatio);
     float localSignificantHeight = rawSignificantHeight * amplitudeScale;
     float second = .28 + uBreakerSteepness * .17
       + uBreakerHollow * .1;
@@ -1332,6 +1707,46 @@ const OCEAN_VERTEX = /* glsl */ `
       * dominantGradient.x;
     gradientZ += washAmplitude * washDerivative
       * dominantGradient.y;
+    float breakingDepthStep = max(
+      .002,
+      breakingDepth * .001
+    );
+    float lowerBreakingDepth = max(
+      .05,
+      breakingDepth - breakingDepthStep
+    );
+    float upperBreakingDepth = breakingDepth
+      + breakingDepthStep;
+    float lowerBreakingHeight = breakerHeightAtDepth(
+      lowerBreakingDepth,
+      rawSignificantHeight,
+      aggregate.y,
+      rawLinearHeight,
+      rawGroupAmplitude,
+      rawGroupVariance,
+      dominantPhase,
+      dominantWavelength
+    );
+    float upperBreakingHeight = breakerHeightAtDepth(
+      upperBreakingDepth,
+      rawSignificantHeight,
+      aggregate.y,
+      rawLinearHeight,
+      rawGroupAmplitude,
+      rawGroupVariance,
+      dominantPhase,
+      dominantWavelength
+    );
+    float heightDerivativeBreakingDepth = (
+      upperBreakingHeight - lowerBreakingHeight
+    ) / max(
+      .000001,
+      upperBreakingDepth - lowerBreakingDepth
+    );
+    gradientX += heightDerivativeBreakingDepth
+      * bathymetryDerivative.z;
+    gradientZ += heightDerivativeBreakingDepth
+      * bathymetryDerivative.w;
 
     float horizontalScale = min(
       1.0,
@@ -1354,119 +1769,134 @@ const OCEAN_VERTEX = /* glsl */ `
     p.y -= boundedHorizontalDisplacement.y;
     surfaceHeight += uTide * .3;
     p.z += surfaceHeight;
+    float crestSignal = .5 + .5 * cos(dominantPhase);
     float shoreCrestSignal = smoothstep(
       .12,
       .92,
-      .5 + .5 * cos(dominantPhase)
+      crestSignal
     );
-    float runupReach = 1.35
-      + washActivation * (
-        1.55
-          + min(2.9, uTargetFaceHeight * .52)
-          + shoreCrestSignal * 1.45
-      );
-    // A breaking face must collapse into a lower bore before it reaches dry
-    // sand. Carrying the full wall across the zero-depth contour produced the
-    // triangular hills and caverns seen in shoreline QA. Spread the collapse
-    // across a wave-scaled offshore band so energy and whitewater still reach
-    // the beach without dragging a surfable wall onto land.
-    float boreCollapseStart = -clamp(
-      4.8 + uTargetFaceHeight * 1.15,
-      5.8,
-      11.5
+    // Literal GLSL mirror of applyOceanShoreTransition. Gameplay sampling and
+    // the displaced render mesh must collapse, cover, and bury at the same
+    // physical shore distance or craft and boards appear above/below water.
+    float targetFaceHeight = max(0.0, uTargetFaceHeight);
+    float shoreCollapseStart = -clamp(
+      3.3 + targetFaceHeight * .36,
+      4.0,
+      6.5
     );
-    float boreCollapseEnd = clamp(
-      runupReach * .18,
-      .5,
-      1.25
-    );
-    float shoreAnchorUnit = clamp(
-      (contourCoordinate - boreCollapseStart)
-        / max(.001, boreCollapseEnd - boreCollapseStart),
+    float shoreCollapseEnd = -.12;
+    float shoreCollapseUnit = clamp(
+      (shoreDistance - shoreCollapseStart)
+        / max(.000001, shoreCollapseEnd - shoreCollapseStart),
       0.0,
       1.0
     );
-    float shoreAnchor = shoreAnchorUnit * shoreAnchorUnit
-      * shoreAnchorUnit
+    float shoreCollapse = shoreCollapseUnit * shoreCollapseUnit
+      * shoreCollapseUnit
       * (
-        shoreAnchorUnit * (
-          shoreAnchorUnit * 6.0 - 15.0
+        shoreCollapseUnit * (
+          shoreCollapseUnit * 6.0 - 15.0
         ) + 10.0
       );
-    float horizontalShoreAnchorStart = boreCollapseStart - 2.4;
-    float horizontalShoreAnchorEnd = max(
-      .25,
-      boreCollapseEnd - .65
+    float shoreCollapseDerivative = 30.0
+      * shoreCollapseUnit * shoreCollapseUnit
+      * (1.0 - shoreCollapseUnit)
+      * (1.0 - shoreCollapseUnit)
+      / max(.000001, shoreCollapseEnd - shoreCollapseStart);
+    float rawHeightScale = 1.0 - shoreCollapse;
+    float runupPulsePhase = surfaceOrigin.x * PI * 2.0 / 260.0
+      - uTime * PI * 2.0 / 32.0;
+    float runupPulse = .5 + .5 * sin(runupPulsePhase);
+    float runupPulseDerivativeX = .5
+      * cos(runupPulsePhase) * PI * 2.0 / 260.0;
+    float runupPulseAmplitude = .32
+      + min(.18, targetFaceHeight * .025);
+    float shoreAnchorHeight = uTide * .3 - .12
+      + runupPulseAmplitude * runupPulse;
+    float shoreAnchorDerivativeX = runupPulseAmplitude
+      * runupPulseDerivativeX;
+    float runupReach = clamp(
+      1.8 + targetFaceHeight * .52,
+      2.2,
+      5.6
     );
-    float horizontalShoreAnchorUnit = clamp(
-      (contourCoordinate - horizontalShoreAnchorStart)
-        / max(
-          .001,
-          horizontalShoreAnchorEnd - horizontalShoreAnchorStart
-        ),
-      0.0,
-      1.0
-    );
-    float horizontalShoreAnchor =
-      horizontalShoreAnchorUnit * horizontalShoreAnchorUnit
-        * horizontalShoreAnchorUnit
-        * (
-          horizontalShoreAnchorUnit * (
-            horizontalShoreAnchorUnit * 6.0 - 15.0
-          ) + 10.0
-        );
-    p.xy = mix(p.xy, position.xy, horizontalShoreAnchor);
-    float swashFilmHeight = uTide * .3 - .2
-      + washActivation * (
-        .035 + shoreCrestSignal * .075
-      );
-    p.z = mix(p.z, swashFilmHeight, shoreAnchor);
-    float landwardDistance = max(0.0, contourCoordinate);
-    // Do not cut the moving mesh off at the wet line. Carry a continuous,
-    // centimetres-thin sheet across the active run-up, then lower it beneath
-    // the wet-sand plane before any fragment is discarded. The visible edge
-    // is therefore a smooth water/sand intersection instead of a mask-shaped
-    // polygon hole or an isolated whitewater ribbon.
-    float shoreBurialStart = max(.9, runupReach - .05);
-    float shoreBurialEnd = runupReach + 2.45;
+    float shoreBurialStart = runupReach * .48;
+    float shoreBurialEnd = runupReach + 1.2;
     float shoreBurialUnit = clamp(
-      (landwardDistance - shoreBurialStart)
-        / max(.001, shoreBurialEnd - shoreBurialStart),
+      (shoreDistance - shoreBurialStart)
+        / max(.000001, shoreBurialEnd - shoreBurialStart),
       0.0,
       1.0
     );
     float shoreBurial = shoreBurialUnit * shoreBurialUnit
-      * (3.0 - 2.0 * shoreBurialUnit);
-    p.z -= shoreBurial * .56;
-    gradientX *= 1.0 - shoreAnchor;
-    gradientZ *= 1.0 - shoreAnchor;
-    float shoreBurialDerivative = 6.0
       * shoreBurialUnit
+      * (
+        shoreBurialUnit * (
+          shoreBurialUnit * 6.0 - 15.0
+        ) + 10.0
+      );
+    float shoreBurialDerivative = 30.0
+      * shoreBurialUnit * shoreBurialUnit
       * (1.0 - shoreBurialUnit)
-      / max(.001, shoreBurialEnd - shoreBurialStart);
-    gradientX -= shoreBurialDerivative
-      * contourGradient.x
-      * .56;
-    gradientZ -= shoreBurialDerivative
-      * contourGradient.y
-      * .56;
-    vShoreMask = 1.0 - smoothstep(
-      runupReach + 2.35,
-      runupReach + 3.35,
-      landwardDistance
+      * (1.0 - shoreBurialUnit)
+      / max(.000001, shoreBurialEnd - shoreBurialStart);
+    float maximumShoreBurial = .48
+      + max(0.0, uTide * .3)
+      + runupPulseAmplitude;
+    float shoreBurialDepth = shoreBurial
+      * maximumShoreBurial;
+    float shoreCoverageStart = runupReach - .45;
+    float shoreCoverageEnd = runupReach + 1.1;
+    float shoreCoverageUnit = clamp(
+      (shoreDistance - shoreCoverageStart)
+        / max(.000001, shoreCoverageEnd - shoreCoverageStart),
+      0.0,
+      1.0
     );
+    float shoreCoverageTransition =
+      shoreCoverageUnit * shoreCoverageUnit
+      * shoreCoverageUnit
+      * (
+        shoreCoverageUnit * (
+          shoreCoverageUnit * 6.0 - 15.0
+        ) + 10.0
+      );
+    float shoreCoverage = 1.0 - shoreCoverageTransition;
+    float rawShoreHeight = p.z;
+    p.xy = position.xy
+      + (p.xy - position.xy) * rawHeightScale;
+    p.z = rawShoreHeight * rawHeightScale
+      + shoreAnchorHeight * shoreCollapse
+      - shoreBurialDepth;
+    float heightDerivativeShoreDistance = (
+      shoreAnchorHeight - rawShoreHeight
+    ) * shoreCollapseDerivative
+      - shoreBurialDerivative * maximumShoreBurial;
+    gradientX = gradientX * rawHeightScale
+      + shoreCollapse * shoreAnchorDerivativeX
+      + heightDerivativeShoreDistance * shoreGradient.x;
+    gradientZ = gradientZ * rawHeightScale
+      + heightDerivativeShoreDistance * shoreGradient.y;
 
     vHeight = p.z;
-    vCrest = (surfaceHeight - uTide * .3)
+    float postTransitionDatum = mix(
+      uTide * .3,
+      shoreAnchorHeight,
+      shoreCollapse
+    );
+    vCrest = (p.z - postTransitionDatum)
       / max(.08, rawSignificantHeight * .5);
-    float crestSignal = .5 + .5 * cos(dominantPhase);
     float breakingWhitewater = shapeActivation
       * smoothstep(.45, .88, crestSignal)
       * (.52 + brokenProgress * .48)
-      * (.46 + crestEnergy * .54);
+      * (.46 + crestEnergy * .54)
+      * rawHeightScale;
     float washWhitewater = washActivation
-      * smoothstep(.18, .72, crestSignal)
-      * (.58 + crestEnergy * .42);
+      * shoreCollapse
+      * shoreCoverage
+      * (1.0 - shoreBurial)
+      * (.22 + shoreCrestSignal * .42)
+      * (.58 + runupPulse * .42);
     float breakActivation = max(
       breakingWhitewater,
       washWhitewater
@@ -1476,8 +1906,15 @@ const OCEAN_VERTEX = /* glsl */ `
       .12,
       .82,
       swellElevation / max(.08, rawSignificantHeight * .5)
-    ) * (1.0 - breakActivation * .8);
+    ) * (1.0 - breakActivation * .8)
+      * rawHeightScale;
     vChop = windElevation / max(.08, rawSignificantHeight);
+    vShoreDistance = shoreDistance;
+    vShoreCollapse = shoreCollapse;
+    vShoreCoverage = shoreCoverage;
+    vShoreBurial = shoreBurial;
+    vRunupPulse = runupPulse;
+    vRunupReach = runupReach;
     vSurface = surfaceOrigin;
     vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
     vWorldNormal = normalize(vec3(-gradientX, 1.0, -gradientZ));
@@ -1500,12 +1937,18 @@ const OCEAN_FRAGMENT = /* glsl */ `
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
   uniform vec3 uHazeColor;
+  uniform vec3 uShoreColor;
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
   varying float vChop;
   varying float vSwellRead;
-  varying float vShoreMask;
+  varying float vShoreDistance;
+  varying float vShoreCollapse;
+  varying float vShoreCoverage;
+  varying float vShoreBurial;
+  varying float vRunupPulse;
+  varying float vRunupReach;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
   varying vec3 vWorldNormal;
@@ -1528,7 +1971,6 @@ const OCEAN_FRAGMENT = /* glsl */ `
   }
 
   void main() {
-    if (vShoreMask < .035) discard;
     float depth = smoothstep(14.0, -90.0, vSurface.y);
     vec3 abyss = vec3(.004, .032, .071);
     vec3 offshore = vec3(.012, .115, .155);
@@ -1536,19 +1978,32 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 deep = mix(offshore, abyss, depth);
     float crestLight = smoothstep(-.2, .95, vHeight) * (1.0 - depth);
     vec3 color = mix(deep, lagoon, crestLight * .48);
-    vec3 analyticNormal = normalize(vWorldNormal);
-    vec3 geometricNormal = normalize(
-      cross(dFdx(vWorldPosition), dFdy(vWorldPosition))
+    float analyticNormalLengthSquared = dot(
+      vWorldNormal,
+      vWorldNormal
     );
+    vec3 analyticNormal = analyticNormalLengthSquared
+      > .00000001
+        ? normalize(vWorldNormal)
+        : vec3(0.0, 1.0, 0.0);
+    vec3 geometricCross = cross(
+      dFdx(vWorldPosition),
+      dFdy(vWorldPosition)
+    );
+    vec3 geometricNormal = dot(geometricCross, geometricCross) > .00000001
+      ? normalize(geometricCross)
+      : analyticNormal;
     if (dot(geometricNormal, analyticNormal) < 0.0) {
       geometricNormal *= -1.0;
     }
-    // Main's strongest visual cue was real mesh-normal shading. Blend that
-    // silhouette back in while retaining the analytic physical normal used by
-    // the shared spectrum and gameplay.
-    vec3 surfaceNormal = normalize(
-      mix(analyticNormal, geometricNormal, .34)
-    );
+    // The analytic normal is evaluated at every vertex and interpolates
+    // smoothly across adaptive triangles. Screen-space derivatives are flat
+    // per primitive, so they are retained only as a degenerate-data fallback
+    // and orientation guard—not as the shading normal.
+    vec3 surfaceNormal = analyticNormal;
+    if (analyticNormalLengthSquared <= .00000001) {
+      surfaceNormal = geometricNormal;
+    }
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
     bool underwaterSide = !gl_FrontFacing;
     if (underwaterSide) surfaceNormal *= -1.0;
@@ -1589,6 +2044,61 @@ const OCEAN_FRAGMENT = /* glsl */ `
     vec3 horizonReflection = mix(vec3(.11, .31, .39), vec3(.42, .67, .69), uLight);
     horizonReflection = mix(horizonReflection, vec3(.09, .13, .17), uCloud * .55);
     color = mix(color, horizonReflection, fresnel * (.38 + uLight * .28));
+    // The physical shoreline remains one continuous, fully buried mesh. Give
+    // that thin film a moving optical front instead of shading the entire
+    // collapsed anchor as a solid blue shelf. Broad world-space breakup keeps
+    // the edge coast-like without cutting holes or drawing global-z ribbons.
+    float landwardShoreDistance = max(0.0, vShoreDistance);
+    float swashAdvance = vRunupPulse * vRunupPulse
+      * (3.0 - 2.0 * vRunupPulse);
+    float swashBreakup = (
+      noise(vec2(
+        vSurface.x * .018 + uTime * .006,
+        vSurface.x * .006 - uTime * .004
+      )) - .5
+    ) * 1.6;
+    float softSwashFront = vRunupReach
+      * mix(.48, 1.0, swashAdvance)
+      + swashBreakup;
+    float movingSwashCoverage = (
+      1.0 - smoothstep(
+        softSwashFront - .42,
+        softSwashFront + .68,
+        landwardShoreDistance
+      )
+    ) * vShoreCoverage;
+    float activeShoreFilm = vShoreCollapse
+      * movingSwashCoverage;
+    float restingShoreFilm = vShoreCollapse
+      * vShoreCoverage
+      * (1.0 - movingSwashCoverage);
+    float shoreGrain = noise(
+      vSurface * vec2(.31, .57)
+        + vec2(uTime * .006, 0.0)
+    );
+    vec3 wetSandMatch = uShoreColor
+      * (.46 + uLight * .1)
+      * (.88 + shoreGrain * .12);
+    wetSandMatch = mix(
+      wetSandMatch,
+      horizonReflection,
+      .14 + fresnel * .18
+    );
+    vec3 thinSwashColor = mix(
+      wetSandMatch,
+      horizonReflection,
+      .02 + fresnel * .04
+    );
+    color = mix(
+      color,
+      thinSwashColor,
+      activeShoreFilm
+    );
+    color = mix(
+      color,
+      wetSandMatch,
+      restingShoreFilm * .98
+    );
     vec3 swellRidgeColor = mix(vec3(.055, .26, .29), vec3(.42, .76, .71), uLight);
     color = mix(
       color,
@@ -1652,9 +2162,32 @@ const OCEAN_FRAGMENT = /* glsl */ `
         .14
         + smoothstep(.42, .8, foamDetail) * .7
       );
-    float shorePulse = sin(vSurface.x * .2 + uTime * 1.7 + noise(vSurface * .08) * 4.0) * .5 + .5;
-    float shoreFoam = smoothstep(4.2, 10.5, vSurface.y) * smoothstep(.27, .72, shorePulse) * .64;
-    float foam = clamp(max(max(crestFoam, breakerFoam), shoreFoam), 0.0, .94);
+    // Use the unclamped physical shore distance for wash foam. Clamping every
+    // seaward fragment to zero made a whole shelf satisfy the same lace test,
+    // producing the rigid white ruler line seen in shoreline QA.
+    float swashFoamCenter = softSwashFront
+      - mix(.36, .58, swashAdvance);
+    float swashFrontLace = 1.0 - smoothstep(
+      .1,
+      .62,
+      abs(vShoreDistance - swashFoamCenter)
+    );
+    float swashFoamTexture = smoothstep(
+      .38,
+      .76,
+      foamBase * .58 + foamDetail * .42
+    );
+    float swashFoam = swashFrontLace
+      * vShoreCollapse
+      * vShoreCoverage
+      * (1.0 - vShoreBurial * .42)
+      * swashFoamTexture
+      * (.68 + swashAdvance * .32);
+    float foam = clamp(
+      max(max(crestFoam, breakerFoam), swashFoam),
+      0.0,
+      .94
+    );
     vec3 foamColor = mix(vec3(.63, .88, .84), vec3(.91, 1.0, .97), uLight);
     color = mix(color, foamColor, foam * .9);
     color = mix(color, vec3(.018, .041, .065), uCloud * .2);
@@ -1692,63 +2225,6 @@ const OCEAN_FRAGMENT = /* glsl */ `
     aerialPerspective *= .56 + uCloud * .28;
     color = mix(color, uHazeColor, aerialPerspective);
     gl_FragColor = vec4(color, 1.0);
-  }
-`;
-
-const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uTime;
-  uniform float uLight;
-  uniform float uCloud;
-  uniform float uWind;
-  uniform vec3 uSunDirection;
-  uniform vec3 uSunColor;
-  uniform vec3 uHazeColor;
-  varying float vHeight;
-  varying float vBreaker;
-  varying float vChop;
-  varying float vShoreMask;
-  varying vec2 vSurface;
-  varying vec3 vWorldPosition;
-  varying vec3 vWorldNormal;
-
-  float hash(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * .1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-
-  float noise(vec2 p) {
-    vec2 cell = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(cell);
-    float b = hash(cell + vec2(1.0, 0.0));
-    float c = hash(cell + vec2(0.0, 1.0));
-    float d = hash(cell + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    if (vShoreMask < .08) discard;
-    vec3 surfaceNormal = normalize(vWorldNormal);
-    if (surfaceNormal.y > 0.0) surfaceNormal *= -1.0;
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    float facing = max(.055, abs(dot(surfaceNormal, viewDirection)));
-    float wind = clamp(uWind / 24.0, 0.0, 1.45);
-    float bodyDepth = (.28 + abs(vHeight) * .16 + vBreaker * .64 + vChop * .14) / facing;
-    float absorption = 1.0 - exp(-bodyDepth * .88);
-    float cells = noise(vSurface * vec2(.38, .18) + vec2(uTime * .12, -uTime * .08));
-    float veins = noise(vSurface * vec2(1.24, .57) + vec2(-uTime * (.22 + wind * .08), uTime * .13));
-    float sunThrough = pow(max(0.0, normalize(uSunDirection).y), 1.5) * (1.0 - uCloud * .72);
-    float lens = pow(max(0.0, cells * .56 + veins * .44 - .57), 2.8) * sunThrough;
-    vec3 deepBody = mix(vec3(.002, .035, .062), vec3(.006, .11, .12), uLight);
-    vec3 litBody = mix(vec3(.025, .18, .19), vec3(.12, .48, .4), uLight);
-    vec3 color = mix(litBody, deepBody, absorption * .78);
-    color += uSunColor * lens * (.035 + uLight * .2);
-    color *= .72 + cells * .12 + veins * .08;
-    color = mix(color, uHazeColor * .35, smoothstep(75.0, 260.0, length(cameraPosition - vWorldPosition)) * .45);
-    gl_FragColor = vec4(color, .995);
   }
 `;
 
@@ -1862,6 +2338,7 @@ function Ocean({
   sunPosition,
   sunColor,
   hazeColor,
+  shoreColor,
   visibility,
   rain,
 }: {
@@ -1873,11 +2350,11 @@ function Ocean({
   sunPosition: [number, number, number];
   sunColor: string;
   hazeColor: string;
+  shoreColor: string;
   visibility: number;
   rain: number;
 }) {
   const ocean = useRef<THREE.Mesh>(null);
-  const subsurface = useRef<THREE.Mesh>(null);
   const material = useRef<THREE.ShaderMaterial>(null);
   const quality = useRenderQuality();
   const mobile = useMemo(() => isMobileRenderer(), []);
@@ -1913,8 +2390,6 @@ function Ocean({
   const offshoreSegments = mobile
     ? quality === "reduced" ? 144 : quality === "high" ? 260 : 204
     : quality === "reduced" ? 260 : quality === "balanced" ? 340 : 420;
-  const subsurfaceCrossShoreSegments = Math.max(48, Math.round(crossShoreSegments * .62));
-  const subsurfaceOffshoreSegments = Math.max(64, Math.round(offshoreSegments * .6));
   const oceanGeometry = useMemo(
     () => createAdaptiveOceanGeometry(
       OCEAN_RENDER_WIDTH,
@@ -1924,27 +2399,13 @@ function Ocean({
     ),
     [crossShoreSegments, offshoreSegments],
   );
-  const subsurfaceGeometry = useMemo(
-    () => createAdaptiveOceanGeometry(
-      OCEAN_RENDER_WIDTH,
-      OCEAN_PLANE_DEPTH,
-      subsurfaceCrossShoreSegments,
-      subsurfaceOffshoreSegments,
-    ),
-    [
-      subsurfaceCrossShoreSegments,
-      subsurfaceOffshoreSegments,
-    ],
-  );
   useEffect(() => () => {
     oceanGeometry.dispose();
-    subsurfaceGeometry.dispose();
-  }, [oceanGeometry, subsurfaceGeometry]);
+  }, [oceanGeometry]);
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
       uHeight: { value: settings.waveHeight },
-      uPeriod: { value: settings.wavePeriod },
       uSwellHeight: { value: settings.swellHeight },
       uSwellPeriod: { value: settings.swellPeriod },
       uSwellDirection: { value: settings.swellDirection },
@@ -1960,7 +2421,6 @@ function Ocean({
       uRain: { value: 0 },
       uVisibility: { value: 240 },
       uCenterX: { value: 0 },
-      uProfileX: { value: renderState.profileX },
       uComponentCount: {
         value: renderState.componentBank.count,
       },
@@ -1986,16 +2446,28 @@ function Ocean({
       uBathymetryWidth: {
         value: renderState.bathymetry.width,
       },
+      uBathymetryHeight: {
+        value: renderState.bathymetry.height,
+      },
+      uBathymetryXMin: {
+        value: renderState.bathymetry.xMin,
+      },
+      uBathymetryXStep: {
+        value: renderState.bathymetry.xStep,
+      },
+      uBathymetryXCount: {
+        value: renderState.bathymetry.xCount,
+      },
       uTravelKnots: {
         value: paddedOceanKnots(
           renderState.travel.contourKnots,
-          40,
+          80,
         ),
       },
       uBathymetryKnots: {
         value: paddedOceanKnots(
           OCEAN_BATHYMETRY_COASTAL_Z,
-          48,
+          80,
         ),
       },
       uComponentParameters: {
@@ -2007,8 +2479,15 @@ function Ocean({
       uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
       uSunColor: { value: new THREE.Color("#fff0ca") },
       uHazeColor: { value: new THREE.Color("#78979c") },
+      uShoreColor: { value: new THREE.Color(shoreColor) },
     }),
-    [character, renderState, renderTextures, settings],
+    [
+      character,
+      renderState,
+      renderTextures,
+      settings,
+      shoreColor,
+    ],
   );
 
   const tideShift = shorelineShiftForTide(settings.tide);
@@ -2018,10 +2497,6 @@ function Ocean({
     if (ocean.current) {
       ocean.current.position.x = THREE.MathUtils.damp(ocean.current.position.x, focusPosition.current.x, 12, delta);
       ocean.current.position.z = THREE.MathUtils.damp(ocean.current.position.z, OCEAN_CENTER_Z + tideShift, 2.8, delta);
-    }
-    if (subsurface.current) {
-      subsurface.current.position.x = ocean.current?.position.x ?? focusPosition.current.x;
-      subsurface.current.position.z = ocean.current?.position.z ?? OCEAN_CENTER_Z + tideShift;
     }
     const values = material.current.uniforms;
     const renderFocusX = ocean.current?.position.x
@@ -2053,7 +2528,6 @@ function Ocean({
         renderTextures.bathymetry,
         nextRenderState.bathymetry,
       );
-      values.uProfileX.value = nextRenderState.profileX;
       values.uComponentCount.value =
         nextRenderState.componentBank.count;
       values.uDominantIndex.value =
@@ -2069,14 +2543,21 @@ function Ocean({
       values.uTravelWidth.value = nextRenderState.travel.width;
       values.uBathymetryWidth.value =
         nextRenderState.bathymetry.width;
+      values.uBathymetryHeight.value =
+        nextRenderState.bathymetry.height;
+      values.uBathymetryXMin.value =
+        nextRenderState.bathymetry.xMin;
+      values.uBathymetryXStep.value =
+        nextRenderState.bathymetry.xStep;
+      values.uBathymetryXCount.value =
+        nextRenderState.bathymetry.xCount;
       values.uTravelKnots.value = paddedOceanKnots(
         nextRenderState.travel.contourKnots,
-        40,
+        80,
       );
     }
     values.uTime.value = clock.elapsedTime;
     values.uHeight.value = THREE.MathUtils.lerp(values.uHeight.value, settings.waveHeight, 0.02);
-    values.uPeriod.value = settings.wavePeriod;
     values.uSwellHeight.value = THREE.MathUtils.lerp(values.uSwellHeight.value, settings.swellHeight, .025);
     values.uSwellPeriod.value = settings.swellPeriod;
     values.uSwellDirection.value = settings.swellDirection;
@@ -2095,37 +2576,20 @@ function Ocean({
     values.uSunDirection.value.set(...sunPosition).normalize();
     values.uSunColor.value.set(sunColor);
     values.uHazeColor.value.set(hazeColor);
+    values.uShoreColor.value.set(shoreColor);
   });
 
   return (
-    <>
-      <mesh ref={ocean} position={[0, -0.08, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <primitive attach="geometry" object={oceanGeometry} />
-        <shaderMaterial
-          ref={material}
-          uniforms={uniforms}
-          vertexShader={OCEAN_VERTEX}
-          fragmentShader={OCEAN_FRAGMENT}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh
-        ref={subsurface}
-        position={[0, -.34 - Math.min(.18, settings.waveHeight * .04), OCEAN_CENTER_Z + tideShift]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        renderOrder={-1}
-      >
-        <primitive attach="geometry" object={subsurfaceGeometry} />
-        <shaderMaterial
-          uniforms={uniforms}
-          vertexShader={OCEAN_VERTEX}
-          fragmentShader={OCEAN_SUBSURFACE_FRAGMENT}
-          side={THREE.BackSide}
-          transparent
-          opacity={.995}
-        />
-      </mesh>
-    </>
+    <mesh ref={ocean} position={[0, 0, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <primitive attach="geometry" object={oceanGeometry} />
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={OCEAN_VERTEX}
+        fragmentShader={OCEAN_FRAGMENT}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
   );
 }
 
@@ -9433,12 +9897,105 @@ function RoadSurface({ weatherCode, light }: { weatherCode: number; light: numbe
   );
 }
 
+function createWetSandGeometry(
+  coastId: string,
+  zoneName: string,
+  reduced: boolean,
+) {
+  const alongshoreSegments = reduced ? 80 : 192;
+  const landwardSegments = reduced ? 6 : 10;
+  const columns = alongshoreSegments + 1;
+  const rows = landwardSegments + 1;
+  const positions = new Float32Array(columns * rows * 3);
+  const uvs = new Float32Array(columns * rows * 2);
+  const shoreDistances = new Float32Array(columns * rows);
+  const indices: number[] = [];
+
+  for (let alongshoreIndex = 0; alongshoreIndex < columns; alongshoreIndex += 1) {
+    const alongshoreProgress = alongshoreIndex / alongshoreSegments;
+    const worldX = THREE.MathUtils.lerp(
+      -COAST_GEOMETRY_WIDTH * .5,
+      COAST_GEOMETRY_WIDTH * .5,
+      alongshoreProgress,
+    );
+    const shorelineWorldZ = SHORELINE_REFERENCE_Z
+      + shorelineReferenceAt(coastId, zoneName, worldX);
+    // Start just landward of the modeled wet line. The displaced ocean owns
+    // the water side and sinks beneath this strip after its run-up, so neither
+    // surface can expose a flat offshore plane through a wave trough.
+    const seawardWorldZ = shorelineWorldZ + .12;
+    const landwardWorldZ = Math.max(
+      70,
+      shorelineWorldZ + 18,
+    );
+
+    for (let landwardIndex = 0; landwardIndex < rows; landwardIndex += 1) {
+      const landwardProgress = landwardIndex / landwardSegments;
+      const worldZ = THREE.MathUtils.lerp(
+        seawardWorldZ,
+        landwardWorldZ,
+        landwardProgress,
+      );
+      const vertexIndex = landwardIndex * columns + alongshoreIndex;
+      const positionOffset = vertexIndex * 3;
+      const uvOffset = vertexIndex * 2;
+      positions[positionOffset] = worldX;
+      // The mesh rotates -90 degrees around X, mapping local -Y to world +Z.
+      positions[positionOffset + 1] = -worldZ;
+      positions[positionOffset + 2] = 0;
+      uvs[uvOffset] = alongshoreProgress;
+      uvs[uvOffset + 1] = landwardProgress;
+      shoreDistances[vertexIndex] = worldZ - shorelineWorldZ;
+    }
+  }
+
+  for (let landwardIndex = 0; landwardIndex < landwardSegments; landwardIndex += 1) {
+    for (let alongshoreIndex = 0; alongshoreIndex < alongshoreSegments; alongshoreIndex += 1) {
+      const seawardLeft = landwardIndex * columns + alongshoreIndex;
+      const seawardRight = seawardLeft + 1;
+      const landwardLeft = seawardLeft + columns;
+      const landwardRight = landwardLeft + 1;
+      // Winding faces local +Z, which becomes world +Y after mesh rotation.
+      indices.push(
+        seawardLeft,
+        landwardLeft,
+        seawardRight,
+        seawardRight,
+        landwardLeft,
+        landwardRight,
+      );
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.BufferAttribute(positions, 3),
+  );
+  geometry.setAttribute(
+    "uv",
+    new THREE.BufferAttribute(uvs, 2),
+  );
+  geometry.setAttribute(
+    "aShoreDistance",
+    new THREE.BufferAttribute(shoreDistances, 1),
+  );
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 const WET_SAND_VERTEX = /* glsl */ `
+  attribute float aShoreDistance;
   varying vec2 vUv;
+  varying float vShoreDistance;
   varying vec3 vWorldPosition;
 
   void main() {
     vUv = uv;
+    vShoreDistance = aShoreDistance;
     vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
@@ -9454,12 +10011,13 @@ const WET_SAND_FRAGMENT = /* glsl */ `
   uniform float uRain;
   uniform float uWeatherWetness;
   uniform float uWind;
-  uniform float uShorelineZ;
+  uniform float uTargetFaceHeight;
   uniform vec2 uWindVector;
   uniform vec3 uBaseColor;
   uniform vec3 uSunDirection;
   uniform vec3 uSunColor;
   varying vec2 vUv;
+  varying float vShoreDistance;
   varying vec3 vWorldPosition;
 
   float hash(vec2 p) {
@@ -9490,14 +10048,58 @@ const WET_SAND_FRAGMENT = /* glsl */ `
     vec2 world = vWorldPosition.xz;
     vec2 windDirection = normalize(uWindVector + vec2(.0001));
     vec2 windTangent = vec2(-windDirection.y, windDirection.x);
-    vec2 windSpace = vec2(dot(world, windDirection), dot(world, windTangent));
-    float shoreDistance = max(0.0, vWorldPosition.z - uShorelineZ);
-    float tideSaturation = 1.0 - smoothstep(5.5, 24.0, shoreDistance);
-    float runup = sin(uTime * .31 + world.x * .021) * .5 + .5;
-    float runupBand = 1.0 - smoothstep(
-      2.6,
-      10.8,
-      abs(shoreDistance - (7.2 + runup * 3.8 + sin(world.x * .047 + uTime * .13) * .75))
+    vec2 windSpace = vec2(
+      dot(world, windDirection),
+      dot(world, windTangent)
+    );
+    float shoreDistance = max(0.0, vShoreDistance);
+    // Use the same broad pulse, reach, and coverage interval as
+    // applyOceanShoreTransition and OCEAN_VERTEX. This is only a persistent
+    // damp-sand response; it must not invent a second moving waterline.
+    float runupPulsePhase = world.x
+      * 3.141592653589793 * 2.0 / 260.0
+      - uTime * 3.141592653589793 * 2.0 / 32.0;
+    float runupPulse = .5 + .5 * sin(runupPulsePhase);
+    float runupReach = clamp(
+      1.8 + max(0.0, uTargetFaceHeight) * .52,
+      2.2,
+      5.6
+    );
+    float swashAdvance = runupPulse * runupPulse
+      * (3.0 - 2.0 * runupPulse);
+    float swashBreakup = (
+      noise(vec2(
+        world.x * .018 + uTime * .006,
+        world.x * .006 - uTime * .004
+      )) - .5
+    ) * 1.6;
+    float softSwashFront = runupReach
+      * mix(.48, 1.0, swashAdvance)
+      + swashBreakup;
+    float coverageUnit = clamp(
+      (shoreDistance - (runupReach - .45)) / 1.55,
+      0.0,
+      1.0
+    );
+    float coverageTransition =
+      coverageUnit * coverageUnit * coverageUnit
+      * (
+        coverageUnit * (
+          coverageUnit * 6.0 - 15.0
+        ) + 10.0
+      );
+    float movingSwashCoverage = 1.0 - smoothstep(
+      softSwashFront - .42,
+      softSwashFront + .68,
+      shoreDistance
+    );
+    float runupBand = movingSwashCoverage
+      * (1.0 - coverageTransition)
+      * (.84 + runupPulse * .16);
+    float tideSaturation = 1.0 - smoothstep(
+      runupReach + 1.5,
+      runupReach + 9.0,
+      shoreDistance
     );
     float broadPools = fbm(world * vec2(.038, .11) + vec2(uTime * .006, 0.0));
     float puddles = smoothstep(.5, .73, broadPools + tideSaturation * .17 + uWeatherWetness * .23);
@@ -9514,8 +10116,12 @@ const WET_SAND_FRAGMENT = /* glsl */ `
     );
     // Keep the full intertidal shelf visibly saturated. Allowing isolated dry
     // patches here reads as a second beach between the wet sand and ocean.
-    float intertidalContinuity = 1.0 - smoothstep(18.0, 30.0, shoreDistance);
-    film = max(film, intertidalContinuity * .84);
+    float intertidalContinuity = 1.0 - smoothstep(
+      runupReach + 7.0,
+      runupReach + 19.0,
+      shoreDistance
+    );
+    film = max(film, intertidalContinuity * .68);
 
     vec3 sandTexture = texture2D(uSandMap, vUv * uTextureRepeat).rgb;
     float grain = dot(sandTexture, vec3(.26, .57, .17));
@@ -9557,6 +10163,49 @@ const WET_SAND_FRAGMENT = /* glsl */ `
     sunPath *= sunBreakup * film * (1.0 - uCloud * .82);
     color += uSunColor * sunPath * (.24 + uLight * 1.22);
 
+    // The buried ocean sheet cannot carry a visible run-up edge once it
+    // passes beneath this sand surface. Render that same synchronized front
+    // here as porous lace so the wash visibly advances and retreats without
+    // adding an overlapping ribbon mesh, alpha hole, or a second waterline.
+    float swashLaceCenter = softSwashFront
+      + (
+        noise(vec2(
+          world.x * .14 - uTime * .024,
+          world.x * .043 + uTime * .017
+        )) - .5
+      ) * .74;
+    float wetSandSwashLace = 1.0 - smoothstep(
+      .08,
+      .52,
+      abs(shoreDistance - swashLaceCenter)
+    );
+    float wetSandSwashCells = smoothstep(
+      .4,
+      .74,
+      noise(
+        world * vec2(.43, .21)
+          + vec2(-uTime * .08, uTime * .025)
+      ) * .58
+        + noise(
+          world * vec2(1.17, .54)
+            + vec2(uTime * .13, -uTime * .04)
+        ) * .42
+    );
+    float wetSandSwashFoam = wetSandSwashLace
+      * (1.0 - coverageTransition)
+      * (.06 + wetSandSwashCells * .94)
+      * (.76 + swashAdvance * .24);
+    vec3 wetSandFoamColor = mix(
+      vec3(.61, .82, .79),
+      vec3(.9, .97, .93),
+      uLight
+    );
+    color = mix(
+      color,
+      wetSandFoamColor,
+      wetSandSwashFoam * .86
+    );
+
     if (uRain > .01) {
       vec2 rainUv = world * 1.12;
       vec2 rainCell = floor(rainUv);
@@ -9574,8 +10223,11 @@ const WET_SAND_FRAGMENT = /* glsl */ `
 `;
 
 function WetSandSurface({
+  coastId,
+  zoneName,
   texture,
   color,
+  waveHeight,
   windSpeed,
   windDirection,
   coastHeading,
@@ -9587,8 +10239,11 @@ function WetSandSurface({
   sunColor,
   reduced,
 }: {
+  coastId: string;
+  zoneName: string;
   texture: THREE.Texture;
   color: string;
+  waveHeight: number;
   windSpeed: number;
   windDirection: number;
   coastHeading: number;
@@ -9604,6 +10259,25 @@ function WetSandSurface({
   const material = useRef<THREE.ShaderMaterial>(null);
   const profile = useMemo(() => weatherProfile(weatherCode), [weatherCode]);
   const targetWindVector = useMemo(() => new THREE.Vector2(), []);
+  const geometry = useMemo(
+    () => createWetSandGeometry(
+      coastId,
+      zoneName,
+      reduced,
+    ),
+    [coastId, reduced, zoneName],
+  );
+  useEffect(() => () => {
+    geometry.dispose();
+  }, [geometry]);
+  const targetFaceHeight = useMemo(
+    () => forecastFaceHeightForBreak(
+      waveHeight,
+      tide,
+      getBreakCharacter(coastId, zoneName),
+    ),
+    [coastId, tide, waveHeight, zoneName],
+  );
   const uniforms = useMemo(() => ({
     uSandMap: { value: texture },
     uTextureRepeat: { value: texture.repeat.clone() },
@@ -9613,17 +10287,22 @@ function WetSandSurface({
     uRain: { value: 0 },
     uWeatherWetness: { value: 0 },
     uWind: { value: 0 },
-    uShorelineZ: { value: SHORELINE_REFERENCE_Z },
+    uTargetFaceHeight: { value: targetFaceHeight },
     uWindVector: { value: new THREE.Vector2(0, 1) },
     uBaseColor: { value: new THREE.Color(color) },
     uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
     uSunColor: { value: new THREE.Color("#fff0ca") },
-  }), [color, texture]);
+  }), [color, targetFaceHeight, texture]);
   const tideShift = shorelineShiftForTide(tide);
 
   useFrame(({ clock }, delta) => {
     if (surface.current) {
-      surface.current.position.z = THREE.MathUtils.damp(surface.current.position.z, 34 + tideShift, 2.8, delta);
+      surface.current.position.z = THREE.MathUtils.damp(
+        surface.current.position.z,
+        tideShift,
+        2.8,
+        delta,
+      );
     }
     if (!material.current) return;
     const values = material.current.uniforms;
@@ -9635,7 +10314,7 @@ function WetSandSurface({
     values.uRain.value = THREE.MathUtils.damp(values.uRain.value, profile.kind === "rain" ? profile.intensity : 0, 3, delta);
     values.uWeatherWetness.value = THREE.MathUtils.damp(values.uWeatherWetness.value, weatherWetness(weatherCode), 2.2, delta);
     values.uWind.value = THREE.MathUtils.damp(values.uWind.value, THREE.MathUtils.clamp(windSpeed / 24, 0, 1.45), 3, delta);
-    values.uShorelineZ.value = THREE.MathUtils.damp(values.uShorelineZ.value, SHORELINE_REFERENCE_Z + tideShift, 2.8, delta);
+    values.uTargetFaceHeight.value = targetFaceHeight;
     values.uWindVector.value.lerp(targetWindVector, 1 - Math.exp(-delta * 3));
     values.uBaseColor.value.set(color);
     values.uSunDirection.value.set(...sunPosition).normalize();
@@ -9643,18 +10322,14 @@ function WetSandSurface({
   });
 
   return (
-    <mesh ref={surface} position={[0, -.34, 34 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[COAST_GEOMETRY_WIDTH, 64]} />
-      {reduced ? (
-        <meshStandardMaterial color={color} map={texture} bumpMap={texture} bumpScale={.025} roughness={.76} metalness={.04} />
-      ) : (
-        <shaderMaterial
-          ref={material}
-          uniforms={uniforms}
-          vertexShader={WET_SAND_VERTEX}
-          fragmentShader={WET_SAND_FRAGMENT}
-        />
-      )}
+    <mesh ref={surface} position={[0, -.34, tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <primitive attach="geometry" object={geometry} />
+      <shaderMaterial
+        ref={material}
+        uniforms={uniforms}
+        vertexShader={WET_SAND_VERTEX}
+        fragmentShader={WET_SAND_FRAGMENT}
+      />
     </mesh>
   );
 }
@@ -10324,6 +10999,7 @@ function CoastWayfinding({ beach, zoneName, light }: { beach: Beach; zoneName: s
 function BeachLife({
   beach,
   zoneName,
+  waveHeight,
   windSpeed,
   windDirection,
   coastHeading,
@@ -10337,6 +11013,7 @@ function BeachLife({
 }: {
   beach: Beach;
   zoneName: string;
+  waveHeight: number;
   windSpeed: number;
   windDirection: number;
   coastHeading: number;
@@ -10374,15 +11051,7 @@ function BeachLife({
     sandTexture.dispose();
     wetSandTexture.dispose();
   }, [sandTexture, wetSandTexture]);
-  const surface = {
-    urban: ["#c0aa91", "#756a60"],
-    tropical: ["#e0c499", "#88735c"],
-    dune: ["#c7ad86", "#776b5e"],
-    rugged: ["#b49a7c", "#6f665e"],
-    cold: ["#a6a39a", "#606965"],
-    volcanic: ["#454744", "#252b2a"],
-    desert: ["#c08c62", "#725a49"],
-  }[biome];
+  const surface = COAST_SURFACE_COLORS[biome];
   useFrame(() => {
     const nextChunkIndex = Math.round(playerPosition.current.x / COAST_CHUNK_SPAN);
     if (nextChunkIndex !== coastChunkIndexRef.current) {
@@ -10397,8 +11066,11 @@ function BeachLife({
         <meshStandardMaterial color={surface[0]} map={sandTexture} bumpMap={sandTexture} bumpScale={0.045} roughness={0.93} metalness={0} />
       </mesh>
       <WetSandSurface
+        coastId={beach.id}
+        zoneName={zoneName}
         texture={wetSandTexture}
         color={surface[1]}
+        waveHeight={waveHeight}
         windSpeed={windSpeed}
         windDirection={windDirection}
         coastHeading={coastHeading}
@@ -11601,22 +12273,45 @@ function towPointOnCrest(
 ) {
   let x = anchorX;
   let z = anchorZ;
-  let transport = primaryWaveVelocityAt(x, z, elapsed, settings, character);
+  let dominant = sampleCoastDominantWave(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
   for (let iteration = 0; iteration < 4; iteration += 1) {
-    const phaseError = primaryWavePhaseAt(x, z, elapsed, settings, character) - targetPhase;
-    const waveNumber = (Math.PI * 2) / Math.max(.1, transport.wavelength);
-    const normalX = transport.x / Math.max(.001, transport.speed);
-    const normalZ = transport.z / Math.max(.001, transport.speed);
+    // Crest seeking only needs the dominant partition. Avoid evaluating the
+    // complete surface (including finite-difference normals) on this hot path.
+    const speed = dominant?.celerity ?? 0;
+    const normalX = (dominant?.celerityX ?? 0)
+      / Math.max(.001, speed);
+    const normalZ = (dominant?.celerityZ ?? 0)
+      / Math.max(.001, speed);
+    const phaseError = (
+      (dominant?.phase ?? 0) + Math.PI * .5
+    ) - targetPhase;
+    const waveNumber = (Math.PI * 2)
+      / Math.max(.1, dominant?.wavelength ?? 1);
     x -= normalX * phaseError / waveNumber;
     z -= normalZ * phaseError / waveNumber;
-    transport = primaryWaveVelocityAt(x, z, elapsed, settings, character);
+    // Match the returned direction and speed to the solved point. The former
+    // implementation returned the pre-update normal from the fourth step.
+    dominant = sampleCoastDominantWave(
+      x,
+      z,
+      elapsed,
+      settings,
+      character,
+    );
   }
+  const speed = dominant?.celerity ?? 0;
   return {
     x,
     z,
-    normalX: transport.x / Math.max(.001, transport.speed),
-    normalZ: transport.z / Math.max(.001, transport.speed),
-    speed: transport.speed,
+    normalX: (dominant?.celerityX ?? 0) / Math.max(.001, speed),
+    normalZ: (dominant?.celerityZ ?? 0) / Math.max(.001, speed),
+    speed,
   };
 }
 
@@ -11821,14 +12516,21 @@ function OptionalTowCraft({
     );
     if (craft.current) {
       craft.current.visible = tow.available;
+      const idleTow = !tow.active && !tow.returning;
+      const craftPositionJump = Math.hypot(
+        craft.current.position.x - tow.position.x,
+        craft.current.position.z - tow.position.z,
+      );
       craft.current.position.x = tow.position.x;
       craft.current.position.z = tow.position.z;
-      craft.current.rotation.y = dampAngle(
-        craft.current.rotation.y,
-        tow.heading,
-        tow.active ? 12 : 5,
-        delta,
-      );
+      craft.current.rotation.y = idleTow
+        ? tow.heading
+        : dampAngle(
+            craft.current.rotation.y,
+            tow.heading,
+            tow.active ? 12 : 5,
+            delta,
+          );
       const forwardX = Math.sin(craft.current.rotation.y);
       const forwardZ = Math.cos(craft.current.rotation.y);
       const rightX = Math.cos(craft.current.rotation.y);
@@ -11849,11 +12551,11 @@ function OptionalTowCraft({
       );
       const bowHeight = surfaceAtHullPoint(
         0,
-        OPTIONAL_TOW_HULL_HALF_LENGTH,
+        OPTIONAL_TOW_HULL_BOW_REACH,
       );
       const sternHeight = surfaceAtHullPoint(
         0,
-        -OPTIONAL_TOW_HULL_HALF_LENGTH,
+        -OPTIONAL_TOW_HULL_STERN_REACH,
       );
       const leftHeight = surfaceAtHullPoint(
         -OPTIONAL_TOW_HULL_HALF_BEAM,
@@ -11881,30 +12583,168 @@ function OptionalTowCraft({
         -.1,
         .1,
       );
-      // The geometry extends about .33 m below the group origin. The averaged
-      // displacement plane supplies the normal draft; a pose-aware floor only
-      // raises that target when a real bow/stern/rail sample would otherwise
-      // climb over the visible hull.
+      // Match the render origin to the hull solver's filtered displacement
+      // plane. A highest-sample floor made steep faces snap the entire craft
+      // upward and then hover while the other probes caught up.
       const displacementOriginY = hullAttitude.waterlineHeight
         + THREE.MathUtils.lerp(
           .145,
           .185,
           hullAttitude.planing,
         );
-      const targetOriginY = Math.max(
-        displacementOriginY,
-        // Eight centimetres of reserve absorbs the deliberate pose lag through
-        // steep short-period faces without making the highest sample the
-        // craft's normal equilibrium plane.
-        hullAttitude.minimumSafeElevation + .08,
+      const targetOriginY = displacementOriginY;
+      const hullAnticipationSeconds = .1;
+      const anticipatedCenterX = tow.position.x
+        + forwardX
+          * tow.speed
+          * hullAnticipationSeconds;
+      const anticipatedCenterZ = tow.position.z
+        + forwardZ
+          * tow.speed
+          * hullAnticipationSeconds;
+      const anticipatedSurfaceAtHullPoint = (
+        localX: number,
+        localZ: number,
+      ) => waveHeightAt(
+        anticipatedCenterX
+          + rightX * localX
+          + forwardX * localZ,
+        anticipatedCenterZ
+          + rightZ * localX
+          + forwardZ * localZ,
+        elapsed + hullAnticipationSeconds,
+        settings,
+        character,
       );
+      const anticipatedCenterHeight =
+        anticipatedSurfaceAtHullPoint(0, 0);
+      const anticipatedBowHeight =
+        anticipatedSurfaceAtHullPoint(
+          0,
+          OPTIONAL_TOW_HULL_BOW_REACH,
+        );
+      const anticipatedSternHeight =
+        anticipatedSurfaceAtHullPoint(
+          0,
+          -OPTIONAL_TOW_HULL_STERN_REACH,
+        );
+      const anticipatedLeftHeight =
+        anticipatedSurfaceAtHullPoint(
+          -OPTIONAL_TOW_HULL_HALF_BEAM,
+          0,
+        );
+      const anticipatedRightHeight =
+        anticipatedSurfaceAtHullPoint(
+          OPTIONAL_TOW_HULL_HALF_BEAM,
+          0,
+        );
+      const anticipatedAttitude = resolveOptionalTowHullAttitude({
+        centerHeight: anticipatedCenterHeight,
+        bowHeight: anticipatedBowHeight,
+        sternHeight: anticipatedSternHeight,
+        leftHeight: anticipatedLeftHeight,
+        rightHeight: anticipatedRightHeight,
+        speed: tow.speed,
+      });
+      const anticipatedTargetOriginY =
+        anticipatedAttitude.waterlineHeight
+        + THREE.MathUtils.lerp(
+          .145,
+          .185,
+          anticipatedAttitude.planing,
+        );
+      const contactPitch = hullFloat.current.initialized
+        ? hullFloat.current.pitch
+        : hullAttitude.pitch;
+      const contactRoll = hullFloat.current.initialized
+        ? hullFloat.current.roll
+        : hullAttitude.roll;
+      const contactBowRise = -Math.sin(contactPitch)
+        * OPTIONAL_TOW_HULL_BOW_REACH;
+      const contactSternRise = Math.sin(contactPitch)
+        * OPTIONAL_TOW_HULL_STERN_REACH;
+      const contactRightRise = Math.sin(contactRoll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const contactLeftRise = -Math.sin(contactRoll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const renderedPoseContactFloor = Math.max(
+        craftSurface,
+        bowHeight - contactBowRise,
+        sternHeight - contactSternRise,
+        leftHeight - contactLeftRise,
+        rightHeight - contactRightRise,
+      ) - .2;
+      const minimumContactElevation = Math.max(
+        targetOriginY,
+        renderedPoseContactFloor,
+      );
+      const anticipatedBowRise =
+        -Math.sin(anticipatedAttitude.pitch)
+          * OPTIONAL_TOW_HULL_BOW_REACH;
+      const anticipatedSternRise =
+        Math.sin(anticipatedAttitude.pitch)
+          * OPTIONAL_TOW_HULL_STERN_REACH;
+      const anticipatedRightRise =
+        Math.sin(anticipatedAttitude.roll)
+          * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const anticipatedLeftRise =
+        -Math.sin(anticipatedAttitude.roll)
+          * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const anticipatedContactFloor = Math.max(
+        anticipatedCenterHeight,
+        anticipatedBowHeight - anticipatedBowRise,
+        anticipatedSternHeight - anticipatedSternRise,
+        anticipatedLeftHeight - anticipatedLeftRise,
+        anticipatedRightHeight - anticipatedRightRise,
+      ) - .2;
+      const anticipatedSupportElevation = Math.max(
+        anticipatedTargetOriginY,
+        anticipatedContactFloor,
+      );
+      const predictedContactVelocity = (
+        anticipatedSupportElevation - minimumContactElevation
+      ) / hullAnticipationSeconds;
+      const targetPitch = hullAttitude.pitch + .6 * Math.atan2(
+        Math.sin(
+          anticipatedAttitude.pitch - hullAttitude.pitch,
+        ),
+        Math.cos(
+          anticipatedAttitude.pitch - hullAttitude.pitch,
+        ),
+      );
+      const targetRoll = hullAttitude.roll + .6 * Math.atan2(
+        Math.sin(
+          anticipatedAttitude.roll - hullAttitude.roll,
+        ),
+        Math.cos(
+          anticipatedAttitude.roll - hullAttitude.roll,
+        ),
+      );
+      // The scene starts with a generic tow coordinate, then resolves the
+      // selected coast's curved shoreline and may replace fallback marine
+      // data asynchronously. While parked, rebase those one-time environment
+      // changes onto the same water plane instead of visibly hovering while
+      // the dynamic solver chases a world-space seam.
+      const idleSurfaceRebase = idleTow
+        && hullFloat.current.initialized
+        && (
+          craftPositionJump > .75
+          || Math.abs(
+            targetOriginY - hullFloat.current.targetElevation
+          ) > .32
+        );
+      if (idleSurfaceRebase) {
+        hullFloat.current.initialized = false;
+      }
       hullFloat.current = advanceOptionalTowHullFloat(
         hullFloat.current,
         {
           targetElevation: targetOriginY,
-          targetPitch: hullAttitude.pitch,
+          minimumContactElevation,
+          predictedContactVelocity,
+          targetPitch,
           targetRoll: THREE.MathUtils.clamp(
-            hullAttitude.roll + turnBank,
+            targetRoll + turnBank,
             -.2,
             .2,
           ),
@@ -11917,9 +12757,9 @@ function OptionalTowCraft({
       craft.current.rotation.z = hullFloat.current.roll;
       craftSurface = hullAttitude.waterlineHeight;
       const renderedBowRise = -Math.sin(hullFloat.current.pitch)
-        * OPTIONAL_TOW_HULL_HALF_LENGTH;
+        * OPTIONAL_TOW_HULL_BOW_REACH;
       const renderedSternRise = Math.sin(hullFloat.current.pitch)
-        * OPTIONAL_TOW_HULL_HALF_LENGTH;
+        * OPTIONAL_TOW_HULL_STERN_REACH;
       const renderedRightRise = Math.sin(hullFloat.current.roll)
         * OPTIONAL_TOW_HULL_HALF_BEAM;
       const renderedLeftRise = -Math.sin(hullFloat.current.roll)
@@ -12383,6 +13223,13 @@ function Simulation({
     returning: false,
     returnProgress: 0,
     returnStart: new THREE.Vector3(10, 0, 4),
+  });
+  const towTakeoffScan = useRef({
+    refreshAt: -1,
+    targetFaceDistance: 3.5,
+    currentFaceDistance: 3.5,
+    faceQuality: 0,
+    transportSpeed: 8,
   });
   const towHullTelemetry = useRef<TowHullTelemetry>({
     hullElevation: 0,
@@ -13351,12 +14198,22 @@ function Simulation({
           x,
         )
     );
-    const navigableTowZAt = (x: number, targetZ: number) => (
-      optionalTowNavigableZ(targetZ, towShorelineZAt(x))
-    );
-    const towHomeZ = navigableTowZAt(
-      towHomeX,
+    const towHomeZ = optionalTowNavigableZ(
       towShorelineZAt(towHomeX),
+      towShorelineZAt(towHomeX),
+      OPTIONAL_TOW_BERTH_OFFSHORE,
+    );
+    const towIdleHeading = Math.sign(character.peel || 1)
+      * Math.PI / 2;
+    const routeNavigableTowZAt = (
+      x: number,
+      targetZ: number,
+      routeProgress: number,
+      returning = false,
+    ) => optionalTowNavigableZ(
+      targetZ,
+      towShorelineZAt(x),
+      optionalTowRouteClearance(routeProgress, returning),
     );
     if (!towMotion.current.active) {
       if (towMotion.current.returning) {
@@ -13388,7 +14245,12 @@ function Simulation({
             * towMotion.current.returnStart.z
           + 2 * inverseReturn * returnProgress * returnControlZ
           + returnProgress * returnProgress * towHomeZ;
-        const safeReturnZ = navigableTowZAt(returnX, returnZ);
+        const safeReturnZ = routeNavigableTowZAt(
+          returnX,
+          returnZ,
+          towMotion.current.returnProgress,
+          true,
+        );
         const returnHomeDistanceBeforeStep = Math.hypot(
           previousTowX - towHomeX,
           previousTowZ - towHomeZ,
@@ -13419,9 +14281,11 @@ function Simulation({
           returnSpeedLimit,
           returnAccelerationLimit,
         );
-        const resolvedReturnZ = navigableTowZAt(
+        const resolvedReturnZ = routeNavigableTowZAt(
           returnStep.x,
           returnStep.z,
+          towMotion.current.returnProgress,
+          true,
         );
         const shorelineClamped = resolvedReturnZ
           < returnStep.z - .0001;
@@ -13468,7 +14332,7 @@ function Simulation({
         }
       } else {
         towMotion.current.position.set(towHomeX, 0, towHomeZ);
-        towMotion.current.heading = Math.PI;
+        towMotion.current.heading = towIdleHeading;
         towMotion.current.speed = 0;
       }
     }
@@ -13589,6 +14453,16 @@ function Simulation({
       towMotion.current.targetZ = targetZ;
       towMotion.current.returning = false;
       towMotion.current.returnProgress = 0;
+      const initialFaceDistance = THREE.MathUtils.clamp(
+        2.8 + settings.waveHeight * .32,
+        3,
+        4.6,
+      );
+      towTakeoffScan.current.refreshAt = -1;
+      towTakeoffScan.current.targetFaceDistance = initialFaceDistance;
+      towTakeoffScan.current.currentFaceDistance = initialFaceDistance;
+      towTakeoffScan.current.faceQuality = 0;
+      towTakeoffScan.current.transportSpeed = 8;
       phase.current = "paddling";
       playerHeading.current = Math.PI;
       paddleHeading.current = Math.PI;
@@ -13949,68 +14823,91 @@ function Simulation({
               liveCrest.normalX,
               liveCrest.normalZ,
             );
-            // Re-scan the actual rising face every frame. Wave scale changes
-            // the preferred pop-up distance, while slope, lift, phase, and
-            // whitewater select the best currently supported point. The craft
-            // therefore chases the takeoff zone instead of passing through a
-            // fixed timer coordinate.
-            let bestTakeoffScore = -1;
-            for (let candidateIndex = 0; candidateIndex < 12; candidateIndex += 1) {
-              const faceDistance = 1.35 + candidateIndex * .52;
-              const candidateX = stagedCrest.x
-                + liveCrest.normalX * faceDistance;
-              const candidateZ = stagedCrest.z
-                + liveCrest.normalZ * faceDistance;
-              const candidateSurface = waveSurfaceFrameAt(
-                candidateX,
-                candidateZ,
-                t,
-                settings,
-                character,
-              );
-              const candidateSlope = Math.max(
-                0,
-                -(
-                  candidateSurface.slopeX * liveCrest.normalX
-                    + candidateSurface.slopeZ * liveCrest.normalZ
-                ),
-              );
-              const candidateFaceQuality = optionalTowReleaseFaceQuality({
-                breakingRatio: candidateSurface.breakingRatio,
-                crestPhaseError: primaryWavePhaseAt(
+            // Surface sampling is the expensive part of the ocean model.
+            // Refresh the physical face search at 10 Hz, then keep its chosen
+            // distance attached to the continuously moving crest every frame.
+            // This preserves dynamic takeoff chasing without making the
+            // render loop evaluate twelve complete spectra (plus duplicate
+            // phase/velocity samples) on every animation frame.
+            const takeoffScan = towTakeoffScan.current;
+            if (t >= takeoffScan.refreshAt) {
+              const firstScan = takeoffScan.refreshAt < 0;
+              let bestTakeoffScore = -1;
+              let bestFaceDistance = takeoffScan.targetFaceDistance;
+              let bestFaceQuality = takeoffScan.faceQuality;
+              let bestTransportSpeed = takeoffScan.transportSpeed;
+              for (
+                let candidateIndex = 0;
+                candidateIndex < 12;
+                candidateIndex += 1
+              ) {
+                const faceDistance = 1.35 + candidateIndex * .52;
+                const candidateX = stagedCrest.x
+                  + liveCrest.normalX * faceDistance;
+                const candidateZ = stagedCrest.z
+                  + liveCrest.normalZ * faceDistance;
+                const candidateSurface = waveSurfaceFrameAt(
                   candidateX,
                   candidateZ,
                   t,
                   settings,
                   character,
-                ) - towMotion.current.targetWavePhase,
-                faceSlope: candidateSlope,
-                surfaceRise: candidateSurface.surfaceRise,
-                whitewater: candidateSurface.whitewater,
-              });
-              const candidateScore = optionalTowTakeoffTargetScore(
-                candidateFaceQuality,
-                faceDistance,
-                targetFaceHeight,
-              );
-              if (candidateScore <= bestTakeoffScore) continue;
-              bestTakeoffScore = candidateScore;
-              liveTakeoffX = candidateX;
-              liveTakeoffZ = candidateZ;
-              liveTakeoffFaceQuality = candidateFaceQuality;
+                );
+                const candidateSlope = Math.max(
+                  0,
+                  -(
+                    candidateSurface.slopeX * liveCrest.normalX
+                      + candidateSurface.slopeZ * liveCrest.normalZ
+                  ),
+                );
+                const candidateFaceQuality = optionalTowReleaseFaceQuality({
+                  breakingRatio: candidateSurface.breakingRatio,
+                  crestPhaseError: (
+                    (candidateSurface.dominant?.phase ?? 0)
+                      + Math.PI * .5
+                  ) - towMotion.current.targetWavePhase,
+                  faceSlope: candidateSlope,
+                  surfaceRise: candidateSurface.surfaceRise,
+                  whitewater: candidateSurface.whitewater,
+                });
+                const candidateScore = optionalTowTakeoffTargetScore(
+                  candidateFaceQuality,
+                  faceDistance,
+                  targetFaceHeight,
+                );
+                if (candidateScore <= bestTakeoffScore) continue;
+                bestTakeoffScore = candidateScore;
+                bestFaceDistance = faceDistance;
+                bestFaceQuality = candidateFaceQuality;
+                bestTransportSpeed =
+                  candidateSurface.dominant?.celerity
+                    ?? bestTransportSpeed;
+              }
+              takeoffScan.targetFaceDistance = bestFaceDistance;
+              if (firstScan) {
+                takeoffScan.currentFaceDistance = bestFaceDistance;
+              }
+              takeoffScan.faceQuality = bestFaceQuality;
+              takeoffScan.transportSpeed = bestTransportSpeed;
+              takeoffScan.refreshAt = t + .1;
             }
+            takeoffScan.currentFaceDistance = THREE.MathUtils.damp(
+              takeoffScan.currentFaceDistance,
+              takeoffScan.targetFaceDistance,
+              12,
+              delta,
+            );
+            liveTakeoffX = stagedCrest.x
+              + liveCrest.normalX * takeoffScan.currentFaceDistance;
+            liveTakeoffZ = stagedCrest.z
+              + liveCrest.normalZ * takeoffScan.currentFaceDistance;
+            liveTakeoffFaceQuality = takeoffScan.faceQuality;
+            liveTakeoffTransportSpeed = takeoffScan.transportSpeed;
             const towRopeLength = 7;
             liveCraftX = liveTakeoffX
               + liveCrest.normalX * towRopeLength;
             liveCraftZ = liveTakeoffZ
               + liveCrest.normalZ * towRopeLength;
-            liveTakeoffTransportSpeed = primaryWaveVelocityAt(
-              liveTakeoffX,
-              liveTakeoffZ,
-              t,
-              settings,
-              character,
-            ).speed;
           }
           if (towProgress < .38) {
             const outboundProgress = THREE.MathUtils.smootherstep(towProgress, 0, .38);
@@ -14041,9 +14938,10 @@ function Simulation({
             desiredTowZ = liveCraftZ;
           }
           const safeDelta = Math.max(.001, delta);
-          desiredTowZ = navigableTowZAt(
+          desiredTowZ = routeNavigableTowZAt(
             desiredTowX,
             desiredTowZ,
+            towProgress,
           );
           const routeSpeedLimit = THREE.MathUtils.lerp(
             10.5,
@@ -14089,9 +14987,10 @@ function Simulation({
             safeDelta,
             maximumTowSpeed,
           );
-          const safeCraftZ = navigableTowZAt(
+          const safeCraftZ = routeNavigableTowZAt(
             craftStep.x,
             craftStep.z,
+            towProgress,
           );
           const shorelineClamped = safeCraftZ
             < craftStep.z - .0001;
@@ -14171,13 +15070,6 @@ function Simulation({
           boardWaterContact = 1;
           boardPlaning = THREE.MathUtils.clamp(speed / 8, .45, 1);
           takeoffOpportunity = 0;
-          const towFaceTransport = primaryWaveVelocityAt(
-            position.current.x,
-            position.current.z,
-            t,
-            settings,
-            character,
-          );
           const towFaceSurface = waveSurfaceFrameAt(
             position.current.x,
             position.current.z,
@@ -14185,10 +15077,16 @@ function Simulation({
             settings,
             character,
           );
-          const towFaceNormalX = towFaceTransport.x
-            / Math.max(.001, towFaceTransport.speed);
-          const towFaceNormalZ = towFaceTransport.z
-            / Math.max(.001, towFaceTransport.speed);
+          const towFaceTransportSpeed =
+            towFaceSurface.dominant?.celerity ?? 0;
+          const towFaceTransportX =
+            towFaceSurface.dominant?.celerityX ?? 0;
+          const towFaceTransportZ =
+            towFaceSurface.dominant?.celerityZ ?? 0;
+          const towFaceNormalX = towFaceTransportX
+            / Math.max(.001, towFaceTransportSpeed);
+          const towFaceNormalZ = towFaceTransportZ
+            / Math.max(.001, towFaceTransportSpeed);
           const towFaceSlope = Math.max(
             0,
             -(
@@ -14196,12 +15094,9 @@ function Simulation({
                 + towFaceSurface.slopeZ * towFaceNormalZ
             ),
           );
-          const towCrestPhaseError = primaryWavePhaseAt(
-            position.current.x,
-            position.current.z,
-            t,
-            settings,
-            character,
+          const towCrestPhaseError = (
+            (towFaceSurface.dominant?.phase ?? 0)
+              + Math.PI * .5
           ) - towMotion.current.targetWavePhase;
           const towFaceQuality = optionalTowReleaseFaceQuality({
             breakingRatio: towFaceSurface.breakingRatio,
@@ -14218,7 +15113,7 @@ function Simulation({
             1,
           );
           const towSpeedRatio = towNormalSpeed
-            / Math.max(.001, towFaceTransport.speed);
+            / Math.max(.001, towFaceTransportSpeed);
           const towSpeedMatch = THREE.MathUtils.clamp(
             1 - Math.abs(towSpeedRatio - .82) / .72,
             0,
@@ -20218,12 +21113,14 @@ function Simulation({
         sunPosition={oceanSunPosition}
         sunColor={sunLightColor}
         hazeColor={fogColor}
+        shoreColor={COAST_SURFACE_COLORS[coastBiome][1]}
         visibility={fogFar}
         rain={weather.kind === "rain" ? weather.intensity : 0}
       />
       <BeachLife
         beach={beach}
         zoneName={zoneName}
+        waveHeight={settings.waveHeight}
         windSpeed={settings.windSpeed}
         windDirection={settings.windDirection}
         coastHeading={settings.coastHeading}

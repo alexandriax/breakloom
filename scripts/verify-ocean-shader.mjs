@@ -7,23 +7,50 @@ const source = await readFile(
 );
 const vertexStart = source.indexOf("const OCEAN_VERTEX");
 const fragmentStart = source.indexOf("const OCEAN_FRAGMENT", vertexStart);
-const subsurfaceStart = source.indexOf(
-  "const OCEAN_SUBSURFACE_FRAGMENT",
+const lineupStart = source.indexOf(
+  "const LINEUP_CREST_VERTEX",
   fragmentStart,
 );
 
 assert.ok(vertexStart >= 0, "ocean vertex shader is missing");
 assert.ok(fragmentStart > vertexStart, "ocean fragment shader is missing");
 assert.ok(
-  subsurfaceStart > fragmentStart,
-  "ocean subsurface shader is missing",
+  lineupStart > fragmentStart,
+  "ocean shader boundary is missing",
 );
 
 const vertex = source.slice(vertexStart, fragmentStart);
-const fragment = source.slice(fragmentStart, subsurfaceStart);
+const fragment = source.slice(fragmentStart, lineupStart);
+const wetSandFragmentStart = source.indexOf(
+  "const WET_SAND_FRAGMENT",
+  lineupStart,
+);
+const wetSandFragmentEnd = source.indexOf(
+  "function WetSandSurface(",
+  wetSandFragmentStart,
+);
+const wetSandFragment = source.slice(
+  wetSandFragmentStart,
+  wetSandFragmentEnd,
+);
+const wetSandSurface = source.slice(
+  wetSandFragmentEnd,
+  source.indexOf("type VisitorActivity", wetSandFragmentEnd),
+);
 const oceanComponent = source.slice(
   source.indexOf("function Ocean("),
-  source.indexOf("const LINEUP_CREST_VERTEX"),
+  lineupStart,
+);
+const breakerHeightHelperStart = vertex.indexOf(
+  "float breakerHeightAtDepth(",
+);
+const breakerHeightHelperEnd = vertex.indexOf(
+  "void main()",
+  breakerHeightHelperStart,
+);
+const breakerHeightHelper = vertex.slice(
+  breakerHeightHelperStart,
+  breakerHeightHelperEnd,
 );
 
 for (const token of [
@@ -52,18 +79,32 @@ for (const token of [
   "normalizedGroupEnvelope",
   "horizontalDisplacement",
   "horizontalSlopeBudget",
-  "horizontalShoreAnchor",
-  "horizontalShoreAnchorUnit",
-  "boreCollapseStart",
-  "boreCollapseEnd",
-  "shoreAnchorUnit",
+  "shoreCollapseStart",
+  "shoreCollapseEnd",
+  "shoreCollapseUnit",
+  "shoreCollapseDerivative",
+  "rawHeightScale",
   "runupReach",
-  "swashFilmHeight",
+  "runupPulse",
+  "shoreAnchorHeight",
   "shoreBurial",
+  "shoreBurialDepth",
   "shoreBurialDerivative",
-  "vShoreMask",
+  "shoreCoverage",
   "washActivation",
   "washWhitewater",
+  "shoreDistance = coastalZ - shorelineZ",
+  "uBathymetryHeight",
+  "uBathymetryXMin",
+  "uBathymetryXStep",
+  "uBathymetryXCount",
+  "uTravelKnots[80]",
+  "uBathymetryKnots[80]",
+  "bathymetryLowValueV",
+  "bathymetryHighDerivativeV",
+  "15.0 + (coastalZ + 120.0) / 4.0",
+  "30.0 + (coastalZ + 60.0) / 2.0",
+  "54.0 + coastalZ + 12.0",
   "for (int index = 0; index < 28; index++)",
 ]) {
   assert.ok(
@@ -71,6 +112,65 @@ for (const token of [
     `physical ocean vertex contract lost ${token}`,
   );
 }
+assert.ok(
+  vertex.includes(
+    "groupCarrierGradient += varianceWeight\n          * vec2(first.a, travel.g)",
+  )
+    && vertex.includes(
+      "groupDerivativeReal -= amplitude\n          * sine\n          * vec2(phaseGradientX, phaseGradientZ)",
+    )
+    && vertex.includes(
+      "groupDerivativeImaginary += amplitude\n          * cosine\n          * vec2(phaseGradientX, phaseGradientZ)",
+    ),
+  "breaker carrier wavelength no longer matches the packed fixed-profile gameplay sampler",
+);
+assert.ok(
+  vertex.includes(
+    "float propagationDepth = max(.08, aggregate.z)",
+  )
+    && vertex.includes(
+      "float breakingDepth = max(.08, bathymetryValue.y)",
+    )
+    && vertex.includes(
+      "/ max(.04, .78 * breakingDepth)",
+    )
+    && vertex.includes(
+      ".78 * breakingDepth / rawSignificantHeight",
+    )
+    && vertex.includes(
+      "tanh(localWaveNumber * propagationDepth)",
+    )
+    && !vertex.includes(
+      "tanh(localWaveNumber * depth)",
+    ),
+  "propagation and breaking depth responsibilities were recombined",
+);
+assert.ok(
+  breakerHeightHelperStart >= 0
+    && breakerHeightHelperEnd > breakerHeightHelperStart
+    && !breakerHeightHelper.includes("for (")
+    && !breakerHeightHelper.includes("texture2D(")
+    && vertex.match(/breakerHeightAtDepth\(/g)?.length === 3
+    && vertex.includes(
+      "float rawLinearHeight = surfaceHeight",
+    )
+    && vertex.includes(
+      "float rawGroupVariance = groupVariance",
+    )
+    && vertex.includes(
+      "float lowerBreakingHeight = breakerHeightAtDepth(",
+    )
+    && vertex.includes(
+      "float upperBreakingHeight = breakerHeightAtDepth(",
+    )
+    && vertex.includes(
+      "gradientX += heightDerivativeBreakingDepth\n      * bathymetryDerivative.z",
+    )
+    && vertex.includes(
+      "gradientZ += heightDerivativeBreakingDepth\n      * bathymetryDerivative.w",
+    ),
+  "breaking-depth normal correction no longer uses one O(1) D±epsilon response",
+);
 
 for (const token of [
   "createOceanRenderState",
@@ -78,7 +178,6 @@ for (const token of [
   "updateOceanFloatTexture",
   "createAdaptiveOceanGeometry",
   "oceanGeometry",
-  "subsurfaceGeometry",
 ]) {
   assert.ok(
     source.includes(token)
@@ -91,32 +190,161 @@ for (const token of [
 }
 
 assert.ok(
-  fragment.includes("normalize(vWorldNormal)")
-    && fragment.includes("cross(dFdx(vWorldPosition), dFdy(vWorldPosition))")
-    && fragment.includes("mix(analyticNormal, geometricNormal, .34)"),
-  "fragment shading no longer combines analytic water normals with the displaced mesh silhouette",
-);
-assert.ok(
-  source.includes("const OCEAN_RUNUP_DEPTH = 12")
-    && vertex.includes("4.8 + uTargetFaceHeight * 1.15")
-    && vertex.includes("shoreAnchorUnit * shoreAnchorUnit")
-    && vertex.includes(
-      "horizontalShoreAnchorUnit * horizontalShoreAnchorUnit",
+  fragment.includes(
+    "float analyticNormalLengthSquared = dot(",
+  )
+    && fragment.includes("normalize(vWorldNormal)")
+    && fragment.includes("vec3 geometricCross = cross(")
+    && fragment.includes("dFdx(vWorldPosition)")
+    && fragment.includes("dFdy(vWorldPosition)")
+    && fragment.includes(
+      "dot(geometricCross, geometricCross) > .00000001",
     )
-    && vertex.includes(".035 + shoreCrestSignal * .075")
-    && vertex.includes("p.z -= shoreBurial * .56")
-    && vertex.includes("runupReach + 2.35")
-    && vertex.includes("runupReach + 3.35")
-    && fragment.includes("if (vShoreMask < .035) discard")
-    && source.slice(subsurfaceStart).includes(
-      "if (vShoreMask < .08) discard",
+    && fragment.includes(
+      "dot(geometricNormal, analyticNormal) < 0.0",
+    )
+    && fragment.includes("vec3 surfaceNormal = analyticNormal")
+    && fragment.includes(
+      "if (analyticNormalLengthSquared <= .00000001)",
+    )
+    && fragment.includes("surfaceNormal = geometricNormal")
+    && !fragment.includes(
+      "vec3 surfaceNormal = geometricNormal",
+    )
+    && !fragment.includes(
+      "mix(analyticNormal, geometricNormal",
     ),
-  "shore swash no longer continues as a thin sheet before sinking beneath wet sand",
+  "fragment shading no longer uses the smooth analytic normal with a guarded geometric fallback",
 );
 assert.ok(
-  !vertex.includes("max(.75, runupReach - .9)")
-    && !vertex.includes("runupReach + .35"),
-  "visible shoreline fragments are being discarded before the water passes beneath the sand",
+  source.includes("const OCEAN_RUNUP_DEPTH = 100")
+    && oceanComponent.includes(
+      "position={[0, 0, OCEAN_CENTER_Z + tideShift]}",
+    )
+    && oceanComponent.includes("side={THREE.DoubleSide}"),
+  "the primary ocean mesh no longer covers the curved coast and its buried run-up skirt",
+);
+assert.ok(
+  vertex.includes("3.3 + targetFaceHeight * .36")
+    && vertex.includes("float shoreCollapseEnd = -.12")
+    && vertex.includes(
+      "surfaceOrigin.x * PI * 2.0 / 260.0",
+    )
+    && vertex.includes("uTime * PI * 2.0 / 32.0")
+    && vertex.includes(
+      ".32\n      + min(.18, targetFaceHeight * .025)",
+    )
+    && vertex.includes("1.8 + targetFaceHeight * .52")
+    && vertex.includes(
+      "float shoreBurialStart = runupReach * .48",
+    )
+    && vertex.includes(
+      "float shoreBurialEnd = runupReach + 1.2",
+    )
+    && vertex.includes(
+      ".48\n      + max(0.0, uTide * .3)\n      + runupPulseAmplitude",
+    )
+    && vertex.includes(
+      "p.xy = position.xy\n      + (p.xy - position.xy) * rawHeightScale",
+    )
+    && vertex.includes(
+      "p.z = rawShoreHeight * rawHeightScale",
+    ),
+  "GPU shore transition no longer mirrors applyOceanShoreTransition",
+);
+assert.ok(
+  !vertex.includes("profileDeltaX")
+    && !vertex.includes(
+      "profileDeltaX * profileDeltaX",
+    )
+    && !vertex.includes("slowRunupPhase")
+    && !vertex.includes("swashTravelPhase"),
+  "the shader reintroduced a profile-center Taylor approximation or independent run-up phase",
+);
+for (const [opening, closing] of [
+  ["(", ")"],
+  ["{", "}"],
+  ["[", "]"],
+]) {
+  assert.equal(
+    [...vertex].filter((character) => character === opening).length,
+    [...vertex].filter((character) => character === closing).length,
+    `ocean vertex shader has unbalanced ${opening}${closing} delimiters`,
+  );
+}
+assert.ok(
+  !vertex.includes("discard")
+    && !fragment.includes("discard")
+    && !wetSandFragment.includes("discard")
+    && !source.includes("OCEAN_SUBSURFACE_FRAGMENT")
+    && !oceanComponent.includes("subsurface"),
+  "the ocean regained a hard shoreline cutout or duplicate underside mesh",
+);
+assert.ok(
+  source.includes("function createWetSandGeometry(")
+    && source.includes(
+      "shorelineReferenceAt(coastId, zoneName, worldX)",
+    )
+    && source.includes('"aShoreDistance"')
+    && source.includes(
+      "const seawardWorldZ = shorelineWorldZ + .12",
+    )
+    && source.includes(
+      "position={[0, -.34, tideShift]}",
+    ),
+  "wet sand no longer follows the same curved shoreline as the ocean",
+);
+for (const token of [
+  "vShoreDistance",
+  "vShoreCollapse",
+  "vShoreCoverage",
+  "vShoreBurial",
+  "vRunupPulse",
+  "vRunupReach",
+  "softSwashFront",
+  "movingSwashCoverage",
+  "swashFoamCenter",
+  "swashFrontLace",
+  "swashFoam",
+  "uShoreColor",
+  "wetSandMatch",
+]) {
+  assert.ok(
+    fragment.includes(token),
+    `soft shoreline shading lost ${token}`,
+  );
+}
+for (const token of [
+  "softSwashFront",
+  "movingSwashCoverage",
+  "wetSandSwashLace",
+  "wetSandSwashFoam",
+  "world.x * .018 + uTime * .006",
+  "runupReach\n      * mix(.48, 1.0, swashAdvance)",
+]) {
+  assert.ok(
+    wetSandFragment.includes(token),
+    `wet-sand swash response lost ${token}`,
+  );
+}
+assert.ok(
+  fragment.includes(
+    "max(max(crestFoam, breakerFoam), swashFoam)",
+  )
+    && fragment.includes(
+      "abs(vShoreDistance - swashFoamCenter)",
+    )
+    && wetSandFragment.includes(
+      "color,\n      wetSandFoamColor,\n      wetSandSwashFoam * .86",
+    )
+    && wetSandSurface.includes(
+      "fragmentShader={WET_SAND_FRAGMENT}",
+    )
+    && !wetSandSurface.includes("<meshStandardMaterial")
+    && !fragment.includes("* 0.0")
+    && !fragment.includes("shoreFoam = smoothstep")
+    && !fragment.includes("gl_FragColor = vec4(color, 0."),
+  "shoreline intersection regained a fixed comb, hard alpha edge, or lost moving wash",
 );
 assert.ok(
   !vertex.includes("crestEnergy("),

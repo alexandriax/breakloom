@@ -7,6 +7,7 @@ import {
   shorelineReferenceAt,
 } from "./bathymetry.ts";
 import {
+  applyOceanShoreTransition,
   coastWaveModelAt,
   maximumVisibleHorizontalDisplacement,
   oceanLocationFor,
@@ -32,21 +33,40 @@ export const MAX_RENDER_WAVE_COMPONENTS = 28;
 export const OCEAN_TRAVEL_CHANNELS = 4;
 export const OCEAN_COMPONENT_PARAMETER_ROWS = 2;
 export const OCEAN_BATHYMETRY_ROWS = 2;
+/** Full ocean mesh width resolved by the render bathymetry window. */
+export const OCEAN_BATHYMETRY_RENDER_WIDTH = 620;
+/**
+ * A globally anchored 4 m grid is fine enough to preserve reef/channel
+ * signatures while making every overlapping recenter window byte-identical.
+ */
+export const OCEAN_BATHYMETRY_X_STEP = 4;
+export const OCEAN_BATHYMETRY_X_HALF_SPAN = 360;
+export const OCEAN_BATHYMETRY_X_COUNT =
+  OCEAN_BATHYMETRY_X_HALF_SPAN * 2 / OCEAN_BATHYMETRY_X_STEP + 1;
 
 const BREAKING_INDEX = .78;
 const MAXIMUM_COMBINED_STEEPNESS = .44;
+const MAX_BATHYMETRY_ROW_CACHE_ENTRIES = 4096;
+const bathymetryRowCache = new Map<string, Float32Array>();
 
 /**
- * Monotonic scene cross-shore samples. Their nearshore density resolves bars
- * and ledges while four wide offshore intervals keep the WebGL table compact.
+ * Monotonic scene cross-shore samples. The offshore field stays sparse, while
+ * reef/ledge depths use four-metre spacing, the surf zone uses two metres,
+ * and the final shore approach uses one metre. The matching shader index is
+ * piecewise analytic, so this added physical resolution does not add a long
+ * per-vertex knot search.
  */
 export const OCEAN_BATHYMETRY_COASTAL_Z = new Float32Array([
   -1260, -1050, -860, -700, -565, -450, -355, -310,
-  -278, -244, -216, -190, -166, -145, -126, -111,
-  -103, -96, -90, -84, -78, -73, -68, -64,
-  -60, -57, -55, -51, -49, -47, -44, -40,
-  -37, -34, -28, -25, -23, -19, -17, -15,
-  -12, -9, -7, -3, 0, 2, 5, 12,
+  -278, -244, -216, -190, -166, -145, -126,
+  -120, -116, -112, -108, -104, -100, -96, -92,
+  -88, -84, -80, -76, -72, -68, -64, -60,
+  -58, -56, -54, -52, -50, -48, -46, -44,
+  -42, -40, -38, -36, -34, -32, -30, -28,
+  -26, -24, -22, -20, -18, -16, -14, -12,
+  -11, -10, -9, -8, -7, -6, -5, -4,
+  -3, -2, -1, 0, 1, 2, 3, 4,
+  5, 6, 8, 10, 12,
 ]);
 
 export type RenderWaveComponent = {
@@ -116,12 +136,18 @@ export type RenderAggregateTable = FloatTextureTable & {
 
 export type RenderBathymetryTable = FloatTextureTable & {
   coastalZKnots: Float32Array;
+  /** Globally anchored world-x coordinate represented by the first row pair. */
+  xMin: number;
+  xStep: number;
+  xCount: number;
   /**
-   * Row 0 = contour q, depth, shoreline z, ∂²q/∂x²
-   * Row 1 = ∂q/∂x, ∂q/∂z, ∂depth/∂x, ∂depth/∂z
+   * For each x sample i:
+   * row 2i = contour q, depth, shoreline z, ∂shoreline/∂x
+   * row 2i+1 = ∂q/∂x, ∂q/∂z, ∂depth/∂x, ∂depth/∂z
    *
-   * Linear interpolation in coastal z plus the x derivatives gives a compact
-   * local q/depth sampler without any coast-specific shader branches.
+   * Hardware interpolation across coastal z and a manual mix between adjacent
+   * x row pairs reconstruct the same continuous field without coast-specific
+   * shader branches or a profile-centered Taylor approximation.
    */
   data: Float32Array;
 };
@@ -157,12 +183,20 @@ export type PackedBathymetrySample = {
   contourCoordinate: number;
   depth: number;
   shorelineZ: number;
+  /** Positive on land and negative offshore: coastalZ - shorelineZ. */
+  shoreDistance: number;
   offshore: number;
-  contourCurvatureX: number;
+  shorelineGradientX: number;
   contourGradientX: number;
   contourGradientZ: number;
   depthGradientX: number;
   depthGradientZ: number;
+};
+
+export type PackedBathymetryInterpolation = {
+  low: number;
+  high: number;
+  blend: number;
 };
 
 function clamp(value: number, minimum: number, maximum: number) {
@@ -389,16 +423,38 @@ function buildTravelTables(
 
   for (const component of bank.components) {
     let integral = 0;
-    let previousCrossK = crossShoreWaveNumber(component, depths[0]);
     for (let knot = 0; knot < knotCount; knot += 1) {
       const depth = depths[knot];
       const crossK = crossShoreWaveNumber(component, depth);
       if (knot > 0) {
-        const middleDepth = (depths[knot - 1] + depth) * .5;
-        const middleCrossK = crossShoreWaveNumber(component, middleDepth);
-        integral += (contourKnots[knot] - contourKnots[knot - 1])
-          * (previousCrossK + 4 * middleCrossK + crossK)
-          / 6;
+        const startZ = contourKnots[knot - 1];
+        const endZ = contourKnots[knot];
+        const startDepth = depths[knot - 1];
+        const intervalCount = Math.max(
+          1,
+          Math.ceil(Math.abs(endZ - startZ) / 3),
+        );
+        for (let interval = 0; interval < intervalCount; interval += 1) {
+          const startUnit = interval / intervalCount;
+          const endUnit = (interval + 1) / intervalCount;
+          const middleUnit = (startUnit + endUnit) * .5;
+          const intervalStartZ = startZ + (endZ - startZ) * startUnit;
+          const intervalEndZ = startZ + (endZ - startZ) * endUnit;
+          const intervalStartDepth =
+            startDepth + (depth - startDepth) * startUnit;
+          const intervalMiddleDepth =
+            startDepth + (depth - startDepth) * middleUnit;
+          const intervalEndDepth =
+            startDepth + (depth - startDepth) * endUnit;
+          integral += (intervalEndZ - intervalStartZ) * (
+            crossShoreWaveNumber(component, intervalStartDepth)
+              + 4 * crossShoreWaveNumber(
+                component,
+                intervalMiddleDepth,
+              )
+              + crossShoreWaveNumber(component, intervalEndDepth)
+          ) / 6;
+        }
       }
       const gain = shoalingGain(component, depth, referenceDepth);
       const amplitude = component.amplitude * gain;
@@ -407,7 +463,6 @@ function buildTravelTables(
       travelData[texel + 1] = crossK;
       travelData[texel + 2] = gain;
       travelData[texel + 3] = amplitude;
-      previousCrossK = crossK;
     }
   }
 
@@ -466,89 +521,134 @@ function buildTravelTables(
 function buildBathymetryTable(
   coastId: string,
   zoneName: string,
-  profileX: number,
+  centerX: number,
 ) {
   const knotCount = OCEAN_BATHYMETRY_COASTAL_Z.length;
-  const data = new Float32Array(knotCount * OCEAN_BATHYMETRY_ROWS * 4);
-  for (let knot = 0; knot < knotCount; knot += 1) {
-    const coastalZ = OCEAN_BATHYMETRY_COASTAL_Z[knot];
-    const contour = bathymetryContourCoordinateAt(
-      coastId,
-      zoneName,
-      profileX,
-      coastalZ,
-    );
-    const depth = bathymetryDepthAt(
-      coastId,
-      zoneName,
-      profileX,
-      coastalZ,
-    );
-    const shorelineZ = shorelineReferenceAt(coastId, zoneName, profileX);
-    const contourGradient = bathymetryContourGradientAt(
-      coastId,
-      zoneName,
-      profileX,
-      coastalZ,
-    );
-    const depthGradient = bathymetryGradientAt(
-      coastId,
-      zoneName,
-      profileX,
-      coastalZ,
-    );
-    const curvatureStep = 4;
-    const contourCurvatureX = (
-      bathymetryContourCoordinateAt(
+  const xCount = OCEAN_BATHYMETRY_X_COUNT;
+  const xStep = OCEAN_BATHYMETRY_X_STEP;
+  const xMin = Math.floor(
+    (centerX - OCEAN_BATHYMETRY_X_HALF_SPAN) / xStep,
+  ) * xStep;
+  const data = new Float32Array(
+    knotCount * xCount * OCEAN_BATHYMETRY_ROWS * 4,
+  );
+  const rowPairLength = knotCount * OCEAN_BATHYMETRY_ROWS * 4;
+  const shorelineGradientRadius = .4;
+  for (let xIndex = 0; xIndex < xCount; xIndex += 1) {
+    const x = xMin + xIndex * xStep;
+    const rowKey = `${coastId}:${zoneName}:${x}`;
+    const cachedRowPair = bathymetryRowCache.get(rowKey);
+    if (cachedRowPair) {
+      data.set(cachedRowPair, xIndex * rowPairLength);
+      continue;
+    }
+    const rowPair = new Float32Array(rowPairLength);
+    const shorelineZ = shorelineReferenceAt(coastId, zoneName, x);
+    const shorelineGradientX = (
+      shorelineReferenceAt(
         coastId,
         zoneName,
-        profileX + curvatureStep,
-        coastalZ,
+        x + shorelineGradientRadius,
       )
-        - 2 * contour
-        + bathymetryContourCoordinateAt(
+        - shorelineReferenceAt(
           coastId,
           zoneName,
-          profileX - curvatureStep,
-          coastalZ,
+          x - shorelineGradientRadius,
         )
-    ) / (curvatureStep * curvatureStep);
-    const first = knot * 4;
-    data[first] = contour;
-    data[first + 1] = depth;
-    data[first + 2] = shorelineZ;
-    data[first + 3] = contourCurvatureX;
-    const second = (knotCount + knot) * 4;
-    data[second] = contourGradient.x;
-    data[second + 1] = contourGradient.z;
-    data[second + 2] = depthGradient.x;
-    data[second + 3] = depthGradient.z;
+    ) / (shorelineGradientRadius * 2);
+    for (let knot = 0; knot < knotCount; knot += 1) {
+      const coastalZ = OCEAN_BATHYMETRY_COASTAL_Z[knot];
+      const contour = bathymetryContourCoordinateAt(
+        coastId,
+        zoneName,
+        x,
+        coastalZ,
+      );
+      const depth = bathymetryDepthAt(
+        coastId,
+        zoneName,
+        x,
+        coastalZ,
+      );
+      const contourGradient = bathymetryContourGradientAt(
+        coastId,
+        zoneName,
+        x,
+        coastalZ,
+      );
+      const depthGradient = bathymetryGradientAt(
+        coastId,
+        zoneName,
+        x,
+        coastalZ,
+      );
+      const first = knot * 4;
+      rowPair[first] = contour;
+      rowPair[first + 1] = depth;
+      rowPair[first + 2] = shorelineZ;
+      rowPair[first + 3] = shorelineGradientX;
+      const second = (knotCount + knot) * 4;
+      rowPair[second] = contourGradient.x;
+      rowPair[second + 1] = contourGradient.z;
+      rowPair[second + 2] = depthGradient.x;
+      rowPair[second + 3] = depthGradient.z;
+    }
+    if (bathymetryRowCache.size >= MAX_BATHYMETRY_ROW_CACHE_ENTRIES) {
+      const oldest = bathymetryRowCache.keys().next().value;
+      if (oldest !== undefined) bathymetryRowCache.delete(oldest);
+    }
+    bathymetryRowCache.set(rowKey, rowPair);
+    data.set(rowPair, xIndex * rowPairLength);
   }
   return {
     width: knotCount,
-    height: OCEAN_BATHYMETRY_ROWS,
+    height: xCount * OCEAN_BATHYMETRY_ROWS,
     channels: 4,
     data,
     coastalZKnots: new Float32Array(OCEAN_BATHYMETRY_COASTAL_Z),
+    xMin,
+    xStep,
+    xCount,
   } satisfies RenderBathymetryTable;
 }
 
 function adaptiveTravelProfile(profile: WaveDepthProfile) {
   const additions = profile.knots
     .slice(0, -1)
-    .map((start, index) => {
+    .flatMap((start, index) => {
       const end = profile.knots[index + 1];
       const span = end.z - start.z;
-      return {
-        z: (start.z + end.z) * .5,
-        score: span > 3
-          ? Math.abs(end.depth - start.depth)
-            + Math.min(24, span) * .012
-          : 0,
-      };
+      if (span <= 2) return [];
+      const shallowPhaseChange = span * Math.abs(
+        1 / Math.sqrt(Math.max(.08, end.depth))
+          - 1 / Math.sqrt(Math.max(.08, start.depth)),
+      );
+      const relativeDepthChange = Math.abs(end.depth - start.depth)
+        / Math.max(.12, Math.min(start.depth, end.depth));
+      const score = shallowPhaseChange + relativeDepthChange;
+      return [
+        { fraction: .5, weight: 1 },
+        { fraction: .25, weight: .82 },
+        { fraction: .75, weight: .82 },
+        { fraction: .125, weight: .68 },
+        { fraction: .375, weight: .68 },
+        { fraction: .625, weight: .68 },
+        { fraction: .875, weight: .68 },
+        { fraction: .0625, weight: .55 },
+        { fraction: .1875, weight: .55 },
+        { fraction: .3125, weight: .55 },
+        { fraction: .4375, weight: .55 },
+        { fraction: .5625, weight: .55 },
+        { fraction: .6875, weight: .55 },
+        { fraction: .8125, weight: .55 },
+        { fraction: .9375, weight: .55 },
+      ].map(({ fraction, weight }) => ({
+        z: start.z + span * fraction,
+        score: score * weight,
+      }));
     })
     .sort((a, b) => b.score - a.score || a.z - b.z)
-    .slice(0, Math.max(0, 40 - profile.knots.length))
+    .slice(0, Math.max(0, 80 - profile.knots.length))
     .filter((interval) => interval.score > .04)
     .map((interval) => interval.z);
   const contour = [
@@ -577,6 +677,31 @@ function interpolationBracket(knots: Float32Array, value: number) {
     high,
     blend: (value - knots[low]) / Math.max(1e-9, knots[high] - knots[low]),
   };
+}
+
+export function packedBathymetryXInterpolation(
+  table: RenderBathymetryTable,
+  x: number,
+): PackedBathymetryInterpolation {
+  const coordinate = clamp(
+    (x - table.xMin) / table.xStep,
+    0,
+    table.xCount - 1,
+  );
+  const low = Math.floor(coordinate);
+  const high = Math.min(table.xCount - 1, low + 1);
+  return {
+    low,
+    high,
+    blend: coordinate - low,
+  };
+}
+
+export function packedBathymetryZInterpolation(
+  table: RenderBathymetryTable,
+  coastalZ: number,
+): PackedBathymetryInterpolation {
+  return interpolationBracket(table.coastalZKnots, coastalZ);
 }
 
 function sampleRgbaRow(
@@ -649,31 +774,60 @@ export function samplePackedAggregate(
 
 export function samplePackedBathymetry(
   state: OceanRenderState,
+  x: number,
   coastalZ: number,
 ): PackedBathymetrySample {
-  const bracket = interpolationBracket(state.bathymetry.coastalZKnots, coastalZ);
-  const values = sampleRgbaRow(
+  const xBracket = packedBathymetryXInterpolation(state.bathymetry, x);
+  const zBracket = packedBathymetryZInterpolation(
+    state.bathymetry,
+    coastalZ,
+  );
+  const valuesAtLowX = sampleRgbaRow(
     state.bathymetry.data,
     state.bathymetry.width,
-    0,
-    bracket.low,
-    bracket.high,
-    bracket.blend,
+    xBracket.low * OCEAN_BATHYMETRY_ROWS,
+    zBracket.low,
+    zBracket.high,
+    zBracket.blend,
   );
-  const derivatives = sampleRgbaRow(
+  const valuesAtHighX = sampleRgbaRow(
     state.bathymetry.data,
     state.bathymetry.width,
-    1,
-    bracket.low,
-    bracket.high,
-    bracket.blend,
+    xBracket.high * OCEAN_BATHYMETRY_ROWS,
+    zBracket.low,
+    zBracket.high,
+    zBracket.blend,
   );
+  const derivativesAtLowX = sampleRgbaRow(
+    state.bathymetry.data,
+    state.bathymetry.width,
+    xBracket.low * OCEAN_BATHYMETRY_ROWS + 1,
+    zBracket.low,
+    zBracket.high,
+    zBracket.blend,
+  );
+  const derivativesAtHighX = sampleRgbaRow(
+    state.bathymetry.data,
+    state.bathymetry.width,
+    xBracket.high * OCEAN_BATHYMETRY_ROWS + 1,
+    zBracket.low,
+    zBracket.high,
+    zBracket.blend,
+  );
+  const values = valuesAtLowX.map((value, channel) => (
+    value + (valuesAtHighX[channel] - value) * xBracket.blend
+  ));
+  const derivatives = derivativesAtLowX.map((value, channel) => (
+    value + (derivativesAtHighX[channel] - value) * xBracket.blend
+  ));
+  const shoreDistance = coastalZ - values[2];
   return {
     contourCoordinate: values[0],
     depth: values[1],
     shorelineZ: values[2],
-    offshore: Math.max(0, values[2] - coastalZ),
-    contourCurvatureX: values[3],
+    shoreDistance,
+    offshore: Math.max(0, -shoreDistance),
+    shorelineGradientX: values[3],
     contourGradientX: derivatives[0],
     contourGradientZ: derivatives[1],
     depthGradientX: derivatives[2],
@@ -695,19 +849,16 @@ export function samplePackedOceanHeight(
   character: BreakCharacter,
 ) {
   const coastalZ = worldToBathymetryZ(worldZ, settings.tide);
-  const bathymetry = samplePackedBathymetry(state, coastalZ);
-  const profileDeltaX = x - state.profileX;
-  const contourCoordinate = bathymetry.contourCoordinate
-    + bathymetry.contourGradientX * profileDeltaX
-    + bathymetry.contourCurvatureX
-      * profileDeltaX * profileDeltaX * .5;
+  const bathymetry = samplePackedBathymetry(state, x, coastalZ);
+  const contourCoordinate = bathymetry.contourCoordinate;
   const aggregate = samplePackedAggregate(state, contourCoordinate);
-  const depth = Math.max(.08, aggregate.depth);
+  const propagationDepth = Math.max(.08, aggregate.depth);
+  const breakingDepth = Math.max(.08, bathymetry.depth);
   const breakingRatio = aggregate.rawSignificantHeight
-    / Math.max(.04, BREAKING_INDEX * depth);
+    / Math.max(.04, BREAKING_INDEX * breakingDepth);
   const depthScale = Math.min(
     1,
-    BREAKING_INDEX * depth
+    BREAKING_INDEX * breakingDepth
       / Math.max(.0001, aggregate.rawSignificantHeight),
   );
   const amplitudeScale = Math.min(
@@ -744,7 +895,10 @@ export function samplePackedOceanHeight(
       .0001,
       Math.hypot(phaseGradientX, phaseGradientZ),
     );
-    const coth = 1 / Math.max(.08, Math.tanh(localWaveNumber * depth));
+    const coth = 1 / Math.max(
+      .08,
+      Math.tanh(localWaveNumber * propagationDepth),
+    );
     const horizontalAmplitude = amplitude * Math.min(2.5, coth);
     horizontalDisplacementX -= horizontalAmplitude
       * Math.sin(phase)
@@ -763,8 +917,15 @@ export function samplePackedOceanHeight(
       groupReal += amplitude * Math.cos(phase);
       groupImaginary += amplitude * Math.sin(phase);
       groupVariance += varianceWeight;
-      groupCarrierGradientX += varianceWeight * phaseGradientX;
-      groupCarrierGradientZ += varianceWeight * phaseGradientZ;
+      // Breaker face compression is parameterized in the fixed travel
+      // profile's contour space, exactly like sampleWaveSurface. Physical
+      // contour gradients belong in displacement/normal conversion above,
+      // but folding them into this wavelength changes the nonlinear wall
+      // support between rendering and gameplay.
+      groupCarrierGradientX += varianceWeight
+        * component.alongshoreWaveNumber;
+      groupCarrierGradientZ += varianceWeight
+        * travel.crossShoreWaveNumber;
     }
   }
   const dominantPhase = Math.atan2(groupImaginary, groupReal);
@@ -829,15 +990,32 @@ export function samplePackedOceanHeight(
       : 1;
   horizontalDisplacementX *= horizontalMagnitudeScale;
   horizontalDisplacementZ *= horizontalMagnitudeScale;
-  return {
-    height: height + breaker.heightOffset + settings.tide * .3,
+  const tideSurface = settings.tide * .3;
+  const transition = applyOceanShoreTransition({
+    x,
+    elapsed,
+    shoreDistance: bathymetry.shoreDistance,
+    rawHeight: height + breaker.heightOffset + tideSurface,
     displacementX: horizontalDisplacementX,
     displacementZ: horizontalDisplacementZ,
-    depth,
+    tideSurface,
+    targetFaceHeight: state.targetFaceHeight,
+  });
+  return {
+    height: transition.height,
+    displacementX: transition.displacementX,
+    displacementZ: transition.displacementZ,
+    depth: breakingDepth,
     breakingRatio,
     breakingProgress: breaker.breakingProgress,
     brokenProgress: breaker.brokenProgress,
     whitewater: breaker.whitewater,
+    shoreDistance: bathymetry.shoreDistance,
+    shorelineZ: bathymetry.shorelineZ,
+    shoreCollapse: transition.collapse,
+    shoreCoverage: transition.coverage,
+    shoreAnchorHeight: transition.anchorHeight,
+    shoreBurial: transition.burial,
   };
 }
 
@@ -862,7 +1040,9 @@ export function createOceanRenderState(
   return {
     coastId: location.coastId,
     zoneName: location.zoneName,
-    profileX: model.profileX,
+    // Render refreshes track the exact requested center. The wave travel
+    // profile itself is fixed per coast/zone inside coastWaveModelAt.
+    profileX: x,
     tide: settings.tide,
     targetFaceHeight,
     maximumHorizontalDisplacement:
@@ -873,7 +1053,7 @@ export function createOceanRenderState(
     bathymetry: buildBathymetryTable(
       model.coastId,
       model.zoneName,
-      model.profileX,
+      x,
     ),
   };
 }

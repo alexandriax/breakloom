@@ -5644,8 +5644,21 @@ export function shorelineRideOutProgress(coastalZ: number) {
 
 export const OPTIONAL_TOW_DURATION_SECONDS = 16;
 export const OPTIONAL_TOW_NAVIGABLE_OFFSHORE = 6;
-export const OPTIONAL_TOW_HULL_HALF_LENGTH = 1.55;
-export const OPTIONAL_TOW_HULL_HALF_BEAM = .58;
+export const OPTIONAL_TOW_BERTH_OFFSHORE = .5;
+export const OPTIONAL_TOW_LAUNCH_CLEARANCE_PROGRESS = .16;
+export const OPTIONAL_TOW_RETURN_BERTH_PROGRESS = .68;
+// These dimensions follow the actual bevelled white-hull geometry rather than
+// the smaller visual planform used by the original five-point approximation.
+// Keep HALF_LENGTH as the mean reach for callers that only need a characteristic
+// span; flotation samplers should use the asymmetric bow/stern constants.
+export const OPTIONAL_TOW_HULL_BOW_REACH = 2.08;
+export const OPTIONAL_TOW_HULL_STERN_REACH = 1.76;
+export const OPTIONAL_TOW_HULL_HALF_LENGTH = (
+  OPTIONAL_TOW_HULL_BOW_REACH + OPTIONAL_TOW_HULL_STERN_REACH
+) * .5;
+export const OPTIONAL_TOW_HULL_HALF_BEAM = .8;
+export const OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED = 3.2;
+export const OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION = 11.5;
 
 export type OptionalTowHullSurfaceSample = {
   centerHeight: number;
@@ -5658,7 +5671,6 @@ export type OptionalTowHullSurfaceSample = {
 
 export type OptionalTowHullAttitude = {
   waterlineHeight: number;
-  minimumSafeElevation: number;
   pitch: number;
   roll: number;
   planing: number;
@@ -5667,11 +5679,9 @@ export type OptionalTowHullAttitude = {
 /**
  * Fits the jetski's waterline to five points under its actual hull footprint.
  * The weighted waterline represents displaced water across the footprint.
- * A separate, pose-aware freeboard floor prevents an individual bow, stern,
- * or rail sample from climbing over the visible hull without turning that
- * sample into the equilibrium water plane. Pitch and roll intentionally
- * under-follow short chop while the freeboard floor only intervenes when the
- * rendered hull would otherwise be swallowed.
+ * Pitch and roll intentionally under-follow short chop. A single high sample
+ * must not lift the entire craft: actual penetration protection belongs to the
+ * rate-limited rigid-body solver, not to a discontinuous maximum waterline.
  */
 export function resolveOptionalTowHullAttitude(
   sample: OptionalTowHullSurfaceSample,
@@ -5693,7 +5703,10 @@ export function resolveOptionalTowHullAttitude(
     : centerHeight;
   const forwardSlope = (
     bowHeight - sternHeight
-  ) / (OPTIONAL_TOW_HULL_HALF_LENGTH * 2);
+  ) / (
+    OPTIONAL_TOW_HULL_BOW_REACH
+      + OPTIONAL_TOW_HULL_STERN_REACH
+  );
   const lateralSlope = (
     rightHeight - leftHeight
   ) / (OPTIONAL_TOW_HULL_HALF_BEAM * 2);
@@ -5701,12 +5714,20 @@ export function resolveOptionalTowHullAttitude(
     ? sample.speed
     : 0;
   const planing = clampValue(speed / 14.5, 0, 1);
-  const pitchAuthority = lerpValue(.72, .48, planing);
+  // A planing hull has enough longitudinal stability to follow a coherent
+  // face. Reducing pitch authority at speed left the bow driving straight
+  // through steep crests even though all five probes described the slope.
+  // A coherent breaker face is not chop: rotating the hull with its
+  // longitudinal waterline is what keeps the bow clear without translating
+  // the whole craft above its displacement plane. The former .72-.78 gain
+  // under-followed a real ~28 degree face until the old .38 rad clamp, so the
+  // non-penetration constraint could only respond by lifting the entire ski.
+  const pitchAuthority = lerpValue(.86, .98, planing);
   const rollAuthority = lerpValue(.52, .34, planing);
   const pitch = clampValue(
     -Math.atan(forwardSlope) * pitchAuthority - planing * .028,
-    -.24,
-    .24,
+    -.5,
+    .5,
   );
   const roll = clampValue(
     Math.atan(lateralSlope) * rollAuthority,
@@ -5720,29 +5741,8 @@ export function resolveOptionalTowHullAttitude(
       + leftHeight
       + rightHeight
   ) / 6;
-  // The main white hull reaches roughly .17 m above the group origin. Keep
-  // the local waterline at least .08 m below that origin at every footprint
-  // sample, after accounting for the fitted pose. This leaves visible hull
-  // freeboard without using the highest sample as the normal ride height.
-  const minimumWaterlineOffset = -.08;
-  const bowPoseRise = -Math.sin(pitch)
-    * OPTIONAL_TOW_HULL_HALF_LENGTH;
-  const sternPoseRise = Math.sin(pitch)
-    * OPTIONAL_TOW_HULL_HALF_LENGTH;
-  const rightPoseRise = Math.sin(roll)
-    * OPTIONAL_TOW_HULL_HALF_BEAM;
-  const leftPoseRise = -Math.sin(roll)
-    * OPTIONAL_TOW_HULL_HALF_BEAM;
-  const minimumSafeElevation = Math.max(
-    centerHeight - minimumWaterlineOffset,
-    bowHeight - bowPoseRise - minimumWaterlineOffset,
-    sternHeight - sternPoseRise - minimumWaterlineOffset,
-    leftHeight - leftPoseRise - minimumWaterlineOffset,
-    rightHeight - rightPoseRise - minimumWaterlineOffset,
-  );
   return {
     waterlineHeight: displacedWaterline,
-    minimumSafeElevation,
     pitch,
     roll,
     planing,
@@ -5751,13 +5751,33 @@ export function resolveOptionalTowHullAttitude(
 
 export type OptionalTowHullFloatState = {
   elevation: number;
+  /**
+   * Frame-average rendered velocity. It always equals the finite difference
+   * of consecutive elevations, so telemetry cannot hide a position jump.
+   */
   verticalVelocity: number;
+  /**
+   * Hull velocity relative to the moving water plane. World-space surface
+   * motion is carried by the filtered reference fields below.
+   */
+  integrationVelocity?: number;
+  /**
+   * Low-frequency water-reference velocity. Acceleration limiting separates
+   * coherent swell heave from short chop before relative buoyancy is solved.
+   */
+  referenceVelocity?: number;
+  /** Frame-average acceleration of the filtered water reference. */
+  referenceAcceleration?: number;
   pitch: number;
   pitchVelocity: number;
   roll: number;
   rollVelocity: number;
   targetElevation: number;
   targetVerticalVelocity: number;
+  /** Last raw sampled target, used to identify a continuous water reference. */
+  sampledTargetElevation?: number;
+  /** Last plausible raw water-reference velocity. */
+  sampledVerticalVelocity?: number;
   targetPitch: number;
   targetRoll: number;
   initialized: boolean;
@@ -5765,6 +5785,10 @@ export type OptionalTowHullFloatState = {
 
 export type OptionalTowHullFloatSample = {
   targetElevation: number;
+  /** Lower edge of the compliant, rendered-pose support envelope. */
+  minimumContactElevation?: number;
+  /** Forward-sampled velocity of the support envelope. */
+  predictedContactVelocity?: number;
   targetPitch: number;
   targetRoll: number;
   planing: number;
@@ -5772,11 +5796,14 @@ export type OptionalTowHullFloatSample = {
 };
 
 /**
- * Advances the jetski as an overdamped floating rigid body. The displaced
- * water plane is interpolated through each frame, then followed with stronger
- * hydrostatic response only when the hull departs materially from its working
- * draft. This keeps the craft in the water without the overshoot, launch, or
- * asymmetric up/down chase produced by a lightly damped spring.
+ * Advances the jetski in the moving frame of the sampled water plane.
+ *
+ * A floating hull follows coherent long-wave elevation in world space; its
+ * inertia governs displacement relative to that plane. Rate-limiting absolute
+ * world height makes the craft hover above a falling face and submerge under
+ * the next crest. Plausible water motion therefore drives an
+ * acceleration-limited reference frame, while short chop and sample seams
+ * remain for the bounded relative solver to attenuate.
  */
 export function advanceOptionalTowHullFloat(
   state: OptionalTowHullFloatState,
@@ -5791,8 +5818,8 @@ export function advanceOptionalTowHullFloat(
     Number.isFinite(sample.targetPitch)
       ? sample.targetPitch
       : 0,
-    -.24,
-    .24,
+    -.5,
+    .5,
   );
   const targetRoll = clampValue(
     Number.isFinite(sample.targetRoll)
@@ -5806,41 +5833,125 @@ export function advanceOptionalTowHullFloat(
     0,
     1,
   );
-  const delta = clampValue(
-    Number.isFinite(sample.deltaSeconds) ? sample.deltaSeconds : 0,
+  const frameDelta = Math.max(
     0,
-    .05,
+    Number.isFinite(sample.deltaSeconds) ? sample.deltaSeconds : 0,
   );
+  const delta = Math.min(frameDelta, .05);
+  const hasMinimumContact = Number.isFinite(
+    sample.minimumContactElevation,
+  );
+  const minimumContactElevation = hasMinimumContact
+    ? sample.minimumContactElevation as number
+    : Number.NEGATIVE_INFINITY;
+  const predictedContactVelocity = hasMinimumContact
+    && Number.isFinite(sample.predictedContactVelocity)
+    ? clampValue(
+        sample.predictedContactVelocity as number,
+        -12,
+        12,
+      )
+    : 0;
   if (!state.initialized) {
     return {
-      elevation: targetElevation,
+      elevation: Math.max(targetElevation, minimumContactElevation),
       verticalVelocity: 0,
+      integrationVelocity: 0,
+      referenceVelocity: 0,
+      referenceAcceleration: 0,
       pitch: targetPitch,
       pitchVelocity: 0,
       roll: targetRoll,
       rollVelocity: 0,
       targetElevation,
       targetVerticalVelocity: 0,
+      sampledTargetElevation: targetElevation,
+      sampledVerticalVelocity: 0,
       targetPitch,
       targetRoll,
       initialized: true,
     };
   }
 
-  let elevation = Number.isFinite(state.elevation)
+  const initialElevation = Number.isFinite(state.elevation)
     ? state.elevation
     : targetElevation;
-  let verticalVelocity = clampValue(
-    Number.isFinite(state.verticalVelocity)
-      ? state.verticalVelocity
+  const previousSampledTarget = Number.isFinite(
+    state.sampledTargetElevation,
+  )
+    ? state.sampledTargetElevation as number
+    : targetElevation;
+  const sampledTargetDelta = targetElevation - previousSampledTarget;
+  const rawSurfaceVelocity = frameDelta > 1e-9
+    ? sampledTargetDelta / frameDelta
+    : 0;
+  // The rendered face can legitimately move several metres per second. A
+  // profile seam instead presents a large one-frame displacement. Reject
+  // impossible geometry, then acceleration-limit the remaining reference:
+  // coherent swell passes, while short chop cannot bypass hull inertia.
+  const maximumContinuousDelta = Math.max(
+    .18,
+    Math.min(.4, frameDelta * 8),
+  );
+  const continuousSurfaceSample = frameDelta > 1e-9
+    && Math.abs(sampledTargetDelta) <= maximumContinuousDelta
+    && Math.abs(rawSurfaceVelocity) <= 12;
+  const previousReferenceVelocity = clampValue(
+    Number.isFinite(state.referenceVelocity)
+      ? state.referenceVelocity as number
       : 0,
     -12,
     12,
   );
+  const targetReferenceVelocity = continuousSurfaceSample
+    ? rawSurfaceVelocity
+    : 0;
+  // The rigid-body step is capped at 50 ms; carrying the reference for twice
+  // that horizon allowed a stalled render frame to translate the hull by up
+  // to 1.2 m while buoyancy integrated only half as long.
+  const referenceDelta = delta;
+  const maximumReferenceAcceleration = lerpValue(
+    hasMinimumContact ? 10 : 4.8,
+    hasMinimumContact ? 16 : 6.2,
+    planing,
+  );
+  const referenceVelocity = clampValue(
+    previousReferenceVelocity + clampValue(
+      targetReferenceVelocity - previousReferenceVelocity,
+      -maximumReferenceAcceleration * referenceDelta,
+      maximumReferenceAcceleration * referenceDelta,
+    ),
+    -12,
+    12,
+  );
+  const referenceAcceleration = referenceDelta > 1e-9
+    ? (
+        referenceVelocity - previousReferenceVelocity
+      ) / referenceDelta
+    : 0;
+  const referenceTranslation = (
+    previousReferenceVelocity + referenceVelocity
+  ) * .5 * referenceDelta;
+  let elevation = initialElevation + referenceTranslation;
+  const storedIntegrationVelocity = state.integrationVelocity;
+  let integrationVelocity = clampValue(
+    typeof storedIntegrationVelocity === "number"
+      && Number.isFinite(storedIntegrationVelocity)
+      ? storedIntegrationVelocity
+      : 0,
+    -OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED,
+    OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED,
+  );
+  const previousPitchTarget = Number.isFinite(state.targetPitch)
+    ? state.targetPitch
+    : targetPitch;
+  const previousRollTarget = Number.isFinite(state.targetRoll)
+    ? state.targetRoll
+    : targetRoll;
   let pitch = clampValue(
     Number.isFinite(state.pitch) ? state.pitch : targetPitch,
-    -.28,
-    .28,
+    -.54,
+    .54,
   );
   let pitchVelocity = clampValue(
     Number.isFinite(state.pitchVelocity)
@@ -5861,29 +5972,8 @@ export function advanceOptionalTowHullFloat(
     -2,
     2,
   );
-  const previousElevationTarget = Number.isFinite(state.targetElevation)
-    ? state.targetElevation
-    : targetElevation;
-  let targetVerticalVelocity = Number.isFinite(
-    state.targetVerticalVelocity,
-  )
-    ? state.targetVerticalVelocity
-    : 0;
-  const previousPitchTarget = Number.isFinite(state.targetPitch)
-    ? state.targetPitch
-    : targetPitch;
-  const previousRollTarget = Number.isFinite(state.targetRoll)
-    ? state.targetRoll
-    : targetRoll;
   let remaining = delta;
   let elapsed = 0;
-  const sampledTargetVelocity = delta > 1e-9
-    ? clampValue(
-        (targetElevation - previousElevationTarget) / delta,
-        -12,
-        12,
-      )
-    : 0;
 
   while (remaining > 1e-9) {
     const step = Math.min(1 / 240, remaining);
@@ -5891,11 +5981,6 @@ export function advanceOptionalTowHullFloat(
     const targetProgress = delta > 1e-9
       ? clampValue(elapsed / delta, 0, 1)
       : 1;
-    const frameElevationTarget = lerpValue(
-      previousElevationTarget,
-      targetElevation,
-      targetProgress,
-    );
     const framePitchTarget = lerpValue(
       previousPitchTarget,
       targetPitch,
@@ -5906,43 +5991,60 @@ export function advanceOptionalTowHullFloat(
       targetRoll,
       targetProgress,
     );
-    const previousElevation = elevation;
-    const elevationError = frameElevationTarget - elevation;
-    targetVerticalVelocity += (
-      sampledTargetVelocity - targetVerticalVelocity
-    ) * (1 - Math.exp(-3.4 * step));
-    const heaveResponse = lerpValue(5.2, 7.1, planing)
-      + smoothstep(.12, .42, Math.abs(elevationError)) * 6.8;
-    const feedForwardVelocity = targetVerticalVelocity * .34;
-    elevation += (
-      feedForwardVelocity * elevationError > 0
-        ? feedForwardVelocity * step
-        : 0
-    )
-      + elevationError * (1 - Math.exp(-heaveResponse * step));
-    // Keep the visible hull within a narrow planing-draft band. The previous
-    // -.22/-.26 m allowance put the waterline nearly at deck level and let the
-    // stationary craft traverse 36 cm of apparent draft in a few seconds.
-    elevation = clampValue(
-      elevation,
-      frameElevationTarget - lerpValue(.045, .04, planing),
-      frameElevationTarget + lerpValue(.055, .075, planing),
+    const elevationError = targetElevation - elevation;
+    const separationResponse = smoothstep(
+      .08,
+      .48,
+      Math.abs(elevationError),
     );
-    verticalVelocity = lerpValue(
-      verticalVelocity,
-      (elevation - previousElevation) / Math.max(1e-6, step),
-      1 - Math.exp(-18 * step),
+    const heaveFrequency = lerpValue(
+      lerpValue(6.2, 7.4, planing),
+      lerpValue(9.5, 11.5, planing),
+      separationResponse,
     );
-    verticalVelocity = clampValue(
-      verticalVelocity,
-      -3.2,
-      3.2,
+    const heaveAccelerationLimit = lerpValue(
+      hasMinimumContact ? 20 : 10,
+      hasMinimumContact
+        ? 22
+        : OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION,
+      planing,
     );
+    const desiredRelativeAcceleration = clampValue(
+      heaveFrequency * heaveFrequency * elevationError
+        - 2.4 * heaveFrequency * integrationVelocity,
+      -heaveAccelerationLimit,
+      heaveAccelerationLimit,
+    );
+    // Keep the rendered hull's total vertical acceleration bounded even when
+    // filtered water-reference acceleration and relative buoyancy reinforce
+    // one another.
+    const integratedWorldAccelerationLimit = hasMinimumContact
+      ? 22
+      : 9;
+    const heaveAcceleration = clampValue(
+      referenceAcceleration + desiredRelativeAcceleration,
+      -integratedWorldAccelerationLimit,
+      integratedWorldAccelerationLimit,
+    ) - referenceAcceleration;
+    integrationVelocity = clampValue(
+      integrationVelocity + heaveAcceleration * step,
+      -lerpValue(2.9, OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED, planing),
+      lerpValue(2.9, OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED, planing),
+    );
+    // Integrate through target crossings instead of snapping position or
+    // velocity. The over-damped buoyancy response removes the residual
+    // naturally and keeps reversals acceleration-continuous.
+    elevation += integrationVelocity * step;
 
     const previousPitch = pitch;
     const pitchError = framePitchTarget - pitch;
-    const pitchResponse = lerpValue(5.4, 6.8, planing)
-      + smoothstep(.035, .14, Math.abs(pitchError)) * 3.2;
+    // Longitudinal probe separation is almost four metres, so a steep face
+    // can rotate beneath a 10 m/s craft much faster than ordinary chop. Track
+    // large, coherent pitch changes promptly; leaving a tenth-radian lag made
+    // the bow penetrate first and forced the contact solver to levitate the
+    // entire hull instead.
+    const pitchResponse = lerpValue(7.5, 10.5, planing)
+      + smoothstep(.025, .12, Math.abs(pitchError)) * 7;
     pitch += pitchError
       * (1 - Math.exp(-pitchResponse * step));
     pitchVelocity = lerpValue(
@@ -5952,8 +6054,8 @@ export function advanceOptionalTowHullFloat(
     );
     pitch = clampValue(
       pitch,
-      -.28,
-      .28,
+      -.54,
+      .54,
     );
 
     const previousRoll = roll;
@@ -5975,15 +6077,78 @@ export function advanceOptionalTowHullFloat(
     remaining -= step;
   }
 
+  let verticalVelocity = frameDelta > 1e-9
+    ? (elevation - initialElevation) / frameDelta
+    : 0;
+  if (hasMinimumContact && frameDelta > 1e-9) {
+    // A five-probe maximum can change identity much faster than a real hull
+    // can accelerate. Follow its forward-predicted velocity with a compliant
+    // inelastic contact law, then clamp the rendered velocity—not position—
+    // to a 24 m/s² physical envelope. Position, telemetry velocity, and the
+    // stored relative velocity therefore remain exactly consistent.
+    const previousWorldVelocity = Number.isFinite(
+      state.verticalVelocity,
+    )
+      ? state.verticalVelocity
+      : 0;
+    const maximumRenderedAcceleration = 24;
+    const contactAcceleration = clampValue(
+      64 * (minimumContactElevation - initialElevation)
+        + 12 * (
+          predictedContactVelocity - previousWorldVelocity
+        ),
+      -maximumRenderedAcceleration,
+      maximumRenderedAcceleration,
+    );
+    const freeWorldVelocity = previousWorldVelocity
+      + contactAcceleration * frameDelta;
+    const contactWorldVelocity = Math.min(
+      predictedContactVelocity + .35,
+      (
+        minimumContactElevation - initialElevation
+      ) / frameDelta,
+    );
+    const desiredWorldVelocity = Math.max(
+      freeWorldVelocity,
+      contactWorldVelocity,
+    );
+    const stallSpeedLimit = frameDelta > .05
+      ? .14 / frameDelta
+      : 4.8;
+    verticalVelocity = clampValue(
+      clampValue(
+        desiredWorldVelocity,
+        previousWorldVelocity
+          - maximumRenderedAcceleration * frameDelta,
+        previousWorldVelocity
+          + maximumRenderedAcceleration * frameDelta,
+      ),
+      -stallSpeedLimit,
+      stallSpeedLimit,
+    );
+    elevation = initialElevation
+      + verticalVelocity * frameDelta;
+    integrationVelocity = verticalVelocity
+      - referenceVelocity;
+  }
   return {
     elevation,
     verticalVelocity,
+    integrationVelocity,
+    referenceVelocity,
+    referenceAcceleration,
     pitch,
     pitchVelocity,
     roll,
     rollVelocity,
     targetElevation,
-    targetVerticalVelocity,
+    targetVerticalVelocity: continuousSurfaceSample
+      ? rawSurfaceVelocity
+      : 0,
+    sampledTargetElevation: targetElevation,
+    sampledVerticalVelocity: continuousSurfaceSample
+      ? rawSurfaceVelocity
+      : 0,
     targetPitch,
     targetRoll,
     initialized: true,
@@ -6002,8 +6167,57 @@ export function optionalTowNavigableZ(
 ) {
   return Math.min(
     targetZ,
-    shorelineWorldZ - Math.max(3.5, minimumOffshore),
+    shorelineWorldZ - Math.max(
+      OPTIONAL_TOW_BERTH_OFFSHORE,
+      minimumOffshore,
+    ),
   );
+}
+
+/**
+ * The parked craft belongs in collapsed harbor swash, not the active breaking
+ * band. Launch and return vary only the safety clearance; the craft controller
+ * still integrates the actual route, so neither transition teleports it.
+ */
+export function optionalTowRouteClearance(
+  progress: number,
+  returning = false,
+) {
+  const safeProgress = clampValue(
+    Number.isFinite(progress) ? progress : 0,
+    0,
+    1,
+  );
+  const transitionStart = returning
+    ? OPTIONAL_TOW_RETURN_BERTH_PROGRESS
+    : 0;
+  const transitionEnd = returning
+    ? 1
+    : OPTIONAL_TOW_LAUNCH_CLEARANCE_PROGRESS;
+  const transitionUnit = clampValue(
+    (safeProgress - transitionStart)
+      / Math.max(1e-6, transitionEnd - transitionStart),
+    0,
+    1,
+  );
+  const blend = transitionUnit * transitionUnit
+    * transitionUnit
+    * (
+      transitionUnit * (
+        transitionUnit * 6 - 15
+      ) + 10
+    );
+  return returning
+    ? lerpValue(
+        OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+        OPTIONAL_TOW_BERTH_OFFSHORE,
+        blend,
+      )
+    : lerpValue(
+        OPTIONAL_TOW_BERTH_OFFSHORE,
+        OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+        blend,
+      );
 }
 
 export function stageOptionalTowCrestAtBreaker(
@@ -7409,6 +7623,7 @@ export function waveHeightAt(
     elapsed,
     settings,
     character,
+    false,
   ).height;
 }
 
