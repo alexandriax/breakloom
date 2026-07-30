@@ -1071,6 +1071,7 @@ const OCEAN_VERTEX = /* glsl */ `
       1.05,
       normalizedGroupEnvelope
     );
+    float readableCrestEnergy = .24 + crestEnergy * .76;
     float breakingProgress = smoothstep(.68, 1.06, breakingRatio);
     float brokenProgress = smoothstep(1.02, 1.82, breakingRatio);
     float shoreFade = 1.0 - smoothstep(4.8, 9.5, breakingRatio);
@@ -1093,8 +1094,8 @@ const OCEAN_VERTEX = /* glsl */ `
     float shapeAmplitude = localSignificantHeight * .5
       * uBreakerPower
       * shapeActivation
-      * (.42 + crestEnergy * .7)
-      * (1.0 + smoothstep(1.9, 2.5, uTargetFaceHeight) * .24);
+      * (.42 + readableCrestEnergy * .7)
+      * (1.0 + smoothstep(1.9, 2.5, uTargetFaceHeight) * .32);
     float breakerShape = second * cos(twice)
       + asymmetry * sin(twice)
       + third * cos(thrice)
@@ -1111,7 +1112,7 @@ const OCEAN_VERTEX = /* glsl */ `
     gradientZ += shapeAmplitude * breakerShapeDerivative
       * dominantGradient.y;
     float targetCarrierAmplitude = max(0.0, uTargetFaceHeight)
-      * (.28 + crestEnergy * .24);
+      * (.35 + readableCrestEnergy * .26);
     float carrierCorrection = max(
       0.0,
       targetCarrierAmplitude - sqrt(max(0.0, groupMagnitudeSquared))
@@ -11897,6 +11898,7 @@ function Simulation({
   const barrelTime = useRef(0);
   const rideStartScore = useRef(0);
   const rideWavePhase = useRef(0);
+  const rideCrestEnergy = useRef(0);
   const rideFacePosition = useRef(0);
   const rideCapture = useRef({ overtaken: 0, ahead: 0 });
   const waveCrestOffset = useRef(0);
@@ -12125,7 +12127,6 @@ function Simulation({
   const qaStartedAt = useRef(-1);
   const qaStage = useRef(0);
   const qaRideAt = useRef(-1);
-  const qaRideStartedAt = useRef(-1);
   const sunLight = useRef<THREE.DirectionalLight>(null);
   const sunTarget = useMemo(() => new THREE.Object3D(), []);
   const timeToHour = (value: string, fallback: number) => {
@@ -12468,7 +12469,6 @@ function Simulation({
         && t >= qaRideAt.current
       ) {
         qaStage.current = 5;
-        qaRideStartedAt.current = t;
         const qaRideBreak = findWaveBreakingContourAt(
           -7,
           t,
@@ -12509,10 +12509,8 @@ function Simulation({
         const tangentX = normalZ;
         const tangentZ = -normalX;
         rideLineSide.current = character.peel < 0 ? -1 : 1;
-        const trimSpeed = rideLineSide.current * transport.speed * .82;
-        // Enter slightly below phase speed so live face pressure completes the
-        // capture instead of the scripted board outrunning a shoaling crest.
-        const normalSpeed = transport.speed * .88;
+        const trimSpeed = rideLineSide.current * transport.speed * .72;
+        const normalSpeed = transport.speed;
         const qaRidePhase = primaryWavePhaseAt(
           position.current.x,
           position.current.z,
@@ -12529,6 +12527,8 @@ function Simulation({
           settings,
           character,
         );
+        rideCrestEnergy.current =
+          qaRideSurface.dominant?.crestEnergy ?? .72;
         waterRide.current.elevation = qaRideSurface.height + .16;
         waterRide.current.velocity = qaRideSurface.verticalVelocity;
         waterRide.current.surfaceHeight = qaRideSurface.height;
@@ -12601,15 +12601,8 @@ function Simulation({
     if (qaScenario) {
       if (currentPhase === "paddling") move = 1;
       if (currentPhase === "riding") {
-        const qaRideAge = Math.max(
-          0,
-          t - Math.max(0, qaRideStartedAt.current),
-        );
-        steer = qaRideAge < 2.8
-          ? rideLineSide.current * .42
-          : rideLineSide.current * .18
-            + Math.sin(qaElapsed * .72) * .12;
-        move = .08;
+        steer = Math.sin(qaElapsed * .72) * .28;
+        move = .18;
         balanceInput = Math.sin(qaElapsed * .61) * .08;
       }
     }
@@ -14394,6 +14387,7 @@ function Simulation({
             character,
           );
           boardCrestEnergy = capturedCrest.crestEnergy;
+          rideCrestEnergy.current = capturedCrest.crestEnergy;
           const capturedWaveNumber = Math.PI * 2 / Math.max(.1, catchTransport.wavelength);
           const capturedPhaseError = Math.atan2(
             Math.sin(capturedPhase - rideWavePhase.current),
@@ -15975,8 +15969,13 @@ function Simulation({
           settings,
           character,
         );
-        boardCrestEnergy =
+        const localRideCrestEnergy =
           rideSurface.dominant?.crestEnergy ?? 0;
+        rideCrestEnergy.current = Math.max(
+          localRideCrestEnergy,
+          rideCrestEnergy.current * Math.exp(-delta * .025),
+        );
+        boardCrestEnergy = rideCrestEnergy.current;
         const faceDownhillSlope = Math.max(
           0,
           -(rideSurface.slopeX * waveNormalX + rideSurface.slopeZ * waveNormalZ),
@@ -16103,6 +16102,13 @@ function Simulation({
           boardLength: boardSpec.length,
           boardWidth: boardSpec.width,
           waveHeight: targetFaceHeight,
+          faceTrimSupport: THREE.MathUtils.clamp(
+            (rideEngaged.current ? .42 : 0)
+              + waveEngagement.current * .38
+              + lineControl * .2,
+            0,
+            1,
+          ),
         });
         const planingForwardX = Math.sin(rideHeading.current);
         const planingForwardZ = Math.cos(rideHeading.current);

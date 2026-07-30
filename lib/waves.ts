@@ -1364,13 +1364,18 @@ export function waveBreakerResponseAt(
   const faceActivation = smoothUnit(.55, .82, breakingRatio)
     * (1 - smoothUnit(2.4, 5.2, breakingRatio));
   const realizedCrestEnergy = clamp(crestEnergy, 0, 1);
+  // The coherent spectrum supplies natural sets, spacing, and along-crest
+  // variation. At the actual break, however, even a locally cancelled part of
+  // an energetic line must retain enough wall to peel rather than collapsing
+  // into flat water beneath the surfer.
+  const readableCrestEnergy = .24 + realizedCrestEnergy * .76;
   // A large forecast must produce a wall that reads against a 1.72 m surfer
   // within takeoff distance, not only a broad height change over a wavelength.
   const humanScaleFaceBoost = 1 + smoothUnit(
     1.9,
     2.5,
     options.targetFaceHeight ?? 0,
-  ) * .24;
+  ) * .32;
   const shapeAmplitude = Math.max(0, localSignificantHeight)
     // Preserve the readable height and drive of the earlier mesh while the
     // underlying spectrum supplies spacing and travel. This remains a broad,
@@ -1379,7 +1384,7 @@ export function waveBreakerResponseAt(
     * .5
     * power
     * shapeActivation
-    * (.42 + realizedCrestEnergy * .7)
+    * (.42 + readableCrestEnergy * .7)
     * humanScaleFaceBoost;
   const second = .28 + steepness * .17 + hollow * .1;
   const asymmetry = .08 + hollow * .2 + steepness * .045;
@@ -1409,7 +1414,7 @@ export function waveBreakerResponseAt(
   const targetCarrierAmplitude = Math.max(
     0,
     options.targetFaceHeight ?? 0,
-  ) * (.28 + realizedCrestEnergy * .24);
+  ) * (.35 + readableCrestEnergy * .26);
   const carrierCorrection = Math.max(
     0,
     targetCarrierAmplitude - Math.max(0, dominantEnvelopeAmplitude),

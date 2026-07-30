@@ -1244,6 +1244,12 @@ export type BoardWaterSample = {
   boardLength?: number;
   boardWidth?: number;
   waveHeight: number;
+  /**
+   * Existing rail engagement on a planing wave face. This is zero during
+   * takeoff, but lets a captured board hold a diagonal trim line without
+   * treating every angle away from shore as an unresisted broadside impact.
+   */
+  faceTrimSupport?: number;
 };
 
 export type BoardWaterReading = {
@@ -5304,11 +5310,22 @@ export function evaluateBoardWaterInteraction(
       normalSpeed / Math.max(1.1, waveSpeed * .66),
     ),
   );
+  const faceTrimSupport = clampValue(
+    sample.faceTrimSupport ?? 0,
+    0,
+    1,
+  );
+  const diagonalTrim = faceTrimSupport
+    * smoothstep(.08, .72, headingAlignment);
   // A surfboard can angle into a shoulder, but it cannot acquire planing trim
   // while presenting most of its rail to the wave. Preserve useful diagonal
   // entries while making the final quarter-turn toward broadside lose capture
   // sharply rather than behaving like an arcade pickup radius.
-  const directionalEntry = smoothstep(.25, .94, headingAlignment);
+  const directionalEntry = smoothstep(
+    .25 - diagonalTrim * .28,
+    .94 - diagonalTrim * .2,
+    headingAlignment,
+  );
   const speedMatch = smoothstep(
     .18,
     Math.max(.19, waveSpeed * .48),
@@ -5324,7 +5341,9 @@ export function evaluateBoardWaterInteraction(
     ),
   );
   const stability = Math.max(.62, Math.sqrt(Math.max(.35, sample.boardStability)));
-  const crossFlowSpeed = Math.max(0, relativeWaveSpeed) * broadside;
+  const crossFlowSpeed = Math.max(0, relativeWaveSpeed)
+    * broadside
+    * (1 - diagonalTrim * .58);
   const planformScale = clampValue(
     Math.sqrt(
       (
@@ -5363,7 +5382,10 @@ export function evaluateBoardWaterInteraction(
       (
         crossWaveLoad * .82
         + backwardLoad * .42
-        + waveContact * Math.max(0, broadside - .52) * .28
+        + waveContact
+          * Math.max(0, broadside - .52)
+          * .28
+          * (1 - diagonalTrim * .72)
       ) / stability,
     ),
   );

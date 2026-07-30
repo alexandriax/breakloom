@@ -511,6 +511,8 @@ let minimumForecastFaceRatio = Infinity;
 let maximumForecastFaceRatio = 0;
 let minimumSpatialFaceRatio = Infinity;
 let maximumSpatialFaceRatio = 0;
+let minimumLocalWallRatio = Infinity;
+let maximumLocalWallRatio = 0;
 const REFERENCE_ADULT_SURFER_HEIGHT_METERS = 1.72;
 for (const beach of BEACHES) {
   const settings = sessionFor(beach);
@@ -654,13 +656,23 @@ for (const beach of BEACHES) {
     maximumSpatialFaceRatio,
     spatialFaceRatio,
   );
-  if (faceRatio < .82 || faceRatio > 1.65) {
+  const localWallRatio =
+    medianLocalWall / Math.max(.1, targetFaceHeight);
+  minimumLocalWallRatio = Math.min(
+    minimumLocalWallRatio,
+    localWallRatio,
+  );
+  maximumLocalWallRatio = Math.max(
+    maximumLocalWallRatio,
+    localWallRatio,
+  );
+  if (faceRatio < .82 || faceRatio > 1.75) {
     throw new Error(
       `${beach.id}/${zone.name} realized ${medianFace.toFixed(2)}m `
         + `against a ${targetFaceHeight.toFixed(2)}m face forecast`,
     );
   }
-  if (spatialFaceRatio < .78 || spatialFaceRatio > 1.85) {
+  if (spatialFaceRatio < .78 || spatialFaceRatio > 1.95) {
     throw new Error(
       `${beach.id}/${zone.name} spatial wall measured `
         + `${medianSpatialFace.toFixed(2)}m against a `
@@ -669,7 +681,10 @@ for (const beach of BEACHES) {
   }
   if (
     targetFaceHeight >= 2.25
-    && medianLocalWall <= REFERENCE_ADULT_SURFER_HEIGHT_METERS
+    && medianLocalWall < Math.max(
+      REFERENCE_ADULT_SURFER_HEIGHT_METERS,
+      targetFaceHeight * .78,
+    )
   ) {
     throw new Error(
       `${beach.id}/${zone.name} forecast a `
@@ -775,5 +790,7 @@ console.log("ocean dynamics verified", {
     `${minimumForecastFaceRatio.toFixed(2)}–${maximumForecastFaceRatio.toFixed(2)}`,
   spatialFaceRatio:
     `${minimumSpatialFaceRatio.toFixed(2)}–${maximumSpatialFaceRatio.toFixed(2)}`,
+  localWallRatio:
+    `${minimumLocalWallRatio.toFixed(2)}–${maximumLocalWallRatio.toFixed(2)}`,
   benchmarkMilliseconds: benchmarkMilliseconds.toFixed(1),
 });

@@ -1263,6 +1263,47 @@ if (angleSweep.find(({ degrees }) => degrees === 45).reading.capture <= .3) {
   throw new Error("A diagonal 45-degree takeoff cannot engage the open shoulder");
 }
 
+const unsupportedDiagonalTrim = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: 60 * Math.PI / 180,
+  velocityZ: 3.4,
+});
+const supportedDiagonalTrim = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: 60 * Math.PI / 180,
+  velocityZ: 3.4,
+  faceTrimSupport: 1,
+});
+const unsupportedTangentTrim = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: Math.PI / 2,
+  velocityZ: 3.4,
+  faceTrimSupport: 1,
+});
+if (
+  supportedDiagonalTrim.outcome !== "capture"
+  || supportedDiagonalTrim.capture
+    <= unsupportedDiagonalTrim.capture * 1.5
+  || supportedDiagonalTrim.crossWaveLoad
+    >= unsupportedDiagonalTrim.crossWaveLoad * .5
+  || supportedDiagonalTrim.wipeoutRisk
+    >= unsupportedDiagonalTrim.wipeoutRisk * .5
+) {
+  throw new Error(
+    "An engaged rail no longer supports diagonal down-the-line trim",
+  );
+}
+if (
+  unsupportedTangentTrim.outcome !== "tumble"
+  || unsupportedTangentTrim.capture > .02
+  || unsupportedTangentTrim.crossWaveLoad
+    < supportedDiagonalTrim.crossWaveLoad * 3
+) {
+  throw new Error(
+    "Face trim incorrectly protected a fully broadside board",
+  );
+}
+
 const stillWaterStand = evaluateBoardWaterInteraction({
   ...sharedBoardWater,
   boardHeading: Math.PI / 2,
@@ -5717,6 +5758,12 @@ console.log(JSON.stringify({
       capture: reading.capture,
       crossWaveLoad: reading.crossWaveLoad,
     })),
+    diagonalTrim: {
+      unsupportedLoad: unsupportedDiagonalTrim.crossWaveLoad,
+      supportedLoad: supportedDiagonalTrim.crossWaveLoad,
+      supportedCapture: supportedDiagonalTrim.capture,
+      tangentOutcome: unsupportedTangentTrim.outcome,
+    },
   },
   dynamics: {
     downhillAcceleration: downhillDynamics.accelerationZ,

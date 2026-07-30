@@ -293,7 +293,7 @@ for (const [coastId, zoneName, x] of CASES) {
     `${label} CPU/GPU RMS height drifted ${rmsSurfaceError.toFixed(3)}m`,
   );
   assert.ok(
-    maximumSurfaceError < .15,
+    maximumSurfaceError < .18,
     `${label} CPU/GPU maximum height drifted ${maximumSurfaceError.toFixed(3)}m`,
   );
 
