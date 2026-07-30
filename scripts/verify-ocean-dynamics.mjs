@@ -11,6 +11,7 @@ import {
 import {
   coastWaveModelAt,
   maximumVisibleHorizontalDisplacement,
+  sampleCoastDominantWave,
   sampleCoastWaveSurface,
 } from "../lib/ocean.ts";
 import { forecastFaceHeightForBreak } from "../lib/tide.ts";
@@ -508,6 +509,9 @@ for (
 
 let minimumForecastFaceRatio = Infinity;
 let maximumForecastFaceRatio = 0;
+let minimumSpatialFaceRatio = Infinity;
+let maximumSpatialFaceRatio = 0;
+const REFERENCE_ADULT_SURFER_HEIGHT_METERS = 1.72;
 for (const beach of BEACHES) {
   const settings = sessionFor(beach);
   const zone = beach.zones[0];
@@ -525,6 +529,8 @@ for (const beach of BEACHES) {
     .9,
   );
   const realizedFaces = [];
+  const spatialFaces = [];
+  const localWallHeights = [];
   let arrivalCursor = 0;
   for (let crestIndex = 0; crestIndex < 8; crestIndex += 1) {
     const next = nextVisibleSurfableWaveAt(
@@ -554,6 +560,59 @@ for (const beach of BEACHES) {
       troughHeight = Math.min(troughHeight, surface.height);
     }
     realizedFaces.push(Math.max(0, crest.height - troughHeight));
+    const dominant = sampleCoastDominantWave(
+      0,
+      breakingContour.z,
+      arrivalTime,
+      settings,
+      character,
+    );
+    if (!dominant) {
+      throw new Error(
+        `${beach.id}/${zone.name} lost its dominant wave at the breaking contour`,
+      );
+    }
+    const scanRadius = Math.min(34, dominant.wavelength * .58);
+    const spatialSamples = [];
+    for (let step = -72; step <= 72; step += 1) {
+      const distance = step * scanRadius / 72;
+      const surface = sampleCoastWaveSurface(
+        dominant.directionX * distance,
+        breakingContour.z + dominant.directionZ * distance,
+        arrivalTime,
+        settings,
+        character,
+      );
+      spatialSamples.push({ distance, height: surface.height });
+    }
+    const spatialCrest = spatialSamples.reduce(
+      (highest, sample) => (
+        sample.height > highest.height ? sample : highest
+      ),
+    );
+    const spatialTrough = spatialSamples.reduce(
+      (lowest, sample) => (
+        sample.height < lowest.height ? sample : lowest
+      ),
+    );
+    spatialFaces.push(spatialCrest.height - spatialTrough.height);
+    const wallReach = Math.max(
+      9,
+      Math.min(18, targetFaceHeight * 4.8),
+    );
+    const localTrough = spatialSamples
+      .filter(
+        (sample) => (
+          Math.abs(sample.distance - spatialCrest.distance) <= wallReach
+        ),
+      )
+      .reduce(
+        (lowest, sample) => (
+          sample.height < lowest ? sample.height : lowest
+        ),
+        Infinity,
+      );
+    localWallHeights.push(spatialCrest.height - localTrough);
     const displacement = Math.hypot(
       crest.displacementX,
       crest.displacementZ,
@@ -569,8 +628,16 @@ for (const beach of BEACHES) {
     arrivalCursor = arrivalTime + settings.wavePeriod * .32;
   }
   realizedFaces.sort((left, right) => left - right);
+  spatialFaces.sort((left, right) => left - right);
+  localWallHeights.sort((left, right) => left - right);
   const medianFace = realizedFaces[Math.floor(realizedFaces.length / 2)];
+  const medianSpatialFace =
+    spatialFaces[Math.floor(spatialFaces.length / 2)];
+  const medianLocalWall =
+    localWallHeights[Math.floor(localWallHeights.length / 2)];
   const faceRatio = medianFace / Math.max(.1, targetFaceHeight);
+  const spatialFaceRatio =
+    medianSpatialFace / Math.max(.1, targetFaceHeight);
   minimumForecastFaceRatio = Math.min(
     minimumForecastFaceRatio,
     faceRatio,
@@ -579,10 +646,35 @@ for (const beach of BEACHES) {
     maximumForecastFaceRatio,
     faceRatio,
   );
+  minimumSpatialFaceRatio = Math.min(
+    minimumSpatialFaceRatio,
+    spatialFaceRatio,
+  );
+  maximumSpatialFaceRatio = Math.max(
+    maximumSpatialFaceRatio,
+    spatialFaceRatio,
+  );
   if (faceRatio < .82 || faceRatio > 1.65) {
     throw new Error(
       `${beach.id}/${zone.name} realized ${medianFace.toFixed(2)}m `
         + `against a ${targetFaceHeight.toFixed(2)}m face forecast`,
+    );
+  }
+  if (spatialFaceRatio < .78 || spatialFaceRatio > 1.85) {
+    throw new Error(
+      `${beach.id}/${zone.name} spatial wall measured `
+        + `${medianSpatialFace.toFixed(2)}m against a `
+        + `${targetFaceHeight.toFixed(2)}m face forecast`,
+    );
+  }
+  if (
+    targetFaceHeight >= 2.25
+    && medianLocalWall <= REFERENCE_ADULT_SURFER_HEIGHT_METERS
+  ) {
+    throw new Error(
+      `${beach.id}/${zone.name} forecast a `
+        + `${targetFaceHeight.toFixed(2)}m face but its visible local wall `
+        + `was only ${medianLocalWall.toFixed(2)}m tall`,
     );
   }
 }
@@ -681,5 +773,7 @@ console.log("ocean dynamics verified", {
   highSwellCases: HIGH_SWELL_CASES.length,
   forecastFaceRatio:
     `${minimumForecastFaceRatio.toFixed(2)}–${maximumForecastFaceRatio.toFixed(2)}`,
+  spatialFaceRatio:
+    `${minimumSpatialFaceRatio.toFixed(2)}–${maximumSpatialFaceRatio.toFixed(2)}`,
   benchmarkMilliseconds: benchmarkMilliseconds.toFixed(1),
 });

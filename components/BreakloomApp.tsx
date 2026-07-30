@@ -56,6 +56,7 @@ import {
   BOARD_SPECS,
   compassDirection,
   deepWaterWavelengthForPeriod,
+  forecastFaceHeightForBreak,
   formatClock,
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
@@ -71,7 +72,6 @@ import {
   BREAKLOOM_RELEASE,
   thermalKitForConditions,
   tideResponseForBreak,
-  type TideResponse,
   type BoardType,
   type GameMode,
   type GameStats,
@@ -489,8 +489,8 @@ function breakDemand(character: BreakCharacter) {
  * peak's own power and by how the tide is treating that seabed. Two peaks on
  * one coast share a swell but rarely throw the same wave.
  */
-function peakFaceHeight(waveHeight: number, character: BreakCharacter, tide: TideResponse) {
-  return waveHeight * tide.faceScale * character.power * tide.powerScale;
+function peakFaceHeight(waveHeight: number, character: BreakCharacter, tide: number) {
+  return forecastFaceHeightForBreak(waveHeight, tide, character);
 }
 
 /** Wind read every surfer checks first: is it grooming the face or wrecking it? */
@@ -1023,6 +1023,7 @@ export default function BreakloomApp() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [pointerLocked, setPointerLocked] = useState(false);
   const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
+  const [touchGameplay, setTouchGameplay] = useState(false);
   const [openSections, setOpenSections] = useState<LaunchSection[]>([]);
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
@@ -1211,7 +1212,7 @@ export default function BreakloomApp() {
     () => tideResponseForBreak(conditions.seaLevel, breakCharacter),
     [breakCharacter, conditions.seaLevel],
   );
-  const effectiveFaceHeight = peakFaceHeight(settings.waveHeight, breakCharacter, tideResponse);
+  const effectiveFaceHeight = peakFaceHeight(settings.waveHeight, breakCharacter, settings.tide);
   const thermalKit = useMemo(
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
@@ -1242,7 +1243,7 @@ export default function BreakloomApp() {
     return {
       zone,
       character,
-      face: peakFaceHeight(settings.waveHeight, character, tide),
+      face: peakFaceHeight(settings.waveHeight, character, settings.tide),
       tideLabel: tide.shortName,
       fit: tide.quality,
       tag: breakCharacterTag(character),
@@ -1447,6 +1448,10 @@ export default function BreakloomApp() {
     const timer = window.setTimeout(() => {
       const touchDevice = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
       const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? touchDevice;
+      setTouchGameplay(
+        (touchDevice && coarsePointer)
+          || window.matchMedia?.("(max-width: 760px)").matches === true,
+      );
       setMotionBalanceStatus("DeviceOrientationEvent" in window && touchDevice && coarsePointer ? "idle" : "unavailable");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -4003,7 +4008,7 @@ export default function BreakloomApp() {
       }
     : stats.towMode
       ? {
-          title: towStage.title,
+          title: `${towStage.title} · ${Math.round(stats.towProgress * 100)}%`,
           detail: stats.towBestRelease
             ? "Tap RELEASE now · one tap disengages and starts the pop-up"
             : `${towStage.detail} · RELEASE works anytime`,
@@ -4064,6 +4069,21 @@ export default function BreakloomApp() {
                 detail: `~${stats.holdDownSeconds.toFixed(1)}s physical estimate · ${stats.breath}% breath · follow the leash`,
               }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
+  const mobileMechanicsDetail = stats.towMode
+    ? `${towStage.detail}. Keep the selected crest in view and tap RELEASE when the control turns live.`
+    : stats.phase === "paddling"
+      ? takeoffCommitted
+        ? "Use the balance strip to keep the board level while the feet land."
+        : !stats.inLineup
+          ? paddleTraining.turnDirection === "hold"
+            ? "Push and hold the stick forward for alternating paddle strokes."
+            : `Lean the stick ${paddleTraining.turnDirection} to bias that hand and turn the nose toward the break exit.`
+          : "Steer with the stick, use the balance strip to counter roll, and tap POP when the wall supports the board."
+      : stats.phase === "riding" || standingOnBoard
+        ? "Steer with the stick and drag the balance strip toward the glowing counter-roll target."
+        : stats.phase === "shore" || stats.phase === "wading"
+          ? "Move with the stick and use the large action button when a context becomes available."
+          : "Follow the live touch controls at the bottom of the screen.";
   const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
   const mobileControlStyle = {
     "--rail-grip": `${Math.round(stats.railGrip * 100)}%`,
@@ -4805,7 +4825,7 @@ export default function BreakloomApp() {
 
       {screen === "game" && (
         <section
-          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
+          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${touchGameplay ? "is-touch" : ""} ${stats.towMode ? "is-tow" : ""} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
           style={gameUiStyle}
           data-qa-scenario={qaScenario ? "surf" : undefined}
           data-qa-phase={stats.phase}
@@ -5197,7 +5217,7 @@ export default function BreakloomApp() {
               <div>
                 <span>LIVE BOARD COACH</span>
                 <strong>{mechanicsGuide.cue}</strong>
-                <small>{mechanicsGuide.detail}</small>
+                <small>{touchGameplay ? mobileMechanicsDetail : mechanicsGuide.detail}</small>
                 {(stats.phase === "paddling" || stats.phase === "riding") && (
                   <div
                     className="training-force-vectors"
@@ -5244,7 +5264,7 @@ export default function BreakloomApp() {
               role="status"
               aria-live="polite"
             >
-              <kbd>{gamepadConnected ? "LB" : "SHIFT / DIVE"}</kbd>
+              <kbd>{touchGameplay ? "DIVE" : gamepadConnected ? "LB" : "SHIFT / DIVE"}</kbd>
               <span>
                 <small>
                   INCOMING WALL · {Math.max(0, stats.shorebreakSeconds).toFixed(1)}S
@@ -5313,7 +5333,7 @@ export default function BreakloomApp() {
                     <i><b style={{ width: `${surfRadarFill}%` }} /></i>
                     <small>{surfRadarDetail}</small>
                   </article>
-                  <article><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s · {(deepWaterWavelengthForPeriod(settings.wavePeriod) / settings.wavePeriod).toFixed(1)} m/s deep crest</small></article>
+                  <article><span>FACE</span><strong>{effectiveFaceHeight.toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s · {(deepWaterWavelengthForPeriod(settings.wavePeriod) / settings.wavePeriod).toFixed(1)} m/s deep crest</small></article>
                   <article><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)} m</strong><small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small></article>
                   <article><span>BREAK / TIDE</span><strong>{activeLine}</strong><small>{tideResponse.label}</small></article>
                   <article><span>WIND</span><strong>{settings.windSpeed.toFixed(0)} km/h</strong><small>{degrees(settings.windDirection)}</small></article>
@@ -5649,7 +5669,7 @@ export default function BreakloomApp() {
           </div>
 
           <div className="game-conditions">
-            <div><Waves /><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong></div>
+            <div><Waves /><span>FACE</span><strong>{effectiveFaceHeight.toFixed(1)} m</strong></div>
             <div><Wind /><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)}m · {settings.swellPeriod.toFixed(0)}s</strong></div>
             <div><ArrowRight /><span>BREAK / TIDE</span><strong>{activeLine} · {tideResponse.shortName}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>

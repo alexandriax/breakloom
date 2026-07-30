@@ -204,8 +204,14 @@ export function forecastFaceHeightForBreak(
   character: BreakCharacter,
 ) {
   const response = tideResponseForBreak(tide, character);
-  return Math.max(0, significantHeight)
-    * response.faceScale
-    * character.power
-    * response.powerScale;
+  const adjustedSignificantHeight = Math.max(0, significantHeight)
+    * response.faceScale;
+  // Offshore Hs is the average of the highest third of waves. Once that
+  // energy shoals into a surf break, a softer character can spread the wall
+  // out, but it must not make the vertical face shorter than the tide-adjusted
+  // incoming Hs. More powerful reefs and ledges can amplify it above that.
+  return adjustedSignificantHeight * Math.max(
+    1,
+    character.power * response.powerScale,
+  );
 }

@@ -1364,6 +1364,13 @@ export function waveBreakerResponseAt(
   const faceActivation = smoothUnit(.55, .82, breakingRatio)
     * (1 - smoothUnit(2.4, 5.2, breakingRatio));
   const realizedCrestEnergy = clamp(crestEnergy, 0, 1);
+  // A large forecast must produce a wall that reads against a 1.72 m surfer
+  // within takeoff distance, not only a broad height change over a wavelength.
+  const humanScaleFaceBoost = 1 + smoothUnit(
+    1.9,
+    2.5,
+    options.targetFaceHeight ?? 0,
+  ) * .24;
   const shapeAmplitude = Math.max(0, localSignificantHeight)
     // Preserve the readable height and drive of the earlier mesh while the
     // underlying spectrum supplies spacing and travel. This remains a broad,
@@ -1372,7 +1379,8 @@ export function waveBreakerResponseAt(
     * .5
     * power
     * shapeActivation
-    * (.42 + realizedCrestEnergy * .7);
+    * (.42 + realizedCrestEnergy * .7)
+    * humanScaleFaceBoost;
   const second = .28 + steepness * .17 + hollow * .1;
   const asymmetry = .08 + hollow * .2 + steepness * .045;
   const third = .045 + hollow * .07 + steepness * .035;
