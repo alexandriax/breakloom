@@ -92,6 +92,7 @@ import {
   resolveTakeoffSpeedMatch,
   resolveWaveCrestPhaseIdentity,
   resolveWaveLineSide,
+  resolveWavePocketDrive,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
   resolveWaveTubePressure,
@@ -8052,6 +8053,236 @@ if (
   || independentPopUp.progress < .99
 ) {
   throw new Error("Wave engagement no longer evolves independently from the body transition");
+}
+
+// --- Pocket propulsion: the breaking face must push hardest in the pocket
+// under the curl, fade across the shoulder, and vanish on unbroken water. ---
+const pocketDriveBase = {
+  linePosition: 0,
+  facePosition: .35,
+  waveEnergy: .85,
+  waveSpeed: 6,
+  waveNormalX: 0,
+  waveNormalZ: 1,
+  lineSide: 1,
+  boardHeading: .93,
+  forwardSpeed: 4,
+  waveContact: .85,
+  whitewater: 0,
+  tubePressure: .2,
+};
+const pocketDriveReading = resolveWavePocketDrive(pocketDriveBase);
+const shoulderDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: 1.05,
+});
+const deepDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: -1.1,
+});
+const flatsDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: 1.45,
+  facePosition: -1,
+  waveContact: .06,
+});
+if (
+  pocketDriveReading.driveMagnitude <= .8
+  || pocketDriveReading.driveMagnitude
+    <= shoulderDriveReading.driveMagnitude * 2
+  || deepDriveReading.driveMagnitude <= 0
+  || deepDriveReading.driveMagnitude
+    >= pocketDriveReading.driveMagnitude * .5
+  || flatsDriveReading.driveMagnitude > .05
+) {
+  throw new Error("Pocket drive is not concentrated under the curl");
+}
+// Each gate must zero the drive on its own: a perfectly positioned board on
+// dead water (contact alone) and a trough position on a live face (face
+// envelope alone) both stay quiet.
+const contactOnlyDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  waveContact: .04,
+});
+const troughDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  facePosition: -1,
+  waveContact: .6,
+});
+if (
+  contactOnlyDriveReading.driveMagnitude > .5
+  || troughDriveReading.driveMagnitude > .001
+) {
+  throw new Error("Pocket drive gates are not independently zeroing the push");
+}
+// Glide decay keys on face support: solid contact keeps the pocket and a
+// trough bottom turn leak-free, while unbroken water bleeds momentum.
+if (
+  flatsDriveReading.glideDragBonus <= .015
+  || pocketDriveReading.glideDragBonus > 1e-9
+  || troughDriveReading.glideDragBonus > 1e-9
+) {
+  throw new Error("Glide decay is not keyed on face contact");
+}
+const straightInDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: 0,
+});
+const offshoreDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: Math.PI,
+});
+if (
+  pocketDriveReading.driveMagnitude
+    <= straightInDriveReading.driveMagnitude * 1.2
+  || offshoreDriveReading.driveMagnitude > .001
+) {
+  throw new Error("Down-the-line trim is not outrunning a straight-to-shore or offshore line");
+}
+const overSpeedDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  forwardSpeed: 18,
+});
+const foamDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  whitewater: 1,
+});
+if (
+  overSpeedDriveReading.driveMagnitude > .01
+  || foamDriveReading.driveMagnitude
+    >= pocketDriveReading.driveMagnitude * .6
+  || foamDriveReading.glideDragBonus > .001
+) {
+  throw new Error("Pocket drive is not saturating with board speed or foam");
+}
+// The curl's throw steers toward the peel on both line sides, and a left
+// mirrors a right exactly.
+const rightThrowDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: 0,
+  tubePressure: .9,
+});
+const leftThrowDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: 0,
+  tubePressure: .9,
+  lineSide: -1,
+});
+const mirroredDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  lineSide: -1,
+  boardHeading: -.93,
+});
+if (
+  rightThrowDriveReading.driveX <= .1
+  || leftThrowDriveReading.driveX >= -.1
+  || Math.abs(mirroredDriveReading.driveX + pocketDriveReading.driveX) > 1e-9
+  || Math.abs(mirroredDriveReading.driveZ - pocketDriveReading.driveZ) > 1e-9
+) {
+  throw new Error("Down-the-line throw is not steering toward the peel on both line sides");
+}
+// Assist plumbing: the window widens only the shoulder side, and the drive
+// scale multiplies through with its clamp.
+const windowedShoulderDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: 1.05,
+  pocketWindowScale: 1.3,
+});
+const windowedDeepDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: -1.1,
+  pocketWindowScale: 1.3,
+});
+const scaledDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  driveScale: 1.3,
+});
+const overScaledDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  driveScale: 5,
+});
+if (
+  windowedShoulderDriveReading.driveMagnitude
+    <= shoulderDriveReading.driveMagnitude * 1.5
+  || Math.abs(
+    windowedDeepDriveReading.driveMagnitude
+      - deepDriveReading.driveMagnitude,
+  ) > 1e-9
+  || Math.abs(
+    scaledDriveReading.driveMagnitude
+      - pocketDriveReading.driveMagnitude * 1.3,
+  ) > 1e-9
+  || Math.abs(
+    overScaledDriveReading.driveMagnitude
+      - pocketDriveReading.driveMagnitude * 1.6,
+  ) > 1e-9
+) {
+  throw new Error("Assist window/scale plumbing is not shaping the pocket drive as declared");
+}
+const nanLineDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: Number.NaN,
+});
+const nanHeadingDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: Number.NaN,
+});
+if (
+  nanLineDriveReading.driveMagnitude !== 0
+  || nanLineDriveReading.driveX !== 0
+  || nanLineDriveReading.driveZ !== 0
+  || nanLineDriveReading.glideDragBonus !== 0
+  || nanHeadingDriveReading.driveX !== 0
+  || Number.isNaN(nanLineDriveReading.driveZ)
+  || Number.isNaN(nanHeadingDriveReading.driveZ)
+) {
+  throw new Error("A non-finite pocket sample is leaking into the drive vector");
+}
+const drivenDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveDriveX: 0,
+  waveDriveZ: 3,
+});
+const undrivenDynamics = advanceSurfboardDynamics(dynamicsState, dynamicsSample);
+const explicitZeroDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveDriveX: 0,
+  waveDriveZ: 0,
+  glideDragBonus: 0,
+});
+if (
+  JSON.stringify(undrivenDynamics) !== JSON.stringify(explicitZeroDynamics)
+) {
+  throw new Error("Absent pocket-drive fields no longer match explicit zeros bit-for-bit");
+}
+const airborneDrivenDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveDriveX: 0,
+  waveDriveZ: 3,
+  waterContact: 0,
+});
+const airborneUndrivenDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waterContact: 0,
+});
+if (
+  JSON.stringify(airborneDrivenDynamics)
+    !== JSON.stringify(airborneUndrivenDynamics)
+) {
+  throw new Error("An airborne board is still receiving pocket drive through some channel");
+}
+const glideDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  glideDragBonus: .05,
+});
+const driveVelocityGain = drivenDynamics.velocityZ - undrivenDynamics.velocityZ;
+if (
+  Math.abs(drivenDynamics.waveDriveForward - 3) > 1e-9
+  || undrivenDynamics.waveDriveForward !== 0
+  || glideDynamics.velocityZ >= undrivenDynamics.velocityZ
+  || Math.abs(driveVelocityGain - 3 * dynamicsSample.deltaSeconds) > 1e-9
+) {
+  throw new Error("Wave drive is not integrating exactly through hull contact or glide drag is inert");
 }
 
 console.log(JSON.stringify({

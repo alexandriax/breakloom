@@ -62,6 +62,8 @@ export const SURF_ASSIST_PROFILES = {
     wipeoutThresholdScale: 1.42,
     trimSupportBonus: .22,
     momentumRetention: 1.24,
+    pocketDriveScale: 1.08,
+    pocketWindowScale: 1.3,
   },
   natural: {
     label: "Natural",
@@ -82,6 +84,8 @@ export const SURF_ASSIST_PROFILES = {
     wipeoutThresholdScale: 1.2,
     trimSupportBonus: .1,
     momentumRetention: 1.12,
+    pocketDriveScale: 1,
+    pocketWindowScale: 1.12,
   },
   raw: {
     label: "Raw",
@@ -102,6 +106,8 @@ export const SURF_ASSIST_PROFILES = {
     wipeoutThresholdScale: 1,
     trimSupportBonus: 0,
     momentumRetention: 1,
+    pocketDriveScale: 1,
+    pocketWindowScale: 1,
   },
 } as const satisfies Record<
   SurfAssistLevel,
@@ -124,6 +130,8 @@ export const SURF_ASSIST_PROFILES = {
     wipeoutThresholdScale: number;
     trimSupportBonus: number;
     momentumRetention: number;
+    pocketDriveScale: number;
+    pocketWindowScale: number;
   }
 >;
 
@@ -1015,6 +1023,188 @@ export function resolveWaveTubePressure(
   };
 }
 
+/**
+ * One calibration for how much propulsion the breaking face itself supplies.
+ * The pocket window is measured in resolveWaveSectionPressure line units, the
+ * accelerations in m/s^2, and the headroom ratio against wave phase speed.
+ */
+export const WAVE_DRIVE_TUNING = {
+  maxDriveAcceleration: 4.2,
+  pocketCore: .38,
+  shoulderFalloff: 1.14,
+  deepFalloff: 1.42,
+  lipTaper: .35,
+  downTheLineThrow: .34,
+  speedHeadroomRatio: 2.1,
+  tubeHeadroomBonus: .35,
+  flatsGlideDrag: .024,
+  glideFadeStart: .12,
+  glideFadeEnd: .45,
+  whitewaterDriveLoss: .55,
+} as const;
+
+export type WavePocketDriveSample = {
+  linePosition: number;
+  facePosition: number;
+  waveEnergy: number;
+  waveSpeed: number;
+  waveNormalX: number;
+  waveNormalZ: number;
+  lineSide: number;
+  boardHeading: number;
+  forwardSpeed: number;
+  waveContact: number;
+  whitewater: number;
+  tubePressure: number;
+  driveScale?: number;
+  pocketWindowScale?: number;
+};
+
+export type WavePocketDriveReading = {
+  pocketFactor: number;
+  faceFactor: number;
+  trimFactor: number;
+  headroom: number;
+  envelope: number;
+  driveMagnitude: number;
+  driveX: number;
+  driveZ: number;
+  glideDragBonus: number;
+};
+
+/**
+ * Resolves the propulsion the breaking face itself delivers at the board's
+ * live pocket-relative position. The steep face just ahead of the curl keeps
+ * rising under the hull, so the same downslope force is continuously restored
+ * there; the shoulder is fat and delivers little; unbroken water ahead of the
+ * wave delivers none and instead bleeds glide. Ride state, scoring, and
+ * tutorial mode are deliberately absent, matching the other pocket resolvers.
+ */
+export function resolveWavePocketDrive(
+  sample: WavePocketDriveSample,
+): WavePocketDriveReading {
+  // A single NaN here would integrate straight into board velocity, so the
+  // resolver refuses non-finite localization outright.
+  if (
+    !Number.isFinite(sample.linePosition)
+    || !Number.isFinite(sample.facePosition)
+    || !Number.isFinite(sample.boardHeading)
+    || !Number.isFinite(sample.waveSpeed)
+    || !Number.isFinite(sample.forwardSpeed)
+  ) {
+    return {
+      pocketFactor: 0,
+      faceFactor: 0,
+      trimFactor: 0,
+      headroom: 0,
+      envelope: 0,
+      driveMagnitude: 0,
+      driveX: 0,
+      driveZ: 0,
+      glideDragBonus: 0,
+    };
+  }
+  // Hull/water contact is deliberately absent: advanceSurfboardDynamics gates
+  // the applied drive through hullContact once, so an airborne board receives
+  // nothing without the gate compounding here.
+  const contact = clampValue(sample.waveContact, 0, 1);
+  const energy = clampValue(sample.waveEnergy, 0, 1);
+  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const tube = clampValue(sample.tubePressure, 0, 1);
+  const waveSpeed = Math.max(0, sample.waveSpeed);
+  const windowScale = clampValue(sample.pocketWindowScale ?? 1, .6, 1.6);
+  const lineSide = sample.lineSide < 0 ? -1 : 1;
+  // Assist forgiveness widens only the shoulder side of the window; the deep
+  // side keeps raw units so drive still dies out behind the peel within the
+  // measurable linePosition range.
+  const linePosition = sample.linePosition >= 0
+    ? sample.linePosition / windowScale
+    : sample.linePosition;
+  // Asymmetric bell around the curl: the shoulder side goes slack quickly as
+  // the face fattens, while the deep side fades more slowly into foam push.
+  const shoulderFade = 1 - smoothstep(
+    WAVE_DRIVE_TUNING.pocketCore,
+    WAVE_DRIVE_TUNING.shoulderFalloff,
+    linePosition,
+  );
+  const deepFade = 1 - smoothstep(
+    WAVE_DRIVE_TUNING.pocketCore,
+    WAVE_DRIVE_TUNING.deepFalloff,
+    -linePosition,
+  );
+  const pocketFactor = clampValue(Math.min(shoulderFade, deepFade), 0, 1);
+  const facePosition = clampValue(sample.facePosition, -1, 1);
+  const faceFactor = smoothstep(-.55, .05, facePosition)
+    * (1 - smoothstep(.78, 1.08, facePosition) * WAVE_DRIVE_TUNING.lipTaper);
+  const forwardX = Math.sin(sample.boardHeading);
+  const forwardZ = Math.cos(sample.boardHeading);
+  const headingAlignment = clampValue(
+    forwardX * sample.waveNormalX + forwardZ * sample.waveNormalZ,
+    -1,
+    1,
+  );
+  const broadside = Math.sqrt(Math.max(
+    0,
+    1 - headingAlignment * headingAlignment,
+  ));
+  // Trim across the face outruns a straight-to-shore line; a nose pointed
+  // back offshore earns nothing.
+  const trimFactor = (.55 + .45 * smoothstep(.08, .52, broadside))
+    * smoothstep(-.28, .02, headingAlignment);
+  const headroomRatio = WAVE_DRIVE_TUNING.speedHeadroomRatio
+    + tube * WAVE_DRIVE_TUNING.tubeHeadroomBonus;
+  const speedRatio = waveSpeed < .001
+    ? 1
+    : Math.max(0, sample.forwardSpeed) / (waveSpeed * headroomRatio);
+  const headroom = 1 - smoothstep(.55, 1, speedRatio);
+  const envelope = pocketFactor * faceFactor * (.3 + energy * .7);
+  const driveMagnitude = WAVE_DRIVE_TUNING.maxDriveAcceleration
+    * envelope
+    * trimFactor
+    * headroom
+    * contact
+    * (1 - whitewater * WAVE_DRIVE_TUNING.whitewaterDriveLoss)
+    * clampValue(sample.driveScale ?? 1, 0, 1.6);
+  // The curl's throw carries an alongshore component toward the peel, so part
+  // of the drive is steered down the line instead of along the hull.
+  const downLineX = sample.waveNormalZ * lineSide;
+  const downLineZ = -sample.waveNormalX * lineSide;
+  const throwBlend = pocketFactor
+    * WAVE_DRIVE_TUNING.downTheLineThrow
+    * (.45 + tube * .55);
+  const rawDirectionX = forwardX * (1 - throwBlend) + downLineX * throwBlend;
+  const rawDirectionZ = forwardZ * (1 - throwBlend) + downLineZ * throwBlend;
+  const directionMagnitude = Math.hypot(rawDirectionX, rawDirectionZ);
+  const directionX = directionMagnitude < .05
+    ? forwardX
+    : rawDirectionX / directionMagnitude;
+  const directionZ = directionMagnitude < .05
+    ? forwardZ
+    : rawDirectionZ / directionMagnitude;
+  // Glide decay keys on face support, not the pocket envelope, so a bottom
+  // turn through the trough of a live face keeps its momentum while unbroken
+  // water ahead of the wave bleeds it. The fade band zeroes the penalty once
+  // contact is solid — a live face never leaks drag into the pocket.
+  const glideDragBonus = WAVE_DRIVE_TUNING.flatsGlideDrag
+    * (1 - smoothstep(
+      WAVE_DRIVE_TUNING.glideFadeStart,
+      WAVE_DRIVE_TUNING.glideFadeEnd,
+      contact,
+    ))
+    * (1 - whitewater);
+  return {
+    pocketFactor,
+    faceFactor,
+    trimFactor,
+    headroom,
+    envelope,
+    driveMagnitude,
+    driveX: directionX * driveMagnitude,
+    driveZ: directionZ * driveMagnitude,
+    glideDragBonus,
+  };
+}
+
 export type SurfboardTurbulenceSample = {
   elapsed: number;
   positionX: number;
@@ -1361,6 +1551,14 @@ export type SurfboardDynamicsSample = {
    * zero during prone capture and unsupported broadside impacts.
    */
   faceTrimSupport?: number;
+  /**
+   * Pocket propulsion resolved by resolveWavePocketDrive (m/s^2, world XZ).
+   * Applied through hull contact so an airborne board receives nothing.
+   */
+  waveDriveX?: number;
+  waveDriveZ?: number;
+  /** Extra quadratic glide drag on unbroken water away from the pocket. */
+  glideDragBonus?: number;
 };
 
 export type SurfboardDynamicsReading = SurfboardDynamicsState & {
@@ -1378,6 +1576,7 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   waveForwardDrive: number;
   waveLateralLoad: number;
   wavePatchContact: number;
+  waveDriveForward: number;
   pearlingRisk: number;
   tailStall: number;
 };
@@ -5250,7 +5449,8 @@ export function advanceSurfboardDynamics(
 
   const lengthDragScale = Math.pow(2.5 / safeLength, .58);
   const widthDragScale = Math.pow(safeWidth / .34, .46);
-  const longitudinalDrag = (.033 + whitewater * .035)
+  const glideDragBonus = Math.max(0, sample.glideDragBonus ?? 0);
+  const longitudinalDrag = (.033 + whitewater * .035 + glideDragBonus)
     * lengthDragScale
     * widthDragScale
     * (.05 + hullContact * .95)
@@ -5284,13 +5484,18 @@ export function advanceSurfboardDynamics(
     * whitewater
     * hullContact
     / Math.sqrt(stability);
+  const waveDriveX = (sample.waveDriveX ?? 0) * hullContact;
+  const waveDriveZ = (sample.waveDriveZ ?? 0) * hullContact;
+  const waveDriveForward = waveDriveX * forwardX + waveDriveZ * forwardZ;
   let accelerationX = gravityAccelerationX
     + wavePressure.accelerationX
+    + waveDriveX
     + forwardX * dragForward
     + rightX * dragLateral
     + turbulenceX;
   let accelerationZ = gravityAccelerationZ
     + wavePressure.accelerationZ
+    + waveDriveZ
     + forwardZ * dragForward
     + rightZ * dragLateral
     + turbulenceZ;
@@ -5343,6 +5548,7 @@ export function advanceSurfboardDynamics(
     waveForwardDrive: wavePressure.forwardDrive,
     waveLateralLoad: wavePressure.lateralLoad,
     wavePatchContact: wavePressure.patchContact,
+    waveDriveForward,
     pearlingRisk,
     tailStall,
   };

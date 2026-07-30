@@ -10,7 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import { shorelineReferenceAt } from "@/lib/bathymetry";
 import type { BoardType, GamePhase, GameStats, OptionalTowHullFloatState, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketDrive, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -17238,6 +17238,24 @@ function Simulation({
             halfLength: standingHalfContact,
             halfWidth: standingHalfRail,
           });
+          // Same pocket propulsion as the captured ride so the face's push is
+          // continuous across the capture boundary.
+          const standingPocketDrive = resolveWavePocketDrive({
+            linePosition: standingSection.linePosition,
+            facePosition: standingPhysicalFacePosition,
+            waveEnergy: boardCrestEnergy,
+            waveSpeed: standingTransport.speed,
+            waveNormalX: standingWaveNormalX,
+            waveNormalZ: standingWaveNormalZ,
+            lineSide: rideLineSide.current,
+            boardHeading: rideHeading.current,
+            forwardSpeed: standingRelativeForwardSpeed,
+            waveContact: standingReading.waveContact,
+            whitewater: standingBrokenWater,
+            tubePressure: standingTubePressure,
+            driveScale: assistProfile.pocketDriveScale,
+            pocketWindowScale: assistProfile.pocketWindowScale,
+          });
           const standingDynamics = advanceSurfboardDynamics(
             {
               velocityX: previousStandingVelocityX,
@@ -17276,6 +17294,9 @@ function Simulation({
               turningAuthority: assistProfile.surfTurnAuthority,
               momentumRetention: assistProfile.momentumRetention,
               faceTrimSupport: assistProfile.trimSupportBonus,
+              waveDriveX: standingPocketDrive.driveX,
+              waveDriveZ: standingPocketDrive.driveZ,
+              glideDragBonus: standingPocketDrive.glideDragBonus,
             },
           );
           rideVelocity.current.set(
@@ -17284,7 +17305,8 @@ function Simulation({
           );
           rideHeading.current = standingDynamics.heading;
           rideYawRate.current = standingDynamics.yawRate;
-          wavePressureDrive = standingDynamics.waveForwardDrive;
+          wavePressureDrive = standingDynamics.waveForwardDrive
+            + standingDynamics.waveDriveForward;
           wavePressureSideLoad = standingDynamics.waveLateralLoad;
           hullPatchContact = standingDynamics.wavePatchContact;
           pearlingRisk = Math.max(
@@ -18147,6 +18169,24 @@ function Simulation({
           halfLength: pitchHalfContact,
           halfWidth: rideHalfRail,
         });
+        // The face's own propulsion, resolved at the board's live position in
+        // the pocket frame: strongest under the curl, gone on the flats.
+        const pocketDrive = resolveWavePocketDrive({
+          linePosition,
+          facePosition: physicalFacePosition,
+          waveEnergy: boardCrestEnergy,
+          waveSpeed: waveTransport.speed,
+          waveNormalX,
+          waveNormalZ,
+          lineSide: rideLineSide.current,
+          boardHeading: rideHeading.current,
+          forwardSpeed: rideRelativeForwardSpeed,
+          waveContact: rideInteraction.waveContact,
+          whitewater: whitewaterPressure,
+          tubePressure,
+          driveScale: assistProfile.pocketDriveScale,
+          pocketWindowScale: assistProfile.pocketWindowScale,
+        });
         const dynamics = advanceSurfboardDynamics(
           {
             velocityX: previousRideVelocityX,
@@ -18186,6 +18226,9 @@ function Simulation({
             faceTrimSupport: rideFaceTrimSupport
               * railGrip
               * ridePlaning,
+            waveDriveX: pocketDrive.driveX,
+            waveDriveZ: pocketDrive.driveZ,
+            glideDragBonus: pocketDrive.glideDragBonus,
           },
         );
         rideVelocity.current.set(
@@ -18194,7 +18237,8 @@ function Simulation({
         );
         rideHeading.current = dynamics.heading;
         rideYawRate.current = dynamics.yawRate;
-        wavePressureDrive = dynamics.waveForwardDrive;
+        wavePressureDrive = dynamics.waveForwardDrive
+          + dynamics.waveDriveForward;
         wavePressureSideLoad = dynamics.waveLateralLoad;
         hullPatchContact = dynamics.wavePatchContact;
         pearlingRisk = Math.max(
