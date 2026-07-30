@@ -73,8 +73,10 @@ invariant(
 );
 invariant(
   sceneSource.includes("const pickupAvailable = tow.available")
-    && sceneSource.includes("pickupAvailable\n        ? THREE.MathUtils.damp(pickupMarker.current.opacity, .28, 8, delta)\n        : 0"),
-  "the tow pickup marker no longer disappears while available or remains during a tow",
+    && sceneSource.includes("pickupBeacon.current.visible = pickupAvailable;")
+    && sceneSource.includes('playerMotion.current.phase === "shore" || playerMotion.current.phase === "wading"')
+    && sceneSource.includes("<sphereGeometry args={[.065, mobile ? 8 : 12, mobile ? 6 : 8]} />"),
+  "the compact tow pickup beacon no longer follows pickup availability",
 );
 invariant(
   sceneSource.includes("export default memo(SurfScene);"),

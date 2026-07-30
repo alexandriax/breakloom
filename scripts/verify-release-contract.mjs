@@ -140,6 +140,8 @@ if (
   || !optionalTowReleaseRecommended(idealTowReleaseQuality)
   || optionalTowReleaseRecommended(.5)
   || !optionalTowReleasePhysicallySupported(true, .64, 1, .9)
+  || !optionalTowReleasePhysicallySupported(true, .64, .1, .9)
+  || optionalTowReleasePhysicallySupported(true, .64, .09, .9)
   || optionalTowReleasePhysicallySupported(true, .5, 1, .9)
   || optionalTowReleasePhysicallySupported(true, .64, 1, 2)
   || BREAKLOOM_RELEASE.version !== 236
@@ -181,6 +183,29 @@ if (
   || !surfSceneSource.includes("optionalTowReleaseFaceQuality")
   || !surfSceneSource.includes("optionalTowTakeoffTargetScore")
   || !surfSceneSource.includes("optionalTowNavigableZ")
+  || !surfSceneSource.includes("resolveOptionalTowHullAttitude")
+  || !surfSceneSource.includes("const hullSamples = [")
+  || !surfSceneSource.includes("craftTowAttachment")
+  || surfSceneSource.includes('planeGeometry args={[1.8, 5.8]}')
+  || !surfSceneSource.includes("const safeCraftZ = navigableTowZAt(")
+  || !surfSceneSource.includes("const resolvedCraftStep = {")
+  || !surfSceneSource.includes("const safeReturnZ = navigableTowZAt(")
+  || !surfSceneSource.includes("const returnStep = advanceOptionalTowCraft(")
+  || !launchSource.includes('requestedScenario === "tow"')
+  || !launchSource.includes('data-qa-tow-progress=')
+  || !launchSource.includes('data-qa-tow-release-quality=')
+  || !launchSource.includes('data-qa-tow-face-quality=')
+  || !launchSource.includes('data-qa-tow-target-distance=')
+  || !surfSceneSource.includes(
+    "const towReleaseRequested = actionPressed",
+  )
+  || !surfSceneSource.includes("* .34;")
+  || !surfSceneSource.includes(
+    "paddleVelocity.current.x,\n                paddleVelocity.current.y,",
+  )
+  || !surfSceneSource.includes(
+    "const towReleaseSupportActive = towPopUpPending.current",
+  )
   || !surfSceneSource.includes(
     "for (let candidateIndex = 0; candidateIndex < 12; candidateIndex += 1)",
   )

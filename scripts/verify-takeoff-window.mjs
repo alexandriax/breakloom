@@ -58,6 +58,7 @@ import {
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
   resolveLineupFromBreakingGeometry,
+  resolveOptionalTowHullAttitude,
   resolvePopUpLandingSupport,
   resolveSurfboardFailureRelease,
   resolveSurfboardLeashReaction,
@@ -321,6 +322,8 @@ const stagedTowTangentX = stagedTowCrest.x - 8
   - stagedTowCrest.normalOffset * .6;
 const stagedTowTangentZ = stagedTowCrest.z + 48
   - stagedTowCrest.normalOffset * .8;
+const stagedTowTangentOffset = stagedTowTangentX * .8
+  + stagedTowTangentZ * -.6;
 const originalTowNormalOffset = (31 - 8) * .6 + (-82 + 48) * .8;
 const originalTowTangentX = 31 - 8 - originalTowNormalOffset * .6;
 const originalTowTangentZ = -82 + 48 - originalTowNormalOffset * .8;
@@ -337,6 +340,20 @@ const flatTowFaceQuality = optionalTowReleaseFaceQuality({
   faceSlope: 0,
   surfaceRise: -.12,
   whitewater: 0,
+});
+const foamedTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: .94,
+  crestPhaseError: .58,
+  faceSlope: .075,
+  surfaceRise: .28,
+  whitewater: .92,
+});
+const spentTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: 1.45,
+  crestPhaseError: .58,
+  faceSlope: .075,
+  surfaceRise: .28,
+  whitewater: .14,
 });
 const idealTowInterceptQuality = optionalTowReleaseQuality({
   routeProgress: .72,
@@ -365,19 +382,75 @@ const lipTowTargetScore = optionalTowTakeoffTargetScore(
 const towClampedFromSand = optionalTowNavigableZ(14, 12);
 const towAlreadyOffshore = optionalTowNavigableZ(-20, 12);
 const towCustomClearance = optionalTowNavigableZ(8, 12, 8);
+const levelTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1,
+  bowHeight: 1,
+  sternHeight: 1,
+  leftHeight: 1,
+  rightHeight: 1,
+  speed: 0,
+});
+const climbingTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1,
+  bowHeight: 1.8,
+  sternHeight: .2,
+  leftHeight: 1,
+  rightHeight: 1,
+  speed: 11,
+});
+const bankedTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1,
+  bowHeight: 1,
+  sternHeight: 1,
+  leftHeight: .65,
+  rightHeight: 1.35,
+  speed: 8,
+});
+const convexTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1.7,
+  bowHeight: .9,
+  sternHeight: .9,
+  leftHeight: .9,
+  rightHeight: .9,
+  speed: 14.5,
+});
+const invalidTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: Number.NaN,
+  bowHeight: Number.NaN,
+  sternHeight: Number.NaN,
+  leftHeight: Number.NaN,
+  rightHeight: Number.NaN,
+  speed: Number.NaN,
+});
 if (
   physicalTowContour.ratioError > .002
   || Math.abs((physicalTowContour.breakingRatio ?? 0) - .9) > .002
   || Math.abs(stagedTowCrest.normalOffset) > 3.500001
-  || Math.abs(stagedTowTangentX - originalTowTangentX) > 1e-9
-  || Math.abs(stagedTowTangentZ - originalTowTangentZ) > 1e-9
+  || Math.abs(stagedTowCrest.tangentOffset) > 12.000001
+  || Math.abs(stagedTowTangentOffset - 12) > 1e-9
+  || Math.hypot(
+    stagedTowTangentX - originalTowTangentX,
+    stagedTowTangentZ - originalTowTangentZ,
+  ) < 20
   || supportedTowFaceQuality < .65
   || flatTowFaceQuality !== 0
+  || foamedTowFaceQuality !== 0
+  || spentTowFaceQuality >= supportedTowFaceQuality * .2
   || idealTowInterceptQuality <= missedTowInterceptQuality * 2
   || scaledTowTargetScore <= lipTowTargetScore
   || towClampedFromSand !== 6
   || towAlreadyOffshore !== -20
   || towCustomClearance !== 4
+  || levelTowHull.waterlineHeight !== 1
+  || levelTowHull.pitch !== 0
+  || levelTowHull.roll !== 0
+  || climbingTowHull.pitch >= -.2
+  || climbingTowHull.pitch < -.280001
+  || bankedTowHull.roll <= .2
+  || bankedTowHull.roll > .240001
+  || convexTowHull.waterlineHeight < 1.7
+  || convexTowHull.planing !== 1
+  || !Object.values(invalidTowHull).every(Number.isFinite)
   || !optionalTowReleasePhysicallySupported(
     true,
     .64,
@@ -385,6 +458,8 @@ if (
     .9,
     supportedTowFaceQuality,
   )
+  || !optionalTowReleasePhysicallySupported(true, .64, .1, .9, 1)
+  || optionalTowReleasePhysicallySupported(true, .64, .09, .9, 1)
   || optionalTowReleasePhysicallySupported(true, .5, .9, .9, 1)
   || optionalTowReleasePhysicallySupported(true, .64, .9, .9, 0)
   || optionalTowReleasePhysicallySupported(true, .64, .9, .4, 1)
@@ -485,6 +560,101 @@ if (
 ) {
   throw new Error(
     "Tow craft or rope motion regained a speed cap snap, stretch teleport, or frame impulse",
+  );
+}
+
+let returningTowCraft = {
+  x: 34,
+  z: -82,
+  velocityX: 8,
+  velocityZ: 4,
+  heading: Math.atan2(8, 4),
+};
+const returningTowStart = {
+  x: returningTowCraft.x,
+  z: returningTowCraft.z,
+};
+const returningTowHome = { x: 10, z: 6 };
+let returningTowProgress = 0;
+let maximumReturnSpeed = 0;
+let maximumReturnAcceleration = 0;
+let maximumReturnStep = 0;
+for (let frame = 0; frame < 20 * 60; frame += 1) {
+  returningTowProgress = Math.min(
+    1,
+    returningTowProgress + (1 / 60) / 8.5,
+  );
+  const progress = returningTowProgress * returningTowProgress
+    * (3 - 2 * returningTowProgress);
+  const inverse = 1 - progress;
+  const controlX = (
+    returningTowStart.x + returningTowHome.x
+  ) * .5 - 18;
+  const controlZ = Math.min(
+    returningTowStart.z,
+    returningTowHome.z,
+  ) - 20;
+  const desiredX = inverse * inverse * returningTowStart.x
+    + 2 * inverse * progress * controlX
+    + progress * progress * returningTowHome.x;
+  const desiredZ = inverse * inverse * returningTowStart.z
+    + 2 * inverse * progress * controlZ
+    + progress * progress * returningTowHome.z;
+  const homeDistanceBeforeStep = Math.hypot(
+    returningTowCraft.x - returningTowHome.x,
+    returningTowCraft.z - returningTowHome.z,
+  );
+  const returnSpeedLimit = Math.max(
+    .35,
+    Math.min(
+      13.5,
+      Math.sqrt(2 * 5.6 * homeDistanceBeforeStep) * .82,
+    ),
+  );
+  const nextReturn = advanceOptionalTowCraft(
+    returningTowCraft,
+    desiredX,
+    desiredZ,
+    1 / 60,
+    returnSpeedLimit,
+    5.6,
+  );
+  maximumReturnSpeed = Math.max(
+    maximumReturnSpeed,
+    nextReturn.speed,
+  );
+  maximumReturnAcceleration = Math.max(
+    maximumReturnAcceleration,
+    nextReturn.acceleration,
+  );
+  maximumReturnStep = Math.max(
+    maximumReturnStep,
+    Math.hypot(
+      nextReturn.x - returningTowCraft.x,
+      nextReturn.z - returningTowCraft.z,
+    ),
+  );
+  returningTowCraft = nextReturn;
+}
+const returningTowHomeError = Math.hypot(
+  returningTowCraft.x - returningTowHome.x,
+  returningTowCraft.z - returningTowHome.z,
+);
+if (
+  maximumReturnSpeed > 13.51
+  || maximumReturnAcceleration > 5.61
+  || maximumReturnStep > .226
+  || returningTowHomeError > .55
+  || returningTowCraft.speed > .8
+) {
+  throw new Error(
+    `Tow return no longer converges through the capped craft integrator: ${JSON.stringify({
+      maximumReturnSpeed,
+      maximumReturnAcceleration,
+      maximumReturnStep,
+      returningTowHomeError,
+      finalSpeed: returningTowCraft.speed,
+    })}`,
   );
 }
 

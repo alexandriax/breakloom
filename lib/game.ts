@@ -5640,6 +5640,97 @@ export function shorelineRideOutProgress(coastalZ: number) {
 
 export const OPTIONAL_TOW_DURATION_SECONDS = 16;
 export const OPTIONAL_TOW_NAVIGABLE_OFFSHORE = 6;
+export const OPTIONAL_TOW_HULL_HALF_LENGTH = 1.55;
+export const OPTIONAL_TOW_HULL_HALF_BEAM = .58;
+
+export type OptionalTowHullSurfaceSample = {
+  centerHeight: number;
+  bowHeight: number;
+  sternHeight: number;
+  leftHeight: number;
+  rightHeight: number;
+  speed: number;
+};
+
+export type OptionalTowHullAttitude = {
+  waterlineHeight: number;
+  pitch: number;
+  roll: number;
+  planing: number;
+};
+
+/**
+ * Fits the jetski's waterline to five points under its actual hull footprint.
+ * The center intercept is raised to bridge convex chop instead of letting a
+ * single high corner pass through the hull. Pitch and roll remain bounded so
+ * a steep breaker cannot flip the visual craft before the route turns away.
+ */
+export function resolveOptionalTowHullAttitude(
+  sample: OptionalTowHullSurfaceSample,
+): OptionalTowHullAttitude {
+  const centerHeight = Number.isFinite(sample.centerHeight)
+    ? sample.centerHeight
+    : 0;
+  const bowHeight = Number.isFinite(sample.bowHeight)
+    ? sample.bowHeight
+    : centerHeight;
+  const sternHeight = Number.isFinite(sample.sternHeight)
+    ? sample.sternHeight
+    : centerHeight;
+  const leftHeight = Number.isFinite(sample.leftHeight)
+    ? sample.leftHeight
+    : centerHeight;
+  const rightHeight = Number.isFinite(sample.rightHeight)
+    ? sample.rightHeight
+    : centerHeight;
+  const forwardSlope = (
+    bowHeight - sternHeight
+  ) / (OPTIONAL_TOW_HULL_HALF_LENGTH * 2);
+  const lateralSlope = (
+    rightHeight - leftHeight
+  ) / (OPTIONAL_TOW_HULL_HALF_BEAM * 2);
+  const speed = Number.isFinite(sample.speed)
+    ? sample.speed
+    : 0;
+  const planing = clampValue(speed / 14.5, 0, 1);
+  const pitch = clampValue(
+    -Math.atan(forwardSlope) - planing * .035,
+    -.28,
+    .28,
+  );
+  const roll = clampValue(
+    Math.atan(lateralSlope),
+    -.24,
+    .24,
+  );
+  const fittedCenter = (
+    centerHeight * 2
+      + bowHeight
+      + sternHeight
+      + leftHeight
+      + rightHeight
+  ) / 6;
+  const requiredIntercept = Math.max(
+    centerHeight,
+    bowHeight
+      - forwardSlope * OPTIONAL_TOW_HULL_HALF_LENGTH,
+    sternHeight
+      + forwardSlope * OPTIONAL_TOW_HULL_HALF_LENGTH,
+    leftHeight
+      + lateralSlope * OPTIONAL_TOW_HULL_HALF_BEAM,
+    rightHeight
+      - lateralSlope * OPTIONAL_TOW_HULL_HALF_BEAM,
+  );
+  return {
+    waterlineHeight: Math.max(
+      fittedCenter,
+      requiredIntercept,
+    ),
+    pitch,
+    roll,
+    planing,
+  };
+}
 
 /**
  * Keeps the tow craft seaward of the local, curved shoreline. The caller
@@ -5665,21 +5756,36 @@ export function stageOptionalTowCrestAtBreaker(
   normalX: number,
   normalZ: number,
   maximumNormalOffset = 3.5,
+  maximumTangentOffset = 12,
 ) {
   const normalLength = Math.max(.001, Math.hypot(normalX, normalZ));
   const unitNormalX = normalX / normalLength;
   const unitNormalZ = normalZ / normalLength;
   const normalOffset = (crestX - anchorX) * unitNormalX
     + (crestZ - anchorZ) * unitNormalZ;
+  const tangentX = unitNormalZ;
+  const tangentZ = -unitNormalX;
+  const tangentOffset = (crestX - anchorX) * tangentX
+    + (crestZ - anchorZ) * tangentZ;
   const stagedNormalOffset = clampValue(
     normalOffset,
     -Math.abs(maximumNormalOffset),
     Math.abs(maximumNormalOffset),
   );
+  const stagedTangentOffset = clampValue(
+    tangentOffset,
+    -Math.abs(maximumTangentOffset),
+    Math.abs(maximumTangentOffset),
+  );
   return {
-    x: crestX + (stagedNormalOffset - normalOffset) * unitNormalX,
-    z: crestZ + (stagedNormalOffset - normalOffset) * unitNormalZ,
+    x: anchorX
+      + stagedNormalOffset * unitNormalX
+      + stagedTangentOffset * tangentX,
+    z: anchorZ
+      + stagedNormalOffset * unitNormalZ
+      + stagedTangentOffset * tangentZ,
     normalOffset: stagedNormalOffset,
+    tangentOffset: stagedTangentOffset,
   };
 }
 
@@ -5712,7 +5818,7 @@ export function optionalTowReleaseQuality(
   const routeReady = smoothstep(.54, .7, sample.routeProgress);
   const targetLock = 1 - smoothstep(
     1.4,
-    6.5,
+    7.5,
     Math.max(0, sample.distanceToTarget),
   );
   const alignment = smoothstep(
@@ -5761,16 +5867,25 @@ export function optionalTowReleaseFaceQuality(
   const frontFace = smoothstep(-.08, .18, phaseError)
     * (1 - smoothstep(1.25, 1.9, phaseError));
   const depthLimited = smoothstep(.6, .82, sample.breakingRatio)
-    * (1 - smoothstep(1.4, 1.9, sample.breakingRatio));
+    * (1 - smoothstep(1.08, 1.55, sample.breakingRatio));
   const physicalFace = Math.max(
     smoothstep(.006, .06, sample.faceSlope),
     smoothstep(.01, .3, sample.surfaceRise),
     smoothstep(.04, .28, sample.whitewater),
   );
+  const openFace = 1 - smoothstep(
+    .38,
+    .78,
+    sample.whitewater,
+  );
   return clampValue(
     frontFace
       * depthLimited
       * (.35 + physicalFace * .65),
+      0,
+      1,
+    ) * clampValue(
+      openFace,
     0,
     1,
   );
@@ -5809,7 +5924,7 @@ export function optionalTowReleasePhysicallySupported(
 ) {
   return requested
     && progress >= .56
-    && quality > .12
+    && quality > .095
     && breakingRatio >= .6
     && breakingRatio <= 1.9
     && faceQuality >= .08;
@@ -6049,6 +6164,11 @@ export type GameStats = {
   nearJetSki: boolean;
   towProgress: number;
   towReleaseQuality: number;
+  towFaceQuality: number;
+  towTargetDistance: number;
+  towBreakingRatio: number;
+  towHeadingAlignment: number;
+  towSpeedMatch: number;
   towBestRelease: boolean;
   inLineup: boolean;
   lineupOutsideMargin: number;
@@ -6198,6 +6318,11 @@ export const INITIAL_STATS: GameStats = {
   nearJetSki: false,
   towProgress: 0,
   towReleaseQuality: 0,
+  towFaceQuality: 0,
+  towTargetDistance: 0,
+  towBreakingRatio: 0,
+  towHeadingAlignment: 0,
+  towSpeedMatch: 0,
   towBestRelease: false,
   inLineup: false,
   lineupOutsideMargin: 0,

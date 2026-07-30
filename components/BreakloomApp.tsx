@@ -1029,7 +1029,7 @@ export default function BreakloomApp() {
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
   const [vanBoardPickerOpen, setVanBoardPickerOpen] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
-  const [qaScenario, setQaScenario] = useState(false);
+  const [qaScenario, setQaScenario] = useState<false | "surf" | "tow">(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
   const [recordsReady, setRecordsReady] = useState(false);
@@ -1149,11 +1149,17 @@ export default function BreakloomApp() {
   }, []);
 
   useEffect(() => {
-    const enabled = new URLSearchParams(window.location.search).get("qa") === "surf";
-    if (!enabled) return;
+    const requestedScenario = new URLSearchParams(
+      window.location.search,
+    ).get("qa");
+    const scenario = requestedScenario === "surf"
+      || requestedScenario === "tow"
+      ? requestedScenario
+      : false;
+    if (!scenario) return;
     let startTimer: number | null = null;
     const configureTimer = window.setTimeout(() => {
-      setQaScenario(true);
+      setQaScenario(scenario);
       setSettings((current) => ({
         ...current,
         mode: "playground",
@@ -4262,7 +4268,8 @@ export default function BreakloomApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
-          qaScenario={qaScenario}
+          qaScenario={Boolean(qaScenario)}
+          qaTowScenario={qaScenario === "tow"}
           active={screen === "game" && !paused && !photoMode && !replayActive && heatAllowsGameplay}
           renderActive={screen === "game" && !paused}
           qualityLocked={photoMode || replayActive || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout"}
@@ -4832,11 +4839,26 @@ export default function BreakloomApp() {
         <section
           className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${touchGameplay ? "is-touch" : ""} ${stats.towMode ? "is-tow" : ""} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
           style={gameUiStyle}
-          data-qa-scenario={qaScenario ? "surf" : undefined}
+          data-qa-scenario={qaScenario || undefined}
           data-qa-phase={stats.phase}
           data-qa-crest-distance={stats.crestDistance.toFixed(1)}
           data-qa-wave-surfable={stats.waveSurfable ? "true" : "false"}
           data-qa-takeoff-opportunity={stats.takeoffOpportunity.toFixed(3)}
+          data-qa-takeoff-progress={stats.takeoffCommitProgress.toFixed(3)}
+          data-qa-water-contact={stats.boardWaterContact.toFixed(3)}
+          data-qa-roll-risk={stats.capsizeRisk.toFixed(3)}
+          data-qa-pitch-risk={stats.pitchOverRisk.toFixed(3)}
+          data-qa-wave-engagement={stats.waveEngagement.toFixed(3)}
+          data-qa-prompt={stats.prompt}
+          data-qa-tow-mode={stats.towMode ? "true" : "false"}
+          data-qa-tow-progress={stats.towProgress.toFixed(3)}
+          data-qa-tow-release-quality={stats.towReleaseQuality.toFixed(3)}
+          data-qa-tow-face-quality={stats.towFaceQuality.toFixed(3)}
+          data-qa-tow-target-distance={stats.towTargetDistance.toFixed(3)}
+          data-qa-tow-breaking-ratio={stats.towBreakingRatio.toFixed(3)}
+          data-qa-tow-heading-alignment={stats.towHeadingAlignment.toFixed(3)}
+          data-qa-tow-speed-match={stats.towSpeedMatch.toFixed(3)}
+          data-qa-tow-best-release={stats.towBestRelease ? "true" : "false"}
         >
           <div
             ref={cameraLookSurface}
