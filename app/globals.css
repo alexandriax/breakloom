@@ -1734,7 +1734,7 @@ input:focus-visible {
 .tow-copy > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .tow-copy > small { color: var(--muted); font-size: 8px; line-height: 1.35; }
 .tow-track { position: relative; height: 5px; margin: 2px 0; border-radius: 4px; background: rgba(255, 255, 255, .11); }
-.tow-track .tow-window { position: absolute; inset: -2px 9% -2px 84%; border: 1px solid rgba(239, 197, 121, .72); background: rgba(239, 197, 121, .18); box-shadow: 0 0 10px rgba(239, 197, 121, .22); }
+.tow-track .tow-signal { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: linear-gradient(90deg, rgba(22, 200, 189, .38), #16c8bd); box-shadow: 0 0 10px rgba(113, 225, 211, .3); transition: width .12s ease-out; }
 .tow-track > b { position: absolute; top: 50%; width: 9px; height: 9px; border: 2px solid white; border-radius: 50%; background: #16c8bd; box-shadow: 0 0 8px rgba(113, 225, 211, .76); transform: translate(-50%, -50%); transition: left .1s linear; }
 .tow-instrument.is-window .tow-track > b { background: #efc579; box-shadow: 0 0 11px rgba(239, 197, 121, .92); }
 
@@ -3100,6 +3100,67 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
   .touch-ride-telemetry small { font-size: 8px; }
   .touch-ride-telemetry strong { font-size: 8px; }
   .motion-balance-toggle { height: 20px; }
+
+  /*
+   * Touch HUD hierarchy
+   *
+   * The ocean is the primary instrument. Mobile keeps one compact readout at
+   * the top and one context/action pair at the bottom; desktop coaching and
+   * duplicate tow telemetry must not cover the wave the player is reading.
+   */
+  .game-ui.is-touch .game-objective strong,
+  .game-ui.is-touch .mechanics-guide span,
+  .game-ui.is-touch .mechanics-guide small,
+  .game-ui.is-touch .training-force-vectors {
+    display: none;
+  }
+  .game-ui.is-touch .hud-vitals {
+    top: calc(max(7px, env(safe-area-inset-top)) + 69px);
+  }
+  .game-ui.is-touch .mechanics-guide {
+    top: calc(max(7px, env(safe-area-inset-top)) + 108px);
+    min-height: 40px;
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 7px;
+    padding: 5px 9px 5px 5px;
+  }
+  .game-ui.is-touch .mechanics-guide > i {
+    width: 29px;
+    height: 29px;
+  }
+  .game-ui.is-touch .mechanics-guide > i svg { width: 16px; }
+  .game-ui.is-touch .mechanics-guide strong { font-size: 9px; }
+  .game-ui.is-touch.is-tow .game-objective,
+  .game-ui.is-touch.is-tow .mechanics-guide,
+  .game-ui.is-touch.is-tow .paddle-training-instrument,
+  .game-ui.is-touch.is-tow .tow-instrument,
+  .game-ui.is-touch.is-tow .hud-score-chip,
+  .game-ui.is-touch.is-tow .coach-toggle {
+    display: none !important;
+  }
+  .game-ui.is-touch.is-tow .hud-vitals {
+    top: calc(max(7px, env(safe-area-inset-top)) + 57px);
+    width: min(230px, calc(100vw - 16px));
+  }
+  .game-ui.is-touch.is-tow .hud-vitals > div:nth-child(1),
+  .game-ui.is-touch.is-tow .hud-vitals > div:nth-child(3) {
+    display: none;
+  }
+  .game-ui.is-touch.is-tow .mobile-controls {
+    grid-template-columns: minmax(0, 1fr) clamp(68px, 20vw, 78px);
+    padding-left: 16px;
+  }
+  .game-ui.is-touch.is-tow .analog-stick,
+  .game-ui.is-touch.is-tow .motion-balance-toggle {
+    display: none;
+  }
+  .game-ui.is-touch.is-tow .touch-context {
+    min-height: 52px;
+    margin-bottom: 4px;
+  }
+  .game-ui.is-touch.is-tow .touch-context strong {
+    font-size: 9px;
+  }
 }
 
 @media (max-height: 560px) and (max-width: 960px) {

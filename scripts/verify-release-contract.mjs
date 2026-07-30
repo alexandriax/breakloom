@@ -5,6 +5,7 @@ import {
   evaluateWaveTakeoff,
   INITIAL_STATS,
   optionalTowReleaseQuality,
+  optionalTowReleasePhysicallySupported,
   optionalTowReleaseRecommended,
   reachedSurfTrainingStep,
   BREAKLOOM_RELEASE,
@@ -21,6 +22,10 @@ const launchStyles = readFileSync(
 );
 const worldMapSource = readFileSync(
   new URL("../components/WorldMap.tsx", import.meta.url),
+  "utf8",
+);
+const surfSceneSource = readFileSync(
+  new URL("../components/SurfScene.tsx", import.meta.url),
   "utf8",
 );
 
@@ -96,7 +101,27 @@ const supportedStanding = reachedSurfTrainingStep({
   hullPatchContact: .48,
 });
 const towProgressAfterOneSecond = advanceOptionalTowProgress(0, 1);
-const idealTowReleaseQuality = optionalTowReleaseQuality(.88);
+const idealTowReleaseQuality = optionalTowReleaseQuality({
+  routeProgress: .74,
+  faceQuality: 1,
+  distanceToTarget: 0,
+  headingAlignment: 1,
+  speedMatch: 1,
+});
+const earlyRouteReleaseQuality = optionalTowReleaseQuality({
+  routeProgress: .5,
+  faceQuality: 1,
+  distanceToTarget: 0,
+  headingAlignment: 1,
+  speedMatch: 1,
+});
+const missedTargetReleaseQuality = optionalTowReleaseQuality({
+  routeProgress: .9,
+  faceQuality: 1,
+  distanceToTarget: 8,
+  headingAlignment: 1,
+  speedMatch: 1,
+});
 
 if (
   arbitraryPopUp.progress < .99
@@ -110,12 +135,13 @@ if (
   || towProgressAfterOneSecond <= .06
   || towProgressAfterOneSecond >= .065
   || idealTowReleaseQuality !== 1
-  || !optionalTowReleaseRecommended(.84)
-  || !optionalTowReleaseRecommended(.88)
-  || !optionalTowReleaseRecommended(.91)
-  || optionalTowReleaseRecommended(.82)
-  || optionalTowReleaseRecommended(.93)
+  || earlyRouteReleaseQuality >= idealTowReleaseQuality
+  || missedTargetReleaseQuality >= idealTowReleaseQuality
+  || !optionalTowReleaseRecommended(idealTowReleaseQuality)
   || optionalTowReleaseRecommended(.5)
+  || !optionalTowReleasePhysicallySupported(true, .64, 1, .9)
+  || optionalTowReleasePhysicallySupported(true, .5, 1, .9)
+  || optionalTowReleasePhysicallySupported(true, .64, 1, 2)
   || BREAKLOOM_RELEASE.version !== 236
   || !launchSource.includes('id: "easy"')
   || !launchSource.includes('id: "medium"')
@@ -135,6 +161,26 @@ if (
   || !worldMapSource.includes("refreshMarkerLayout")
   || !launchSource.includes("tow-instrument")
   || !launchSource.includes("RELEASE disengages anytime")
+  || !launchSource.includes("Live face lock")
+  || launchSource.includes('className="tow-window"')
+  || !surfSceneSource.includes("resolvePopUpLandingSupport")
+  || !surfSceneSource.includes("if (landingSupport > 0)")
+  || !surfSceneSource.includes("No face under the board")
+  || !surfSceneSource.includes("&& state.rideEngaged")
+  || !surfSceneSource.includes("transport.whitewater > .04")
+  || !surfSceneSource.includes("horizontalDisplacement")
+  || !surfSceneSource.includes("geometricNormal")
+  || surfSceneSource.includes("<LineupWaveSetVolume")
+  || surfSceneSource.includes("<BreakingWave")
+  || !surfSceneSource.includes("stageOptionalTowCrestAtBreaker")
+  || !surfSceneSource.includes("optionalTowReleaseFaceQuality")
+  || !surfSceneSource.includes("optionalTowTakeoffTargetScore")
+  || !surfSceneSource.includes("distanceToTarget: towTargetDistance")
+  || surfSceneSource.includes("liveCrest.normalX * 9.5")
+  || !surfSceneSource.includes("towMotion.current.targetWavePhase -= Math.PI * 2")
+  || surfSceneSource.includes("actionPressed || towMotion.current.progress >= 1")
+  || surfSceneSource.includes("targetZ -= waveBreakingGeometryAt")
+  || surfSceneSource.includes("towMotion.current.position.x - forwardX * 4.1")
   // The coast atlas, the map, and the peak list are first-screen decisions:
   // none of them may retreat behind an optional disclosure.
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
@@ -157,5 +203,7 @@ console.log(JSON.stringify({
   optionalTow: {
     progressAfterOneSecond: towProgressAfterOneSecond,
     idealReleaseQuality: idealTowReleaseQuality,
+    earlyRouteReleaseQuality,
+    missedTargetReleaseQuality,
   },
 }, null, 2));

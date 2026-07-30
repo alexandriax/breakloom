@@ -16,6 +16,9 @@ export type CoastBiome = "urban" | "tropical" | "dune" | "rugged" | "cold" | "vo
 export type BreakKind = "beach" | "reef" | "point" | "slab" | "canyon";
 
 export type BreakCharacter = {
+  /** Stable location identity used by shared bathymetry and wave propagation. */
+  coastId?: string;
+  zoneName?: string;
   kind: BreakKind;
   line: "LEFT" | "RIGHT" | "A-FRAME";
   peel: number;
@@ -396,5 +399,10 @@ const ZONE_CHARACTER_OVERRIDES: Record<string, Partial<BreakCharacter>> = {
 
 export function getBreakCharacter(id: string, zoneName = ""): BreakCharacter {
   const base = BREAK_CHARACTERS[id] ?? BREAK_CHARACTERS.rockaway;
-  return { ...base, ...ZONE_CHARACTER_OVERRIDES[`${id}:${zoneName}`] };
+  return {
+    ...base,
+    ...ZONE_CHARACTER_OVERRIDES[`${id}:${zoneName}`],
+    coastId: id,
+    zoneName,
+  };
 }
