@@ -1515,9 +1515,12 @@ export function waveBreakerResponseAt(
     + smoothUnit(.55, 1.15, steepness) * .14
     + hollow * .06;
   // At forecast faces of roughly head high or larger, the wall within the
-  // takeoff footprint must visibly clear a 1.6 m rendered surfer.
-  const humanScaleWallRatio = targetFaceHeight >= 1.9
-    ? Math.min(.9, 1.76 / Math.max(.1, targetFaceHeight))
+  // takeoff footprint must read against the normalized 1.72 m surfer.
+  const humanScaleWallRatio = targetFaceHeight >= 1.45
+    ? Math.min(
+        .96,
+        Math.max(.72, 1.76 / Math.max(.1, targetFaceHeight)),
+      )
     : 0;
   const desiredLocalWall = targetFaceHeight
     * Math.max(characterWallRatio, humanScaleWallRatio)
@@ -1559,12 +1562,22 @@ export function waveBreakerResponseAt(
       1 - smoothUnit(.72, 1.05, steepness)
     ) * 2.4 * humanScaleBoostActivation
     : 1;
+  const rideableScaleActivation = smoothUnit(
+    1.35,
+    1.65,
+    targetFaceHeight,
+  ) * (
+    1 - smoothUnit(2.15, 2.65, targetFaceHeight)
+  );
+  const rideableWaveSupportBoost = 1
+    + rideableScaleActivation * 1.15;
   const wallSupportAmplitude = clamp(
     Math.max(0, desiredLocalWall - currentCoherentWall)
       / referenceWallSupportRange
       * (.72 + readableCrestEnergy * .08)
       * existingNonlinearSupport
-      * humanScaleSupportBoost,
+      * humanScaleSupportBoost
+      * rideableWaveSupportBoost,
     0,
     Math.max(
       .1,
@@ -1594,10 +1607,13 @@ export function waveBreakerResponseAt(
   const wallSupportTanh = Math.tanh(
     rawWallSupportShape / wallShapeRange,
   );
-  const wallSupportShape = wallShapeRange * wallSupportTanh;
+  const wallSupportShape = wallShapeRange * wallSupportTanh
+    + wallShapeRange
+      * .1
+      * readableCrestEnergy;
   const wallSupportDerivative = (
-    1 - wallSupportTanh * wallSupportTanh
-  ) * rawWallSupportDerivative;
+      1 - wallSupportTanh * wallSupportTanh
+    ) * rawWallSupportDerivative;
   const washAmplitude = clamp(
     Math.max(0, options.targetFaceHeight ?? 0) * .14 + .1,
     .14,

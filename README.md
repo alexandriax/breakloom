@@ -52,7 +52,8 @@ app shell under 10 MiB and the soundtrack under 18 MiB, and fails if a track nam
 - Drag on touch: orbit the chase camera; double-click or double-tap to recenter
 - `W` while riding: shift pressure toward the nose for trim and speed carry; it does not pull the board up the face
 - `S` while riding: shift pressure toward the tail for tighter rail response and easier pivoting
-- `Q` / `E`: shift body weight against measured board roll while prone or standing
+- `A` / `D` while riding: turn and carve by banking the board onto its rails
+- `Q` / `E`: independently shift body weight to balance or recover while prone or standing
 - Mouse horizontal position: balance while riding
 - `Space`: start a physical pop-up anywhere on the water; only a supported face completes into a ride, while an unsupported landing settles back to prone instead of creating a flat-water surf state
 - `Space` at the parked van's driver door: enter; stop and press again to exit

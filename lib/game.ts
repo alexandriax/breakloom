@@ -45,21 +45,43 @@ const SURFABLE_CREST_ENERGY = .45;
 export const SURF_ASSIST_PROFILES = {
   guided: {
     label: "Guided",
-    description: "More paddle leverage, clearer dive timing, gentler wash.",
+    description: "Forgiving basic lines, strong turns, and automatic recovery.",
     paddleTurnAuthority: 1.38,
     proneLateralLoad: .56,
     shorebreakExposure: .68,
     failureMargin: .08,
     duckDiveWindowScale: 1.32,
+    surfTurnAuthority: 1.42,
+    automaticCounterweight: .72,
+    railTorqueScale: .78,
+    ridingStabilityScale: 1.28,
+    railGripBonus: .14,
+    railDemandScale: .72,
+    instabilityLoadScale: .42,
+    instabilityRecoveryScale: 1.35,
+    wipeoutThresholdScale: 1.42,
+    trimSupportBonus: .22,
+    momentumRetention: 1.24,
   },
   natural: {
     label: "Natural",
-    description: "Calibrated body and board response with light recovery help.",
+    description: "Real board response with enough recovery to explore the face.",
     paddleTurnAuthority: 1.16,
     proneLateralLoad: .78,
     shorebreakExposure: .84,
     failureMargin: .035,
     duckDiveWindowScale: 1.14,
+    surfTurnAuthority: 1.18,
+    automaticCounterweight: .36,
+    railTorqueScale: .9,
+    ridingStabilityScale: 1.12,
+    railGripBonus: .06,
+    railDemandScale: .86,
+    instabilityLoadScale: .7,
+    instabilityRecoveryScale: 1.16,
+    wipeoutThresholdScale: 1.2,
+    trimSupportBonus: .1,
+    momentumRetention: 1.12,
   },
   raw: {
     label: "Raw",
@@ -69,6 +91,17 @@ export const SURF_ASSIST_PROFILES = {
     shorebreakExposure: 1,
     failureMargin: 0,
     duckDiveWindowScale: 1,
+    surfTurnAuthority: 1,
+    automaticCounterweight: 0,
+    railTorqueScale: 1,
+    ridingStabilityScale: 1,
+    railGripBonus: 0,
+    railDemandScale: 1,
+    instabilityLoadScale: 1,
+    instabilityRecoveryScale: 1,
+    wipeoutThresholdScale: 1,
+    trimSupportBonus: 0,
+    momentumRetention: 1,
   },
 } as const satisfies Record<
   SurfAssistLevel,
@@ -80,6 +113,17 @@ export const SURF_ASSIST_PROFILES = {
     shorebreakExposure: number;
     failureMargin: number;
     duckDiveWindowScale: number;
+    surfTurnAuthority: number;
+    automaticCounterweight: number;
+    railTorqueScale: number;
+    ridingStabilityScale: number;
+    railGripBonus: number;
+    railDemandScale: number;
+    instabilityLoadScale: number;
+    instabilityRecoveryScale: number;
+    wipeoutThresholdScale: number;
+    trimSupportBonus: number;
+    momentumRetention: number;
   }
 >;
 
@@ -1309,6 +1353,8 @@ export type SurfboardDynamicsSample = {
   boardTurn: number;
   boardStability: number;
   waveHeight: number;
+  turningAuthority?: number;
+  momentumRetention?: number;
   /**
    * Existing planing/rail support on a captured face. A loaded rail and fins
    * can turn part of cross-face pressure into down-line drive; this remains
@@ -1445,6 +1491,8 @@ export type SurfboardInstabilitySample = {
   pearlingRisk: number;
   pitchOverRisk: number;
   tailStall: number;
+  loadScale?: number;
+  recoveryScale?: number;
 };
 
 export type SurfboardPlaningSample = {
@@ -1483,11 +1531,14 @@ export type BoardRollSample = {
   riderHeight?: number;
   whitewater: number;
   waterContact?: number;
+  automaticCounterweight?: number;
+  railTorqueScale?: number;
 };
 
 export type BoardRollReading = BoardRollState & {
   rollAcceleration: number;
   effectiveRail: number;
+  effectiveCounterweight: number;
   balanceTarget: number;
   externalTorque: number;
   rightingMoment: number;
@@ -1542,9 +1593,26 @@ export function advanceBoardRollDynamics(
     -1,
     Math.min(1, externalTorque / counterweightAuthority),
   );
+  const automaticCounterweight = clampValue(
+    sample.automaticCounterweight ?? 0,
+    0,
+    .85,
+  );
+  // Assistance represents the small, continuous corrections an experienced
+  // surfer makes without thinking. Manual Q/E or the mobile balance slider is
+  // still independent and always adds on top for harder turns and maneuvers.
+  const effectiveCounterweight = clampValue(
+    counterweight
+      + balanceTarget
+        * automaticCounterweight
+        * (1 - Math.abs(counterweight) * .28),
+    -1,
+    1,
+  );
 
   const riderRailTorque = railInput
-    * (1.12 + speedAuthority * 2.35);
+    * (1.12 + speedAuthority * 2.35)
+    * clampValue(sample.railTorqueScale ?? 1, .65, 1.15);
   // A standing surfer raises the combined center of mass and reduces the
   // static metacentric margin. Crouching restores part of that margin; once
   // planing, rail lift supplies more of the righting force.
@@ -1563,7 +1631,8 @@ export function advanceBoardRollDynamics(
       + speedAuthority * .72 * waterContact
       + whitewater * .32 * waterContact
   ) * Math.sqrt(stability * widthScale);
-  const counterweightTorque = -counterweight * counterweightAuthority;
+  const counterweightTorque = -effectiveCounterweight
+    * counterweightAuthority;
   const rollAcceleration = clampValue(
     (
       riderRailTorque
@@ -1618,6 +1687,7 @@ export function advanceBoardRollDynamics(
     rollRate,
     rollAcceleration,
     effectiveRail,
+    effectiveCounterweight,
     balanceTarget,
     externalTorque,
     rightingMoment,
@@ -3522,7 +3592,7 @@ export function advanceSurfboardInstability(
     .1,
     sample.balanceFailureThreshold,
   );
-  const loadRate = rollFailureLoad
+  const rawLoadRate = rollFailureLoad
     + whitewater * SURF_PHYSICS_TUNING.whitewaterFailure
     + shoulderStall * SURF_PHYSICS_TUNING.shoulderFailure
     + tubePressure
@@ -3539,6 +3609,13 @@ export function advanceSurfboardInstability(
     + clampValue(sample.tailStall, 0, 1)
       * SURF_PHYSICS_TUNING.tailStallFailure
     - (edgeRisk < .08 ? 1.8 : 0);
+  const loadRate = rawLoadRate >= 0
+    ? rawLoadRate * clampValue(sample.loadScale ?? 1, .35, 1)
+    : rawLoadRate * clampValue(
+        sample.recoveryScale ?? 1,
+        1,
+        1.5,
+      );
   return {
     instability: Math.max(
       0,
@@ -3554,10 +3631,17 @@ export function surfboardWipeoutTriggered(
   instability: number,
   rollCapsizeRisk: number,
   pitchOverRisk: number,
+  thresholdScale = 1,
+  catastrophicMargin = 0,
 ) {
-  return rollCapsizeRisk > SURF_PHYSICS_TUNING.capsizeWipeout
-    || pitchOverRisk > SURF_PHYSICS_TUNING.pitchWipeout
-    || instability > SURF_PHYSICS_TUNING.wipeoutInstability;
+  const margin = clampValue(catastrophicMargin, 0, .09);
+  return rollCapsizeRisk
+      > SURF_PHYSICS_TUNING.capsizeWipeout + margin
+    || pitchOverRisk
+      > SURF_PHYSICS_TUNING.pitchWipeout + margin
+    || instability
+      > SURF_PHYSICS_TUNING.wipeoutInstability
+        * clampValue(thresholdScale, 1, 1.5);
 }
 
 export type SurfboardWipeoutSample = {
@@ -4981,6 +5065,16 @@ export function advanceSurfboardDynamics(
   const safeWidth = Math.max(.24, sample.boardWidth);
   const stability = Math.max(.55, sample.boardStability);
   const turn = Math.max(.45, sample.boardTurn);
+  const turningAuthority = clampValue(
+    sample.turningAuthority ?? 1,
+    1,
+    1.5,
+  );
+  const momentumRetention = clampValue(
+    sample.momentumRetention ?? 1,
+    1,
+    1.3,
+  );
   const contact = Math.max(0, Math.min(1, sample.waveContact));
   const grip = Math.max(0, Math.min(1, sample.railGrip));
   const whitewater = Math.max(0, Math.min(1, sample.whitewater));
@@ -5028,6 +5122,7 @@ export function advanceSurfboardDynamics(
   const lengthYawInertia = Math.pow(safeLength / 2.5, 1.28);
   const targetYawRate = railInput
     * turn
+    * turningAuthority
     * speedAuthority
     * (.46 + Math.abs(initialForwardSpeed) * .07)
     * (.34 + grip * .66)
@@ -5162,7 +5257,8 @@ export function advanceSurfboardDynamics(
         - nosePressure * .06
         + pearlingRisk * 2.2
         + tailStall * .48
-    );
+    )
+    / momentumRetention;
   const lateralDrag = (
     .2
       + grip * (.29 + planing * .24)
@@ -5543,6 +5639,23 @@ export function shorelineRideOutProgress(coastalZ: number) {
 }
 
 export const OPTIONAL_TOW_DURATION_SECONDS = 16;
+export const OPTIONAL_TOW_NAVIGABLE_OFFSHORE = 6;
+
+/**
+ * Keeps the tow craft seaward of the local, curved shoreline. The caller
+ * supplies the shoreline in world-z coordinates so the same constraint works
+ * at points, reefs, tide-shifted beaches, and the return route.
+ */
+export function optionalTowNavigableZ(
+  targetZ: number,
+  shorelineWorldZ: number,
+  minimumOffshore = OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+) {
+  return Math.min(
+    targetZ,
+    shorelineWorldZ - Math.max(3.5, minimumOffshore),
+  );
+}
 
 export function stageOptionalTowCrestAtBreaker(
   anchorX: number,

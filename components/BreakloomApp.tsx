@@ -228,13 +228,13 @@ const LAUNCH_PRESETS: Array<{
     id: "easy",
     name: "Learning",
     kicker: "Guided",
-    description: "Extra paddle power, clear timing cues, and softer wipeouts.",
+    description: "Forgiving lines, strong turns, and automatic recovery.",
   },
   {
     id: "medium",
     name: "Natural",
     kicker: "Free surf",
-    description: "True board response with light recovery help.",
+    description: "Real board response with room to explore and recover.",
   },
   {
     id: "hard",
@@ -5734,7 +5734,7 @@ export default function BreakloomApp() {
                   </>
                 ) : (
                   <>
-                    <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "apply roll torque" : stats.phase === "paddling" ? takeoffCommitted ? "steady the last stroke / heading" : "bias paddle side / pivot" : "roll onto rail"}</span>
+                    <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "turn / carve (the board banks)" : stats.phase === "paddling" ? takeoffCommitted ? "steady the last stroke / heading" : "bias paddle side / pivot" : "turn / carve"}</span>
                     <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : takeoffCommitted ? "place pop-up foot pressure" : "paddle / brake"}</span>
                   </>
                 )}
@@ -5753,7 +5753,11 @@ export default function BreakloomApp() {
             <div
               className="analog-stick"
               role="group"
-              aria-label={stats.phase === "shore" || stats.phase === "wading" ? "Analog movement stick. Hold RUN while moving to sprint." : "Analog movement stick."}
+              aria-label={stats.phase === "shore" || stats.phase === "wading"
+                ? "Movement stick. Hold RUN while moving to sprint."
+                : stats.phase === "riding"
+                  ? "Turn and carve stick. Balance is controlled separately."
+                  : "Paddle and steer stick. Balance is controlled separately."}
               onPointerDown={updateJoystick}
               onPointerMove={updateJoystick}
               onPointerUp={endJoystick}
@@ -5762,7 +5766,7 @@ export default function BreakloomApp() {
             >
               <span className="analog-ring" />
               <span ref={joystickKnob} className="analog-knob"><i /></span>
-              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE" : "MOVE / STEER"}</small>
+              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE" : stats.phase === "riding" ? "TURN / CARVE" : "PADDLE / STEER"}</small>
             </div>
             <div className={`mobile-balance-stack ${motionBalanceActive ? "is-motion" : ""}`}>
               {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
@@ -5801,7 +5805,7 @@ export default function BreakloomApp() {
                   }}
                 >
                   <span>
-                    <em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `CROUCHED ${Math.round(stats.trickCharge * 100)}%` : motionBalanceActive ? "TILT TO COUNTER ROLL" : "COUNTER BOARD ROLL"}</em>
+                    <em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `CROUCHED ${Math.round(stats.trickCharge * 100)}%` : motionBalanceActive ? "BALANCE · TILT TO RECOVER" : "BALANCE / RECOVER"}</em>
                     <strong>{stats.maneuverActive ? `${balanceAccuracy}%` : `${rollDegrees}°`}</strong>
                   </span>
                   {showPhysicalLandingGuide && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}

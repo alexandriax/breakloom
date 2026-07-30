@@ -46,12 +46,16 @@ for (const token of [
   "compressedFacePhase",
   "wallSupportAmplitude",
   "humanScaleSupportBoost",
+  "rideableWaveSupportBoost",
   "boundedHorizontalDisplacement",
   "groupReal",
   "normalizedGroupEnvelope",
   "horizontalDisplacement",
   "horizontalSlopeBudget",
   "horizontalShoreAnchor",
+  "runupReach",
+  "swashFilmHeight",
+  "vShoreMask",
   "washActivation",
   "washWhitewater",
   "for (int index = 0; index < 28; index++)",
@@ -82,8 +86,17 @@ for (const token of [
 
 assert.ok(
   fragment.includes("normalize(vWorldNormal)")
-    && fragment.includes("cross(dFdx(vWorldPosition), dFdy(vWorldPosition))"),
+    && fragment.includes("cross(dFdx(vWorldPosition), dFdy(vWorldPosition))")
+    && fragment.includes("mix(analyticNormal, geometricNormal, .34)"),
   "fragment shading no longer combines analytic water normals with the displaced mesh silhouette",
+);
+assert.ok(
+  source.includes("const OCEAN_RUNUP_DEPTH = 12")
+    && fragment.includes("if (vShoreMask < .035) discard")
+    && source.slice(subsurfaceStart).includes(
+      "if (vShoreMask < .08) discard",
+    ),
+  "shore swash no longer extends over wet sand and clips as a thin moving film",
 );
 assert.ok(
   !vertex.includes("crestEnergy("),
@@ -99,7 +112,8 @@ assert.ok(
 );
 assert.ok(
   !vertex.includes("smoothstep(-5.0, 1.0, contourCoordinate)")
-    && !vertex.includes("smoothstep(-18.0"),
+    && !vertex.includes("smoothstep(-18.0")
+    && !vertex.includes("smoothstep(.15, 1.8, contourCoordinate)"),
   "the ocean mesh is being flattened before broken waves reach the shoreline",
 );
 assert.ok(

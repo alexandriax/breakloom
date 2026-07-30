@@ -38,6 +38,7 @@ import {
   optionalTowReleasePhysicallySupported,
   optionalTowReleaseFaceQuality,
   optionalTowReleaseQuality,
+  optionalTowNavigableZ,
   optionalTowTakeoffTargetScore,
   primaryWaveVelocityAt,
   readCrestTimingMechanics,
@@ -361,6 +362,9 @@ const lipTowTargetScore = optionalTowTakeoffTargetScore(
   1.35,
   2.5,
 );
+const towClampedFromSand = optionalTowNavigableZ(14, 12);
+const towAlreadyOffshore = optionalTowNavigableZ(-20, 12);
+const towCustomClearance = optionalTowNavigableZ(8, 12, 8);
 if (
   physicalTowContour.ratioError > .002
   || Math.abs((physicalTowContour.breakingRatio ?? 0) - .9) > .002
@@ -371,6 +375,9 @@ if (
   || flatTowFaceQuality !== 0
   || idealTowInterceptQuality <= missedTowInterceptQuality * 2
   || scaledTowTargetScore <= lipTowTargetScore
+  || towClampedFromSand !== 6
+  || towAlreadyOffshore !== -20
+  || towCustomClearance !== 4
   || !optionalTowReleasePhysicallySupported(
     true,
     .64,
@@ -385,7 +392,7 @@ if (
   || optionalTowReleasePhysicallySupported(false, .64, .9, .9, 1)
 ) {
   throw new Error(
-    "Tow targeting no longer requires a physical depth-limited front face or rejects unsupported release water",
+    "Tow targeting no longer requires a physical depth-limited front face, rejects unsupported release water, or stays seaward of the local shoreline",
   );
 }
 
@@ -758,6 +765,28 @@ if (
 
 const x = 0;
 const z = -34;
+
+if (
+  SURF_ASSIST_PROFILES.guided.surfTurnAuthority
+    <= SURF_ASSIST_PROFILES.natural.surfTurnAuthority
+  || SURF_ASSIST_PROFILES.natural.surfTurnAuthority
+    <= SURF_ASSIST_PROFILES.raw.surfTurnAuthority
+  || SURF_ASSIST_PROFILES.guided.automaticCounterweight
+    <= SURF_ASSIST_PROFILES.natural.automaticCounterweight
+  || SURF_ASSIST_PROFILES.natural.automaticCounterweight
+    <= SURF_ASSIST_PROFILES.raw.automaticCounterweight
+  || SURF_ASSIST_PROFILES.guided.ridingStabilityScale
+    <= SURF_ASSIST_PROFILES.natural.ridingStabilityScale
+  || SURF_ASSIST_PROFILES.natural.ridingStabilityScale
+    <= SURF_ASSIST_PROFILES.raw.ridingStabilityScale
+  || SURF_ASSIST_PROFILES.raw.surfTurnAuthority !== 1
+  || SURF_ASSIST_PROFILES.raw.automaticCounterweight !== 0
+  || SURF_ASSIST_PROFILES.raw.ridingStabilityScale !== 1
+) {
+  throw new Error(
+    "Surf assists no longer progress from forgiving Guided through Natural to unmodified Raw",
+  );
+}
 
 function staminaAfter(seconds, effort) {
   let stamina = 100;
@@ -2197,11 +2226,68 @@ const longboardTurn = dynamicsAfterOneSecond({
   boardTurn: .82,
   boardStability: 1.28,
 });
+const naturalPerformanceTurn = dynamicsAfterOneSecond({
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  boardStability: 1,
+  turningAuthority:
+    SURF_ASSIST_PROFILES.natural.surfTurnAuthority,
+  momentumRetention:
+    SURF_ASSIST_PROFILES.natural.momentumRetention,
+});
+const guidedPerformanceTurn = dynamicsAfterOneSecond({
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  boardStability: 1,
+  turningAuthority:
+    SURF_ASSIST_PROFILES.guided.surfTurnAuthority,
+  momentumRetention:
+    SURF_ASSIST_PROFILES.guided.momentumRetention,
+});
+function coastingAfterOneSecond(momentumRetention) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 5,
+    heading: 0,
+    yawRate: 0,
+  };
+  for (let frame = 0; frame < 60; frame += 1) {
+    state = advanceSurfboardDynamics(state, {
+      ...dynamicsSample,
+      waveContact: 0,
+      momentumRetention,
+    });
+  }
+  return Math.hypot(state.velocityX, state.velocityZ);
+}
+const rawCoastingSpeed = coastingAfterOneSecond(
+  SURF_ASSIST_PROFILES.raw.momentumRetention,
+);
+const naturalCoastingSpeed = coastingAfterOneSecond(
+  SURF_ASSIST_PROFILES.natural.momentumRetention,
+);
+const guidedCoastingSpeed = coastingAfterOneSecond(
+  SURF_ASSIST_PROFILES.guided.momentumRetention,
+);
 if (performanceTurn.heading < .3) {
   throw new Error(`A loaded performance rail failed to redirect momentum: ${performanceTurn.heading.toFixed(2)}rad`);
 }
 if (longboardTurn.heading >= performanceTurn.heading * .78) {
   throw new Error("Longboard yaw inertia no longer distinguishes it from a shortboard");
+}
+if (
+  naturalPerformanceTurn.heading
+    <= performanceTurn.heading * 1.06
+  || guidedPerformanceTurn.heading
+    <= naturalPerformanceTurn.heading * 1.08
+  || naturalCoastingSpeed <= rawCoastingSpeed + .02
+  || guidedCoastingSpeed <= naturalCoastingSpeed + .02
+) {
+  throw new Error(
+    "Guided and Natural assists no longer add progressive turn authority and momentum retention",
+  );
 }
 function simulateTakeoffBottomTurn(railInput) {
   let state = {
@@ -2468,6 +2554,34 @@ function instabilityAfterOneSecond(hz) {
 }
 const standingInstability60 = instabilityAfterOneSecond(60);
 const engagedInstability120 = instabilityAfterOneSecond(120);
+let guidedInstability = 0;
+for (let frame = 0; frame < 30; frame += 1) {
+  guidedInstability = advanceSurfboardInstability(
+    guidedInstability,
+    {
+      ...sharedInstabilitySample,
+      deltaSeconds: 1 / 60,
+      loadScale:
+        SURF_ASSIST_PROFILES.guided.instabilityLoadScale,
+      recoveryScale:
+        SURF_ASSIST_PROFILES.guided.instabilityRecoveryScale,
+    },
+  ).instability;
+}
+let rawInstability = 0;
+for (let frame = 0; frame < 30; frame += 1) {
+  rawInstability = advanceSurfboardInstability(
+    rawInstability,
+    {
+      ...sharedInstabilitySample,
+      deltaSeconds: 1 / 60,
+      loadScale:
+        SURF_ASSIST_PROFILES.raw.instabilityLoadScale,
+      recoveryScale:
+        SURF_ASSIST_PROFILES.raw.instabilityRecoveryScale,
+    },
+  ).instability;
+}
 if (
   Math.abs(
     standingInstability60 - engagedInstability120
@@ -2478,8 +2592,26 @@ if (
     sharedInstabilitySample.pitchOverRisk,
   )
   || surfboardWipeoutTriggered(.2, .2, .2)
+  || guidedInstability >= rawInstability * .55
+  || !surfboardWipeoutTriggered(1.5, .2, .2)
+  || surfboardWipeoutTriggered(
+    1.5,
+    .2,
+    .2,
+    SURF_ASSIST_PROFILES.guided.wipeoutThresholdScale,
+    SURF_ASSIST_PROFILES.guided.failureMargin,
+  )
+  || !surfboardWipeoutTriggered(
+    0,
+    .99,
+    0,
+    SURF_ASSIST_PROFILES.guided.wipeoutThresholdScale,
+    SURF_ASSIST_PROFILES.guided.failureMargin,
+  )
 ) {
-  throw new Error("Instability or wipeout threshold changed across engagement");
+  throw new Error(
+    "Instability or the progressive Guided/Natural/Raw wipeout thresholds changed across engagement",
+  );
 }
 const sharedWipeoutSample = {
   waveHeight: 2.4,
@@ -3761,11 +3893,39 @@ const counterweightedCrossWave = rollForFrames(75, {
   whitewater: .3,
   counterweight: crossWaveProbe.balanceTarget,
 });
+const automaticallyBalancedCrossWave = rollForFrames(75, {
+  ...rollSample,
+  speed: 1.2,
+  planing: .12,
+  crossSlope: .12,
+  crossWaveLoad: .72,
+  whitewater: .3,
+  automaticCounterweight:
+    SURF_ASSIST_PROFILES.guided.automaticCounterweight,
+  railTorqueScale:
+    SURF_ASSIST_PROFILES.guided.railTorqueScale,
+});
+const guidedLoadedRail = rollForFrames(60, {
+  ...rollSample,
+  railInput: .8,
+  automaticCounterweight:
+    SURF_ASSIST_PROFILES.guided.automaticCounterweight,
+  railTorqueScale:
+    SURF_ASSIST_PROFILES.guided.railTorqueScale,
+});
 if (
   unbalancedCrossWave.edgeRisk < .35
   || Math.abs(counterweightedCrossWave.rollAngle) >= Math.abs(unbalancedCrossWave.rollAngle) * .55
+  || Math.abs(automaticallyBalancedCrossWave.rollAngle)
+    >= Math.abs(unbalancedCrossWave.rollAngle) * .72
+  || Math.abs(
+    automaticallyBalancedCrossWave.effectiveCounterweight,
+  ) < .08
+  || guidedLoadedRail.effectiveRail < .24
 ) {
-  throw new Error("Counterweight is not physically opposing cross-wave roll torque");
+  throw new Error(
+    "Independent manual/automatic counterweight no longer opposes cross-wave torque while leaving a turnable rail",
+  );
 }
 const airborneRoll = rollForFrames(45, {
   ...rollSample,

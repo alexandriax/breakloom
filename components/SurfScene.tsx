@@ -10,7 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import { shorelineReferenceAt } from "@/lib/bathymetry";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -108,8 +108,15 @@ const SHORE_WALK_SPEED = 5.1;
 const SHORE_RUN_SPEED = 9.2;
 const OCEAN_RENDER_WIDTH = 620;
 const WATER_SIDE_LIMIT = COAST_PLAYABLE_HALF_WIDTH;
-const OCEAN_PLANE_DEPTH = 1250;
-const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z - OCEAN_PLANE_DEPTH * .5;
+const OCEAN_OFFSHORE_DEPTH = 1250;
+// The displaced ocean must continue past the nominal wet line so a raised
+// bore can settle into a thin swash sheet. Ending the mesh exactly at the
+// shoreline exposed the last row of triangles as a vertical polygon wall.
+const OCEAN_RUNUP_DEPTH = 12;
+const OCEAN_PLANE_DEPTH = OCEAN_OFFSHORE_DEPTH + OCEAN_RUNUP_DEPTH;
+const OCEAN_CENTER_Z = SHORELINE_REFERENCE_Z
+  + OCEAN_RUNUP_DEPTH
+  - OCEAN_PLANE_DEPTH * .5;
 const CAMERA_WATER_SAMPLE_DIRECTIONS = [
   [1, 0],
   [-1, 0],
@@ -885,6 +892,7 @@ const OCEAN_VERTEX = /* glsl */ `
   varying float vBreaker;
   varying float vChop;
   varying float vSwellRead;
+  varying float vShoreMask;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
   varying vec3 vWorldNormal;
@@ -1194,8 +1202,11 @@ const OCEAN_VERTEX = /* glsl */ `
     float characterWallRatio = .66
       + smoothstep(.55, 1.15, uBreakerSteepness) * .14
       + uBreakerHollow * .06;
-    float humanScaleWallRatio = uTargetFaceHeight >= 1.9
-      ? min(.9, 1.76 / max(.1, uTargetFaceHeight))
+    float humanScaleWallRatio = uTargetFaceHeight >= 1.45
+      ? min(
+        .96,
+        max(.72, 1.76 / max(.1, uTargetFaceHeight))
+      )
       : 0.0;
     float desiredLocalWall = uTargetFaceHeight
       * max(characterWallRatio, humanScaleWallRatio)
@@ -1239,12 +1250,22 @@ const OCEAN_VERTEX = /* glsl */ `
         1.0 - smoothstep(.72, 1.05, uBreakerSteepness)
       ) * 2.4 * humanScaleBoostActivation
       : 1.0;
+    float rideableScaleActivation = smoothstep(
+      1.35,
+      1.65,
+      uTargetFaceHeight
+    ) * (
+      1.0 - smoothstep(2.15, 2.65, uTargetFaceHeight)
+    );
+    float rideableWaveSupportBoost = 1.0
+      + rideableScaleActivation * 1.15;
     float wallSupportAmplitude = clamp(
       max(0.0, desiredLocalWall - currentCoherentWall)
         / referenceWallSupportRange
         * (.72 + readableCrestEnergy * .08)
         * existingNonlinearSupport
-        * humanScaleSupportBoost,
+        * humanScaleSupportBoost
+        * rideableWaveSupportBoost,
       0.0,
       max(
         .1,
@@ -1274,6 +1295,12 @@ const OCEAN_VERTEX = /* glsl */ `
     float wallSupportDerivative = (
       1.0 - wallSupportTanh * wallSupportTanh
     ) * rawWallSupportDerivative;
+    // Raise the whole crest-local redistribution while preserving the exact
+    // crest-to-foot range. This moves part of the wall above mean water rather
+    // than obtaining all of its height from a dark trench below the lip.
+    wallSupportShape += wallShapeRange
+      * .1
+      * readableCrestEnergy;
     surfaceHeight += wallSupportAmplitude * wallSupportShape;
     gradientX += wallSupportAmplitude * wallSupportDerivative
       * dominantGradient.x;
@@ -1316,16 +1343,42 @@ const OCEAN_VERTEX = /* glsl */ `
     p.y -= boundedHorizontalDisplacement.y;
     surfaceHeight += uTide * .3;
     p.z += surfaceHeight;
-    float shoreAnchor = smoothstep(.15, 1.8, contourCoordinate);
+    float shoreCrestSignal = smoothstep(
+      .12,
+      .92,
+      .5 + .5 * cos(dominantPhase)
+    );
+    float runupReach = 1.35
+      + washActivation * (
+        1.55
+          + min(2.9, uTargetFaceHeight * .52)
+          + shoreCrestSignal * 1.45
+      );
+    // Preserve the full translating bore at the wet line, then settle it
+    // across several metres into a film just above the wet-sand plane. The
+    // old 1.65 m flattening band turned the final raised row into a block.
+    float shoreAnchor = smoothstep(
+      -.08,
+      max(2.4, runupReach - .2),
+      contourCoordinate
+    );
     float horizontalShoreAnchor = smoothstep(
-      -2.0,
-      1.6,
+      -1.2,
+      max(2.0, runupReach - .65),
       contourCoordinate
     );
     p.xy = mix(p.xy, position.xy, horizontalShoreAnchor);
-    p.z = mix(p.z, uTide * .3, shoreAnchor);
+    float swashFilmHeight = uTide * .3 - .2
+      + washActivation * shoreCrestSignal * .055;
+    p.z = mix(p.z, swashFilmHeight, shoreAnchor);
     gradientX *= 1.0 - shoreAnchor;
     gradientZ *= 1.0 - shoreAnchor;
+    float landwardDistance = max(0.0, contourCoordinate);
+    vShoreMask = 1.0 - smoothstep(
+      max(.75, runupReach - .9),
+      runupReach + .35,
+      landwardDistance
+    );
 
     vHeight = p.z;
     vCrest = (surfaceHeight - uTide * .3)
@@ -1376,6 +1429,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
   varying float vBreaker;
   varying float vChop;
   varying float vSwellRead;
+  varying float vShoreMask;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
   varying vec3 vWorldNormal;
@@ -1398,6 +1452,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
   }
 
   void main() {
+    if (vShoreMask < .035) discard;
     float depth = smoothstep(14.0, -90.0, vSurface.y);
     vec3 abyss = vec3(.004, .032, .071);
     vec3 offshore = vec3(.012, .115, .155);
@@ -1416,7 +1471,7 @@ const OCEAN_FRAGMENT = /* glsl */ `
     // silhouette back in while retaining the analytic physical normal used by
     // the shared spectrum and gameplay.
     vec3 surfaceNormal = normalize(
-      mix(analyticNormal, geometricNormal, .78)
+      mix(analyticNormal, geometricNormal, .34)
     );
     if (surfaceNormal.y < 0.0) surfaceNormal *= -1.0;
     bool underwaterSide = !gl_FrontFacing;
@@ -1576,6 +1631,7 @@ const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
   varying float vHeight;
   varying float vBreaker;
   varying float vChop;
+  varying float vShoreMask;
   varying vec2 vSurface;
   varying vec3 vWorldPosition;
   varying vec3 vWorldNormal;
@@ -1598,6 +1654,7 @@ const OCEAN_SUBSURFACE_FRAGMENT = /* glsl */ `
   }
 
   void main() {
+    if (vShoreMask < .08) discard;
     vec3 surfaceNormal = normalize(vWorldNormal);
     if (surfaceNormal.y > 0.0) surfaceNormal *= -1.0;
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
@@ -3813,6 +3870,10 @@ function PaddleOutShorebreak({ motion, settings, light, mobile }: { motion: Muta
 }
 
 const SURFER_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surfer-premium.glb`;
+// The source rig is 2.00 m tall. Normalize it to the same 1.72 m adult used by
+// the wave-scale regression so forecast faces and the on-screen body share
+// real-world units.
+const SURFER_MODEL_SCALE = .86;
 const VAN_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/surf-van-premium.glb`;
 const VISITOR_MODEL_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/models/beach-visitor-premium.glb`;
 const NEOPRENE_TEXTURE_URL = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/textures/neoprene-premium.webp`;
@@ -4193,7 +4254,7 @@ function PremiumSurferBody({
 
   return (
     <group ref={locomotionRoot}>
-      <primitive object={model} scale={0.94} rotation={[0, -Math.PI / 2, 0]} />
+      <primitive object={model} scale={SURFER_MODEL_SCALE} rotation={[0, -Math.PI / 2, 0]} />
     </group>
   );
 }
@@ -12055,6 +12116,8 @@ function Simulation({
   const { camera } = useThree();
   const boardSpec = BOARD_SPECS[settings.board];
   const assistProfile = SURF_ASSIST_PROFILES[settings.assist];
+  const ridingBoardStability = boardSpec.stability
+    * assistProfile.ridingStabilityScale;
   const character = useMemo(() => getBreakCharacter(beach.id, zoneName), [beach.id, zoneName]);
   const tideResponse = useMemo(
     () => tideResponseForBreak(settings.tide, character),
@@ -13040,7 +13103,22 @@ function Simulation({
       wipeoutPower.current = THREE.MathUtils.damp(wipeoutPower.current, 0, 3.2, delta);
     }
     const towHomeX = 10;
-    const towHomeZ = 4 + tideShift;
+    const towShorelineZAt = (x: number) => (
+      SHORELINE_REFERENCE_Z
+        + tideShift
+        + shorelineReferenceAt(
+          character.coastId ?? beach.id,
+          character.zoneName ?? zoneName,
+          x,
+        )
+    );
+    const navigableTowZAt = (x: number, targetZ: number) => (
+      optionalTowNavigableZ(targetZ, towShorelineZAt(x))
+    );
+    const towHomeZ = navigableTowZAt(
+      towHomeX,
+      towShorelineZAt(towHomeX),
+    );
     if (!towMotion.current.active) {
       if (towMotion.current.returning) {
         const previousTowX = towMotion.current.position.x;
@@ -13055,12 +13133,26 @@ function Simulation({
           1,
         );
         const returnSide = character.peel < 0 ? -1 : 1;
+        const inverseReturn = 1 - returnProgress;
+        const returnControlX = (
+          towMotion.current.returnStart.x + towHomeX
+        ) * .5 + returnSide * 18;
+        const returnControlZ = Math.min(
+          towMotion.current.returnStart.z,
+          towHomeZ,
+        ) - 20;
+        const returnX = inverseReturn * inverseReturn
+            * towMotion.current.returnStart.x
+          + 2 * inverseReturn * returnProgress * returnControlX
+          + returnProgress * returnProgress * towHomeX;
+        const returnZ = inverseReturn * inverseReturn
+            * towMotion.current.returnStart.z
+          + 2 * inverseReturn * returnProgress * returnControlZ
+          + returnProgress * returnProgress * towHomeZ;
         towMotion.current.position.set(
-          towMotion.current.returnStart.x + returnSide * 54 * returnProgress,
+          returnX,
           0,
-          towMotion.current.returnStart.z
-            - Math.sin(returnProgress * Math.PI) * 24
-            + returnProgress * 5,
+          navigableTowZAt(returnX, returnZ),
         );
         const velocityX = (towMotion.current.position.x - previousTowX) / Math.max(.001, delta);
         const velocityZ = (towMotion.current.position.z - previousTowZ) / Math.max(.001, delta);
@@ -13627,6 +13719,10 @@ function Simulation({
             );
           }
           const safeDelta = Math.max(.001, delta);
+          desiredTowZ = navigableTowZAt(
+            desiredTowX,
+            desiredTowZ,
+          );
           const maximumTowSpeed = THREE.MathUtils.lerp(
             10.5,
             14.5,
@@ -15434,7 +15530,7 @@ function Simulation({
             ),
             crestEnergy: boardCrestEnergy,
             crestSurfable: boardCrestEnergy >= .45,
-            boardStability: boardSpec.stability,
+            boardStability: ridingBoardStability,
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
             waveHeight: targetFaceHeight,
@@ -15625,7 +15721,8 @@ function Simulation({
           if (standingCrestRelation.overtaken > .42) {
             unstableFor.current += delta
               * SURF_PHYSICS_TUNING.lipOvertakeFailure
-              * standingCrestRelation.overtaken;
+              * standingCrestRelation.overtaken
+              * assistProfile.instabilityLoadScale;
           }
           const standingTubePressure = resolveWaveTubePressure({
             linePosition: standingSection.linePosition,
@@ -15717,12 +15814,15 @@ function Simulation({
               planing: standingPlaning,
               boardWidth: boardSpec.width,
               boardMass: boardSpec.mass,
-              boardStability: boardSpec.stability,
+              boardStability: ridingBoardStability,
               riderHeight: (
                 .92 - bodyCompression.current * .52
               ) * (1 - returnProne.bodyLowering * .76),
               whitewater: standingBrokenWater,
               waterContact: boardWaterContact,
+              automaticCounterweight:
+                assistProfile.automaticCounterweight,
+              railTorqueScale: assistProfile.railTorqueScale,
             },
           );
           boardRollAngle.current = standingRoll.rollAngle;
@@ -15772,7 +15872,7 @@ function Simulation({
               speed: rideVelocity.current.length(),
               planing: standingPlaning,
               boardLength: boardSpec.length,
-              boardStability: boardSpec.stability,
+              boardStability: ridingBoardStability,
               waveContact: THREE.MathUtils.clamp(
                 .35 + standingReading.waveContact * .65,
                 0,
@@ -15788,22 +15888,26 @@ function Simulation({
           noseImmersion = standingPitch.noseImmersion;
           tailImmersion = standingPitch.tailImmersion;
           pitchOverRisk = standingPitch.pitchOverRisk;
-          const standingRailGrip = resolveSurfboardRailGrip({
-            baseGrip: settings.board === "performance"
-              ? .96
-              : settings.board === "longboard"
-                ? .9
-                : .82,
-            planing: standingPlaning,
-            waveContact: standingReading.waveContact,
-            crossWaveLoad,
-            railSlip: railSlip.current,
-            stance: stance.current,
-            facePosition: standingPhysicalFacePosition,
-            tubePressure: standingTubePressure,
-            whitewater: standingBrokenWater,
-            onshoreChop,
-          });
+          const standingRailGrip = THREE.MathUtils.clamp(
+            resolveSurfboardRailGrip({
+              baseGrip: settings.board === "performance"
+                ? .96
+                : settings.board === "longboard"
+                  ? .9
+                  : .82,
+              planing: standingPlaning,
+              waveContact: standingReading.waveContact,
+              crossWaveLoad,
+              railSlip: railSlip.current,
+              stance: stance.current,
+              facePosition: standingPhysicalFacePosition,
+              tubePressure: standingTubePressure,
+              whitewater: standingBrokenWater,
+              onshoreChop,
+            }) + assistProfile.railGripBonus,
+            .08,
+            1,
+          );
           const previousStandingVelocityX = rideVelocity.current.x;
           const previousStandingVelocityZ = rideVelocity.current.y;
           const standingPressureContact = resolveSurfboardContactPatchOffsets({
@@ -15853,8 +15957,11 @@ function Simulation({
               boardLength: boardSpec.length,
               boardWidth: boardSpec.width,
               boardTurn: boardSpec.turn,
-              boardStability: boardSpec.stability,
+              boardStability: ridingBoardStability,
               waveHeight: targetFaceHeight,
+              turningAuthority: assistProfile.surfTurnAuthority,
+              momentumRetention: assistProfile.momentumRetention,
+              faceTrimSupport: assistProfile.trimSupportBonus,
             },
           );
           rideVelocity.current.set(
@@ -15912,11 +16019,11 @@ function Simulation({
           );
 
           const standingBalanceError = Math.abs(
-            standingCounterweight - balanceTarget,
+            standingRoll.effectiveCounterweight - balanceTarget,
           );
           const standingFailThreshold = SURF_PHYSICS_TUNING
             .balanceFailureThreshold
-            * Math.sqrt(boardSpec.stability);
+            * Math.sqrt(ridingBoardStability);
           const standingInstability = advanceSurfboardInstability(
             unstableFor.current,
             {
@@ -15935,6 +16042,9 @@ function Simulation({
               pearlingRisk,
               pitchOverRisk,
               tailStall,
+              loadScale: assistProfile.instabilityLoadScale,
+              recoveryScale:
+                assistProfile.instabilityRecoveryScale,
             },
           );
           unstableFor.current = standingInstability.instability;
@@ -15945,7 +16055,7 @@ function Simulation({
             tideSteepness,
             facePosition: standingPhysicalFacePosition,
             tubePressure: standingTubePressure,
-          });
+          }) * assistProfile.railDemandScale;
           const standingSlip = advanceSurfboardRailSlip(
             railSlip.current,
             {
@@ -16036,6 +16146,8 @@ function Simulation({
             unstableFor.current,
             rollCapsizeRisk,
             pitchOverRisk,
+            assistProfile.wipeoutThresholdScale,
+            assistProfile.failureMargin,
           );
           const standingReleased = Boolean(
             !standingWipeout
@@ -16065,8 +16177,10 @@ function Simulation({
               }),
           );
           const captureNow = (
-            waveEngagement.current >= .46
-              && standingWaveEngagement.pressure >= .16
+            waveEngagement.current
+                >= .46 - assistProfile.trimSupportBonus * .35
+              && standingWaveEngagement.pressure
+                >= .16 - assistProfile.trimSupportBonus * .18
               && standingReading.headingAlignment > .08
               && boardWaterContact > .34
           );
@@ -16428,7 +16542,8 @@ function Simulation({
         const rideFaceTrimSupport = THREE.MathUtils.clamp(
           (rideEngaged.current ? .42 : 0)
             + waveEngagement.current * .38
-            + lineControl * .2,
+            + lineControl * .2
+            + assistProfile.trimSupportBonus,
           0,
           1,
         );
@@ -16500,7 +16615,8 @@ function Simulation({
         if (crestRelation.overtaken > .42) {
           unstableFor.current += delta
             * SURF_PHYSICS_TUNING.lipOvertakeFailure
-            * crestRelation.overtaken;
+            * crestRelation.overtaken
+            * assistProfile.instabilityLoadScale;
         }
         const tubePressure = resolveWaveTubePressure({
           linePosition,
@@ -16535,18 +16651,22 @@ function Simulation({
           lineSide: rideLineSide.current,
           whitewater: whitewaterPressure,
         });
-        const railGrip = resolveSurfboardRailGrip({
-          baseGrip: gripBase,
-          planing: ridePlaning,
-          waveContact: rideInteraction.waveContact,
-          crossWaveLoad,
-          railSlip: railSlip.current,
-          stance: stance.current,
-          facePosition: physicalFacePosition,
-          tubePressure,
-          whitewater: whitewaterPressure,
-          onshoreChop,
-        });
+        const railGrip = THREE.MathUtils.clamp(
+          resolveSurfboardRailGrip({
+            baseGrip: gripBase,
+            planing: ridePlaning,
+            waveContact: rideInteraction.waveContact,
+            crossWaveLoad,
+            railSlip: railSlip.current,
+            stance: stance.current,
+            facePosition: physicalFacePosition,
+            tubePressure,
+            whitewater: whitewaterPressure,
+            onshoreChop,
+          }) + assistProfile.railGripBonus,
+          .08,
+          1,
+        );
         const rideWaveEngagement = advanceWaveEngagement(
           waveEngagement.current,
           {
@@ -16611,12 +16731,15 @@ function Simulation({
             planing: ridePlaning,
             boardWidth: boardSpec.width,
             boardMass: boardSpec.mass,
-            boardStability: boardSpec.stability,
+            boardStability: ridingBoardStability,
             riderHeight: (
               .92 - bodyCompression.current * .52
             ) * (1 - returnProne.bodyLowering * .76),
             whitewater: whitewaterPressure,
             waterContact: boardWaterContact,
+            automaticCounterweight:
+              assistProfile.automaticCounterweight,
+            railTorqueScale: assistProfile.railTorqueScale,
           },
         );
         boardRollAngle.current = rideRoll.rollAngle;
@@ -16627,7 +16750,7 @@ function Simulation({
         rollCapsizeRisk = rideRoll.capsizeRisk;
         balanceTarget = rideRoll.balanceTarget;
         const balanceError = Math.abs(
-          rideCounterweight - balanceTarget,
+          rideRoll.effectiveCounterweight - balanceTarget,
         );
         const pitchForwardX = Math.sin(rideHeading.current);
         const pitchForwardZ = Math.cos(rideHeading.current);
@@ -16669,7 +16792,7 @@ function Simulation({
             speed,
             planing: ridePlaning,
             boardLength: boardSpec.length,
-            boardStability: boardSpec.stability,
+            boardStability: ridingBoardStability,
             waveContact: THREE.MathUtils.clamp(
               .35 + rideInteraction.waveContact * .65,
               0,
@@ -16693,7 +16816,7 @@ function Simulation({
           tideSteepness,
           facePosition: physicalFacePosition,
           tubePressure,
-        });
+        }) * assistProfile.railDemandScale;
         const previousRideVelocityX = rideVelocity.current.x;
         const previousRideVelocityZ = rideVelocity.current.y;
         const ridePressureContact = resolveSurfboardContactPatchOffsets({
@@ -16742,8 +16865,10 @@ function Simulation({
             boardLength: boardSpec.length,
             boardWidth: boardSpec.width,
             boardTurn: boardSpec.turn,
-            boardStability: boardSpec.stability,
+            boardStability: ridingBoardStability,
             waveHeight: targetFaceHeight,
+            turningAuthority: assistProfile.surfTurnAuthority,
+            momentumRetention: assistProfile.momentumRetention,
             faceTrimSupport: rideFaceTrimSupport
               * railGrip
               * ridePlaning,
@@ -17004,7 +17129,7 @@ function Simulation({
                   : "release";
         }
         const failThreshold = SURF_PHYSICS_TUNING.balanceFailureThreshold
-          * Math.sqrt(boardSpec.stability);
+          * Math.sqrt(ridingBoardStability);
         const rideInstability = advanceSurfboardInstability(
           unstableFor.current,
           {
@@ -17023,6 +17148,9 @@ function Simulation({
             pearlingRisk,
             pitchOverRisk,
             tailStall,
+            loadScale: assistProfile.instabilityLoadScale,
+            recoveryScale:
+              assistProfile.instabilityRecoveryScale,
           },
         );
         unstableFor.current = rideInstability.instability;
@@ -17375,6 +17503,8 @@ function Simulation({
             unstableFor.current,
             rollCapsizeRisk,
             pitchOverRisk,
+            assistProfile.wipeoutThresholdScale,
+            assistProfile.failureMargin,
           )
         ) {
           phase.current = "wipeout";

@@ -46,7 +46,7 @@ export const OCEAN_BATHYMETRY_COASTAL_Z = new Float32Array([
   -103, -96, -90, -84, -78, -73, -68, -64,
   -60, -57, -55, -51, -49, -47, -44, -40,
   -37, -34, -28, -25, -23, -19, -17, -15,
-  -12, -9, -7, -3, 0, 2, 4, 6,
+  -12, -9, -7, -3, 0, 2, 5, 12,
 ]);
 
 export type RenderWaveComponent = {

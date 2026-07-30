@@ -160,6 +160,11 @@ if (
   || !worldMapSource.includes("const pairedMinimum")
   || !worldMapSource.includes("refreshMarkerLayout")
   || !launchSource.includes("tow-instrument")
+  || !launchSource.includes("TURN / CARVE")
+  || !launchSource.includes("BALANCE / RECOVER")
+  || !launchSource.includes(
+    "Turn and carve stick. Balance is controlled separately.",
+  )
   || !launchSource.includes("RELEASE disengages anytime")
   || !launchSource.includes("Live face lock")
   || launchSource.includes('className="tow-window"')
@@ -175,6 +180,14 @@ if (
   || !surfSceneSource.includes("stageOptionalTowCrestAtBreaker")
   || !surfSceneSource.includes("optionalTowReleaseFaceQuality")
   || !surfSceneSource.includes("optionalTowTakeoffTargetScore")
+  || !surfSceneSource.includes("optionalTowNavigableZ")
+  || !surfSceneSource.includes(
+    "for (let candidateIndex = 0; candidateIndex < 12; candidateIndex += 1)",
+  )
+  || !surfSceneSource.includes(
+    "desiredTowZ = navigableTowZAt(",
+  )
+  || !surfSceneSource.includes("const SURFER_MODEL_SCALE = .86")
   || !surfSceneSource.includes("distanceToTarget: towTargetDistance")
   || surfSceneSource.includes("liveCrest.normalX * 9.5")
   || !surfSceneSource.includes("towMotion.current.targetWavePhase -= Math.PI * 2")
