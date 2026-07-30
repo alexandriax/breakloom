@@ -5,6 +5,10 @@
 <h1 align="center">Breakloom</h1>
 
 <p align="center">
+  <strong><a href="https://www.breakloom.com">Play Breakloom</a></strong>
+</p>
+
+<p align="center">
   <strong>Published from <code>main</code> through Vercel</strong>
 </p>
 
