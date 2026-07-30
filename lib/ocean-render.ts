@@ -43,8 +43,9 @@ const MAXIMUM_COMBINED_STEEPNESS = .44;
 export const OCEAN_BATHYMETRY_COASTAL_Z = new Float32Array([
   -1260, -1050, -860, -700, -565, -450, -355, -310,
   -278, -244, -216, -190, -166, -145, -126, -111,
-  -96, -84, -73, -68, -64, -60, -55, -51,
-  -47, -44, -40, -34, -28, -23, -19, -15,
+  -103, -96, -90, -84, -78, -73, -68, -64,
+  -60, -57, -55, -51, -49, -47, -44, -40,
+  -37, -34, -28, -25, -23, -19, -17, -15,
   -12, -9, -7, -3, 0, 2, 4, 6,
 ]);
 
@@ -116,7 +117,7 @@ export type RenderAggregateTable = FloatTextureTable & {
 export type RenderBathymetryTable = FloatTextureTable & {
   coastalZKnots: Float32Array;
   /**
-   * Row 0 = contour q, depth, shoreline z, offshore distance
+   * Row 0 = contour q, depth, shoreline z, ∂²q/∂x²
    * Row 1 = ∂q/∂x, ∂q/∂z, ∂depth/∂x, ∂depth/∂z
    *
    * Linear interpolation in coastal z plus the x derivatives gives a compact
@@ -157,6 +158,7 @@ export type PackedBathymetrySample = {
   depth: number;
   shorelineZ: number;
   offshore: number;
+  contourCurvatureX: number;
   contourGradientX: number;
   contourGradientZ: number;
   depthGradientX: number;
@@ -495,11 +497,27 @@ function buildBathymetryTable(
       profileX,
       coastalZ,
     );
+    const curvatureStep = 4;
+    const contourCurvatureX = (
+      bathymetryContourCoordinateAt(
+        coastId,
+        zoneName,
+        profileX + curvatureStep,
+        coastalZ,
+      )
+        - 2 * contour
+        + bathymetryContourCoordinateAt(
+          coastId,
+          zoneName,
+          profileX - curvatureStep,
+          coastalZ,
+        )
+    ) / (curvatureStep * curvatureStep);
     const first = knot * 4;
     data[first] = contour;
     data[first + 1] = depth;
     data[first + 2] = shorelineZ;
-    data[first + 3] = Math.max(0, shorelineZ - coastalZ);
+    data[first + 3] = contourCurvatureX;
     const second = (knotCount + knot) * 4;
     data[second] = contourGradient.x;
     data[second + 1] = contourGradient.z;
@@ -530,7 +548,7 @@ function adaptiveTravelProfile(profile: WaveDepthProfile) {
       };
     })
     .sort((a, b) => b.score - a.score || a.z - b.z)
-    .slice(0, Math.max(0, 32 - profile.knots.length))
+    .slice(0, Math.max(0, 40 - profile.knots.length))
     .filter((interval) => interval.score > .04)
     .map((interval) => interval.z);
   const contour = [
@@ -654,7 +672,8 @@ export function samplePackedBathymetry(
     contourCoordinate: values[0],
     depth: values[1],
     shorelineZ: values[2],
-    offshore: values[3],
+    offshore: Math.max(0, values[2] - coastalZ),
+    contourCurvatureX: values[3],
     contourGradientX: derivatives[0],
     contourGradientZ: derivatives[1],
     depthGradientX: derivatives[2],
@@ -679,7 +698,9 @@ export function samplePackedOceanHeight(
   const bathymetry = samplePackedBathymetry(state, coastalZ);
   const profileDeltaX = x - state.profileX;
   const contourCoordinate = bathymetry.contourCoordinate
-    + bathymetry.contourGradientX * profileDeltaX;
+    + bathymetry.contourGradientX * profileDeltaX
+    + bathymetry.contourCurvatureX
+      * profileDeltaX * profileDeltaX * .5;
   const aggregate = samplePackedAggregate(state, contourCoordinate);
   const depth = Math.max(.08, aggregate.depth);
   const breakingRatio = aggregate.rawSignificantHeight
@@ -700,6 +721,8 @@ export function samplePackedOceanHeight(
   let groupReal = 0;
   let groupImaginary = 0;
   let groupVariance = 0;
+  let groupCarrierGradientX = 0;
+  let groupCarrierGradientZ = 0;
   for (const component of state.componentBank.components) {
     const travel = samplePackedTravel(
       state,
@@ -736,9 +759,12 @@ export function samplePackedOceanHeight(
       component.kind === "swell" ? 1 : -1
     ) * (component.partitionId + 1);
     if (partitionTag === state.componentBank.dominantPartitionTag) {
+      const varianceWeight = amplitude * amplitude * .5;
       groupReal += amplitude * Math.cos(phase);
       groupImaginary += amplitude * Math.sin(phase);
-      groupVariance += amplitude * amplitude * .5;
+      groupVariance += varianceWeight;
+      groupCarrierGradientX += varianceWeight * phaseGradientX;
+      groupCarrierGradientZ += varianceWeight * phaseGradientZ;
     }
   }
   const dominantPhase = Math.atan2(groupImaginary, groupReal);
@@ -759,6 +785,19 @@ export function samplePackedOceanHeight(
     * (3 - 2 * energyUnit);
   const localSignificantHeight = aggregate.rawSignificantHeight
     * amplitudeScale;
+  const stableCarrierGradientX = groupVariance > 1e-8
+    ? groupCarrierGradientX / groupVariance
+    : 0;
+  const stableCarrierGradientZ = groupVariance > 1e-8
+    ? groupCarrierGradientZ / groupVariance
+    : 0;
+  const dominantWavelength = Math.PI * 2 / Math.max(
+    .0001,
+    Math.hypot(
+      stableCarrierGradientX,
+      stableCarrierGradientZ,
+    ),
+  );
   const breaker = waveBreakerResponseAt(
     breakingRatio,
     localSignificantHeight,
@@ -772,6 +811,7 @@ export function samplePackedOceanHeight(
       targetFaceHeight: state.targetFaceHeight,
     },
     -contourCoordinate,
+    dominantWavelength,
   );
   const horizontalSlopeScale = Math.min(
     1,

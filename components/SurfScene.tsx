@@ -878,8 +878,8 @@ const OCEAN_VERTEX = /* glsl */ `
   uniform sampler2D uTravel;
   uniform sampler2D uAggregate;
   uniform sampler2D uBathymetry;
-  uniform float uTravelKnots[32];
-  uniform float uBathymetryKnots[40];
+  uniform float uTravelKnots[40];
+  uniform float uBathymetryKnots[48];
   varying float vHeight;
   varying float vCrest;
   varying float vBreaker;
@@ -895,7 +895,7 @@ const OCEAN_VERTEX = /* glsl */ `
   float bathymetryIndex(float coastalZ) {
     float result = 0.0;
     if (coastalZ <= uBathymetryKnots[0]) return 0.0;
-    for (int index = 0; index < 39; index++) {
+    for (int index = 0; index < 47; index++) {
       float low = uBathymetryKnots[index];
       float high = uBathymetryKnots[index + 1];
       if (coastalZ >= low) {
@@ -903,13 +903,13 @@ const OCEAN_VERTEX = /* glsl */ `
           + clamp((coastalZ - low) / max(.0001, high - low), 0.0, 1.0);
       }
     }
-    return min(result, 39.0);
+    return min(result, 47.0);
   }
 
   float travelIndex(float contourCoordinate) {
     float result = 0.0;
     if (contourCoordinate <= uTravelKnots[0]) return 0.0;
-    for (int index = 0; index < 31; index++) {
+    for (int index = 0; index < 39; index++) {
       if (float(index + 1) >= uTravelKnotCount) continue;
       float low = uTravelKnots[index];
       float high = uTravelKnots[index + 1];
@@ -942,7 +942,9 @@ const OCEAN_VERTEX = /* glsl */ `
     );
     float profileDeltaX = surfaceOrigin.x - uProfileX;
     float contourCoordinate = bathymetryValue.x
-      + bathymetryDerivative.x * profileDeltaX;
+      + bathymetryDerivative.x * profileDeltaX
+      + bathymetryValue.w
+        * profileDeltaX * profileDeltaX * .5;
     float depth = .08;
     vec2 contourGradient = bathymetryDerivative.xy;
     float travelCoordinate = travelIndex(contourCoordinate);
@@ -977,6 +979,7 @@ const OCEAN_VERTEX = /* glsl */ `
     vec2 groupDerivativeReal = vec2(0.0);
     vec2 groupDerivativeImaginary = vec2(0.0);
     float groupVariance = 0.0;
+    vec2 groupCarrierGradient = vec2(0.0);
 
     for (int index = 0; index < 28; index++) {
       if (float(index) >= uComponentCount) continue;
@@ -1034,6 +1037,7 @@ const OCEAN_VERTEX = /* glsl */ `
         );
       }
       if (abs(second.a - uDominantPartitionTag) < .25) {
+        float varianceWeight = amplitude * amplitude * .5;
         groupReal += amplitude * cosine;
         groupImaginary += amplitude * sine;
         groupDerivativeReal -= amplitude
@@ -1042,7 +1046,9 @@ const OCEAN_VERTEX = /* glsl */ `
         groupDerivativeImaginary += amplitude
           * cosine
           * vec2(phaseGradientX, phaseGradientZ);
-        groupVariance += amplitude * amplitude * .5;
+        groupVariance += varianceWeight;
+        groupCarrierGradient += varianceWeight
+          * vec2(phaseGradientX, phaseGradientZ);
       }
       if (second.a > 0.0) {
         swellElevation += elevation;
@@ -1062,6 +1068,11 @@ const OCEAN_VERTEX = /* glsl */ `
             - groupImaginary * groupDerivativeReal
         ) / groupMagnitudeSquared
       : dominantComponentGradient;
+    vec2 stableCarrierGradient = groupVariance > .00000001
+      ? groupCarrierGradient / groupVariance
+      : dominantComponentGradient;
+    float dominantWavelength = PI * 2.0
+      / max(.0001, length(stableCarrierGradient));
     float groupSignificantHeight = 4.0
       * sqrt(max(0.0, groupVariance));
     float normalizedGroupEnvelope = sqrt(
@@ -1129,6 +1140,144 @@ const OCEAN_VERTEX = /* glsl */ `
     gradientX -= carrierCorrection * sin(dominantPhase)
       * dominantGradient.x;
     gradientZ -= carrierCorrection * sin(dominantPhase)
+      * dominantGradient.y;
+    // Preserve one coherent crest/trough cycle, but concentrate the visible
+    // breaker wall into the same 3–7 m footprint occupied by the board. This
+    // is the GPU twin of waveBreakerResponseAt(), not detached face geometry.
+    float largeWaveReachScale = 2.5
+      - smoothstep(4.5, 9.0, uTargetFaceHeight) * .8;
+    float faceReach = clamp(
+      uTargetFaceHeight * largeWaveReachScale,
+      3.0,
+      18.0
+    );
+    float resolvedWavelength = max(
+      faceReach * 2.2,
+      dominantWavelength
+    );
+    float referenceFacePhase = clamp(
+      PI * 2.0 * faceReach / resolvedWavelength,
+      .08,
+      1.2
+    );
+    float desiredFacePhase = clamp(
+      1.04 + uBreakerSteepness * .14 + uBreakerHollow * .08,
+      1.12,
+      1.36
+    );
+    float fullFaceCompression = clamp(
+      tan(desiredFacePhase * .5)
+        / max(.01, tan(referenceFacePhase * .5)),
+      1.0,
+      10.0
+    );
+    float activeFaceCompression = 1.0
+      + (fullFaceCompression - 1.0) * faceActivation;
+    float halfPhaseSine = sin(dominantPhase * .5);
+    float halfPhaseCosine = cos(dominantPhase * .5);
+    float compressedFacePhase = 2.0 * atan(
+      activeFaceCompression * halfPhaseSine,
+      halfPhaseCosine
+    );
+    float compressedPhaseDerivative = activeFaceCompression / max(
+      .000001,
+      halfPhaseCosine * halfPhaseCosine
+        + activeFaceCompression * activeFaceCompression
+          * halfPhaseSine * halfPhaseSine
+    );
+    float referenceHalfSine = sin(referenceFacePhase * .5);
+    float referenceHalfCosine = cos(referenceFacePhase * .5);
+    float compressedReferencePhase = 2.0 * atan(
+      activeFaceCompression * referenceHalfSine,
+      referenceHalfCosine
+    );
+    float characterWallRatio = .66
+      + smoothstep(.55, 1.15, uBreakerSteepness) * .14
+      + uBreakerHollow * .06;
+    float humanScaleWallRatio = uTargetFaceHeight >= 1.9
+      ? min(.9, 1.76 / max(.1, uTargetFaceHeight))
+      : 0.0;
+    float desiredLocalWall = uTargetFaceHeight
+      * max(characterWallRatio, humanScaleWallRatio)
+      * faceActivation;
+    float shapeAtZero = second + third + fourth + fifth;
+    float referenceTwice = referenceFacePhase * 2.0;
+    float shapeAtReference = second * cos(referenceTwice)
+      + asymmetry * sin(referenceTwice)
+      + third * cos(referenceFacePhase * 3.0)
+      + fourth * cos(referenceFacePhase * 4.0)
+      + fifth * cos(referenceFacePhase * 5.0);
+    float currentCoherentWall = max(
+      0.0,
+      (
+        sqrt(max(0.0, groupMagnitudeSquared))
+          + carrierCorrection
+      ) * (1.0 - cos(referenceFacePhase))
+        + shapeAmplitude * (shapeAtZero - shapeAtReference)
+    );
+    float wallShapeRange = max(
+      .08,
+      cos(referenceFacePhase) - cos(compressedReferencePhase)
+    );
+    float referenceWallSupportRange = wallShapeRange * tanh(1.0);
+    float existingNonlinearSupport = clamp(
+      1.0
+        - smoothstep(.85, 1.18, uBreakerSteepness) * .3
+        - uBreakerHollow * .15,
+      .5,
+      1.0
+    );
+    float humanScaleBoostActivation = smoothstep(
+      2.05,
+      2.25,
+      uTargetFaceHeight
+    ) * (
+      1.0 - smoothstep(2.45, 3.1, uTargetFaceHeight)
+    );
+    float humanScaleSupportBoost = uTargetFaceHeight >= 1.9
+      ? 1.0 + (
+        1.0 - smoothstep(.72, 1.05, uBreakerSteepness)
+      ) * 2.4 * humanScaleBoostActivation
+      : 1.0;
+    float wallSupportAmplitude = clamp(
+      max(0.0, desiredLocalWall - currentCoherentWall)
+        / referenceWallSupportRange
+        * (.72 + readableCrestEnergy * .08)
+        * existingNonlinearSupport
+        * humanScaleSupportBoost,
+      0.0,
+      max(
+        .1,
+        uTargetFaceHeight * (
+          1.2 - smoothstep(5.5, 11.0, uTargetFaceHeight) * .5
+            + (
+              1.0 - smoothstep(.72, 1.05, uBreakerSteepness)
+            ) * .8 * humanScaleBoostActivation
+        )
+      )
+    );
+    float unsidedWallSupportShape = cos(compressedFacePhase)
+      - cos(dominantPhase);
+    float rawWallSupportShape = min(
+      0.0,
+      unsidedWallSupportShape
+    );
+    float rawWallSupportDerivative =
+      unsidedWallSupportShape < 0.0
+        ? -sin(compressedFacePhase) * compressedPhaseDerivative
+          + sin(dominantPhase)
+        : 0.0;
+    float wallSupportTanh = tanh(
+      rawWallSupportShape / wallShapeRange
+    );
+    float wallSupportShape = wallShapeRange * wallSupportTanh;
+    float wallSupportDerivative = (
+      1.0 - wallSupportTanh * wallSupportTanh
+    ) * rawWallSupportDerivative;
+    surfaceHeight += wallSupportAmplitude * wallSupportShape;
+    gradientX += wallSupportAmplitude * wallSupportDerivative
+      * dominantGradient.x;
+    gradientZ += wallSupportAmplitude * wallSupportDerivative
       * dominantGradient.y;
     float washAmplitude = clamp(
       max(0.0, uTargetFaceHeight) * .14 + .1,
@@ -1513,6 +1662,64 @@ function paddedOceanKnots(
   return values;
 }
 
+function createAdaptiveOceanGeometry(
+  width: number,
+  depth: number,
+  crossShoreSegments: number,
+  offshoreSegments: number,
+) {
+  const geometry = new THREE.PlaneGeometry(
+    width,
+    depth,
+    crossShoreSegments,
+    offshoreSegments,
+  );
+  const positions = geometry.getAttribute(
+    "position",
+  ) as THREE.BufferAttribute;
+  const widthHalf = width * .5;
+  const depthHalf = depth * .5;
+  const alongshoreConcentration = 3;
+  const offshoreConcentration = 3;
+  const alongshoreDenominator = Math.sinh(
+    alongshoreConcentration,
+  );
+  const offshoreDenominator = Math.expm1(
+    offshoreConcentration,
+  );
+  for (let index = 0; index < positions.count; index += 1) {
+    const normalizedX = THREE.MathUtils.clamp(
+      positions.getX(index) / widthHalf,
+      -1,
+      1,
+    );
+    const offshoreProgress = THREE.MathUtils.clamp(
+      (positions.getY(index) + depthHalf) / depth,
+      0,
+      1,
+    );
+    // The ocean follows the player alongshore, so concentrate the existing
+    // vertex budget around the camera/board and around the shallow breaking
+    // contours. Mobile now resolves roughly 1–2 m cells at a typical peak
+    // instead of stretching one triangle across 5–9 m of surfable face.
+    const adaptiveX = widthHalf
+      * Math.sinh(alongshoreConcentration * normalizedX)
+      / alongshoreDenominator;
+    const adaptiveOffshore = depth
+      * Math.expm1(offshoreConcentration * offshoreProgress)
+      / offshoreDenominator;
+    positions.setXY(
+      index,
+      adaptiveX,
+      -depthHalf + adaptiveOffshore,
+    );
+  }
+  positions.needsUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function Ocean({
   settings,
   character,
@@ -1575,6 +1782,31 @@ function Ocean({
     : quality === "reduced" ? 260 : quality === "balanced" ? 340 : 420;
   const subsurfaceCrossShoreSegments = Math.max(48, Math.round(crossShoreSegments * .62));
   const subsurfaceOffshoreSegments = Math.max(64, Math.round(offshoreSegments * .6));
+  const oceanGeometry = useMemo(
+    () => createAdaptiveOceanGeometry(
+      OCEAN_RENDER_WIDTH,
+      OCEAN_PLANE_DEPTH,
+      crossShoreSegments,
+      offshoreSegments,
+    ),
+    [crossShoreSegments, offshoreSegments],
+  );
+  const subsurfaceGeometry = useMemo(
+    () => createAdaptiveOceanGeometry(
+      OCEAN_RENDER_WIDTH,
+      OCEAN_PLANE_DEPTH,
+      subsurfaceCrossShoreSegments,
+      subsurfaceOffshoreSegments,
+    ),
+    [
+      subsurfaceCrossShoreSegments,
+      subsurfaceOffshoreSegments,
+    ],
+  );
+  useEffect(() => () => {
+    oceanGeometry.dispose();
+    subsurfaceGeometry.dispose();
+  }, [oceanGeometry, subsurfaceGeometry]);
   const uniforms = useMemo(
     () => ({
       uTime: { value: 0 },
@@ -1624,13 +1856,13 @@ function Ocean({
       uTravelKnots: {
         value: paddedOceanKnots(
           renderState.travel.contourKnots,
-          32,
+          40,
         ),
       },
       uBathymetryKnots: {
         value: paddedOceanKnots(
           OCEAN_BATHYMETRY_COASTAL_Z,
-          40,
+          48,
         ),
       },
       uComponentParameters: {
@@ -1706,7 +1938,7 @@ function Ocean({
         nextRenderState.bathymetry.width;
       values.uTravelKnots.value = paddedOceanKnots(
         nextRenderState.travel.contourKnots,
-        32,
+        40,
       );
     }
     values.uTime.value = clock.elapsedTime;
@@ -1735,7 +1967,7 @@ function Ocean({
   return (
     <>
       <mesh ref={ocean} position={[0, -0.08, OCEAN_CENTER_Z + tideShift]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[OCEAN_RENDER_WIDTH, OCEAN_PLANE_DEPTH, crossShoreSegments, offshoreSegments]} />
+        <primitive attach="geometry" object={oceanGeometry} />
         <shaderMaterial
           ref={material}
           uniforms={uniforms}
@@ -1750,7 +1982,7 @@ function Ocean({
         rotation={[-Math.PI / 2, 0, 0]}
         renderOrder={-1}
       >
-        <planeGeometry args={[OCEAN_RENDER_WIDTH, OCEAN_PLANE_DEPTH, subsurfaceCrossShoreSegments, subsurfaceOffshoreSegments]} />
+        <primitive attach="geometry" object={subsurfaceGeometry} />
         <shaderMaterial
           uniforms={uniforms}
           vertexShader={OCEAN_VERTEX}

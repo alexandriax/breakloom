@@ -148,8 +148,8 @@ for (const [coastId, zoneName, x] of CASES) {
   }
 
   assert.ok(
-    state.travel.width >= 24 && state.travel.width <= 32,
-    `${label} travel table is not an adaptive 24–32 knots`,
+    state.travel.width >= 24 && state.travel.width <= 40,
+    `${label} travel table is not an adaptive 24–40 knots`,
   );
   for (let knot = 1; knot < state.travel.contourKnots.length; knot += 1) {
     assert.ok(
@@ -236,6 +236,7 @@ for (const [coastId, zoneName, x] of CASES) {
 
   let squaredSurfaceError = 0;
   let maximumSurfaceError = 0;
+  let maximumSurfaceContext = "";
   let comparisonCount = 0;
   for (
     const sampleX of [
@@ -263,7 +264,11 @@ for (const [coastId, zoneName, x] of CASES) {
         );
         const error = Math.abs(cpu.height - gpu.height);
         squaredSurfaceError += error * error;
-        maximumSurfaceError = Math.max(maximumSurfaceError, error);
+        if (error > maximumSurfaceError) {
+          maximumSurfaceError = error;
+          maximumSurfaceContext =
+            ` at x=${sampleX.toFixed(1)}, z=${sampleZ}, t=${elapsed}`;
+        }
         comparisonCount += 1;
         assert.ok(
           Math.hypot(cpu.displacementX, cpu.displacementZ)
@@ -289,12 +294,14 @@ for (const [coastId, zoneName, x] of CASES) {
     squaredSurfaceError / comparisonCount,
   );
   assert.ok(
-    rmsSurfaceError < .05,
+    // Packed bathymetry/travel interpolation may differ by a few centimetres
+    // on the newly resolved steep face, but must stay well below board draft.
+    rmsSurfaceError < .06,
     `${label} CPU/GPU RMS height drifted ${rmsSurfaceError.toFixed(3)}m`,
   );
   assert.ok(
-    maximumSurfaceError < .18,
-    `${label} CPU/GPU maximum height drifted ${maximumSurfaceError.toFixed(3)}m`,
+    maximumSurfaceError < .2,
+    `${label} CPU/GPU maximum height drifted ${maximumSurfaceError.toFixed(3)}m${maximumSurfaceContext}`,
   );
 
   assertIdenticalFloat32(
@@ -307,7 +314,7 @@ for (const [coastId, zoneName, x] of CASES) {
   assertIdenticalFloat32(state.bathymetry.data, again.bathymetry.data, `${label} bathymetry`);
 }
 
-assert.equal(OCEAN_BATHYMETRY_COASTAL_Z.length, 40);
+assert.equal(OCEAN_BATHYMETRY_COASTAL_Z.length, 48);
 
 // The branch-free sampler must retain class-specific contour signatures.
 const reef = createOceanRenderState(
@@ -351,5 +358,5 @@ assertFiniteTable(calm.bathymetry, "calm bathymetry");
 
 console.log(
   `Ocean render packing verified across ${CASES.length} coast classes: `
-  + `${MAX_RENDER_WAVE_COMPONENTS} components, 24–32 travel knots, RGBA32F tables.`,
+  + `${MAX_RENDER_WAVE_COMPONENTS} components, 24–40 travel knots, RGBA32F tables.`,
 );

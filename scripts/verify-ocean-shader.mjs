@@ -42,6 +42,10 @@ for (const token of [
   "uMaximumHorizontalDisplacement",
   "breakerShapeDerivative",
   "targetCarrierAmplitude",
+  "groupCarrierGradient",
+  "compressedFacePhase",
+  "wallSupportAmplitude",
+  "humanScaleSupportBoost",
   "boundedHorizontalDisplacement",
   "groupReal",
   "normalizedGroupEnvelope",
@@ -62,9 +66,16 @@ for (const token of [
   "createOceanRenderState",
   "createOceanFloatTexture",
   "updateOceanFloatTexture",
+  "createAdaptiveOceanGeometry",
+  "oceanGeometry",
+  "subsurfaceGeometry",
 ]) {
   assert.ok(
-    oceanComponent.includes(token),
+    source.includes(token)
+      && (
+        token === "createAdaptiveOceanGeometry"
+          || oceanComponent.includes(token)
+      ),
     `GPU ocean state contract lost ${token}`,
   );
 }

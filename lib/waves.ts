@@ -1372,6 +1372,7 @@ export function waveBreakerResponseAt(
     | "targetFaceHeight"
   > = {},
   signedOffshoreDistance = Number.POSITIVE_INFINITY,
+  dominantWavelength = Number.NaN,
 ): WaveBreakerResponse {
   const power = clamp(positiveOr(options.breakerPower, 1), .62, 1.55);
   const steepness = clamp(positiveOr(options.breakerSteepness, .78), .38, 1.3);
@@ -1426,11 +1427,13 @@ export function waveBreakerResponseAt(
   const thrice = dominantPhase * 3;
   const fourthPhase = dominantPhase * 4;
   const fifthPhase = dominantPhase * 5;
-  const shape = second * Math.cos(twice)
-    + asymmetry * Math.sin(twice)
-    + third * Math.cos(thrice)
-    + fourth * Math.cos(fourthPhase)
-    + fifth * Math.cos(fifthPhase);
+  const breakerShapeAt = (phase: number) =>
+    second * Math.cos(phase * 2)
+      + asymmetry * Math.sin(phase * 2)
+      + third * Math.cos(phase * 3)
+      + fourth * Math.cos(phase * 4)
+      + fifth * Math.cos(phase * 5);
+  const shape = breakerShapeAt(dominantPhase);
   const shapeDerivative = -2 * second * Math.sin(twice)
     + 2 * asymmetry * Math.cos(twice)
     - 3 * third * Math.sin(thrice)
@@ -1452,6 +1455,149 @@ export function waveBreakerResponseAt(
   ) * faceActivation;
   const carrierShape = Math.cos(dominantPhase);
   const carrierDerivative = -Math.sin(dominantPhase);
+  // Significant wave height alone does not say how much wall exists beside a
+  // board. A long-period carrier can contain the forecast height while taking
+  // 10–20 m to descend, which reads as a low rolling hill at surfer scale.
+  // Reshape only the breaking carrier with a smooth one-crest phase map. The
+  // map preserves crest/trough identity, wavelength, and set spacing while
+  // concentrating the forecast wall into a wave-scaled takeoff footprint.
+  // Because this correction is part of the shared height field (not a second
+  // mesh), hull contact, slope forces, foam, and the rendered wall remain the
+  // same surface.
+  const targetFaceHeight = Math.max(0, options.targetFaceHeight ?? 0);
+  const largeWaveReachScale = 2.5
+    - smoothUnit(4.5, 9, targetFaceHeight) * .8;
+  const faceReach = clamp(
+    targetFaceHeight * largeWaveReachScale,
+    3,
+    18,
+  );
+  const resolvedWavelength = Number.isFinite(dominantWavelength)
+    ? Math.max(faceReach * 2.2, dominantWavelength)
+    : faceReach * 10.5;
+  const referenceFacePhase = clamp(
+    Math.PI * 2 * faceReach / resolvedWavelength,
+    .08,
+    1.2,
+  );
+  const desiredFacePhase = clamp(
+    1.04 + steepness * .14 + hollow * .08,
+    1.12,
+    1.36,
+  );
+  const fullFaceCompression = clamp(
+    Math.tan(desiredFacePhase * .5)
+      / Math.max(.01, Math.tan(referenceFacePhase * .5)),
+    1,
+    10,
+  );
+  const activeFaceCompression = 1
+    + (fullFaceCompression - 1) * faceActivation;
+  const halfPhaseSine = Math.sin(dominantPhase * .5);
+  const halfPhaseCosine = Math.cos(dominantPhase * .5);
+  const compressedFacePhase = 2 * Math.atan2(
+    activeFaceCompression * halfPhaseSine,
+    halfPhaseCosine,
+  );
+  const compressedPhaseDerivative = activeFaceCompression / Math.max(
+    1e-6,
+    halfPhaseCosine * halfPhaseCosine
+      + activeFaceCompression * activeFaceCompression
+        * halfPhaseSine * halfPhaseSine,
+  );
+  const referenceHalfSine = Math.sin(referenceFacePhase * .5);
+  const referenceHalfCosine = Math.cos(referenceFacePhase * .5);
+  const compressedReferencePhase = 2 * Math.atan2(
+    activeFaceCompression * referenceHalfSine,
+    referenceHalfCosine,
+  );
+  const characterWallRatio = .66
+    + smoothUnit(.55, 1.15, steepness) * .14
+    + hollow * .06;
+  // At forecast faces of roughly head high or larger, the wall within the
+  // takeoff footprint must visibly clear a 1.6 m rendered surfer.
+  const humanScaleWallRatio = targetFaceHeight >= 1.9
+    ? Math.min(.9, 1.76 / Math.max(.1, targetFaceHeight))
+    : 0;
+  const desiredLocalWall = targetFaceHeight
+    * Math.max(characterWallRatio, humanScaleWallRatio)
+    * faceActivation;
+  const currentCoherentWall = Math.max(
+    0,
+    (
+      Math.max(0, dominantEnvelopeAmplitude)
+        + carrierCorrection
+    ) * (1 - Math.cos(referenceFacePhase))
+      + shapeAmplitude * (
+        breakerShapeAt(0)
+          - breakerShapeAt(referenceFacePhase)
+      ),
+  );
+  const wallShapeRange = Math.max(
+    .08,
+    Math.cos(referenceFacePhase)
+      - Math.cos(compressedReferencePhase),
+  );
+  const referenceWallSupportRange = wallShapeRange
+    * Math.tanh(1);
+  const existingNonlinearSupport = clamp(
+    1
+      - smoothUnit(.85, 1.18, steepness) * .3
+      - hollow * .15,
+    .5,
+    1,
+  );
+  const humanScaleBoostActivation = smoothUnit(
+    2.05,
+    2.25,
+    targetFaceHeight,
+  ) * (
+    1 - smoothUnit(2.45, 3.1, targetFaceHeight)
+  );
+  const humanScaleSupportBoost = targetFaceHeight >= 1.9
+    ? 1 + (
+      1 - smoothUnit(.72, 1.05, steepness)
+    ) * 2.4 * humanScaleBoostActivation
+    : 1;
+  const wallSupportAmplitude = clamp(
+    Math.max(0, desiredLocalWall - currentCoherentWall)
+      / referenceWallSupportRange
+      * (.72 + readableCrestEnergy * .08)
+      * existingNonlinearSupport
+      * humanScaleSupportBoost,
+    0,
+    Math.max(
+      .1,
+      targetFaceHeight * (
+        1.2 - smoothUnit(5.5, 11, targetFaceHeight) * .5
+          + (
+            1 - smoothUnit(.72, 1.05, steepness)
+          ) * .8 * humanScaleBoostActivation
+      ),
+    ),
+  );
+  const unsidedWallSupportShape = Math.cos(compressedFacePhase)
+    - Math.cos(dominantPhase);
+  // Breaking waves stand up on the shoreward face and retain a longer,
+  // gentler back. Applying the redistribution only on that forward half also
+  // prevents the correction from raising a second false crest behind the lip.
+  const rawWallSupportShape = Math.min(
+    0,
+    unsidedWallSupportShape,
+  );
+  const rawWallSupportDerivative = unsidedWallSupportShape < 0
+    ? -Math.sin(compressedFacePhase) * compressedPhaseDerivative
+      + Math.sin(dominantPhase)
+    : 0;
+  // Saturation prevents the compression from digging an artificial trough
+  // farther down the phase cycle than the calibrated board-scale wall.
+  const wallSupportTanh = Math.tanh(
+    rawWallSupportShape / wallShapeRange,
+  );
+  const wallSupportShape = wallShapeRange * wallSupportTanh;
+  const wallSupportDerivative = (
+    1 - wallSupportTanh * wallSupportTanh
+  ) * rawWallSupportDerivative;
   const washAmplitude = clamp(
     Math.max(0, options.targetFaceHeight ?? 0) * .14 + .1,
     .14,
@@ -1480,10 +1626,12 @@ export function waveBreakerResponseAt(
     heightOffset:
       shapeAmplitude * shape
       + carrierCorrection * carrierShape
+      + wallSupportAmplitude * wallSupportShape
       + washAmplitude * washShape,
     phaseDerivative:
       shapeAmplitude * shapeDerivative
       + carrierCorrection * carrierDerivative
+      + wallSupportAmplitude * wallSupportDerivative
       + washAmplitude * washDerivative,
     whitewater,
   };
@@ -1503,6 +1651,7 @@ function heightFromLocal(
     dominant?.amplitude ?? 0,
     options,
     local.signedOffshoreDistance,
+    dominant?.wavelength,
   );
   return heightFromTerms(local.terms) + response.heightOffset;
 }
@@ -1797,6 +1946,7 @@ export function sampleWaveSurface(
     dominant?.amplitude ?? 0,
     options,
     local.signedOffshoreDistance,
+    dominant?.wavelength,
   );
   const height = heightFromTerms(local.terms) + breaker.heightOffset;
   let timeDerivative = 0;
@@ -1877,7 +2027,10 @@ export function sampleWaveSurface(
       * dominant.gradientX;
   }
   const gradientStep = clamp(
-    positiveOr(options.gradientStep, .18),
+    // Breaking-face support now changes materially across a board-length.
+    // Resolve that local wall rather than averaging its normal over a broad
+    // patch that the rendered mesh and rail contacts do not share.
+    positiveOr(options.gradientStep, .04),
     .025,
     1,
   );
