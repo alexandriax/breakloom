@@ -4851,6 +4851,7 @@ export default function BreakloomApp() {
           data-qa-wave-engagement={stats.waveEngagement.toFixed(3)}
           data-qa-prompt={stats.prompt}
           data-qa-tow-mode={stats.towMode ? "true" : "false"}
+          data-qa-tow-returning={stats.towReturning ? "true" : "false"}
           data-qa-tow-progress={stats.towProgress.toFixed(3)}
           data-qa-tow-release-quality={stats.towReleaseQuality.toFixed(3)}
           data-qa-tow-face-quality={stats.towFaceQuality.toFixed(3)}
@@ -4858,6 +4859,12 @@ export default function BreakloomApp() {
           data-qa-tow-breaking-ratio={stats.towBreakingRatio.toFixed(3)}
           data-qa-tow-heading-alignment={stats.towHeadingAlignment.toFixed(3)}
           data-qa-tow-speed-match={stats.towSpeedMatch.toFixed(3)}
+          data-qa-tow-hull-elevation={stats.towHullElevation.toFixed(3)}
+          data-qa-tow-hull-target-elevation={stats.towHullTargetElevation.toFixed(3)}
+          data-qa-tow-hull-vertical-velocity={stats.towHullVerticalVelocity.toFixed(3)}
+          data-qa-tow-hull-pitch={stats.towHullPitch.toFixed(3)}
+          data-qa-tow-hull-roll={stats.towHullRoll.toFixed(3)}
+          data-qa-tow-hull-draft={stats.towHullDraft.toFixed(3)}
           data-qa-tow-best-release={stats.towBestRelease ? "true" : "false"}
         >
           <div

@@ -58,6 +58,7 @@ import {
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
   resolveLineupFromBreakingGeometry,
+  advanceOptionalTowHullFloat,
   resolveOptionalTowHullAttitude,
   resolvePopUpLandingSupport,
   resolveSurfboardFailureRelease,
@@ -422,6 +423,130 @@ const invalidTowHull = resolveOptionalTowHullAttitude({
   rightHeight: Number.NaN,
   speed: Number.NaN,
 });
+const newTowHullFloatState = () => ({
+  elevation: 0,
+  verticalVelocity: 0,
+  pitch: 0,
+  pitchVelocity: 0,
+  roll: 0,
+  rollVelocity: 0,
+  targetElevation: 0,
+  targetVerticalVelocity: 0,
+  targetPitch: 0,
+  targetRoll: 0,
+  initialized: false,
+});
+const simulateTowHullStep = (framesPerSecond) => {
+  let state = newTowHullFloatState();
+  const deltaSeconds = 1 / framesPerSecond;
+  let maximumStep = 0;
+  let maximumElevation = -Infinity;
+  for (
+    let frame = 0;
+    frame < framesPerSecond * 3;
+    frame += 1
+  ) {
+    const elapsed = frame * deltaSeconds;
+    const riseProgress = Math.max(
+      0,
+      Math.min(1, (elapsed - .5) / .4),
+    );
+    const easedRise = riseProgress * riseProgress
+      * (3 - 2 * riseProgress);
+    const next = advanceOptionalTowHullFloat(state, {
+      targetElevation: .11 + easedRise,
+      targetPitch: -.12 * easedRise,
+      targetRoll: .1 * easedRise,
+      planing: .75,
+      deltaSeconds,
+    });
+    if (state.initialized) {
+      maximumStep = Math.max(
+        maximumStep,
+        Math.abs(next.elevation - state.elevation),
+      );
+    }
+    maximumElevation = Math.max(maximumElevation, next.elevation);
+    state = next;
+  }
+  return {
+    state,
+    maximumStep,
+    maximumElevation,
+  };
+};
+const simulateTowHullWave = (
+  framesPerSecond,
+  frequency,
+  amplitude,
+  duration,
+) => {
+  let state = newTowHullFloatState();
+  const deltaSeconds = 1 / framesPerSecond;
+  let minimumElevation = Infinity;
+  let maximumElevation = -Infinity;
+  let minimumDraft = Infinity;
+  let maximumDraft = -Infinity;
+  for (
+    let frame = 0;
+    frame < framesPerSecond * duration;
+    frame += 1
+  ) {
+    const elapsed = frame * deltaSeconds;
+    const targetElevation = .16
+      + Math.sin(
+        elapsed * Math.PI * 2 * frequency,
+      ) * amplitude;
+    state = advanceOptionalTowHullFloat(state, {
+      targetElevation,
+      targetPitch: Math.sin(
+        elapsed * Math.PI * 2 * frequency + .4,
+      ) * .08,
+      targetRoll: Math.sin(
+        elapsed * Math.PI * 2 * frequency - .7,
+      ) * .06,
+      planing: 1,
+      deltaSeconds,
+    });
+    if (elapsed >= Math.min(2, duration * .25)) {
+      minimumElevation = Math.min(
+        minimumElevation,
+        state.elevation,
+      );
+      maximumElevation = Math.max(
+        maximumElevation,
+        state.elevation,
+      );
+      const workingDraft = .17
+        - (state.elevation - targetElevation);
+      minimumDraft = Math.min(minimumDraft, workingDraft);
+      maximumDraft = Math.max(maximumDraft, workingDraft);
+    }
+  }
+  return {
+    state,
+    amplitude: (maximumElevation - minimumElevation) * .5,
+    minimumDraft,
+    maximumDraft,
+  };
+};
+const towHullStep30 = simulateTowHullStep(30);
+const towHullStep60 = simulateTowHullStep(60);
+const towHullStep120 = simulateTowHullStep(120);
+const towHullChop30 = simulateTowHullWave(30, 3, .35, 4);
+const towHullChop60 = simulateTowHullWave(60, 3, .35, 4);
+const towHullChop120 = simulateTowHullWave(120, 3, .35, 4);
+const towHullSwell = simulateTowHullWave(60, 1 / 8, .5, 16);
+const invalidTowHullFloat = advanceOptionalTowHullFloat(
+  newTowHullFloatState(),
+  {
+    targetElevation: Number.NaN,
+    targetPitch: Number.NaN,
+    targetRoll: Number.NaN,
+    planing: Number.NaN,
+    deltaSeconds: Number.NaN,
+  },
+);
 if (
   physicalTowContour.ratioError > .002
   || Math.abs((physicalTowContour.breakingRatio ?? 0) - .9) > .002
@@ -444,13 +569,46 @@ if (
   || levelTowHull.waterlineHeight !== 1
   || levelTowHull.pitch !== 0
   || levelTowHull.roll !== 0
-  || climbingTowHull.pitch >= -.2
-  || climbingTowHull.pitch < -.280001
-  || bankedTowHull.roll <= .2
-  || bankedTowHull.roll > .240001
-  || convexTowHull.waterlineHeight < 1.7
+  || climbingTowHull.pitch >= -.15
+  || climbingTowHull.pitch < -.180001
+  || bankedTowHull.roll <= .13
+  || bankedTowHull.roll > .160001
+  || convexTowHull.waterlineHeight < 1.16
+  || convexTowHull.waterlineHeight > 1.18
   || convexTowHull.planing !== 1
   || !Object.values(invalidTowHull).every(Number.isFinite)
+  || towHullStep30.maximumStep > .13
+  || towHullStep60.maximumStep > .065
+  || towHullStep120.maximumStep > .033
+  || towHullStep30.maximumElevation > 1.115
+  || towHullStep60.maximumElevation > 1.115
+  || towHullStep120.maximumElevation > 1.115
+  || towHullStep30.state.elevation < 1.08
+  || towHullStep60.state.elevation < 1.08
+  || towHullStep120.state.elevation < 1.08
+  || Math.abs(
+    towHullStep30.state.elevation
+      - towHullStep120.state.elevation,
+  ) > .012
+  || towHullChop30.amplitude > .245
+  || towHullChop60.amplitude > .245
+  || towHullChop120.amplitude > .245
+  || towHullChop30.minimumDraft < -.001
+  || towHullChop60.minimumDraft < -.001
+  || towHullChop120.minimumDraft < -.001
+  || towHullChop30.maximumDraft > .431
+  || towHullChop60.maximumDraft > .431
+  || towHullChop120.maximumDraft > .431
+  || Math.abs(
+    towHullChop30.amplitude - towHullChop120.amplitude,
+  ) > .018
+  || towHullSwell.amplitude < .42
+  || towHullSwell.amplitude > .52
+  || towHullSwell.minimumDraft < -.001
+  || towHullSwell.maximumDraft > .431
+  || !Object.values(invalidTowHullFloat).every((value) => (
+    typeof value === "boolean" || Number.isFinite(value)
+  ))
   || !optionalTowReleasePhysicallySupported(
     true,
     .64,
@@ -467,7 +625,19 @@ if (
   || optionalTowReleasePhysicallySupported(false, .64, .9, .9, 1)
 ) {
   throw new Error(
-    "Tow targeting no longer requires a physical depth-limited front face, rejects unsupported release water, or stays seaward of the local shoreline",
+    `Tow targeting or flotation contract failed: ${JSON.stringify({
+      climbingPitch: climbingTowHull.pitch,
+      bankedRoll: bankedTowHull.roll,
+      convexWaterline: convexTowHull.waterlineHeight,
+      step30: towHullStep30,
+      step60: towHullStep60,
+      step120: towHullStep120,
+      chop30: towHullChop30,
+      chop60: towHullChop60,
+      chop120: towHullChop120,
+      swell: towHullSwell,
+      invalidTowHullFloat,
+    })}`,
   );
 }
 

@@ -2717,6 +2717,10 @@ function clampValue(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function lerpValue(start: number, end: number, amount: number) {
+  return start + (end - start) * amount;
+}
+
 export type PaddleboardDynamicsState = {
   velocityX: number;
   velocityZ: number;
@@ -5661,9 +5665,10 @@ export type OptionalTowHullAttitude = {
 
 /**
  * Fits the jetski's waterline to five points under its actual hull footprint.
- * The center intercept is raised to bridge convex chop instead of letting a
- * single high corner pass through the hull. Pitch and roll remain bounded so
- * a steep breaker cannot flip the visual craft before the route turns away.
+ * The weighted waterline represents displaced water across the footprint,
+ * rather than treating the highest instantaneous sample as a collision plane.
+ * Pitch and roll intentionally under-follow short chop: a floating hull cuts
+ * through the surface while its mass responds to the broader water plane.
  */
 export function resolveOptionalTowHullAttitude(
   sample: OptionalTowHullSurfaceSample,
@@ -5693,42 +5698,267 @@ export function resolveOptionalTowHullAttitude(
     ? sample.speed
     : 0;
   const planing = clampValue(speed / 14.5, 0, 1);
+  const pitchAuthority = lerpValue(.62, .38, planing);
+  const rollAuthority = lerpValue(.48, .3, planing);
   const pitch = clampValue(
-    -Math.atan(forwardSlope) - planing * .035,
-    -.28,
-    .28,
+    -Math.atan(forwardSlope) * pitchAuthority - planing * .028,
+    -.18,
+    .18,
   );
   const roll = clampValue(
-    Math.atan(lateralSlope),
-    -.24,
-    .24,
+    Math.atan(lateralSlope) * rollAuthority,
+    -.16,
+    .16,
   );
-  const fittedCenter = (
+  const displacedWaterline = (
     centerHeight * 2
       + bowHeight
       + sternHeight
       + leftHeight
       + rightHeight
   ) / 6;
-  const requiredIntercept = Math.max(
-    centerHeight,
-    bowHeight
-      - forwardSlope * OPTIONAL_TOW_HULL_HALF_LENGTH,
-    sternHeight
-      + forwardSlope * OPTIONAL_TOW_HULL_HALF_LENGTH,
-    leftHeight
-      + lateralSlope * OPTIONAL_TOW_HULL_HALF_BEAM,
-    rightHeight
-      - lateralSlope * OPTIONAL_TOW_HULL_HALF_BEAM,
-  );
   return {
-    waterlineHeight: Math.max(
-      fittedCenter,
-      requiredIntercept,
-    ),
+    waterlineHeight: displacedWaterline,
     pitch,
     roll,
     planing,
+  };
+}
+
+export type OptionalTowHullFloatState = {
+  elevation: number;
+  verticalVelocity: number;
+  pitch: number;
+  pitchVelocity: number;
+  roll: number;
+  rollVelocity: number;
+  targetElevation: number;
+  targetVerticalVelocity: number;
+  targetPitch: number;
+  targetRoll: number;
+  initialized: boolean;
+};
+
+export type OptionalTowHullFloatSample = {
+  targetElevation: number;
+  targetPitch: number;
+  targetRoll: number;
+  planing: number;
+  deltaSeconds: number;
+};
+
+/**
+ * Advances the jetski as an overdamped floating rigid body. The displaced
+ * water plane is interpolated through each frame, then followed with stronger
+ * hydrostatic response only when the hull departs materially from its working
+ * draft. This keeps the craft in the water without the overshoot, launch, or
+ * asymmetric up/down chase produced by a lightly damped spring.
+ */
+export function advanceOptionalTowHullFloat(
+  state: OptionalTowHullFloatState,
+  sample: OptionalTowHullFloatSample,
+): OptionalTowHullFloatState {
+  const targetElevation = Number.isFinite(sample.targetElevation)
+    ? sample.targetElevation
+    : Number.isFinite(state.targetElevation)
+      ? state.targetElevation
+      : 0;
+  const targetPitch = clampValue(
+    Number.isFinite(sample.targetPitch)
+      ? sample.targetPitch
+      : 0,
+    -.24,
+    .24,
+  );
+  const targetRoll = clampValue(
+    Number.isFinite(sample.targetRoll)
+      ? sample.targetRoll
+      : 0,
+    -.22,
+    .22,
+  );
+  const planing = clampValue(
+    Number.isFinite(sample.planing) ? sample.planing : 0,
+    0,
+    1,
+  );
+  const delta = clampValue(
+    Number.isFinite(sample.deltaSeconds) ? sample.deltaSeconds : 0,
+    0,
+    .05,
+  );
+  if (!state.initialized) {
+    return {
+      elevation: targetElevation,
+      verticalVelocity: 0,
+      pitch: targetPitch,
+      pitchVelocity: 0,
+      roll: targetRoll,
+      rollVelocity: 0,
+      targetElevation,
+      targetVerticalVelocity: 0,
+      targetPitch,
+      targetRoll,
+      initialized: true,
+    };
+  }
+
+  let elevation = Number.isFinite(state.elevation)
+    ? state.elevation
+    : targetElevation;
+  let verticalVelocity = clampValue(
+    Number.isFinite(state.verticalVelocity)
+      ? state.verticalVelocity
+      : 0,
+    -12,
+    12,
+  );
+  let pitch = clampValue(
+    Number.isFinite(state.pitch) ? state.pitch : targetPitch,
+    -.28,
+    .28,
+  );
+  let pitchVelocity = clampValue(
+    Number.isFinite(state.pitchVelocity)
+      ? state.pitchVelocity
+      : 0,
+    -2,
+    2,
+  );
+  let roll = clampValue(
+    Number.isFinite(state.roll) ? state.roll : targetRoll,
+    -.28,
+    .28,
+  );
+  let rollVelocity = clampValue(
+    Number.isFinite(state.rollVelocity)
+      ? state.rollVelocity
+      : 0,
+    -2,
+    2,
+  );
+  const previousElevationTarget = Number.isFinite(state.targetElevation)
+    ? state.targetElevation
+    : targetElevation;
+  let targetVerticalVelocity = Number.isFinite(
+    state.targetVerticalVelocity,
+  )
+    ? state.targetVerticalVelocity
+    : 0;
+  const previousPitchTarget = Number.isFinite(state.targetPitch)
+    ? state.targetPitch
+    : targetPitch;
+  const previousRollTarget = Number.isFinite(state.targetRoll)
+    ? state.targetRoll
+    : targetRoll;
+  let remaining = delta;
+  let elapsed = 0;
+  const sampledTargetVelocity = delta > 1e-9
+    ? clampValue(
+        (targetElevation - previousElevationTarget) / delta,
+        -12,
+        12,
+      )
+    : 0;
+
+  while (remaining > 1e-9) {
+    const step = Math.min(1 / 240, remaining);
+    elapsed += step;
+    const targetProgress = delta > 1e-9
+      ? clampValue(elapsed / delta, 0, 1)
+      : 1;
+    const frameElevationTarget = lerpValue(
+      previousElevationTarget,
+      targetElevation,
+      targetProgress,
+    );
+    const framePitchTarget = lerpValue(
+      previousPitchTarget,
+      targetPitch,
+      targetProgress,
+    );
+    const frameRollTarget = lerpValue(
+      previousRollTarget,
+      targetRoll,
+      targetProgress,
+    );
+    const previousElevation = elevation;
+    const elevationError = frameElevationTarget - elevation;
+    targetVerticalVelocity += (
+      sampledTargetVelocity - targetVerticalVelocity
+    ) * (1 - Math.exp(-3.4 * step));
+    const heaveResponse = lerpValue(7.4, 9.4, planing)
+      + smoothstep(.28, .72, Math.abs(elevationError)) * 10;
+    const feedForwardVelocity = targetVerticalVelocity * .72;
+    elevation += (
+      feedForwardVelocity * elevationError > 0
+        ? feedForwardVelocity * step
+        : 0
+    )
+      + elevationError * (1 - Math.exp(-heaveResponse * step));
+    // A small craft can bury more deeply on impact than it can rise clear of
+    // the water while towing. Preserve that asymmetric working-draft band,
+    // but apply it to the averaged displacement plane—not to individual chop
+    // samples—so it maintains contact without recreating the old popping.
+    elevation = clampValue(
+      elevation,
+      frameElevationTarget - lerpValue(.22, .26, planing),
+      frameElevationTarget + lerpValue(.14, .17, planing),
+    );
+    verticalVelocity = lerpValue(
+      verticalVelocity,
+      (elevation - previousElevation) / Math.max(1e-6, step),
+      1 - Math.exp(-18 * step),
+    );
+
+    const previousPitch = pitch;
+    const pitchError = framePitchTarget - pitch;
+    const pitchResponse = lerpValue(5.4, 6.8, planing)
+      + smoothstep(.035, .14, Math.abs(pitchError)) * 3.2;
+    pitch += pitchError
+      * (1 - Math.exp(-pitchResponse * step));
+    pitchVelocity = lerpValue(
+      pitchVelocity,
+      (pitch - previousPitch) / Math.max(1e-6, step),
+      1 - Math.exp(-16 * step),
+    );
+    pitch = clampValue(
+      pitch,
+      -.28,
+      .28,
+    );
+
+    const previousRoll = roll;
+    const rollError = frameRollTarget - roll;
+    const rollResponse = lerpValue(5.8, 7.2, planing)
+      + smoothstep(.035, .14, Math.abs(rollError)) * 3.4;
+    roll += rollError
+      * (1 - Math.exp(-rollResponse * step));
+    rollVelocity = lerpValue(
+      rollVelocity,
+      (roll - previousRoll) / Math.max(1e-6, step),
+      1 - Math.exp(-16 * step),
+    );
+    roll = clampValue(
+      roll,
+      -.28,
+      .28,
+    );
+    remaining -= step;
+  }
+
+  return {
+    elevation,
+    verticalVelocity,
+    pitch,
+    pitchVelocity,
+    roll,
+    rollVelocity,
+    targetElevation,
+    targetVerticalVelocity,
+    targetPitch,
+    targetRoll,
+    initialized: true,
   };
 }
 
@@ -6161,6 +6391,7 @@ export type GameStats = {
   nearVan: boolean;
   towAvailable: boolean;
   towMode: boolean;
+  towReturning: boolean;
   nearJetSki: boolean;
   towProgress: number;
   towReleaseQuality: number;
@@ -6169,6 +6400,12 @@ export type GameStats = {
   towBreakingRatio: number;
   towHeadingAlignment: number;
   towSpeedMatch: number;
+  towHullElevation: number;
+  towHullTargetElevation: number;
+  towHullVerticalVelocity: number;
+  towHullPitch: number;
+  towHullRoll: number;
+  towHullDraft: number;
   towBestRelease: boolean;
   inLineup: boolean;
   lineupOutsideMargin: number;
@@ -6315,6 +6552,7 @@ export const INITIAL_STATS: GameStats = {
   nearVan: false,
   towAvailable: false,
   towMode: false,
+  towReturning: false,
   nearJetSki: false,
   towProgress: 0,
   towReleaseQuality: 0,
@@ -6323,6 +6561,12 @@ export const INITIAL_STATS: GameStats = {
   towBreakingRatio: 0,
   towHeadingAlignment: 0,
   towSpeedMatch: 0,
+  towHullElevation: 0,
+  towHullTargetElevation: 0,
+  towHullVerticalVelocity: 0,
+  towHullPitch: 0,
+  towHullRoll: 0,
+  towHullDraft: 0,
   towBestRelease: false,
   inLineup: false,
   lineupOutsideMargin: 0,

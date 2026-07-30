@@ -9,8 +9,8 @@ import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import { shorelineReferenceAt } from "@/lib/bathymetry";
-import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_HALF_LENGTH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import type { BoardType, GamePhase, GameStats, OptionalTowHullFloatState, SessionSettings, ThermalKit } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_HALF_LENGTH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -820,6 +820,15 @@ type TowMotionState = {
   returning: boolean;
   returnProgress: number;
   returnStart: THREE.Vector3;
+};
+
+type TowHullTelemetry = {
+  hullElevation: number;
+  hullTargetElevation: number;
+  hullVerticalVelocity: number;
+  hullPitch: number;
+  hullRoll: number;
+  hullWaterline: number;
 };
 
 function isMobileRenderer() {
@@ -11682,6 +11691,7 @@ function OptionalTowCraft({
   accent,
   thermalKit,
   mobile,
+  onHullTelemetry,
 }: {
   motion: MutableRefObject<TowMotionState>;
   playerMotion: MutableRefObject<MotionState>;
@@ -11691,6 +11701,7 @@ function OptionalTowCraft({
   accent: string;
   thermalKit: ThermalKit;
   mobile: boolean;
+  onHullTelemetry: (telemetry: TowHullTelemetry) => void;
 }) {
   const craft = useRef<THREE.Group>(null);
   const rope = useRef<THREE.Mesh>(null);
@@ -11699,8 +11710,20 @@ function OptionalTowCraft({
   const playerTowPoint = useRef(new THREE.Vector3());
   const ropeDirection = useRef(new THREE.Vector3());
   const craftTowAttachment = useRef(new THREE.Vector3());
-  const hullBottomOffset = useRef(new THREE.Vector3());
   const previousCraftHeading = useRef(motion.current.heading);
+  const hullFloat = useRef<OptionalTowHullFloatState>({
+    elevation: 0,
+    verticalVelocity: 0,
+    pitch: 0,
+    pitchVelocity: 0,
+    roll: 0,
+    rollVelocity: 0,
+    targetElevation: 0,
+    targetVerticalVelocity: 0,
+    targetPitch: 0,
+    targetRoll: 0,
+    initialized: false,
+  });
   const up = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const hullGeometry = useMemo(
     () => jetSkiPlanformGeometry(1.44, 3.65, .34, .08),
@@ -11788,88 +11811,45 @@ function OptionalTowCraft({
       );
       const yawRate = yawDelta / Math.max(.01, delta);
       const turnBank = -THREE.MathUtils.clamp(
-        yawRate * .07 * hullAttitude.planing,
-        -.14,
-        .14,
+        yawRate * .055 * hullAttitude.planing,
+        -.1,
+        .1,
       );
-      craft.current.rotation.x = dampAngle(
-        craft.current.rotation.x,
-        hullAttitude.pitch,
-        tow.active || tow.returning ? 11 : 6,
-        delta,
-      );
-      craft.current.rotation.z = dampAngle(
-        craft.current.rotation.z,
-        THREE.MathUtils.clamp(
-          hullAttitude.roll + turnBank,
-          -.26,
-          .26,
-        ),
-        tow.active || tow.returning ? 12 : 7,
-        delta,
-      );
-      // Resolve clearance against the pose that is actually rendered, not
-      // only the target water plane. This lets the hull bridge short chop with
-      // a shallow draft while preventing a lagging bow or stern from slicing
-      // through a steep face.
-      const hullSamples = [
-        {
-          localX: 0,
-          localZ: 0,
-          height: craftSurface,
-        },
-        {
-          localX: 0,
-          localZ: OPTIONAL_TOW_HULL_HALF_LENGTH,
-          height: bowHeight,
-        },
-        {
-          localX: 0,
-          localZ: -OPTIONAL_TOW_HULL_HALF_LENGTH,
-          height: sternHeight,
-        },
-        {
-          localX: -OPTIONAL_TOW_HULL_HALF_BEAM,
-          localZ: 0,
-          height: leftHeight,
-        },
-        {
-          localX: OPTIONAL_TOW_HULL_HALF_BEAM,
-          localZ: 0,
-          height: rightHeight,
-        },
-      ];
-      const hullBottomY = -.25;
-      const planingDraft = THREE.MathUtils.lerp(
-        .065,
-        .025,
-        hullAttitude.planing,
-      );
-      let requiredOriginY = hullAttitude.waterlineHeight + .18;
-      hullSamples.forEach((sample) => {
-        const rotatedBottom = hullBottomOffset.current.set(
-          sample.localX,
-          hullBottomY,
-          sample.localZ,
-        ).applyEuler(craft.current!.rotation);
-        requiredOriginY = Math.max(
-          requiredOriginY,
-          sample.height - planingDraft - rotatedBottom.y,
+      // The geometry extends about .33 m below the group origin. Keeping the
+      // origin only .11–.16 m above the displaced waterline leaves a visible,
+      // speed-dependent draft instead of perching the hull on the surface.
+      const targetOriginY = hullAttitude.waterlineHeight
+        + THREE.MathUtils.lerp(
+          .11,
+          .16,
+          hullAttitude.planing,
         );
+      hullFloat.current = advanceOptionalTowHullFloat(
+        hullFloat.current,
+        {
+          targetElevation: targetOriginY,
+          targetPitch: hullAttitude.pitch,
+          targetRoll: THREE.MathUtils.clamp(
+            hullAttitude.roll + turnBank,
+            -.2,
+            .2,
+          ),
+          planing: hullAttitude.planing,
+          deltaSeconds: delta,
+        },
+      );
+      craft.current.position.y = hullFloat.current.elevation;
+      craft.current.rotation.x = hullFloat.current.pitch;
+      craft.current.rotation.z = hullFloat.current.roll;
+      craftSurface = hullAttitude.waterlineHeight;
+      onHullTelemetry({
+        hullElevation: hullFloat.current.elevation,
+        hullTargetElevation: targetOriginY,
+        hullVerticalVelocity: hullFloat.current.verticalVelocity,
+        hullPitch: hullFloat.current.pitch,
+        hullRoll: hullFloat.current.roll,
+        hullWaterline: hullAttitude.waterlineHeight,
       });
-      const heaveResponsiveness =
-        requiredOriginY > craft.current.position.y ? 18 : 7;
-      const dampedOriginY = THREE.MathUtils.damp(
-        craft.current.position.y,
-        requiredOriginY,
-        heaveResponsiveness,
-        delta,
-      );
-      craft.current.position.y = Math.max(
-        dampedOriginY,
-        requiredOriginY - .025,
-      );
-      craftSurface = craft.current.position.y - .18;
       previousCraftHeading.current = tow.heading;
     }
     if (pickupBeacon.current) {
@@ -12306,6 +12286,19 @@ function Simulation({
     returnProgress: 0,
     returnStart: new THREE.Vector3(10, 0, 4),
   });
+  const towHullTelemetry = useRef<TowHullTelemetry>({
+    hullElevation: 0,
+    hullTargetElevation: 0,
+    hullVerticalVelocity: 0,
+    hullPitch: 0,
+    hullRoll: 0,
+    hullWaterline: 0,
+  });
+  const updateTowHullTelemetry = useCallback((
+    telemetry: TowHullTelemetry,
+  ) => {
+    towHullTelemetry.current = telemetry;
+  }, []);
   const worldFocus = useRef(new THREE.Vector3(0, 0, 35));
   const visibleWaveForecastAnchor = useRef({
     x: Number.NaN,
@@ -19923,6 +19916,7 @@ function Simulation({
         nearVan,
         towAvailable: towMotion.current.available,
         towMode: towMotion.current.active,
+        towReturning: towMotion.current.returning,
         nearJetSki,
         towProgress: towMotion.current.progress,
         towReleaseQuality,
@@ -19931,6 +19925,15 @@ function Simulation({
         towBreakingRatio: towBreakingRatioReading,
         towHeadingAlignment: towHeadingAlignmentReading,
         towSpeedMatch: towSpeedMatchReading,
+        towHullElevation: towHullTelemetry.current.hullElevation,
+        towHullTargetElevation:
+          towHullTelemetry.current.hullTargetElevation,
+        towHullVerticalVelocity:
+          towHullTelemetry.current.hullVerticalVelocity,
+        towHullPitch: towHullTelemetry.current.hullPitch,
+        towHullRoll: towHullTelemetry.current.hullRoll,
+        towHullDraft: towHullTelemetry.current.hullWaterline
+          - (towHullTelemetry.current.hullElevation - .33),
         towBestRelease,
         inLineup,
         lineupOutsideMargin,
@@ -20163,6 +20166,7 @@ function Simulation({
         accent={beach.palette[0]}
         thermalKit={thermalKit}
         mobile={mobileRenderer}
+        onHullTelemetry={updateTowHullTelemetry}
       />
       <KinematicContactShadows
         motion={motion}

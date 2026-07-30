@@ -184,7 +184,11 @@ if (
   || !surfSceneSource.includes("optionalTowTakeoffTargetScore")
   || !surfSceneSource.includes("optionalTowNavigableZ")
   || !surfSceneSource.includes("resolveOptionalTowHullAttitude")
-  || !surfSceneSource.includes("const hullSamples = [")
+  || !surfSceneSource.includes("advanceOptionalTowHullFloat")
+  || !surfSceneSource.includes("const targetOriginY = hullAttitude.waterlineHeight")
+  || surfSceneSource.includes("const hullSamples = [")
+  || surfSceneSource.includes("requiredOriginY")
+  || surfSceneSource.includes("hullBottomOffset")
   || !surfSceneSource.includes("craftTowAttachment")
   || surfSceneSource.includes('planeGeometry args={[1.8, 5.8]}')
   || !surfSceneSource.includes("const safeCraftZ = navigableTowZAt(")
@@ -196,6 +200,7 @@ if (
   || !launchSource.includes('data-qa-tow-release-quality=')
   || !launchSource.includes('data-qa-tow-face-quality=')
   || !launchSource.includes('data-qa-tow-target-distance=')
+  || !launchSource.includes('data-qa-tow-hull-draft=')
   || !surfSceneSource.includes(
     "const towReleaseRequested = actionPressed",
   )
