@@ -4865,6 +4865,9 @@ export default function BreakloomApp() {
           data-qa-tow-hull-pitch={stats.towHullPitch.toFixed(3)}
           data-qa-tow-hull-roll={stats.towHullRoll.toFixed(3)}
           data-qa-tow-hull-draft={stats.towHullDraft.toFixed(3)}
+          data-qa-tow-hull-minimum-freeboard={
+            stats.towHullMinimumFreeboard.toFixed(3)
+          }
           data-qa-tow-best-release={stats.towBestRelease ? "true" : "false"}
         >
           <div

@@ -5658,6 +5658,7 @@ export type OptionalTowHullSurfaceSample = {
 
 export type OptionalTowHullAttitude = {
   waterlineHeight: number;
+  minimumSafeElevation: number;
   pitch: number;
   roll: number;
   planing: number;
@@ -5665,10 +5666,12 @@ export type OptionalTowHullAttitude = {
 
 /**
  * Fits the jetski's waterline to five points under its actual hull footprint.
- * The weighted waterline represents displaced water across the footprint,
- * rather than treating the highest instantaneous sample as a collision plane.
- * Pitch and roll intentionally under-follow short chop: a floating hull cuts
- * through the surface while its mass responds to the broader water plane.
+ * The weighted waterline represents displaced water across the footprint.
+ * A separate, pose-aware freeboard floor prevents an individual bow, stern,
+ * or rail sample from climbing over the visible hull without turning that
+ * sample into the equilibrium water plane. Pitch and roll intentionally
+ * under-follow short chop while the freeboard floor only intervenes when the
+ * rendered hull would otherwise be swallowed.
  */
 export function resolveOptionalTowHullAttitude(
   sample: OptionalTowHullSurfaceSample,
@@ -5698,17 +5701,17 @@ export function resolveOptionalTowHullAttitude(
     ? sample.speed
     : 0;
   const planing = clampValue(speed / 14.5, 0, 1);
-  const pitchAuthority = lerpValue(.62, .38, planing);
-  const rollAuthority = lerpValue(.48, .3, planing);
+  const pitchAuthority = lerpValue(.72, .48, planing);
+  const rollAuthority = lerpValue(.52, .34, planing);
   const pitch = clampValue(
     -Math.atan(forwardSlope) * pitchAuthority - planing * .028,
-    -.18,
-    .18,
+    -.24,
+    .24,
   );
   const roll = clampValue(
     Math.atan(lateralSlope) * rollAuthority,
-    -.16,
-    .16,
+    -.18,
+    .18,
   );
   const displacedWaterline = (
     centerHeight * 2
@@ -5717,8 +5720,29 @@ export function resolveOptionalTowHullAttitude(
       + leftHeight
       + rightHeight
   ) / 6;
+  // The main white hull reaches roughly .17 m above the group origin. Keep
+  // the local waterline at least .08 m below that origin at every footprint
+  // sample, after accounting for the fitted pose. This leaves visible hull
+  // freeboard without using the highest sample as the normal ride height.
+  const minimumWaterlineOffset = -.08;
+  const bowPoseRise = -Math.sin(pitch)
+    * OPTIONAL_TOW_HULL_HALF_LENGTH;
+  const sternPoseRise = Math.sin(pitch)
+    * OPTIONAL_TOW_HULL_HALF_LENGTH;
+  const rightPoseRise = Math.sin(roll)
+    * OPTIONAL_TOW_HULL_HALF_BEAM;
+  const leftPoseRise = -Math.sin(roll)
+    * OPTIONAL_TOW_HULL_HALF_BEAM;
+  const minimumSafeElevation = Math.max(
+    centerHeight - minimumWaterlineOffset,
+    bowHeight - bowPoseRise - minimumWaterlineOffset,
+    sternHeight - sternPoseRise - minimumWaterlineOffset,
+    leftHeight - leftPoseRise - minimumWaterlineOffset,
+    rightHeight - rightPoseRise - minimumWaterlineOffset,
+  );
   return {
     waterlineHeight: displacedWaterline,
+    minimumSafeElevation,
     pitch,
     roll,
     planing,
@@ -5887,28 +5911,32 @@ export function advanceOptionalTowHullFloat(
     targetVerticalVelocity += (
       sampledTargetVelocity - targetVerticalVelocity
     ) * (1 - Math.exp(-3.4 * step));
-    const heaveResponse = lerpValue(7.4, 9.4, planing)
-      + smoothstep(.28, .72, Math.abs(elevationError)) * 10;
-    const feedForwardVelocity = targetVerticalVelocity * .72;
+    const heaveResponse = lerpValue(5.2, 7.1, planing)
+      + smoothstep(.12, .42, Math.abs(elevationError)) * 6.8;
+    const feedForwardVelocity = targetVerticalVelocity * .34;
     elevation += (
       feedForwardVelocity * elevationError > 0
         ? feedForwardVelocity * step
         : 0
     )
       + elevationError * (1 - Math.exp(-heaveResponse * step));
-    // A small craft can bury more deeply on impact than it can rise clear of
-    // the water while towing. Preserve that asymmetric working-draft band,
-    // but apply it to the averaged displacement plane—not to individual chop
-    // samples—so it maintains contact without recreating the old popping.
+    // Keep the visible hull within a narrow planing-draft band. The previous
+    // -.22/-.26 m allowance put the waterline nearly at deck level and let the
+    // stationary craft traverse 36 cm of apparent draft in a few seconds.
     elevation = clampValue(
       elevation,
-      frameElevationTarget - lerpValue(.22, .26, planing),
-      frameElevationTarget + lerpValue(.14, .17, planing),
+      frameElevationTarget - lerpValue(.045, .04, planing),
+      frameElevationTarget + lerpValue(.055, .075, planing),
     );
     verticalVelocity = lerpValue(
       verticalVelocity,
       (elevation - previousElevation) / Math.max(1e-6, step),
       1 - Math.exp(-18 * step),
+    );
+    verticalVelocity = clampValue(
+      verticalVelocity,
+      -3.2,
+      3.2,
     );
 
     const previousPitch = pitch;
@@ -6406,6 +6434,7 @@ export type GameStats = {
   towHullPitch: number;
   towHullRoll: number;
   towHullDraft: number;
+  towHullMinimumFreeboard: number;
   towBestRelease: boolean;
   inLineup: boolean;
   lineupOutsideMargin: number;
@@ -6567,6 +6596,7 @@ export const INITIAL_STATS: GameStats = {
   towHullPitch: 0,
   towHullRoll: 0,
   towHullDraft: 0,
+  towHullMinimumFreeboard: 0,
   towBestRelease: false,
   inLineup: false,
   lineupOutsideMargin: 0,

@@ -53,8 +53,14 @@ for (const token of [
   "horizontalDisplacement",
   "horizontalSlopeBudget",
   "horizontalShoreAnchor",
+  "horizontalShoreAnchorUnit",
+  "boreCollapseStart",
+  "boreCollapseEnd",
+  "shoreAnchorUnit",
   "runupReach",
   "swashFilmHeight",
+  "shoreBurial",
+  "shoreBurialDerivative",
   "vShoreMask",
   "washActivation",
   "washWhitewater",
@@ -92,11 +98,25 @@ assert.ok(
 );
 assert.ok(
   source.includes("const OCEAN_RUNUP_DEPTH = 12")
+    && vertex.includes("4.8 + uTargetFaceHeight * 1.15")
+    && vertex.includes("shoreAnchorUnit * shoreAnchorUnit")
+    && vertex.includes(
+      "horizontalShoreAnchorUnit * horizontalShoreAnchorUnit",
+    )
+    && vertex.includes(".035 + shoreCrestSignal * .075")
+    && vertex.includes("p.z -= shoreBurial * .56")
+    && vertex.includes("runupReach + 2.35")
+    && vertex.includes("runupReach + 3.35")
     && fragment.includes("if (vShoreMask < .035) discard")
     && source.slice(subsurfaceStart).includes(
       "if (vShoreMask < .08) discard",
     ),
-  "shore swash no longer extends over wet sand and clips as a thin moving film",
+  "shore swash no longer continues as a thin sheet before sinking beneath wet sand",
+);
+assert.ok(
+  !vertex.includes("max(.75, runupReach - .9)")
+    && !vertex.includes("runupReach + .35"),
+  "visible shoreline fragments are being discarded before the water passes beneath the sand",
 );
 assert.ok(
   !vertex.includes("crestEnergy("),

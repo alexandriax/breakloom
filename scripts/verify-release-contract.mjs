@@ -185,7 +185,9 @@ if (
   || !surfSceneSource.includes("optionalTowNavigableZ")
   || !surfSceneSource.includes("resolveOptionalTowHullAttitude")
   || !surfSceneSource.includes("advanceOptionalTowHullFloat")
-  || !surfSceneSource.includes("const targetOriginY = hullAttitude.waterlineHeight")
+  || !surfSceneSource.includes("const displacementOriginY = hullAttitude.waterlineHeight")
+  || !surfSceneSource.includes("hullAttitude.minimumSafeElevation")
+  || !surfSceneSource.includes("hullMinimumFreeboard")
   || surfSceneSource.includes("const hullSamples = [")
   || surfSceneSource.includes("requiredOriginY")
   || surfSceneSource.includes("hullBottomOffset")
@@ -201,6 +203,7 @@ if (
   || !launchSource.includes('data-qa-tow-face-quality=')
   || !launchSource.includes('data-qa-tow-target-distance=')
   || !launchSource.includes('data-qa-tow-hull-draft=')
+  || !launchSource.includes('data-qa-tow-hull-minimum-freeboard=')
   || !surfSceneSource.includes(
     "const towReleaseRequested = actionPressed",
   )

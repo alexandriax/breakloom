@@ -829,6 +829,7 @@ type TowHullTelemetry = {
   hullPitch: number;
   hullRoll: number;
   hullWaterline: number;
+  hullMinimumFreeboard: number;
 };
 
 function isMobileRenderer() {
@@ -1364,29 +1365,94 @@ const OCEAN_VERTEX = /* glsl */ `
           + min(2.9, uTargetFaceHeight * .52)
           + shoreCrestSignal * 1.45
       );
-    // Preserve the full translating bore at the wet line, then settle it
-    // across several metres into a film just above the wet-sand plane. The
-    // old 1.65 m flattening band turned the final raised row into a block.
-    float shoreAnchor = smoothstep(
-      -.08,
-      max(2.4, runupReach - .2),
-      contourCoordinate
+    // A breaking face must collapse into a lower bore before it reaches dry
+    // sand. Carrying the full wall across the zero-depth contour produced the
+    // triangular hills and caverns seen in shoreline QA. Spread the collapse
+    // across a wave-scaled offshore band so energy and whitewater still reach
+    // the beach without dragging a surfable wall onto land.
+    float boreCollapseStart = -clamp(
+      4.8 + uTargetFaceHeight * 1.15,
+      5.8,
+      11.5
     );
-    float horizontalShoreAnchor = smoothstep(
-      -1.2,
-      max(2.0, runupReach - .65),
-      contourCoordinate
+    float boreCollapseEnd = clamp(
+      runupReach * .18,
+      .5,
+      1.25
     );
+    float shoreAnchorUnit = clamp(
+      (contourCoordinate - boreCollapseStart)
+        / max(.001, boreCollapseEnd - boreCollapseStart),
+      0.0,
+      1.0
+    );
+    float shoreAnchor = shoreAnchorUnit * shoreAnchorUnit
+      * shoreAnchorUnit
+      * (
+        shoreAnchorUnit * (
+          shoreAnchorUnit * 6.0 - 15.0
+        ) + 10.0
+      );
+    float horizontalShoreAnchorStart = boreCollapseStart - 2.4;
+    float horizontalShoreAnchorEnd = max(
+      .25,
+      boreCollapseEnd - .65
+    );
+    float horizontalShoreAnchorUnit = clamp(
+      (contourCoordinate - horizontalShoreAnchorStart)
+        / max(
+          .001,
+          horizontalShoreAnchorEnd - horizontalShoreAnchorStart
+        ),
+      0.0,
+      1.0
+    );
+    float horizontalShoreAnchor =
+      horizontalShoreAnchorUnit * horizontalShoreAnchorUnit
+        * horizontalShoreAnchorUnit
+        * (
+          horizontalShoreAnchorUnit * (
+            horizontalShoreAnchorUnit * 6.0 - 15.0
+          ) + 10.0
+        );
     p.xy = mix(p.xy, position.xy, horizontalShoreAnchor);
     float swashFilmHeight = uTide * .3 - .2
-      + washActivation * shoreCrestSignal * .055;
+      + washActivation * (
+        .035 + shoreCrestSignal * .075
+      );
     p.z = mix(p.z, swashFilmHeight, shoreAnchor);
+    float landwardDistance = max(0.0, contourCoordinate);
+    // Do not cut the moving mesh off at the wet line. Carry a continuous,
+    // centimetres-thin sheet across the active run-up, then lower it beneath
+    // the wet-sand plane before any fragment is discarded. The visible edge
+    // is therefore a smooth water/sand intersection instead of a mask-shaped
+    // polygon hole or an isolated whitewater ribbon.
+    float shoreBurialStart = max(.9, runupReach - .05);
+    float shoreBurialEnd = runupReach + 2.45;
+    float shoreBurialUnit = clamp(
+      (landwardDistance - shoreBurialStart)
+        / max(.001, shoreBurialEnd - shoreBurialStart),
+      0.0,
+      1.0
+    );
+    float shoreBurial = shoreBurialUnit * shoreBurialUnit
+      * (3.0 - 2.0 * shoreBurialUnit);
+    p.z -= shoreBurial * .56;
     gradientX *= 1.0 - shoreAnchor;
     gradientZ *= 1.0 - shoreAnchor;
-    float landwardDistance = max(0.0, contourCoordinate);
+    float shoreBurialDerivative = 6.0
+      * shoreBurialUnit
+      * (1.0 - shoreBurialUnit)
+      / max(.001, shoreBurialEnd - shoreBurialStart);
+    gradientX -= shoreBurialDerivative
+      * contourGradient.x
+      * .56;
+    gradientZ -= shoreBurialDerivative
+      * contourGradient.y
+      * .56;
     vShoreMask = 1.0 - smoothstep(
-      max(.75, runupReach - .9),
-      runupReach + .35,
+      runupReach + 2.35,
+      runupReach + 3.35,
       landwardDistance
     );
 
@@ -11815,15 +11881,23 @@ function OptionalTowCraft({
         -.1,
         .1,
       );
-      // The geometry extends about .33 m below the group origin. Keeping the
-      // origin only .11–.16 m above the displaced waterline leaves a visible,
-      // speed-dependent draft instead of perching the hull on the surface.
-      const targetOriginY = hullAttitude.waterlineHeight
+      // The geometry extends about .33 m below the group origin. The averaged
+      // displacement plane supplies the normal draft; a pose-aware floor only
+      // raises that target when a real bow/stern/rail sample would otherwise
+      // climb over the visible hull.
+      const displacementOriginY = hullAttitude.waterlineHeight
         + THREE.MathUtils.lerp(
-          .11,
-          .16,
+          .145,
+          .185,
           hullAttitude.planing,
         );
+      const targetOriginY = Math.max(
+        displacementOriginY,
+        // Eight centimetres of reserve absorbs the deliberate pose lag through
+        // steep short-period faces without making the highest sample the
+        // craft's normal equilibrium plane.
+        hullAttitude.minimumSafeElevation + .08,
+      );
       hullFloat.current = advanceOptionalTowHullFloat(
         hullFloat.current,
         {
@@ -11842,6 +11916,29 @@ function OptionalTowCraft({
       craft.current.rotation.x = hullFloat.current.pitch;
       craft.current.rotation.z = hullFloat.current.roll;
       craftSurface = hullAttitude.waterlineHeight;
+      const renderedBowRise = -Math.sin(hullFloat.current.pitch)
+        * OPTIONAL_TOW_HULL_HALF_LENGTH;
+      const renderedSternRise = Math.sin(hullFloat.current.pitch)
+        * OPTIONAL_TOW_HULL_HALF_LENGTH;
+      const renderedRightRise = Math.sin(hullFloat.current.roll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const renderedLeftRise = -Math.sin(hullFloat.current.roll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const highestLocalWaterline = Math.max(
+        craftSurface - hullFloat.current.elevation,
+        bowHeight
+          - hullFloat.current.elevation
+          - renderedBowRise,
+        sternHeight
+          - hullFloat.current.elevation
+          - renderedSternRise,
+        leftHeight
+          - hullFloat.current.elevation
+          - renderedLeftRise,
+        rightHeight
+          - hullFloat.current.elevation
+          - renderedRightRise,
+      );
       onHullTelemetry({
         hullElevation: hullFloat.current.elevation,
         hullTargetElevation: targetOriginY,
@@ -11849,6 +11946,7 @@ function OptionalTowCraft({
         hullPitch: hullFloat.current.pitch,
         hullRoll: hullFloat.current.roll,
         hullWaterline: hullAttitude.waterlineHeight,
+        hullMinimumFreeboard: .17 - highestLocalWaterline,
       });
       previousCraftHeading.current = tow.heading;
     }
@@ -12293,6 +12391,7 @@ function Simulation({
     hullPitch: 0,
     hullRoll: 0,
     hullWaterline: 0,
+    hullMinimumFreeboard: 0,
   });
   const updateTowHullTelemetry = useCallback((
     telemetry: TowHullTelemetry,
@@ -19934,6 +20033,8 @@ function Simulation({
         towHullRoll: towHullTelemetry.current.hullRoll,
         towHullDraft: towHullTelemetry.current.hullWaterline
           - (towHullTelemetry.current.hullElevation - .33),
+        towHullMinimumFreeboard:
+          towHullTelemetry.current.hullMinimumFreeboard,
         towBestRelease,
         inLineup,
         lineupOutsideMargin,

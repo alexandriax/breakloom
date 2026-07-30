@@ -441,6 +441,7 @@ const simulateTowHullStep = (framesPerSecond) => {
   const deltaSeconds = 1 / framesPerSecond;
   let maximumStep = 0;
   let maximumElevation = -Infinity;
+  let maximumVerticalVelocity = 0;
   for (
     let frame = 0;
     frame < framesPerSecond * 3;
@@ -467,12 +468,17 @@ const simulateTowHullStep = (framesPerSecond) => {
       );
     }
     maximumElevation = Math.max(maximumElevation, next.elevation);
+    maximumVerticalVelocity = Math.max(
+      maximumVerticalVelocity,
+      Math.abs(next.verticalVelocity),
+    );
     state = next;
   }
   return {
     state,
     maximumStep,
     maximumElevation,
+    maximumVerticalVelocity,
   };
 };
 const simulateTowHullWave = (
@@ -487,6 +493,7 @@ const simulateTowHullWave = (
   let maximumElevation = -Infinity;
   let minimumDraft = Infinity;
   let maximumDraft = -Infinity;
+  let maximumVerticalVelocity = 0;
   for (
     let frame = 0;
     frame < framesPerSecond * duration;
@@ -521,6 +528,10 @@ const simulateTowHullWave = (
         - (state.elevation - targetElevation);
       minimumDraft = Math.min(minimumDraft, workingDraft);
       maximumDraft = Math.max(maximumDraft, workingDraft);
+      maximumVerticalVelocity = Math.max(
+        maximumVerticalVelocity,
+        Math.abs(state.verticalVelocity),
+      );
     }
   }
   return {
@@ -528,14 +539,18 @@ const simulateTowHullWave = (
     amplitude: (maximumElevation - minimumElevation) * .5,
     minimumDraft,
     maximumDraft,
+    maximumVerticalVelocity,
   };
 };
 const towHullStep30 = simulateTowHullStep(30);
 const towHullStep60 = simulateTowHullStep(60);
 const towHullStep120 = simulateTowHullStep(120);
-const towHullChop30 = simulateTowHullWave(30, 3, .35, 4);
-const towHullChop60 = simulateTowHullWave(60, 3, .35, 4);
-const towHullChop120 = simulateTowHullWave(120, 3, .35, 4);
+// Five footprint samples attenuate short chop before it reaches this solver.
+// Exercise a 12 cm residual water plane at 3 Hz, then a full half-metre,
+// eight-second swell that the small craft should follow.
+const towHullChop30 = simulateTowHullWave(30, 3, .12, 4);
+const towHullChop60 = simulateTowHullWave(60, 3, .12, 4);
+const towHullChop120 = simulateTowHullWave(120, 3, .12, 4);
 const towHullSwell = simulateTowHullWave(60, 1 / 8, .5, 16);
 const invalidTowHullFloat = advanceOptionalTowHullFloat(
   newTowHullFloatState(),
@@ -567,14 +582,17 @@ if (
   || towAlreadyOffshore !== -20
   || towCustomClearance !== 4
   || levelTowHull.waterlineHeight !== 1
+  || levelTowHull.minimumSafeElevation !== 1.08
   || levelTowHull.pitch !== 0
   || levelTowHull.roll !== 0
-  || climbingTowHull.pitch >= -.15
-  || climbingTowHull.pitch < -.180001
-  || bankedTowHull.roll <= .13
-  || bankedTowHull.roll > .160001
+  || climbingTowHull.pitch >= -.2
+  || climbingTowHull.pitch < -.240001
+  || bankedTowHull.roll <= .16
+  || bankedTowHull.roll > .180001
   || convexTowHull.waterlineHeight < 1.16
   || convexTowHull.waterlineHeight > 1.18
+  || convexTowHull.minimumSafeElevation < 1.779
+  || convexTowHull.minimumSafeElevation > 1.781
   || convexTowHull.planing !== 1
   || !Object.values(invalidTowHull).every(Number.isFinite)
   || towHullStep30.maximumStep > .13
@@ -586,26 +604,33 @@ if (
   || towHullStep30.state.elevation < 1.08
   || towHullStep60.state.elevation < 1.08
   || towHullStep120.state.elevation < 1.08
+  || towHullStep30.maximumVerticalVelocity > 3.200001
+  || towHullStep60.maximumVerticalVelocity > 3.200001
+  || towHullStep120.maximumVerticalVelocity > 3.200001
   || Math.abs(
     towHullStep30.state.elevation
       - towHullStep120.state.elevation,
   ) > .012
-  || towHullChop30.amplitude > .245
-  || towHullChop60.amplitude > .245
-  || towHullChop120.amplitude > .245
-  || towHullChop30.minimumDraft < -.001
-  || towHullChop60.minimumDraft < -.001
-  || towHullChop120.minimumDraft < -.001
-  || towHullChop30.maximumDraft > .431
-  || towHullChop60.maximumDraft > .431
-  || towHullChop120.maximumDraft > .431
+  || towHullChop30.amplitude > .121
+  || towHullChop60.amplitude > .121
+  || towHullChop120.amplitude > .121
+  || towHullChop30.minimumDraft < .094
+  || towHullChop60.minimumDraft < .094
+  || towHullChop120.minimumDraft < .094
+  || towHullChop30.maximumDraft > .211
+  || towHullChop60.maximumDraft > .211
+  || towHullChop120.maximumDraft > .211
+  || towHullChop30.maximumVerticalVelocity > 3.200001
+  || towHullChop60.maximumVerticalVelocity > 3.200001
+  || towHullChop120.maximumVerticalVelocity > 3.200001
   || Math.abs(
     towHullChop30.amplitude - towHullChop120.amplitude,
   ) > .018
   || towHullSwell.amplitude < .42
   || towHullSwell.amplitude > .52
-  || towHullSwell.minimumDraft < -.001
-  || towHullSwell.maximumDraft > .431
+  || towHullSwell.minimumDraft < .09
+  || towHullSwell.maximumDraft > .23
+  || towHullSwell.maximumVerticalVelocity > 3.200001
   || !Object.values(invalidTowHullFloat).every((value) => (
     typeof value === "boolean" || Number.isFinite(value)
   ))
