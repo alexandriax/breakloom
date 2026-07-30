@@ -1,4 +1,5 @@
 import { BEACHES, getBreakCharacter } from "../lib/beaches.ts";
+import { shorelineReferenceAt } from "../lib/bathymetry.ts";
 import {
   primaryWavePhaseAt,
   primaryWaveVelocityAt,
@@ -11,6 +12,7 @@ import {
 import {
   coastWaveModelAt,
   maximumVisibleHorizontalDisplacement,
+  OCEAN_SHORELINE_WORLD_Z,
   sampleCoastDominantWave,
   sampleCoastWaveSurface,
 } from "../lib/ocean.ts";
@@ -59,6 +61,8 @@ let zoneCount = 0;
 let minimumJacobian = Infinity;
 let maximumDerivativeError = 0;
 let maximumPhaseAdvectionError = 0;
+let minimumShoreWashRange = Infinity;
+let minimumShoreWhitewater = Infinity;
 const HIGH_SWELL_CASES = [
   ["pipeline", "First Reef", 5.5, 15],
   ["teahupoo", "The Bowl", 5, 16],
@@ -73,6 +77,40 @@ for (const beach of BEACHES) {
     zoneCount += 1;
     const character = getBreakCharacter(beach.id, zone.name);
     const model = coastWaveModelAt(0, settings, character);
+    const shorelineWorldZ = OCEAN_SHORELINE_WORLD_Z
+      + shorelineReferenceAt(beach.id, zone.name, 0);
+    const shoreWashHeights = [];
+    let shoreWhitewater = 0;
+    for (let frame = 0; frame < 72; frame += 1) {
+      const shoreWash = sampleCoastWaveSurface(
+        0,
+        shorelineWorldZ - .2,
+        frame * settings.wavePeriod / 72,
+        settings,
+        character,
+      );
+      shoreWashHeights.push(shoreWash.height);
+      shoreWhitewater = Math.max(
+        shoreWhitewater,
+        shoreWash.whitewater,
+      );
+    }
+    const shoreWashRange = Math.max(...shoreWashHeights)
+      - Math.min(...shoreWashHeights);
+    minimumShoreWashRange = Math.min(
+      minimumShoreWashRange,
+      shoreWashRange,
+    );
+    minimumShoreWhitewater = Math.min(
+      minimumShoreWhitewater,
+      shoreWhitewater,
+    );
+    if (shoreWashRange < .16 || shoreWhitewater < .045) {
+      throw new Error(
+        `${beach.id}/${zone.name} dissipated the broken wave before the shoreline `
+          + `(range=${shoreWashRange.toFixed(3)}, foam=${shoreWhitewater.toFixed(3)})`,
+      );
+    }
     const energyError = Math.abs(
       model.bank.significantHeight - settings.waveHeight,
     );
@@ -785,6 +823,8 @@ console.log("ocean dynamics verified", {
   maximumDerivativeError: `${(maximumDerivativeError * 100).toFixed(2)}%`,
   maximumPhaseAdvectionError:
     maximumPhaseAdvectionError.toExponential(2),
+  minimumShoreWashRange: minimumShoreWashRange.toFixed(3),
+  minimumShoreWhitewater: minimumShoreWhitewater.toFixed(3),
   highSwellCases: HIGH_SWELL_CASES.length,
   forecastFaceRatio:
     `${minimumForecastFaceRatio.toFixed(2)}–${maximumForecastFaceRatio.toFixed(2)}`,

@@ -771,6 +771,7 @@ export function samplePackedOceanHeight(
       breakerHollow: character.hollow,
       targetFaceHeight: state.targetFaceHeight,
     },
+    -contourCoordinate,
   );
   const horizontalSlopeScale = Math.min(
     1,

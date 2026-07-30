@@ -24,8 +24,11 @@ export type SurfAssistLevel = "guided" | "natural" | "raw";
 export type SessionGrade = "C" | "B" | "A" | "S";
 export type BoardType = "performance" | "fish" | "longboard";
 export const SHORELINE_REFERENCE_Z = 8;
-export const RIDE_RESULT_LINE_Z = SHORELINE_REFERENCE_Z - 9.2;
-export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z - 1.2;
+// A completed ride is scored in the swash, not while the surfer is still on
+// an open face. The final board-to-feet transition happens just landward of
+// the nominal wet line so a broken wave can visibly carry the board to shore.
+export const RIDE_RESULT_LINE_Z = SHORELINE_REFERENCE_Z - 1;
+export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z + .35;
 export const OUTER_PADDLE_LIMIT_Z = -900;
 // Baseline shoaling starts offshore so the takeoff zone leaves a usable face
 // between the crest and the inside. Set energy can move it farther outside.
@@ -1306,6 +1309,12 @@ export type SurfboardDynamicsSample = {
   boardTurn: number;
   boardStability: number;
   waveHeight: number;
+  /**
+   * Existing planing/rail support on a captured face. A loaded rail and fins
+   * can turn part of cross-face pressure into down-line drive; this remains
+   * zero during prone capture and unsupported broadside impacts.
+   */
+  faceTrimSupport?: number;
 };
 
 export type SurfboardDynamicsReading = SurfboardDynamicsState & {
@@ -1345,6 +1354,7 @@ export type SurfboardWavePressureSample = {
   boardLength?: number;
   boardWidth?: number;
   boardTurn?: number;
+  faceTrimSupport?: number;
 };
 
 export type SurfboardWavePatchContactSample = {
@@ -3258,12 +3268,13 @@ export function resolveSurfboardWavePatchContact(
 
 /**
  * Resolves the breaking face's horizontal pressure across the nose, tail, and
- * both rail contact patches. The force always follows the live wave normal:
- * a board pointed with the wave receives useful longitudinal drive, while a
- * broadside board receives the same event mostly as lateral load. Off-center
- * patches apply their force through the measured longitudinal and lateral
- * centers of pressure. This is shared by prone takeoff and standing surf
- * dynamics so changing body phase cannot grant crest speed.
+ * both rail contact patches. Raw pressure follows the live wave normal. Once
+ * a captured, planing board loads a rail, its fins and rail reaction can
+ * redirect part of that lateral pressure into longitudinal trim—the physical
+ * mechanism that lets a surfer run along a wall instead of only toward shore.
+ * Unsupported takeoff and broadside impacts receive no such conversion.
+ * Off-center patches apply their remaining force through measured centers of
+ * pressure.
  */
 export function resolveSurfboardWavePressure(
   sample: SurfboardWavePressureSample,
@@ -3327,10 +3338,24 @@ export function resolveSurfboardWavePressure(
     * (.48 + Math.max(0, headingAlignment) * .72)
     * (.72 + Math.max(.25, sample.waveHeight) * .11)
     * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .42);
-  const accelerationX = waveNormalX * pressure;
-  const accelerationZ = waveNormalZ * pressure;
-  const forwardDrive = accelerationX * forwardX + accelerationZ * forwardZ;
-  const lateralLoad = accelerationX * rightX + accelerationZ * rightZ;
+  const rawForwardDrive = pressure * headingAlignment;
+  const rawLateralLoad = pressure
+    * (waveNormalX * rightX + waveNormalZ * rightZ);
+  const broadside = Math.sqrt(Math.max(
+    0,
+    1 - headingAlignment * headingAlignment,
+  ));
+  const trimConversion = clampValue(
+    sample.faceTrimSupport ?? 0,
+    0,
+    1,
+  ) * smoothstep(.1, .68, headingAlignment)
+    * smoothstep(.12, .78, broadside);
+  const forwardDrive = rawForwardDrive
+    + Math.abs(rawLateralLoad) * trimConversion * .55;
+  const lateralLoad = rawLateralLoad * (1 - trimConversion * .62);
+  const accelerationX = forwardX * forwardDrive + rightX * lateralLoad;
+  const accelerationZ = forwardZ * forwardDrive + rightZ * lateralLoad;
   const contactSum = Math.max(
     .001,
     noseContact + tailContact + rightRailContact + leftRailContact,
@@ -5109,6 +5134,7 @@ export function advanceSurfboardDynamics(
     boardLength: safeLength,
     boardWidth: safeWidth,
     boardTurn: turn,
+    faceTrimSupport: sample.faceTrimSupport,
   });
   const activeRailPressureResistance =
     1 - Math.abs(railInput)
@@ -5553,13 +5579,48 @@ export function advanceOptionalTowProgress(
   return Math.max(0, Math.min(1, progress + Math.max(0, deltaSeconds) / Math.max(.1, durationSeconds)));
 }
 
-export function optionalTowReleaseQuality(progress: number) {
-  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .9) / .08));
+export type OptionalTowInterceptSample = {
+  routeProgress: number;
+  faceQuality: number;
+  distanceToTarget: number;
+  headingAlignment: number;
+  speedMatch: number;
+};
+
+/**
+ * Scores the live tow interception rather than a clock window. Route progress
+ * only proves that the craft has completed its outbound turn; proximity to the
+ * moving takeoff point, board/face alignment, speed match, and the face itself
+ * decide whether releasing is useful.
+ */
+export function optionalTowReleaseQuality(
+  sample: OptionalTowInterceptSample,
+) {
+  const routeReady = smoothstep(.54, .7, sample.routeProgress);
+  const targetLock = 1 - smoothstep(
+    1.4,
+    6.5,
+    Math.max(0, sample.distanceToTarget),
+  );
+  const alignment = smoothstep(
+    .32,
+    .88,
+    sample.headingAlignment,
+  );
+  const speedMatch = smoothstep(.32, .86, sample.speedMatch);
+  return clampValue(
+    clampValue(sample.faceQuality, 0, 1)
+      * (.22 + targetLock * .78)
+      * (.38 + alignment * .62)
+      * (.42 + speedMatch * .58)
+      * (.32 + routeReady * .68),
+    0,
+    1,
+  );
 }
 
-export function optionalTowReleaseRecommended(progress: number) {
-  const releaseProgress = clampValue(progress, 0, 1);
-  return releaseProgress >= .88 && releaseProgress <= .92;
+export function optionalTowReleaseRecommended(quality: number) {
+  return clampValue(quality, 0, 1) >= .58;
 }
 
 export type OptionalTowReleaseFaceSample = {
@@ -5602,6 +5663,30 @@ export function optionalTowReleaseFaceQuality(
   );
 }
 
+/**
+ * Chooses a point down the physical front face. The ideal stand-up distance
+ * grows with wave scale, while the measured live-face score remains the main
+ * criterion so the tow follows an arriving shoulder instead of a fixed spot.
+ */
+export function optionalTowTakeoffTargetScore(
+  faceQuality: number,
+  distanceFromCrest: number,
+  targetFaceHeight: number,
+) {
+  const idealDistance = clampValue(
+    2.8 + Math.max(0, targetFaceHeight) * .48,
+    3.1,
+    6.2,
+  );
+  const distanceQuality = 1 - smoothstep(
+    Math.max(1.4, idealDistance * .48),
+    Math.max(2.8, idealDistance * 1.08),
+    Math.abs(distanceFromCrest - idealDistance),
+  );
+  return clampValue(faceQuality, 0, 1)
+    * (.64 + distanceQuality * .36);
+}
+
 export function optionalTowReleasePhysicallySupported(
   requested: boolean,
   progress: number,
@@ -5610,8 +5695,8 @@ export function optionalTowReleasePhysicallySupported(
   faceQuality = 1,
 ) {
   return requested
-    && progress >= .8
-    && quality > .08
+    && progress >= .56
+    && quality > .12
     && breakingRatio >= .6
     && breakingRatio <= 1.9
     && faceQuality >= .08;

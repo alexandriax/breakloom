@@ -48,6 +48,8 @@ for (const token of [
   "horizontalDisplacement",
   "horizontalSlopeBudget",
   "horizontalShoreAnchor",
+  "washActivation",
+  "washWhitewater",
   "for (int index = 0; index < 28; index++)",
 ]) {
   assert.ok(
@@ -83,6 +85,11 @@ assert.ok(
 assert.ok(
   !vertex.includes("pow(max(0.0, primary), 5.0)"),
   "mountain-shaped crest spike returned to the ocean shader",
+);
+assert.ok(
+  !vertex.includes("smoothstep(-5.0, 1.0, contourCoordinate)")
+    && !vertex.includes("smoothstep(-18.0"),
+  "the ocean mesh is being flattened before broken waves reach the shoreline",
 );
 assert.ok(
   !vertex.includes("gerstner("),

@@ -130,6 +130,12 @@ export type WavePropagationFieldSample = {
    * retaining a single-valued, differentiable phase field.
    */
   contourCoordinate?: number;
+  /**
+   * Signed distance from the local shoreline: positive offshore, negative on
+   * land. When omitted, the negative contour coordinate is used because the
+   * standard bathymetry field is anchored to zero at the shoreline.
+   */
+  signedOffshoreDistance?: number;
 };
 
 export type WavePropagationField = {
@@ -478,12 +484,21 @@ function isDepthProfile(source: WaveDepthSource): source is WaveDepthProfile {
 
 function sourceSampleAt(source: WaveDepthSource, x: number, z: number) {
   if (isDepthProfile(source)) {
-    return { depth: depthAt(source, z), contourCoordinate: z };
+    return {
+      depth: depthAt(source, z),
+      contourCoordinate: z,
+      signedOffshoreDistance: -z,
+    };
   }
   const sample = source.sample(x, z);
+  const contourCoordinate = finiteOr(sample.contourCoordinate, z);
   return {
     depth: Math.max(MIN_DEPTH, positiveOr(sample.depth, MIN_DEPTH)),
-    contourCoordinate: finiteOr(sample.contourCoordinate, z),
+    contourCoordinate,
+    signedOffshoreDistance: finiteOr(
+      sample.signedOffshoreDistance,
+      -contourCoordinate,
+    ),
   };
 }
 
@@ -1247,7 +1262,8 @@ function localTermsAt(
   elapsed: number,
   options: WaveSamplingOptions,
 ) {
-  const depth = sourceSampleAt(source, x, z).depth;
+  const sourceSample = sourceSampleAt(source, x, z);
+  const depth = sourceSample.depth;
   const rawTerms = bank.components.map((component) => {
     const geometry = localGeometryAt(component, source, x, z, elapsed);
     const referenceNormalFlux = geometry.referenceGroupVelocity
@@ -1305,6 +1321,7 @@ function localTermsAt(
   return {
     terms,
     depth,
+    signedOffshoreDistance: sourceSample.signedOffshoreDistance,
     rawSignificantHeight,
     localSignificantHeight: rawSignificantHeight * scale,
     breakingRatio: rawSignificantHeight / Math.max(.05, breakingIndex * depth),
@@ -1328,6 +1345,7 @@ export type WaveBreakerResponse = {
   brokenProgress: number;
   shapeActivation: number;
   faceActivation: number;
+  washActivation: number;
   heightOffset: number;
   phaseDerivative: number;
   whitewater: number;
@@ -1353,6 +1371,7 @@ export function waveBreakerResponseAt(
     | "breakerHollow"
     | "targetFaceHeight"
   > = {},
+  signedOffshoreDistance = Number.POSITIVE_INFINITY,
 ): WaveBreakerResponse {
   const power = clamp(positiveOr(options.breakerPower, 1), .62, 1.55);
   const steepness = clamp(positiveOr(options.breakerSteepness, .78), .38, 1.3);
@@ -1363,6 +1382,18 @@ export function waveBreakerResponseAt(
   const shapeActivation = breakingProgress * shoreFade;
   const faceActivation = smoothUnit(.55, .82, breakingRatio)
     * (1 - smoothUnit(2.4, 5.2, breakingRatio));
+  // Once the pitched face has collapsed, its energy becomes a translating
+  // bore and swash rather than disappearing. This smaller residual follows the
+  // same dominant phase all the way to the dry line, then fades over the first
+  // metre or so of land. It therefore cannot become another stationary ribbon
+  // or a second synthetic wave system.
+  const shorePersistence = smoothUnit(
+    -1.45,
+    .45,
+    signedOffshoreDistance,
+  );
+  const washActivation = smoothUnit(1.35, 3.1, breakingRatio)
+    * shorePersistence;
   const realizedCrestEnergy = clamp(crestEnergy, 0, 1);
   // The coherent spectrum supplies natural sets, spacing, and along-crest
   // variation. At the actual break, however, even a locally cancelled part of
@@ -1421,22 +1452,39 @@ export function waveBreakerResponseAt(
   ) * faceActivation;
   const carrierShape = Math.cos(dominantPhase);
   const carrierDerivative = -Math.sin(dominantPhase);
+  const washAmplitude = clamp(
+    Math.max(0, options.targetFaceHeight ?? 0) * .14 + .1,
+    .14,
+    .72,
+  ) * (.58 + realizedCrestEnergy * .42)
+    * washActivation;
+  const washShape = .78 * Math.cos(dominantPhase)
+    + .22 * Math.cos(twice);
+  const washDerivative = -.78 * Math.sin(dominantPhase)
+    - .44 * Math.sin(twice);
   const crestSignal = .5 + .5 * Math.cos(dominantPhase);
-  const whitewater = shapeActivation
+  const breakingWhitewater = shapeActivation
     * smoothUnit(.3, .76, crestSignal)
     * (.52 + brokenProgress * .48)
     * (.46 + realizedCrestEnergy * .54);
+  const washWhitewater = washActivation
+    * smoothUnit(.18, .72, crestSignal)
+    * (.58 + realizedCrestEnergy * .42);
+  const whitewater = Math.max(breakingWhitewater, washWhitewater);
   return {
     breakingProgress,
     brokenProgress,
     shapeActivation,
     faceActivation,
+    washActivation,
     heightOffset:
       shapeAmplitude * shape
-      + carrierCorrection * carrierShape,
+      + carrierCorrection * carrierShape
+      + washAmplitude * washShape,
     phaseDerivative:
       shapeAmplitude * shapeDerivative
-      + carrierCorrection * carrierDerivative,
+      + carrierCorrection * carrierDerivative
+      + washAmplitude * washDerivative,
     whitewater,
   };
 }
@@ -1454,6 +1502,7 @@ function heightFromLocal(
     dominant?.crestEnergy ?? 0,
     dominant?.amplitude ?? 0,
     options,
+    local.signedOffshoreDistance,
   );
   return heightFromTerms(local.terms) + response.heightOffset;
 }
@@ -1747,6 +1796,7 @@ export function sampleWaveSurface(
     dominant?.crestEnergy ?? 0,
     dominant?.amplitude ?? 0,
     options,
+    local.signedOffshoreDistance,
   );
   const height = heightFromTerms(local.terms) + breaker.heightOffset;
   let timeDerivative = 0;

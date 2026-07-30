@@ -37,6 +37,8 @@ import {
   popUpStaminaDelta,
   optionalTowReleasePhysicallySupported,
   optionalTowReleaseFaceQuality,
+  optionalTowReleaseQuality,
+  optionalTowTakeoffTargetScore,
   primaryWaveVelocityAt,
   readCrestTimingMechanics,
   readDuckDiveCue,
@@ -335,6 +337,30 @@ const flatTowFaceQuality = optionalTowReleaseFaceQuality({
   surfaceRise: -.12,
   whitewater: 0,
 });
+const idealTowInterceptQuality = optionalTowReleaseQuality({
+  routeProgress: .72,
+  faceQuality: supportedTowFaceQuality,
+  distanceToTarget: .4,
+  headingAlignment: .96,
+  speedMatch: .94,
+});
+const missedTowInterceptQuality = optionalTowReleaseQuality({
+  routeProgress: .92,
+  faceQuality: supportedTowFaceQuality,
+  distanceToTarget: 9,
+  headingAlignment: .96,
+  speedMatch: .94,
+});
+const scaledTowTargetScore = optionalTowTakeoffTargetScore(
+  supportedTowFaceQuality,
+  4,
+  2.5,
+);
+const lipTowTargetScore = optionalTowTakeoffTargetScore(
+  supportedTowFaceQuality,
+  1.35,
+  2.5,
+);
 if (
   physicalTowContour.ratioError > .002
   || Math.abs((physicalTowContour.breakingRatio ?? 0) - .9) > .002
@@ -343,17 +369,20 @@ if (
   || Math.abs(stagedTowTangentZ - originalTowTangentZ) > 1e-9
   || supportedTowFaceQuality < .65
   || flatTowFaceQuality !== 0
+  || idealTowInterceptQuality <= missedTowInterceptQuality * 2
+  || scaledTowTargetScore <= lipTowTargetScore
   || !optionalTowReleasePhysicallySupported(
     true,
-    .88,
-    .9,
+    .64,
+    idealTowInterceptQuality,
     .9,
     supportedTowFaceQuality,
   )
-  || optionalTowReleasePhysicallySupported(true, .88, .9, .9, 0)
-  || optionalTowReleasePhysicallySupported(true, .88, .9, .4, 1)
-  || optionalTowReleasePhysicallySupported(true, .88, .9, 2, 1)
-  || optionalTowReleasePhysicallySupported(false, .88, .9, .9, 1)
+  || optionalTowReleasePhysicallySupported(true, .5, .9, .9, 1)
+  || optionalTowReleasePhysicallySupported(true, .64, .9, .9, 0)
+  || optionalTowReleasePhysicallySupported(true, .64, .9, .4, 1)
+  || optionalTowReleasePhysicallySupported(true, .64, .9, 2, 1)
+  || optionalTowReleasePhysicallySupported(false, .64, .9, .9, 1)
 ) {
   throw new Error(
     "Tow targeting no longer requires a physical depth-limited front face or rejects unsupported release water",
@@ -759,6 +788,8 @@ const shallowMidpointProgress = shorelineRideOutProgress(
 );
 if (
   shorelineRideOutProgress(RIDE_RESULT_LINE_Z) !== 0
+  || SHALLOW_DISMOUNT_Z - RIDE_RESULT_LINE_Z > 1.5
+  || RIDE_RESULT_LINE_Z < 6.8
   || !Number.isFinite(shallowMidpointProgress)
   || Math.abs(shallowMidpointProgress - .5) > .000001
   || shorelineRideOutProgress(SHALLOW_DISMOUNT_Z) !== 1
@@ -1730,6 +1761,41 @@ const broadsideWavePressure = resolveSurfboardWavePressure({
   waveHeight: dynamicsSample.waveHeight,
   stance: 0,
 });
+const diagonalStandingPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 3,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: -.12,
+});
+const diagonalTrimPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 3,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: -.12,
+  faceTrimSupport: 1,
+});
+const broadsideTrimPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 2,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: -.12,
+  faceTrimSupport: 1,
+});
 const stillWaterPressure = resolveSurfboardWavePressure({
   velocityX: 0,
   velocityZ: 0,
@@ -1890,6 +1956,12 @@ if (
   || Math.abs(alignedWavePressure.lateralLoad) > .001
   || Math.abs(broadsideWavePressure.forwardDrive) > .001
   || Math.abs(broadsideWavePressure.lateralLoad) < 1
+  || diagonalTrimPressure.forwardDrive
+    <= diagonalStandingPressure.forwardDrive * 1.35
+  || Math.abs(diagonalTrimPressure.lateralLoad)
+    >= Math.abs(diagonalStandingPressure.lateralLoad) * .72
+  || Math.abs(broadsideTrimPressure.forwardDrive) > .001
+  || Math.abs(broadsideTrimPressure.lateralLoad) < 1
   || stillWaterPressure.pressure !== 0
 ) {
   throw new Error("Shared wave pressure no longer distinguishes aligned drive, broadside load, and still water");

@@ -8,8 +8,9 @@ import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.j
 import type { ShaderPass } from "three-stdlib";
 import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
+import { shorelineReferenceAt } from "@/lib/bathymetry";
 import type { BoardType, GamePhase, GameStats, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_DURATION_SECONDS, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -1078,6 +1079,13 @@ const OCEAN_VERTEX = /* glsl */ `
     float shapeActivation = breakingProgress * shoreFade;
     float faceActivation = smoothstep(.55, .82, breakingRatio)
       * (1.0 - smoothstep(2.4, 5.2, breakingRatio));
+    float shorePersistence = smoothstep(
+      -1.45,
+      .45,
+      -contourCoordinate
+    );
+    float washActivation = smoothstep(1.35, 3.1, breakingRatio)
+      * shorePersistence;
     float localSignificantHeight = rawSignificantHeight * amplitudeScale;
     float second = .28 + uBreakerSteepness * .17
       + uBreakerHollow * .1;
@@ -1122,6 +1130,21 @@ const OCEAN_VERTEX = /* glsl */ `
       * dominantGradient.x;
     gradientZ -= carrierCorrection * sin(dominantPhase)
       * dominantGradient.y;
+    float washAmplitude = clamp(
+      max(0.0, uTargetFaceHeight) * .14 + .1,
+      .14,
+      .72
+    ) * (.58 + crestEnergy * .42)
+      * washActivation;
+    float washShape = .78 * cos(dominantPhase)
+      + .22 * cos(twice);
+    float washDerivative = -.78 * sin(dominantPhase)
+      - .44 * sin(twice);
+    surfaceHeight += washAmplitude * washShape;
+    gradientX += washAmplitude * washDerivative
+      * dominantGradient.x;
+    gradientZ += washAmplitude * washDerivative
+      * dominantGradient.y;
 
     float horizontalScale = min(
       1.0,
@@ -1144,10 +1167,10 @@ const OCEAN_VERTEX = /* glsl */ `
     p.y -= boundedHorizontalDisplacement.y;
     surfaceHeight += uTide * .3;
     p.z += surfaceHeight;
-    float shoreAnchor = smoothstep(-5.0, 1.0, contourCoordinate);
+    float shoreAnchor = smoothstep(.15, 1.8, contourCoordinate);
     float horizontalShoreAnchor = smoothstep(
-      -18.0,
-      1.0,
+      -2.0,
+      1.6,
       contourCoordinate
     );
     p.xy = mix(p.xy, position.xy, horizontalShoreAnchor);
@@ -1159,10 +1182,17 @@ const OCEAN_VERTEX = /* glsl */ `
     vCrest = (surfaceHeight - uTide * .3)
       / max(.08, rawSignificantHeight * .5);
     float crestSignal = .5 + .5 * cos(dominantPhase);
-    float breakActivation = shapeActivation
+    float breakingWhitewater = shapeActivation
       * smoothstep(.45, .88, crestSignal)
       * (.52 + brokenProgress * .48)
       * (.46 + crestEnergy * .54);
+    float washWhitewater = washActivation
+      * smoothstep(.18, .72, crestSignal)
+      * (.58 + crestEnergy * .42);
+    float breakActivation = max(
+      breakingWhitewater,
+      washWhitewater
+    );
     vBreaker = breakActivation;
     vSwellRead = smoothstep(
       .12,
@@ -12593,6 +12623,15 @@ function Simulation({
       sunTarget.updateMatrixWorld();
     }
     const tideShift = shorelineShiftForTide(settings.tide);
+    const coastalPositionAt = (x: number, z: number) => (
+      z
+        - tideShift
+        - shorelineReferenceAt(
+          character.coastId ?? beach.id,
+          character.zoneName ?? zoneName,
+          x,
+        )
+    );
     const qaElapsed = qaScenario ? t - qaStartedAt.current : 0;
     let steer = THREE.MathUtils.clamp((state.right ? 1 : 0) - (state.left ? 1 : 0) + state.moveX + state.gamepadMoveX, -1, 1);
     let move = THREE.MathUtils.clamp((state.forward ? 1 : 0) - (state.back ? 1 : 0) + state.moveY + state.gamepadMoveY, -1, 1);
@@ -12746,9 +12785,7 @@ function Simulation({
     let noseImmersion = 0;
     let tailImmersion = 0;
     let pitchOverRisk = 0;
-    let towReleaseQuality = towMotion.current.active
-      ? optionalTowReleaseQuality(towMotion.current.progress)
-      : 0;
+    let towReleaseQuality = 0;
     let towBestRelease = false;
     const boardAttitudeInWater = currentPhase === "riding"
       || currentPhase === "paddling";
@@ -13244,6 +13281,9 @@ function Simulation({
           const turnExitZ = towMotion.current.targetZ - 18;
           let desiredTowX = previousTowX;
           let desiredTowZ = previousTowZ;
+          let liveTakeoffX = position.current.x;
+          let liveTakeoffZ = position.current.z;
+          let liveTakeoffFaceQuality = 0;
           if (towProgress < .44) {
             const outboundProgress = THREE.MathUtils.smootherstep(towProgress, 0, .44);
             desiredTowX = THREE.MathUtils.lerp(
@@ -13287,10 +13327,61 @@ function Simulation({
               liveCrest.normalX,
               liveCrest.normalZ,
             );
-            // The craft runs ahead of the crest; a seven-metre rope places the
-            // surfer on the rising face instead of inside the lip.
-            const liveCraftX = stagedCrest.x + liveCrest.normalX * 9.5;
-            const liveCraftZ = stagedCrest.z + liveCrest.normalZ * 9.5;
+            // Re-scan the actual rising face every frame. Wave scale changes
+            // the preferred pop-up distance, while slope, lift, phase, and
+            // whitewater select the best currently supported point. The craft
+            // therefore chases the takeoff zone instead of passing through a
+            // fixed timer coordinate.
+            let bestTakeoffScore = -1;
+            for (let candidateIndex = 0; candidateIndex < 12; candidateIndex += 1) {
+              const faceDistance = 1.35 + candidateIndex * .52;
+              const candidateX = stagedCrest.x
+                + liveCrest.normalX * faceDistance;
+              const candidateZ = stagedCrest.z
+                + liveCrest.normalZ * faceDistance;
+              const candidateSurface = waveSurfaceFrameAt(
+                candidateX,
+                candidateZ,
+                t,
+                settings,
+                character,
+              );
+              const candidateSlope = Math.max(
+                0,
+                -(
+                  candidateSurface.slopeX * liveCrest.normalX
+                    + candidateSurface.slopeZ * liveCrest.normalZ
+                ),
+              );
+              const candidateFaceQuality = optionalTowReleaseFaceQuality({
+                breakingRatio: candidateSurface.breakingRatio,
+                crestPhaseError: primaryWavePhaseAt(
+                  candidateX,
+                  candidateZ,
+                  t,
+                  settings,
+                  character,
+                ) - towMotion.current.targetWavePhase,
+                faceSlope: candidateSlope,
+                surfaceRise: candidateSurface.surfaceRise,
+                whitewater: candidateSurface.whitewater,
+              });
+              const candidateScore = optionalTowTakeoffTargetScore(
+                candidateFaceQuality,
+                faceDistance,
+                targetFaceHeight,
+              );
+              if (candidateScore <= bestTakeoffScore) continue;
+              bestTakeoffScore = candidateScore;
+              liveTakeoffX = candidateX;
+              liveTakeoffZ = candidateZ;
+              liveTakeoffFaceQuality = candidateFaceQuality;
+            }
+            const towRopeLength = 7;
+            const liveCraftX = liveTakeoffX
+              + liveCrest.normalX * towRopeLength;
+            const liveCraftZ = liveTakeoffZ
+              + liveCrest.normalZ * towRopeLength;
             const captureProgress = THREE.MathUtils.smootherstep(towProgress, .6, .7);
             desiredTowX = THREE.MathUtils.lerp(
               turnExitX,
@@ -13404,14 +13495,31 @@ function Simulation({
             surfaceRise: towFaceSurface.surfaceRise,
             whitewater: towFaceSurface.whitewater,
           });
-          const towProgressQuality = optionalTowReleaseQuality(
-            towMotion.current.progress,
+          const towNormalSpeed = paddleVelocity.current.x * towFaceNormalX
+            + paddleVelocity.current.y * towFaceNormalZ;
+          const towHeadingAlignment = THREE.MathUtils.clamp(
+            towNormalSpeed / Math.max(.001, surferTowSpeed),
+            -1,
+            1,
           );
-          towReleaseQuality = THREE.MathUtils.clamp(
-            towProgressQuality * .25 + towFaceQuality * .75,
+          const towSpeedRatio = towNormalSpeed
+            / Math.max(.001, towFaceTransport.speed);
+          const towSpeedMatch = THREE.MathUtils.clamp(
+            1 - Math.abs(towSpeedRatio - .82) / .72,
             0,
             1,
           );
+          const towTargetDistance = Math.hypot(
+            position.current.x - liveTakeoffX,
+            position.current.z - liveTakeoffZ,
+          );
+          towReleaseQuality = optionalTowReleaseQuality({
+            routeProgress: towMotion.current.progress,
+            faceQuality: towFaceQuality,
+            distanceToTarget: towTargetDistance,
+            headingAlignment: towHeadingAlignment,
+            speedMatch: towSpeedMatch,
+          });
           towBestRelease = optionalTowReleasePhysicallySupported(
             true,
             towMotion.current.progress,
@@ -13425,11 +13533,11 @@ function Simulation({
               ? "Running outside the break · SPACE / RELEASE anytime"
               : towMotion.current.progress < .6
                 ? "Turning onto a live wave · hold the tow"
-                : towMotion.current.progress < .78
-                  ? "Matching the selected crest · prepare to release"
-                  : towFaceQuality > .05
-                    ? "Face loading under the board · hold for green"
-                    : "Tracking the live crest · release only when highlighted";
+                : towTargetDistance > 4.5
+                  ? "Chasing the moving takeoff point · hold the tow"
+                  : liveTakeoffFaceQuality > .08
+                    ? "Matching speed on the rising face · hold for green"
+                    : "Scanning the live crest for a supported pop-up point";
           if (!actionPressed && towMotion.current.progress >= 1) {
             // A slow frame or oblique approach can miss a crest. Keep the
             // surfer under tow and acquire the following physical crest rather
@@ -15903,7 +16011,10 @@ function Simulation({
         } else {
         const finishing = finishAt.current >= 0;
         rideOutProgress = shorelineRideOutProgress(
-          position.current.z - tideShift,
+          coastalPositionAt(
+            position.current.x,
+            position.current.z,
+          ),
         );
         const rideSteer = rideRailInputFromPaddleSteer(steer)
           * returnProneFootSupport;
@@ -16082,6 +16193,13 @@ function Simulation({
               character,
             )
         ) / rideLookback;
+        const rideFaceTrimSupport = THREE.MathUtils.clamp(
+          (rideEngaged.current ? .42 : 0)
+            + waveEngagement.current * .38
+            + lineControl * .2,
+          0,
+          1,
+        );
         const rideInteraction = evaluateBoardWaterInteraction({
           boardHeading: rideHeading.current,
           velocityX: rideVelocity.current.x,
@@ -16102,13 +16220,7 @@ function Simulation({
           boardLength: boardSpec.length,
           boardWidth: boardSpec.width,
           waveHeight: targetFaceHeight,
-          faceTrimSupport: THREE.MathUtils.clamp(
-            (rideEngaged.current ? .42 : 0)
-              + waveEngagement.current * .38
-              + lineControl * .2,
-            0,
-            1,
-          ),
+          faceTrimSupport: rideFaceTrimSupport,
         });
         const planingForwardX = Math.sin(rideHeading.current);
         const planingForwardZ = Math.cos(rideHeading.current);
@@ -16400,6 +16512,9 @@ function Simulation({
             boardTurn: boardSpec.turn,
             boardStability: boardSpec.stability,
             waveHeight: targetFaceHeight,
+            faceTrimSupport: rideFaceTrimSupport
+              * railGrip
+              * ridePlaning,
           },
         );
         rideVelocity.current.set(
@@ -17156,7 +17271,10 @@ function Simulation({
         } else if (
           !qaScenario
           && !finishing
-          && position.current.z - tideShift > RIDE_RESULT_LINE_Z
+          && coastalPositionAt(
+            position.current.x,
+            position.current.z,
+          ) > RIDE_RESULT_LINE_Z
         ) {
           if (rideResult.current === "") {
             score.current += 750 + rideDistance.current * 11;
@@ -17629,7 +17747,10 @@ function Simulation({
     }
 
     if (!replayMotion && phase.current === "riding") {
-      const coastalPosition = position.current.z - tideShift;
+      const coastalPosition = coastalPositionAt(
+        position.current.x,
+        position.current.z,
+      );
       rideOutProgress = shorelineRideOutProgress(coastalPosition);
       const shallowExit = coastalPosition > SHALLOW_DISMOUNT_Z;
       if (
@@ -18965,7 +19086,10 @@ function Simulation({
         pocketDistance: Number(pocketDistance.current.toFixed(1)),
         offshoreDistance: Number(Math.max(
           0,
-          SHORELINE_REFERENCE_Z - (position.current.z - tideShift),
+          SHORELINE_REFERENCE_Z - coastalPositionAt(
+            position.current.x,
+            position.current.z,
+          ),
         ).toFixed(1)),
         coastDistance: Number((phase.current === "driving" ? vanPosition.current.x : position.current.x).toFixed(1)),
         cameraHeading,
