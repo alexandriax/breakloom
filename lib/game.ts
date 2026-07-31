@@ -1,5 +1,22 @@
 import type { MarineConditions } from "./marine";
 import type { BreakCharacter } from "./beaches";
+import {
+  coastWaveModelAt,
+  oceanTideShorelineShift,
+  sampleCoastDominantWave,
+  sampleCoastWaveSurface,
+} from "./ocean.ts";
+import {
+  dominantCrestPropertiesAtPhase,
+  spectralCrestAtOrdinal,
+  type WaveComponentBank,
+} from "./waves.ts";
+import { DEFAULT_TIDE_BREAK } from "./tide.ts";
+export {
+  forecastFaceHeightForBreak,
+  tideResponseForBreak,
+  type TideResponse,
+} from "./tide.ts";
 
 export type GameMode = "training" | "advanced" | "playground";
 export type GamePhase = "shore" | "driving" | "wading" | "paddling" | "riding" | "wipeout";
@@ -7,20 +24,17 @@ export type SurfAssistLevel = "guided" | "natural" | "raw";
 export type SessionGrade = "C" | "B" | "A" | "S";
 export type BoardType = "performance" | "fish" | "longboard";
 export const SHORELINE_REFERENCE_Z = 8;
-export const RIDE_RESULT_LINE_Z = SHORELINE_REFERENCE_Z - 9.2;
-export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z - 1.2;
+// A completed ride is scored in the swash, not while the surfer is still on
+// an open face. The final board-to-feet transition happens just landward of
+// the nominal wet line so a broken wave can visibly carry the board to shore.
+export const RIDE_RESULT_LINE_Z = SHORELINE_REFERENCE_Z - 1;
+export const SHALLOW_DISMOUNT_Z = SHORELINE_REFERENCE_Z + .35;
 export const OUTER_PADDLE_LIMIT_Z = -900;
 // Baseline shoaling starts offshore so the takeoff zone leaves a usable face
 // between the crest and the inside. Set energy can move it farther outside.
 export const BREAK_OFFSHORE_OFFSET = 24;
 export const MAX_OFFSHORE_DISTANCE = SHORELINE_REFERENCE_Z - OUTER_PADDLE_LIMIT_Z;
-const WAVE_ENERGY_SEQUENCE = [
-  .12, .16, .2, .14, .18, .24,
-  .29, .42, .64, .86, .72, .48,
-  .22, .15, .11, .17, .25,
-  .34, .53, .78, .61, .39, .23, .16,
-] as const;
-const SURFABLE_CREST_ENERGY = .28;
+const SURFABLE_CREST_ENERGY = .45;
 
 /**
  * Assistance changes how forgiving the surfer's technique is, not the wave
@@ -31,21 +45,47 @@ const SURFABLE_CREST_ENERGY = .28;
 export const SURF_ASSIST_PROFILES = {
   guided: {
     label: "Guided",
-    description: "More paddle leverage, clearer dive timing, gentler wash.",
+    description: "Forgiving basic lines, strong turns, and automatic recovery.",
     paddleTurnAuthority: 1.38,
     proneLateralLoad: .56,
     shorebreakExposure: .68,
     failureMargin: .08,
     duckDiveWindowScale: 1.32,
+    surfTurnAuthority: 1.42,
+    automaticCounterweight: .72,
+    railTorqueScale: .78,
+    ridingStabilityScale: 1.28,
+    railGripBonus: .14,
+    railDemandScale: .72,
+    instabilityLoadScale: .42,
+    instabilityRecoveryScale: 1.35,
+    wipeoutThresholdScale: 1.42,
+    trimSupportBonus: .22,
+    momentumRetention: 1.24,
+    pocketDriveScale: 1.08,
+    pocketWindowScale: 1.3,
   },
   natural: {
     label: "Natural",
-    description: "Calibrated body and board response with light recovery help.",
+    description: "Real board response with enough recovery to explore the face.",
     paddleTurnAuthority: 1.16,
     proneLateralLoad: .78,
     shorebreakExposure: .84,
     failureMargin: .035,
     duckDiveWindowScale: 1.14,
+    surfTurnAuthority: 1.18,
+    automaticCounterweight: .36,
+    railTorqueScale: .9,
+    ridingStabilityScale: 1.12,
+    railGripBonus: .06,
+    railDemandScale: .86,
+    instabilityLoadScale: .7,
+    instabilityRecoveryScale: 1.16,
+    wipeoutThresholdScale: 1.2,
+    trimSupportBonus: .1,
+    momentumRetention: 1.12,
+    pocketDriveScale: 1,
+    pocketWindowScale: 1.12,
   },
   raw: {
     label: "Raw",
@@ -55,6 +95,19 @@ export const SURF_ASSIST_PROFILES = {
     shorebreakExposure: 1,
     failureMargin: 0,
     duckDiveWindowScale: 1,
+    surfTurnAuthority: 1,
+    automaticCounterweight: 0,
+    railTorqueScale: 1,
+    ridingStabilityScale: 1,
+    railGripBonus: 0,
+    railDemandScale: 1,
+    instabilityLoadScale: 1,
+    instabilityRecoveryScale: 1,
+    wipeoutThresholdScale: 1,
+    trimSupportBonus: 0,
+    momentumRetention: 1,
+    pocketDriveScale: 1,
+    pocketWindowScale: 1,
   },
 } as const satisfies Record<
   SurfAssistLevel,
@@ -66,6 +119,19 @@ export const SURF_ASSIST_PROFILES = {
     shorebreakExposure: number;
     failureMargin: number;
     duckDiveWindowScale: number;
+    surfTurnAuthority: number;
+    automaticCounterweight: number;
+    railTorqueScale: number;
+    ridingStabilityScale: number;
+    railGripBonus: number;
+    railDemandScale: number;
+    instabilityLoadScale: number;
+    instabilityRecoveryScale: number;
+    wipeoutThresholdScale: number;
+    trimSupportBonus: number;
+    momentumRetention: number;
+    pocketDriveScale: number;
+    pocketWindowScale: number;
   }
 >;
 
@@ -957,6 +1023,188 @@ export function resolveWaveTubePressure(
   };
 }
 
+/**
+ * One calibration for how much propulsion the breaking face itself supplies.
+ * The pocket window is measured in resolveWaveSectionPressure line units, the
+ * accelerations in m/s^2, and the headroom ratio against wave phase speed.
+ */
+export const WAVE_DRIVE_TUNING = {
+  maxDriveAcceleration: 4.2,
+  pocketCore: .38,
+  shoulderFalloff: 1.14,
+  deepFalloff: 1.42,
+  lipTaper: .35,
+  downTheLineThrow: .34,
+  speedHeadroomRatio: 2.1,
+  tubeHeadroomBonus: .35,
+  flatsGlideDrag: .024,
+  glideFadeStart: .12,
+  glideFadeEnd: .45,
+  whitewaterDriveLoss: .55,
+} as const;
+
+export type WavePocketDriveSample = {
+  linePosition: number;
+  facePosition: number;
+  waveEnergy: number;
+  waveSpeed: number;
+  waveNormalX: number;
+  waveNormalZ: number;
+  lineSide: number;
+  boardHeading: number;
+  forwardSpeed: number;
+  waveContact: number;
+  whitewater: number;
+  tubePressure: number;
+  driveScale?: number;
+  pocketWindowScale?: number;
+};
+
+export type WavePocketDriveReading = {
+  pocketFactor: number;
+  faceFactor: number;
+  trimFactor: number;
+  headroom: number;
+  envelope: number;
+  driveMagnitude: number;
+  driveX: number;
+  driveZ: number;
+  glideDragBonus: number;
+};
+
+/**
+ * Resolves the propulsion the breaking face itself delivers at the board's
+ * live pocket-relative position. The steep face just ahead of the curl keeps
+ * rising under the hull, so the same downslope force is continuously restored
+ * there; the shoulder is fat and delivers little; unbroken water ahead of the
+ * wave delivers none and instead bleeds glide. Ride state, scoring, and
+ * tutorial mode are deliberately absent, matching the other pocket resolvers.
+ */
+export function resolveWavePocketDrive(
+  sample: WavePocketDriveSample,
+): WavePocketDriveReading {
+  // A single NaN here would integrate straight into board velocity, so the
+  // resolver refuses non-finite localization outright.
+  if (
+    !Number.isFinite(sample.linePosition)
+    || !Number.isFinite(sample.facePosition)
+    || !Number.isFinite(sample.boardHeading)
+    || !Number.isFinite(sample.waveSpeed)
+    || !Number.isFinite(sample.forwardSpeed)
+  ) {
+    return {
+      pocketFactor: 0,
+      faceFactor: 0,
+      trimFactor: 0,
+      headroom: 0,
+      envelope: 0,
+      driveMagnitude: 0,
+      driveX: 0,
+      driveZ: 0,
+      glideDragBonus: 0,
+    };
+  }
+  // Hull/water contact is deliberately absent: advanceSurfboardDynamics gates
+  // the applied drive through hullContact once, so an airborne board receives
+  // nothing without the gate compounding here.
+  const contact = clampValue(sample.waveContact, 0, 1);
+  const energy = clampValue(sample.waveEnergy, 0, 1);
+  const whitewater = clampValue(sample.whitewater, 0, 1);
+  const tube = clampValue(sample.tubePressure, 0, 1);
+  const waveSpeed = Math.max(0, sample.waveSpeed);
+  const windowScale = clampValue(sample.pocketWindowScale ?? 1, .6, 1.6);
+  const lineSide = sample.lineSide < 0 ? -1 : 1;
+  // Assist forgiveness widens only the shoulder side of the window; the deep
+  // side keeps raw units so drive still dies out behind the peel within the
+  // measurable linePosition range.
+  const linePosition = sample.linePosition >= 0
+    ? sample.linePosition / windowScale
+    : sample.linePosition;
+  // Asymmetric bell around the curl: the shoulder side goes slack quickly as
+  // the face fattens, while the deep side fades more slowly into foam push.
+  const shoulderFade = 1 - smoothstep(
+    WAVE_DRIVE_TUNING.pocketCore,
+    WAVE_DRIVE_TUNING.shoulderFalloff,
+    linePosition,
+  );
+  const deepFade = 1 - smoothstep(
+    WAVE_DRIVE_TUNING.pocketCore,
+    WAVE_DRIVE_TUNING.deepFalloff,
+    -linePosition,
+  );
+  const pocketFactor = clampValue(Math.min(shoulderFade, deepFade), 0, 1);
+  const facePosition = clampValue(sample.facePosition, -1, 1);
+  const faceFactor = smoothstep(-.55, .05, facePosition)
+    * (1 - smoothstep(.78, 1.08, facePosition) * WAVE_DRIVE_TUNING.lipTaper);
+  const forwardX = Math.sin(sample.boardHeading);
+  const forwardZ = Math.cos(sample.boardHeading);
+  const headingAlignment = clampValue(
+    forwardX * sample.waveNormalX + forwardZ * sample.waveNormalZ,
+    -1,
+    1,
+  );
+  const broadside = Math.sqrt(Math.max(
+    0,
+    1 - headingAlignment * headingAlignment,
+  ));
+  // Trim across the face outruns a straight-to-shore line; a nose pointed
+  // back offshore earns nothing.
+  const trimFactor = (.55 + .45 * smoothstep(.08, .52, broadside))
+    * smoothstep(-.28, .02, headingAlignment);
+  const headroomRatio = WAVE_DRIVE_TUNING.speedHeadroomRatio
+    + tube * WAVE_DRIVE_TUNING.tubeHeadroomBonus;
+  const speedRatio = waveSpeed < .001
+    ? 1
+    : Math.max(0, sample.forwardSpeed) / (waveSpeed * headroomRatio);
+  const headroom = 1 - smoothstep(.55, 1, speedRatio);
+  const envelope = pocketFactor * faceFactor * (.3 + energy * .7);
+  const driveMagnitude = WAVE_DRIVE_TUNING.maxDriveAcceleration
+    * envelope
+    * trimFactor
+    * headroom
+    * contact
+    * (1 - whitewater * WAVE_DRIVE_TUNING.whitewaterDriveLoss)
+    * clampValue(sample.driveScale ?? 1, 0, 1.6);
+  // The curl's throw carries an alongshore component toward the peel, so part
+  // of the drive is steered down the line instead of along the hull.
+  const downLineX = sample.waveNormalZ * lineSide;
+  const downLineZ = -sample.waveNormalX * lineSide;
+  const throwBlend = pocketFactor
+    * WAVE_DRIVE_TUNING.downTheLineThrow
+    * (.45 + tube * .55);
+  const rawDirectionX = forwardX * (1 - throwBlend) + downLineX * throwBlend;
+  const rawDirectionZ = forwardZ * (1 - throwBlend) + downLineZ * throwBlend;
+  const directionMagnitude = Math.hypot(rawDirectionX, rawDirectionZ);
+  const directionX = directionMagnitude < .05
+    ? forwardX
+    : rawDirectionX / directionMagnitude;
+  const directionZ = directionMagnitude < .05
+    ? forwardZ
+    : rawDirectionZ / directionMagnitude;
+  // Glide decay keys on face support, not the pocket envelope, so a bottom
+  // turn through the trough of a live face keeps its momentum while unbroken
+  // water ahead of the wave bleeds it. The fade band zeroes the penalty once
+  // contact is solid — a live face never leaks drag into the pocket.
+  const glideDragBonus = WAVE_DRIVE_TUNING.flatsGlideDrag
+    * (1 - smoothstep(
+      WAVE_DRIVE_TUNING.glideFadeStart,
+      WAVE_DRIVE_TUNING.glideFadeEnd,
+      contact,
+    ))
+    * (1 - whitewater);
+  return {
+    pocketFactor,
+    faceFactor,
+    trimFactor,
+    headroom,
+    envelope,
+    driveMagnitude,
+    driveX: directionX * driveMagnitude,
+    driveZ: directionZ * driveMagnitude,
+    glideDragBonus,
+  };
+}
+
 export type SurfboardTurbulenceSample = {
   elapsed: number;
   positionX: number;
@@ -1150,9 +1398,20 @@ export type SessionSettings = {
   waveHeight: number;
   wavePeriod: number;
   waveDirection: number;
+  windWaveHeight?: number;
+  windWavePeriod?: number;
+  windWavePeakPeriod?: number;
+  windWaveDirection?: number;
   swellHeight: number;
   swellPeriod: number;
   swellDirection: number;
+  swellPeakPeriod?: number;
+  secondarySwellHeight?: number;
+  secondarySwellPeriod?: number;
+  secondarySwellDirection?: number;
+  tertiarySwellHeight?: number;
+  tertiarySwellPeriod?: number;
+  tertiarySwellDirection?: number;
   currentStrength: number;
   currentDirection: number;
   windSpeed: number;
@@ -1191,6 +1450,20 @@ export type WaveTakeoffReading = {
   positionQuality: number;
 };
 
+export type PopUpLandingSupportSample = {
+  lostCrest: boolean;
+  boardStillEngaged: boolean;
+  interactionOutcome: "stand" | "glide" | "capture" | "tumble";
+  waterContact: number;
+  rollCapsizeRisk: number;
+  pitchOverRisk: number;
+  crestOvertaken: number;
+  surfableFace: boolean;
+  faceEnvelope: number;
+  physicalLift: number;
+  waveContact: number;
+};
+
 export type BoardWaterSample = {
   boardHeading: number;
   velocityX: number;
@@ -1208,6 +1481,12 @@ export type BoardWaterSample = {
   boardLength?: number;
   boardWidth?: number;
   waveHeight: number;
+  /**
+   * Existing rail engagement on a planing wave face. This is zero during
+   * takeoff, but lets a captured board hold a diagonal trim line without
+   * treating every angle away from shore as an unresisted broadside impact.
+   */
+  faceTrimSupport?: number;
 };
 
 export type BoardWaterReading = {
@@ -1240,6 +1519,9 @@ export type SurfboardDynamicsSample = {
   surfaceSlopeZ: number;
   waveVelocityX: number;
   waveVelocityZ: number;
+  /** Surface-particle flow, kept separate from crest propagation. */
+  waterVelocityX?: number;
+  waterVelocityZ?: number;
   currentVelocityX: number;
   currentVelocityZ: number;
   waveContact: number;
@@ -1261,6 +1543,22 @@ export type SurfboardDynamicsSample = {
   boardTurn: number;
   boardStability: number;
   waveHeight: number;
+  turningAuthority?: number;
+  momentumRetention?: number;
+  /**
+   * Existing planing/rail support on a captured face. A loaded rail and fins
+   * can turn part of cross-face pressure into down-line drive; this remains
+   * zero during prone capture and unsupported broadside impacts.
+   */
+  faceTrimSupport?: number;
+  /**
+   * Pocket propulsion resolved by resolveWavePocketDrive (m/s^2, world XZ).
+   * Applied through hull contact so an airborne board receives nothing.
+   */
+  waveDriveX?: number;
+  waveDriveZ?: number;
+  /** Extra quadratic glide drag on unbroken water away from the pocket. */
+  glideDragBonus?: number;
 };
 
 export type SurfboardDynamicsReading = SurfboardDynamicsState & {
@@ -1278,6 +1576,7 @@ export type SurfboardDynamicsReading = SurfboardDynamicsState & {
   waveForwardDrive: number;
   waveLateralLoad: number;
   wavePatchContact: number;
+  waveDriveForward: number;
   pearlingRisk: number;
   tailStall: number;
 };
@@ -1300,6 +1599,7 @@ export type SurfboardWavePressureSample = {
   boardLength?: number;
   boardWidth?: number;
   boardTurn?: number;
+  faceTrimSupport?: number;
 };
 
 export type SurfboardWavePatchContactSample = {
@@ -1390,6 +1690,8 @@ export type SurfboardInstabilitySample = {
   pearlingRisk: number;
   pitchOverRisk: number;
   tailStall: number;
+  loadScale?: number;
+  recoveryScale?: number;
 };
 
 export type SurfboardPlaningSample = {
@@ -1428,11 +1730,14 @@ export type BoardRollSample = {
   riderHeight?: number;
   whitewater: number;
   waterContact?: number;
+  automaticCounterweight?: number;
+  railTorqueScale?: number;
 };
 
 export type BoardRollReading = BoardRollState & {
   rollAcceleration: number;
   effectiveRail: number;
+  effectiveCounterweight: number;
   balanceTarget: number;
   externalTorque: number;
   rightingMoment: number;
@@ -1487,9 +1792,26 @@ export function advanceBoardRollDynamics(
     -1,
     Math.min(1, externalTorque / counterweightAuthority),
   );
+  const automaticCounterweight = clampValue(
+    sample.automaticCounterweight ?? 0,
+    0,
+    .85,
+  );
+  // Assistance represents the small, continuous corrections an experienced
+  // surfer makes without thinking. Manual Q/E or the mobile balance slider is
+  // still independent and always adds on top for harder turns and maneuvers.
+  const effectiveCounterweight = clampValue(
+    counterweight
+      + balanceTarget
+        * automaticCounterweight
+        * (1 - Math.abs(counterweight) * .28),
+    -1,
+    1,
+  );
 
   const riderRailTorque = railInput
-    * (1.12 + speedAuthority * 2.35);
+    * (1.12 + speedAuthority * 2.35)
+    * clampValue(sample.railTorqueScale ?? 1, .65, 1.15);
   // A standing surfer raises the combined center of mass and reduces the
   // static metacentric margin. Crouching restores part of that margin; once
   // planing, rail lift supplies more of the righting force.
@@ -1508,7 +1830,8 @@ export function advanceBoardRollDynamics(
       + speedAuthority * .72 * waterContact
       + whitewater * .32 * waterContact
   ) * Math.sqrt(stability * widthScale);
-  const counterweightTorque = -counterweight * counterweightAuthority;
+  const counterweightTorque = -effectiveCounterweight
+    * counterweightAuthority;
   const rollAcceleration = clampValue(
     (
       riderRailTorque
@@ -1563,6 +1886,7 @@ export function advanceBoardRollDynamics(
     rollRate,
     rollAcceleration,
     effectiveRail,
+    effectiveCounterweight,
     balanceTarget,
     externalTorque,
     rightingMoment,
@@ -2592,6 +2916,10 @@ function clampValue(value: number, minimum: number, maximum: number) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
+function lerpValue(start: number, end: number, amount: number) {
+  return start + (end - start) * amount;
+}
+
 export type PaddleboardDynamicsState = {
   velocityX: number;
   velocityZ: number;
@@ -3213,12 +3541,13 @@ export function resolveSurfboardWavePatchContact(
 
 /**
  * Resolves the breaking face's horizontal pressure across the nose, tail, and
- * both rail contact patches. The force always follows the live wave normal:
- * a board pointed with the wave receives useful longitudinal drive, while a
- * broadside board receives the same event mostly as lateral load. Off-center
- * patches apply their force through the measured longitudinal and lateral
- * centers of pressure. This is shared by prone takeoff and standing surf
- * dynamics so changing body phase cannot grant crest speed.
+ * both rail contact patches. Raw pressure follows the live wave normal. Once
+ * a captured, planing board loads a rail, its fins and rail reaction can
+ * redirect part of that lateral pressure into longitudinal trim—the physical
+ * mechanism that lets a surfer run along a wall instead of only toward shore.
+ * Unsupported takeoff and broadside impacts receive no such conversion.
+ * Off-center patches apply their remaining force through measured centers of
+ * pressure.
  */
 export function resolveSurfboardWavePressure(
   sample: SurfboardWavePressureSample,
@@ -3282,10 +3611,24 @@ export function resolveSurfboardWavePressure(
     * (.48 + Math.max(0, headingAlignment) * .72)
     * (.72 + Math.max(.25, sample.waveHeight) * .11)
     * (1 - tailPressure * .08 + nosePressure * .04 - pearlingRisk * .42);
-  const accelerationX = waveNormalX * pressure;
-  const accelerationZ = waveNormalZ * pressure;
-  const forwardDrive = accelerationX * forwardX + accelerationZ * forwardZ;
-  const lateralLoad = accelerationX * rightX + accelerationZ * rightZ;
+  const rawForwardDrive = pressure * headingAlignment;
+  const rawLateralLoad = pressure
+    * (waveNormalX * rightX + waveNormalZ * rightZ);
+  const broadside = Math.sqrt(Math.max(
+    0,
+    1 - headingAlignment * headingAlignment,
+  ));
+  const trimConversion = clampValue(
+    sample.faceTrimSupport ?? 0,
+    0,
+    1,
+  ) * smoothstep(.1, .68, headingAlignment)
+    * smoothstep(.12, .78, broadside);
+  const forwardDrive = rawForwardDrive
+    + Math.abs(rawLateralLoad) * trimConversion * .55;
+  const lateralLoad = rawLateralLoad * (1 - trimConversion * .62);
+  const accelerationX = forwardX * forwardDrive + rightX * lateralLoad;
+  const accelerationZ = forwardZ * forwardDrive + rightZ * lateralLoad;
   const contactSum = Math.max(
     .001,
     noseContact + tailContact + rightRailContact + leftRailContact,
@@ -3452,7 +3795,7 @@ export function advanceSurfboardInstability(
     .1,
     sample.balanceFailureThreshold,
   );
-  const loadRate = rollFailureLoad
+  const rawLoadRate = rollFailureLoad
     + whitewater * SURF_PHYSICS_TUNING.whitewaterFailure
     + shoulderStall * SURF_PHYSICS_TUNING.shoulderFailure
     + tubePressure
@@ -3469,6 +3812,13 @@ export function advanceSurfboardInstability(
     + clampValue(sample.tailStall, 0, 1)
       * SURF_PHYSICS_TUNING.tailStallFailure
     - (edgeRisk < .08 ? 1.8 : 0);
+  const loadRate = rawLoadRate >= 0
+    ? rawLoadRate * clampValue(sample.loadScale ?? 1, .35, 1)
+    : rawLoadRate * clampValue(
+        sample.recoveryScale ?? 1,
+        1,
+        1.5,
+      );
   return {
     instability: Math.max(
       0,
@@ -3484,10 +3834,17 @@ export function surfboardWipeoutTriggered(
   instability: number,
   rollCapsizeRisk: number,
   pitchOverRisk: number,
+  thresholdScale = 1,
+  catastrophicMargin = 0,
 ) {
-  return rollCapsizeRisk > SURF_PHYSICS_TUNING.capsizeWipeout
-    || pitchOverRisk > SURF_PHYSICS_TUNING.pitchWipeout
-    || instability > SURF_PHYSICS_TUNING.wipeoutInstability;
+  const margin = clampValue(catastrophicMargin, 0, .09);
+  return rollCapsizeRisk
+      > SURF_PHYSICS_TUNING.capsizeWipeout + margin
+    || pitchOverRisk
+      > SURF_PHYSICS_TUNING.pitchWipeout + margin
+    || instability
+      > SURF_PHYSICS_TUNING.wipeoutInstability
+        * clampValue(thresholdScale, 1, 1.5);
 }
 
 export type SurfboardWipeoutSample = {
@@ -4911,6 +5268,16 @@ export function advanceSurfboardDynamics(
   const safeWidth = Math.max(.24, sample.boardWidth);
   const stability = Math.max(.55, sample.boardStability);
   const turn = Math.max(.45, sample.boardTurn);
+  const turningAuthority = clampValue(
+    sample.turningAuthority ?? 1,
+    1,
+    1.5,
+  );
+  const momentumRetention = clampValue(
+    sample.momentumRetention ?? 1,
+    1,
+    1.3,
+  );
   const contact = Math.max(0, Math.min(1, sample.waveContact));
   const grip = Math.max(0, Math.min(1, sample.railGrip));
   const whitewater = Math.max(0, Math.min(1, sample.whitewater));
@@ -4958,6 +5325,7 @@ export function advanceSurfboardDynamics(
   const lengthYawInertia = Math.pow(safeLength / 2.5, 1.28);
   const targetYawRate = railInput
     * turn
+    * turningAuthority
     * speedAuthority
     * (.46 + Math.abs(initialForwardSpeed) * .07)
     * (.34 + grip * .66)
@@ -4985,16 +5353,16 @@ export function advanceSurfboardDynamics(
   const rightX = Math.cos(heading);
   const rightZ = -Math.sin(heading);
 
-  // Surface particles move far slower than the crest itself. A small orbital
-  // component gives the board moving water to react against without making the
-  // phase speed a conveyor belt.
+  // Surface particles move far slower than the crest itself. Keep their
+  // oscillating orbital flow out of the propagation vector so a half-cycle can
+  // never reverse the wave normal or the board's capture frame.
   const orbitalCoupling = hullContact * (.035 + contact * (
     .09 + Math.max(0, sample.waveHeight) * .018
   ));
   const waterVelocityX = sample.currentVelocityX
-    + sample.waveVelocityX * orbitalCoupling;
+    + (sample.waterVelocityX ?? 0) * orbitalCoupling;
   const waterVelocityZ = sample.currentVelocityZ
-    + sample.waveVelocityZ * orbitalCoupling;
+    + (sample.waterVelocityZ ?? 0) * orbitalCoupling;
   const relativeX = state.velocityX - waterVelocityX;
   const relativeZ = state.velocityZ - waterVelocityZ;
   const forwardSpeed = relativeX * forwardX + relativeZ * forwardZ;
@@ -5064,6 +5432,7 @@ export function advanceSurfboardDynamics(
     boardLength: safeLength,
     boardWidth: safeWidth,
     boardTurn: turn,
+    faceTrimSupport: sample.faceTrimSupport,
   });
   const activeRailPressureResistance =
     1 - Math.abs(railInput)
@@ -5080,7 +5449,8 @@ export function advanceSurfboardDynamics(
 
   const lengthDragScale = Math.pow(2.5 / safeLength, .58);
   const widthDragScale = Math.pow(safeWidth / .34, .46);
-  const longitudinalDrag = (.033 + whitewater * .035)
+  const glideDragBonus = Math.max(0, sample.glideDragBonus ?? 0);
+  const longitudinalDrag = (.033 + whitewater * .035 + glideDragBonus)
     * lengthDragScale
     * widthDragScale
     * (.05 + hullContact * .95)
@@ -5091,7 +5461,8 @@ export function advanceSurfboardDynamics(
         - nosePressure * .06
         + pearlingRisk * 2.2
         + tailStall * .48
-    );
+    )
+    / momentumRetention;
   const lateralDrag = (
     .2
       + grip * (.29 + planing * .24)
@@ -5113,13 +5484,18 @@ export function advanceSurfboardDynamics(
     * whitewater
     * hullContact
     / Math.sqrt(stability);
+  const waveDriveX = (sample.waveDriveX ?? 0) * hullContact;
+  const waveDriveZ = (sample.waveDriveZ ?? 0) * hullContact;
+  const waveDriveForward = waveDriveX * forwardX + waveDriveZ * forwardZ;
   let accelerationX = gravityAccelerationX
     + wavePressure.accelerationX
+    + waveDriveX
     + forwardX * dragForward
     + rightX * dragLateral
     + turbulenceX;
   let accelerationZ = gravityAccelerationZ
     + wavePressure.accelerationZ
+    + waveDriveZ
     + forwardZ * dragForward
     + rightZ * dragLateral
     + turbulenceZ;
@@ -5172,6 +5548,7 @@ export function advanceSurfboardDynamics(
     waveForwardDrive: wavePressure.forwardDrive,
     waveLateralLoad: wavePressure.lateralLoad,
     wavePatchContact: wavePressure.patchContact,
+    waveDriveForward,
     pearlingRisk,
     tailStall,
   };
@@ -5265,11 +5642,22 @@ export function evaluateBoardWaterInteraction(
       normalSpeed / Math.max(1.1, waveSpeed * .66),
     ),
   );
+  const faceTrimSupport = clampValue(
+    sample.faceTrimSupport ?? 0,
+    0,
+    1,
+  );
+  const diagonalTrim = faceTrimSupport
+    * smoothstep(.08, .72, headingAlignment);
   // A surfboard can angle into a shoulder, but it cannot acquire planing trim
   // while presenting most of its rail to the wave. Preserve useful diagonal
   // entries while making the final quarter-turn toward broadside lose capture
   // sharply rather than behaving like an arcade pickup radius.
-  const directionalEntry = smoothstep(.25, .94, headingAlignment);
+  const directionalEntry = smoothstep(
+    .25 - diagonalTrim * .28,
+    .94 - diagonalTrim * .2,
+    headingAlignment,
+  );
   const speedMatch = smoothstep(
     .18,
     Math.max(.19, waveSpeed * .48),
@@ -5285,7 +5673,9 @@ export function evaluateBoardWaterInteraction(
     ),
   );
   const stability = Math.max(.62, Math.sqrt(Math.max(.35, sample.boardStability)));
-  const crossFlowSpeed = Math.max(0, relativeWaveSpeed) * broadside;
+  const crossFlowSpeed = Math.max(0, relativeWaveSpeed)
+    * broadside
+    * (1 - diagonalTrim * .58);
   const planformScale = clampValue(
     Math.sqrt(
       (
@@ -5324,7 +5714,10 @@ export function evaluateBoardWaterInteraction(
       (
         crossWaveLoad * .82
         + backwardLoad * .42
-        + waveContact * Math.max(0, broadside - .52) * .28
+        + waveContact
+          * Math.max(0, broadside - .52)
+          * .28
+          * (1 - diagonalTrim * .72)
       ) / stability,
     ),
   );
@@ -5376,177 +5769,6 @@ export type ThermalKit = {
   insulation: number;
   effectiveTemperature: number;
 };
-
-export type TideResponse = {
-  level: number;
-  label: string;
-  shortName: string;
-  note: string;
-  quality: number;
-  faceScale: number;
-  powerScale: number;
-  steepnessScale: number;
-  hollowScale: number;
-  variabilityScale: number;
-  breakShift: number;
-  shorebreakScale: number;
-};
-
-const DEFAULT_TIDE_BREAK: BreakCharacter = {
-  kind: "beach",
-  line: "A-FRAME",
-  peel: 0,
-  power: 1,
-  steepness: .7,
-  hollow: .4,
-  variability: .4,
-  length: 1,
-};
-
-const TIDE_RESPONSE_CACHE = new WeakMap<BreakCharacter, Map<number, TideResponse>>();
-
-export function tideResponseForBreak(tide: number, character: BreakCharacter): TideResponse {
-  const safeTide = Number.isFinite(tide) ? tide : 0;
-  const cacheKey = Math.round(safeTide * 1000) / 1000;
-  const characterCache = TIDE_RESPONSE_CACHE.get(character);
-  const cached = characterCache?.get(cacheKey);
-  if (cached) return cached;
-  const level = Math.max(-1, Math.min(1, safeTide / (safeTide < 0 ? 1.5 : 1.8)));
-  const low = Math.max(0, -level);
-  const high = Math.max(0, level);
-  const drained = level < -.38;
-  const full = level > .42;
-  const response = {
-    ideal: 0,
-    tolerance: .82,
-    faceScale: 1,
-    powerScale: 1,
-    steepnessScale: 1,
-    hollowScale: 1,
-    variabilityScale: 1,
-    breakShift: 0,
-    shorebreakScale: 1,
-    lowLabel: "Low-water draw",
-    midLabel: "Tide in tune",
-    highLabel: "Full-tide push",
-    lowNote: "The break is drawing off the bottom",
-    midNote: "Water depth and seabed are balanced",
-    highNote: "More water is softening the break",
-  };
-
-  if (character.kind === "beach") {
-    Object.assign(response, {
-      ideal: -.08,
-      tolerance: .7,
-      faceScale: 1 + low * .08 - high * .05,
-      powerScale: 1 + low * .06 - high * .04,
-      steepnessScale: 1 + low * .15 - high * .16,
-      hollowScale: 1 + low * .2 - high * .25,
-      variabilityScale: 1 + low * .16 + high * .12,
-      breakShift: level * 8,
-      shorebreakScale: 1 + high * .32 - low * .08,
-      lowLabel: "Exposed sandbars",
-      midLabel: "Sandbar pulse",
-      highLabel: "High-tide shorebreak",
-      lowNote: "Shallow banks make punchier, less predictable peaks",
-      midNote: "The sandbar is carrying a balanced breaking depth",
-      highNote: "Deep banks soften outside while shorebreak gains weight",
-    });
-  } else if (character.kind === "reef") {
-    Object.assign(response, {
-      ideal: .06,
-      tolerance: .82,
-      faceScale: 1 + low * .06 - high * .035,
-      powerScale: 1 + low * .08 - high * .04,
-      steepnessScale: 1 + low * .16 - high * .12,
-      hollowScale: 1 + low * .21 - high * .16,
-      variabilityScale: 1 + low * .06 + high * .03,
-      breakShift: level * 4.2,
-      shorebreakScale: .9 + high * .08,
-      lowLabel: "Drawn reef",
-      midLabel: "Reef in tune",
-      highLabel: "Deep-water wrap",
-      lowNote: "Less water makes the reef faster, steeper, and hollower",
-      midNote: "The reef has enough water without losing its shape",
-      highNote: "Extra depth rounds the lip and moves energy down the line",
-    });
-  } else if (character.kind === "slab") {
-    Object.assign(response, {
-      ideal: .16,
-      tolerance: .72,
-      faceScale: 1 + low * .08 - high * .045,
-      powerScale: 1 + low * .11 - high * .035,
-      steepnessScale: 1 + low * .2 - high * .11,
-      hollowScale: 1 + low * .24 - high * .13,
-      variabilityScale: 1 + low * .08,
-      breakShift: level * 3.2,
-      shorebreakScale: .86 + high * .06,
-      lowLabel: "Dry-ledge slab",
-      midLabel: "Ledge engaged",
-      highLabel: "Slab softened",
-      lowNote: "The ledge is drawing hard with a violent pitching lip",
-      midNote: "Water depth keeps the ledge powerful and makeable",
-      highNote: "More water cushions the ledge without removing its power",
-    });
-  } else if (character.kind === "point") {
-    Object.assign(response, {
-      ideal: .18,
-      tolerance: .78,
-      faceScale: 1 - low * .025 + high * .03,
-      powerScale: 1 - low * .03 + high * .025,
-      steepnessScale: 1 + low * .12 - high * .055,
-      hollowScale: 1 + low * .12 - high * .06,
-      variabilityScale: 1 + low * .18 - high * .06,
-      breakShift: level * 5.2,
-      shorebreakScale: .82 + high * .07,
-      lowLabel: "Sectioned point",
-      midLabel: "Point running",
-      highLabel: "Full-tide wrap",
-      lowNote: "The line is fast and segmented over shallow sections",
-      midNote: "The point is linking speed, wall, and pocket",
-      highNote: "Extra depth opens a rounder, longer wrapping wall",
-    });
-  } else if (character.kind === "canyon") {
-    Object.assign(response, {
-      ideal: 0,
-      tolerance: .95,
-      faceScale: 1 + low * .025 + high * .018,
-      powerScale: 1 + low * .025 + high * .02,
-      steepnessScale: 1 + low * .04 - high * .025,
-      hollowScale: 1 + low * .035 - high * .025,
-      variabilityScale: 1 + Math.abs(level) * .05,
-      breakShift: level * 2,
-      shorebreakScale: .94 + high * .08,
-      lowLabel: "Canyon draw",
-      midLabel: "Canyon focus",
-      highLabel: "Canyon surge",
-      lowNote: "Deep-water focusing dominates the low-water draw",
-      midNote: "The canyon is focusing swell directly into the peak",
-      highNote: "Rising water adds surge more than it changes the peak",
-    });
-  }
-
-  const tideFit = Math.exp(-Math.pow((level - response.ideal) / response.tolerance, 2));
-  const quality = Math.max(.42, Math.min(1, .45 + tideFit * .55));
-  const result = {
-    level,
-    label: drained ? response.lowLabel : full ? response.highLabel : response.midLabel,
-    shortName: drained ? "LOW DRAW" : full ? "FULL TIDE" : "MID TIDE",
-    note: drained ? response.lowNote : full ? response.highNote : response.midNote,
-    quality,
-    faceScale: response.faceScale,
-    powerScale: response.powerScale,
-    steepnessScale: response.steepnessScale,
-    hollowScale: response.hollowScale,
-    variabilityScale: response.variabilityScale,
-    breakShift: response.breakShift,
-    shorebreakScale: response.shorebreakScale,
-  };
-  const nextCache = characterCache ?? new Map<number, TideResponse>();
-  nextCache.set(cacheKey, result);
-  if (!characterCache) TIDE_RESPONSE_CACHE.set(character, nextCache);
-  return result;
-}
 
 export function thermalKitForConditions(
   waterTemperature: number,
@@ -5609,10 +5831,8 @@ export function thermalKitForConditions(
   };
 }
 
-const TIDE_SHORELINE_TRAVEL = 3;
-
 export function shorelineShiftForTide(tide: number) {
-  return Math.max(-1.5, Math.min(1.8, tide)) * TIDE_SHORELINE_TRAVEL;
+  return oceanTideShorelineShift(tide);
 }
 
 /**
@@ -5629,6 +5849,623 @@ export function shorelineRideOutProgress(coastalZ: number) {
 }
 
 export const OPTIONAL_TOW_DURATION_SECONDS = 16;
+export const OPTIONAL_TOW_NAVIGABLE_OFFSHORE = 6;
+export const OPTIONAL_TOW_BERTH_OFFSHORE = .5;
+export const OPTIONAL_TOW_LAUNCH_CLEARANCE_PROGRESS = .16;
+export const OPTIONAL_TOW_RETURN_BERTH_PROGRESS = .68;
+// These dimensions follow the actual bevelled white-hull geometry rather than
+// the smaller visual planform used by the original five-point approximation.
+// Keep HALF_LENGTH as the mean reach for callers that only need a characteristic
+// span; flotation samplers should use the asymmetric bow/stern constants.
+export const OPTIONAL_TOW_HULL_BOW_REACH = 2.08;
+export const OPTIONAL_TOW_HULL_STERN_REACH = 1.76;
+export const OPTIONAL_TOW_HULL_HALF_LENGTH = (
+  OPTIONAL_TOW_HULL_BOW_REACH + OPTIONAL_TOW_HULL_STERN_REACH
+) * .5;
+export const OPTIONAL_TOW_HULL_HALF_BEAM = .8;
+export const OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED = 3.2;
+export const OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION = 11.5;
+
+export type OptionalTowHullSurfaceSample = {
+  centerHeight: number;
+  bowHeight: number;
+  sternHeight: number;
+  leftHeight: number;
+  rightHeight: number;
+  speed: number;
+};
+
+export type OptionalTowHullAttitude = {
+  waterlineHeight: number;
+  pitch: number;
+  roll: number;
+  planing: number;
+};
+
+/**
+ * Fits the jetski's waterline to five points under its actual hull footprint.
+ * The weighted waterline represents displaced water across the footprint.
+ * Pitch and roll intentionally under-follow short chop. A single high sample
+ * must not lift the entire craft: actual penetration protection belongs to the
+ * rate-limited rigid-body solver, not to a discontinuous maximum waterline.
+ */
+export function resolveOptionalTowHullAttitude(
+  sample: OptionalTowHullSurfaceSample,
+): OptionalTowHullAttitude {
+  const centerHeight = Number.isFinite(sample.centerHeight)
+    ? sample.centerHeight
+    : 0;
+  const bowHeight = Number.isFinite(sample.bowHeight)
+    ? sample.bowHeight
+    : centerHeight;
+  const sternHeight = Number.isFinite(sample.sternHeight)
+    ? sample.sternHeight
+    : centerHeight;
+  const leftHeight = Number.isFinite(sample.leftHeight)
+    ? sample.leftHeight
+    : centerHeight;
+  const rightHeight = Number.isFinite(sample.rightHeight)
+    ? sample.rightHeight
+    : centerHeight;
+  const forwardSlope = (
+    bowHeight - sternHeight
+  ) / (
+    OPTIONAL_TOW_HULL_BOW_REACH
+      + OPTIONAL_TOW_HULL_STERN_REACH
+  );
+  const lateralSlope = (
+    rightHeight - leftHeight
+  ) / (OPTIONAL_TOW_HULL_HALF_BEAM * 2);
+  const speed = Number.isFinite(sample.speed)
+    ? sample.speed
+    : 0;
+  const planing = clampValue(speed / 14.5, 0, 1);
+  // A planing hull has enough longitudinal stability to follow a coherent
+  // face. Reducing pitch authority at speed left the bow driving straight
+  // through steep crests even though all five probes described the slope.
+  // A coherent breaker face is not chop: rotating the hull with its
+  // longitudinal waterline is what keeps the bow clear without translating
+  // the whole craft above its displacement plane. The former .72-.78 gain
+  // under-followed a real ~28 degree face until the old .38 rad clamp, so the
+  // non-penetration constraint could only respond by lifting the entire ski.
+  const pitchAuthority = lerpValue(.86, .98, planing);
+  const rollAuthority = lerpValue(.52, .34, planing);
+  const pitch = clampValue(
+    -Math.atan(forwardSlope) * pitchAuthority - planing * .028,
+    -.5,
+    .5,
+  );
+  const roll = clampValue(
+    Math.atan(lateralSlope) * rollAuthority,
+    -.18,
+    .18,
+  );
+  const displacedWaterline = (
+    centerHeight * 2
+      + bowHeight
+      + sternHeight
+      + leftHeight
+      + rightHeight
+  ) / 6;
+  return {
+    waterlineHeight: displacedWaterline,
+    pitch,
+    roll,
+    planing,
+  };
+}
+
+export type OptionalTowHullFloatState = {
+  elevation: number;
+  /**
+   * Frame-average rendered velocity. It always equals the finite difference
+   * of consecutive elevations, so telemetry cannot hide a position jump.
+   */
+  verticalVelocity: number;
+  /**
+   * Hull velocity relative to the moving water plane. World-space surface
+   * motion is carried by the filtered reference fields below.
+   */
+  integrationVelocity?: number;
+  /**
+   * Low-frequency water-reference velocity. Acceleration limiting separates
+   * coherent swell heave from short chop before relative buoyancy is solved.
+   */
+  referenceVelocity?: number;
+  /** Frame-average acceleration of the filtered water reference. */
+  referenceAcceleration?: number;
+  pitch: number;
+  pitchVelocity: number;
+  roll: number;
+  rollVelocity: number;
+  targetElevation: number;
+  targetVerticalVelocity: number;
+  /** Last raw sampled target, used to identify a continuous water reference. */
+  sampledTargetElevation?: number;
+  /** Last plausible raw water-reference velocity. */
+  sampledVerticalVelocity?: number;
+  targetPitch: number;
+  targetRoll: number;
+  initialized: boolean;
+};
+
+export type OptionalTowHullFloatSample = {
+  targetElevation: number;
+  /** Lower edge of the compliant, rendered-pose support envelope. */
+  minimumContactElevation?: number;
+  /** Forward-sampled velocity of the support envelope. */
+  predictedContactVelocity?: number;
+  targetPitch: number;
+  targetRoll: number;
+  planing: number;
+  deltaSeconds: number;
+};
+
+/**
+ * Advances the jetski in the moving frame of the sampled water plane.
+ *
+ * A floating hull follows coherent long-wave elevation in world space; its
+ * inertia governs displacement relative to that plane. Rate-limiting absolute
+ * world height makes the craft hover above a falling face and submerge under
+ * the next crest. Plausible water motion therefore drives an
+ * acceleration-limited reference frame, while short chop and sample seams
+ * remain for the bounded relative solver to attenuate.
+ */
+export function advanceOptionalTowHullFloat(
+  state: OptionalTowHullFloatState,
+  sample: OptionalTowHullFloatSample,
+): OptionalTowHullFloatState {
+  const targetElevation = Number.isFinite(sample.targetElevation)
+    ? sample.targetElevation
+    : Number.isFinite(state.targetElevation)
+      ? state.targetElevation
+      : 0;
+  const targetPitch = clampValue(
+    Number.isFinite(sample.targetPitch)
+      ? sample.targetPitch
+      : 0,
+    -.5,
+    .5,
+  );
+  const targetRoll = clampValue(
+    Number.isFinite(sample.targetRoll)
+      ? sample.targetRoll
+      : 0,
+    -.22,
+    .22,
+  );
+  const planing = clampValue(
+    Number.isFinite(sample.planing) ? sample.planing : 0,
+    0,
+    1,
+  );
+  const frameDelta = Math.max(
+    0,
+    Number.isFinite(sample.deltaSeconds) ? sample.deltaSeconds : 0,
+  );
+  const delta = Math.min(frameDelta, .05);
+  const hasMinimumContact = Number.isFinite(
+    sample.minimumContactElevation,
+  );
+  const minimumContactElevation = hasMinimumContact
+    ? sample.minimumContactElevation as number
+    : Number.NEGATIVE_INFINITY;
+  const predictedContactVelocity = hasMinimumContact
+    && Number.isFinite(sample.predictedContactVelocity)
+    ? clampValue(
+        sample.predictedContactVelocity as number,
+        -12,
+        12,
+      )
+    : 0;
+  if (!state.initialized) {
+    return {
+      elevation: Math.max(targetElevation, minimumContactElevation),
+      verticalVelocity: 0,
+      integrationVelocity: 0,
+      referenceVelocity: 0,
+      referenceAcceleration: 0,
+      pitch: targetPitch,
+      pitchVelocity: 0,
+      roll: targetRoll,
+      rollVelocity: 0,
+      targetElevation,
+      targetVerticalVelocity: 0,
+      sampledTargetElevation: targetElevation,
+      sampledVerticalVelocity: 0,
+      targetPitch,
+      targetRoll,
+      initialized: true,
+    };
+  }
+
+  const initialElevation = Number.isFinite(state.elevation)
+    ? state.elevation
+    : targetElevation;
+  const previousSampledTarget = Number.isFinite(
+    state.sampledTargetElevation,
+  )
+    ? state.sampledTargetElevation as number
+    : targetElevation;
+  const sampledTargetDelta = targetElevation - previousSampledTarget;
+  const rawSurfaceVelocity = frameDelta > 1e-9
+    ? sampledTargetDelta / frameDelta
+    : 0;
+  // The rendered face can legitimately move several metres per second. A
+  // profile seam instead presents a large one-frame displacement. Reject
+  // impossible geometry, then acceleration-limit the remaining reference:
+  // coherent swell passes, while short chop cannot bypass hull inertia.
+  const maximumContinuousDelta = Math.max(
+    .18,
+    Math.min(.4, frameDelta * 8),
+  );
+  const continuousSurfaceSample = frameDelta > 1e-9
+    && Math.abs(sampledTargetDelta) <= maximumContinuousDelta
+    && Math.abs(rawSurfaceVelocity) <= 12;
+  const previousReferenceVelocity = clampValue(
+    Number.isFinite(state.referenceVelocity)
+      ? state.referenceVelocity as number
+      : 0,
+    -12,
+    12,
+  );
+  const targetReferenceVelocity = continuousSurfaceSample
+    ? rawSurfaceVelocity
+    : 0;
+  // The rigid-body step is capped at 50 ms; carrying the reference for twice
+  // that horizon allowed a stalled render frame to translate the hull by up
+  // to 1.2 m while buoyancy integrated only half as long.
+  const referenceDelta = delta;
+  const maximumReferenceAcceleration = lerpValue(
+    hasMinimumContact ? 10 : 4.8,
+    hasMinimumContact ? 16 : 6.2,
+    planing,
+  );
+  const referenceVelocity = clampValue(
+    previousReferenceVelocity + clampValue(
+      targetReferenceVelocity - previousReferenceVelocity,
+      -maximumReferenceAcceleration * referenceDelta,
+      maximumReferenceAcceleration * referenceDelta,
+    ),
+    -12,
+    12,
+  );
+  const referenceAcceleration = referenceDelta > 1e-9
+    ? (
+        referenceVelocity - previousReferenceVelocity
+      ) / referenceDelta
+    : 0;
+  const referenceTranslation = (
+    previousReferenceVelocity + referenceVelocity
+  ) * .5 * referenceDelta;
+  let elevation = initialElevation + referenceTranslation;
+  const storedIntegrationVelocity = state.integrationVelocity;
+  let integrationVelocity = clampValue(
+    typeof storedIntegrationVelocity === "number"
+      && Number.isFinite(storedIntegrationVelocity)
+      ? storedIntegrationVelocity
+      : 0,
+    -OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED,
+    OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED,
+  );
+  const previousPitchTarget = Number.isFinite(state.targetPitch)
+    ? state.targetPitch
+    : targetPitch;
+  const previousRollTarget = Number.isFinite(state.targetRoll)
+    ? state.targetRoll
+    : targetRoll;
+  let pitch = clampValue(
+    Number.isFinite(state.pitch) ? state.pitch : targetPitch,
+    -.54,
+    .54,
+  );
+  let pitchVelocity = clampValue(
+    Number.isFinite(state.pitchVelocity)
+      ? state.pitchVelocity
+      : 0,
+    -2,
+    2,
+  );
+  let roll = clampValue(
+    Number.isFinite(state.roll) ? state.roll : targetRoll,
+    -.28,
+    .28,
+  );
+  let rollVelocity = clampValue(
+    Number.isFinite(state.rollVelocity)
+      ? state.rollVelocity
+      : 0,
+    -2,
+    2,
+  );
+  let remaining = delta;
+  let elapsed = 0;
+
+  while (remaining > 1e-9) {
+    const step = Math.min(1 / 240, remaining);
+    elapsed += step;
+    const targetProgress = delta > 1e-9
+      ? clampValue(elapsed / delta, 0, 1)
+      : 1;
+    const framePitchTarget = lerpValue(
+      previousPitchTarget,
+      targetPitch,
+      targetProgress,
+    );
+    const frameRollTarget = lerpValue(
+      previousRollTarget,
+      targetRoll,
+      targetProgress,
+    );
+    const elevationError = targetElevation - elevation;
+    const separationResponse = smoothstep(
+      .08,
+      .48,
+      Math.abs(elevationError),
+    );
+    const heaveFrequency = lerpValue(
+      lerpValue(6.2, 7.4, planing),
+      lerpValue(9.5, 11.5, planing),
+      separationResponse,
+    );
+    const heaveAccelerationLimit = lerpValue(
+      hasMinimumContact ? 20 : 10,
+      hasMinimumContact
+        ? 22
+        : OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION,
+      planing,
+    );
+    const desiredRelativeAcceleration = clampValue(
+      heaveFrequency * heaveFrequency * elevationError
+        - 2.4 * heaveFrequency * integrationVelocity,
+      -heaveAccelerationLimit,
+      heaveAccelerationLimit,
+    );
+    // Keep the rendered hull's total vertical acceleration bounded even when
+    // filtered water-reference acceleration and relative buoyancy reinforce
+    // one another.
+    const integratedWorldAccelerationLimit = hasMinimumContact
+      ? 22
+      : 9;
+    const heaveAcceleration = clampValue(
+      referenceAcceleration + desiredRelativeAcceleration,
+      -integratedWorldAccelerationLimit,
+      integratedWorldAccelerationLimit,
+    ) - referenceAcceleration;
+    integrationVelocity = clampValue(
+      integrationVelocity + heaveAcceleration * step,
+      -lerpValue(2.9, OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED, planing),
+      lerpValue(2.9, OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED, planing),
+    );
+    // Integrate through target crossings instead of snapping position or
+    // velocity. The over-damped buoyancy response removes the residual
+    // naturally and keeps reversals acceleration-continuous.
+    elevation += integrationVelocity * step;
+
+    const previousPitch = pitch;
+    const pitchError = framePitchTarget - pitch;
+    // Longitudinal probe separation is almost four metres, so a steep face
+    // can rotate beneath a 10 m/s craft much faster than ordinary chop. Track
+    // large, coherent pitch changes promptly; leaving a tenth-radian lag made
+    // the bow penetrate first and forced the contact solver to levitate the
+    // entire hull instead.
+    const pitchResponse = lerpValue(7.5, 10.5, planing)
+      + smoothstep(.025, .12, Math.abs(pitchError)) * 7;
+    pitch += pitchError
+      * (1 - Math.exp(-pitchResponse * step));
+    pitchVelocity = lerpValue(
+      pitchVelocity,
+      (pitch - previousPitch) / Math.max(1e-6, step),
+      1 - Math.exp(-16 * step),
+    );
+    pitch = clampValue(
+      pitch,
+      -.54,
+      .54,
+    );
+
+    const previousRoll = roll;
+    const rollError = frameRollTarget - roll;
+    const rollResponse = lerpValue(5.8, 7.2, planing)
+      + smoothstep(.035, .14, Math.abs(rollError)) * 3.4;
+    roll += rollError
+      * (1 - Math.exp(-rollResponse * step));
+    rollVelocity = lerpValue(
+      rollVelocity,
+      (roll - previousRoll) / Math.max(1e-6, step),
+      1 - Math.exp(-16 * step),
+    );
+    roll = clampValue(
+      roll,
+      -.28,
+      .28,
+    );
+    remaining -= step;
+  }
+
+  let verticalVelocity = frameDelta > 1e-9
+    ? (elevation - initialElevation) / frameDelta
+    : 0;
+  if (hasMinimumContact && frameDelta > 1e-9) {
+    // A five-probe maximum can change identity much faster than a real hull
+    // can accelerate. Follow its forward-predicted velocity with a compliant
+    // inelastic contact law, then clamp the rendered velocity—not position—
+    // to a 24 m/s² physical envelope. Position, telemetry velocity, and the
+    // stored relative velocity therefore remain exactly consistent.
+    const previousWorldVelocity = Number.isFinite(
+      state.verticalVelocity,
+    )
+      ? state.verticalVelocity
+      : 0;
+    const maximumRenderedAcceleration = 24;
+    const contactAcceleration = clampValue(
+      64 * (minimumContactElevation - initialElevation)
+        + 12 * (
+          predictedContactVelocity - previousWorldVelocity
+        ),
+      -maximumRenderedAcceleration,
+      maximumRenderedAcceleration,
+    );
+    const freeWorldVelocity = previousWorldVelocity
+      + contactAcceleration * frameDelta;
+    const contactWorldVelocity = Math.min(
+      predictedContactVelocity + .35,
+      (
+        minimumContactElevation - initialElevation
+      ) / frameDelta,
+    );
+    const desiredWorldVelocity = Math.max(
+      freeWorldVelocity,
+      contactWorldVelocity,
+    );
+    const stallSpeedLimit = frameDelta > .05
+      ? .14 / frameDelta
+      : 4.8;
+    verticalVelocity = clampValue(
+      clampValue(
+        desiredWorldVelocity,
+        previousWorldVelocity
+          - maximumRenderedAcceleration * frameDelta,
+        previousWorldVelocity
+          + maximumRenderedAcceleration * frameDelta,
+      ),
+      -stallSpeedLimit,
+      stallSpeedLimit,
+    );
+    elevation = initialElevation
+      + verticalVelocity * frameDelta;
+    integrationVelocity = verticalVelocity
+      - referenceVelocity;
+  }
+  return {
+    elevation,
+    verticalVelocity,
+    integrationVelocity,
+    referenceVelocity,
+    referenceAcceleration,
+    pitch,
+    pitchVelocity,
+    roll,
+    rollVelocity,
+    targetElevation,
+    targetVerticalVelocity: continuousSurfaceSample
+      ? rawSurfaceVelocity
+      : 0,
+    sampledTargetElevation: targetElevation,
+    sampledVerticalVelocity: continuousSurfaceSample
+      ? rawSurfaceVelocity
+      : 0,
+    targetPitch,
+    targetRoll,
+    initialized: true,
+  };
+}
+
+/**
+ * Keeps the tow craft seaward of the local, curved shoreline. The caller
+ * supplies the shoreline in world-z coordinates so the same constraint works
+ * at points, reefs, tide-shifted beaches, and the return route.
+ */
+export function optionalTowNavigableZ(
+  targetZ: number,
+  shorelineWorldZ: number,
+  minimumOffshore = OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+) {
+  return Math.min(
+    targetZ,
+    shorelineWorldZ - Math.max(
+      OPTIONAL_TOW_BERTH_OFFSHORE,
+      minimumOffshore,
+    ),
+  );
+}
+
+/**
+ * The parked craft belongs in collapsed harbor swash, not the active breaking
+ * band. Launch and return vary only the safety clearance; the craft controller
+ * still integrates the actual route, so neither transition teleports it.
+ */
+export function optionalTowRouteClearance(
+  progress: number,
+  returning = false,
+) {
+  const safeProgress = clampValue(
+    Number.isFinite(progress) ? progress : 0,
+    0,
+    1,
+  );
+  const transitionStart = returning
+    ? OPTIONAL_TOW_RETURN_BERTH_PROGRESS
+    : 0;
+  const transitionEnd = returning
+    ? 1
+    : OPTIONAL_TOW_LAUNCH_CLEARANCE_PROGRESS;
+  const transitionUnit = clampValue(
+    (safeProgress - transitionStart)
+      / Math.max(1e-6, transitionEnd - transitionStart),
+    0,
+    1,
+  );
+  const blend = transitionUnit * transitionUnit
+    * transitionUnit
+    * (
+      transitionUnit * (
+        transitionUnit * 6 - 15
+      ) + 10
+    );
+  return returning
+    ? lerpValue(
+        OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+        OPTIONAL_TOW_BERTH_OFFSHORE,
+        blend,
+      )
+    : lerpValue(
+        OPTIONAL_TOW_BERTH_OFFSHORE,
+        OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+        blend,
+      );
+}
+
+export function stageOptionalTowCrestAtBreaker(
+  anchorX: number,
+  anchorZ: number,
+  crestX: number,
+  crestZ: number,
+  normalX: number,
+  normalZ: number,
+  maximumNormalOffset = 3.5,
+  maximumTangentOffset = 12,
+) {
+  const normalLength = Math.max(.001, Math.hypot(normalX, normalZ));
+  const unitNormalX = normalX / normalLength;
+  const unitNormalZ = normalZ / normalLength;
+  const normalOffset = (crestX - anchorX) * unitNormalX
+    + (crestZ - anchorZ) * unitNormalZ;
+  const tangentX = unitNormalZ;
+  const tangentZ = -unitNormalX;
+  const tangentOffset = (crestX - anchorX) * tangentX
+    + (crestZ - anchorZ) * tangentZ;
+  const stagedNormalOffset = clampValue(
+    normalOffset,
+    -Math.abs(maximumNormalOffset),
+    Math.abs(maximumNormalOffset),
+  );
+  const stagedTangentOffset = clampValue(
+    tangentOffset,
+    -Math.abs(maximumTangentOffset),
+    Math.abs(maximumTangentOffset),
+  );
+  return {
+    x: anchorX
+      + stagedNormalOffset * unitNormalX
+      + stagedTangentOffset * tangentX,
+    z: anchorZ
+      + stagedNormalOffset * unitNormalZ
+      + stagedTangentOffset * tangentZ,
+    normalOffset: stagedNormalOffset,
+    tangentOffset: stagedTangentOffset,
+  };
+}
 
 export function advanceOptionalTowProgress(
   progress: number,
@@ -5639,13 +6476,250 @@ export function advanceOptionalTowProgress(
   return Math.max(0, Math.min(1, progress + Math.max(0, deltaSeconds) / Math.max(.1, durationSeconds)));
 }
 
-export function optionalTowReleaseQuality(progress: number) {
-  return Math.max(0, Math.min(1, 1 - Math.abs(progress - .88) / .1));
+export type OptionalTowInterceptSample = {
+  routeProgress: number;
+  faceQuality: number;
+  distanceToTarget: number;
+  headingAlignment: number;
+  speedMatch: number;
+};
+
+/**
+ * Scores the live tow interception rather than a clock window. Route progress
+ * only proves that the craft has completed its outbound turn; proximity to the
+ * moving takeoff point, board/face alignment, speed match, and the face itself
+ * decide whether releasing is useful.
+ */
+export function optionalTowReleaseQuality(
+  sample: OptionalTowInterceptSample,
+) {
+  const routeReady = smoothstep(.54, .7, sample.routeProgress);
+  const targetLock = 1 - smoothstep(
+    1.4,
+    7.5,
+    Math.max(0, sample.distanceToTarget),
+  );
+  const alignment = smoothstep(
+    .32,
+    .88,
+    sample.headingAlignment,
+  );
+  const speedMatch = smoothstep(.32, .86, sample.speedMatch);
+  return clampValue(
+    clampValue(sample.faceQuality, 0, 1)
+      * (.22 + targetLock * .78)
+      * (.38 + alignment * .62)
+      * (.42 + speedMatch * .58)
+      * (.32 + routeReady * .68),
+    0,
+    1,
+  );
 }
 
-export function optionalTowReleaseRecommended(progress: number) {
-  const releaseProgress = clampValue(progress, 0, 1);
-  return releaseProgress >= .84 && releaseProgress <= .91;
+export function optionalTowReleaseRecommended(quality: number) {
+  return clampValue(quality, 0, 1) >= .58;
+}
+
+export type OptionalTowReleaseFaceSample = {
+  breakingRatio: number;
+  crestPhaseError: number;
+  faceSlope: number;
+  surfaceRise: number;
+  whitewater: number;
+};
+
+/**
+ * Scores the face that is physically under the tow surfer. Progress alone
+ * cannot prove that the craft caught its intended crest: frame pressure,
+ * oblique swell, and route lag can all move the nominal window away from the
+ * rendered wave. The score therefore requires a depth-limited front face and
+ * measured slope, lift, or crest-localized whitewater.
+ */
+export function optionalTowReleaseFaceQuality(
+  sample: OptionalTowReleaseFaceSample,
+) {
+  const phaseError = Math.atan2(
+    Math.sin(sample.crestPhaseError),
+    Math.cos(sample.crestPhaseError),
+  );
+  const frontFace = smoothstep(-.08, .18, phaseError)
+    * (1 - smoothstep(1.25, 1.9, phaseError));
+  const depthLimited = smoothstep(.6, .82, sample.breakingRatio)
+    * (1 - smoothstep(1.08, 1.55, sample.breakingRatio));
+  const physicalFace = Math.max(
+    smoothstep(.006, .06, sample.faceSlope),
+    smoothstep(.01, .3, sample.surfaceRise),
+    smoothstep(.04, .28, sample.whitewater),
+  );
+  const openFace = 1 - smoothstep(
+    .38,
+    .78,
+    sample.whitewater,
+  );
+  return clampValue(
+    frontFace
+      * depthLimited
+      * (.35 + physicalFace * .65),
+      0,
+      1,
+    ) * clampValue(
+      openFace,
+    0,
+    1,
+  );
+}
+
+/**
+ * Chooses a point down the physical front face. The ideal stand-up distance
+ * grows with wave scale, while the measured live-face score remains the main
+ * criterion so the tow follows an arriving shoulder instead of a fixed spot.
+ */
+export function optionalTowTakeoffTargetScore(
+  faceQuality: number,
+  distanceFromCrest: number,
+  targetFaceHeight: number,
+) {
+  const idealDistance = clampValue(
+    2.8 + Math.max(0, targetFaceHeight) * .48,
+    3.1,
+    6.2,
+  );
+  const distanceQuality = 1 - smoothstep(
+    Math.max(1.4, idealDistance * .48),
+    Math.max(2.8, idealDistance * 1.08),
+    Math.abs(distanceFromCrest - idealDistance),
+  );
+  return clampValue(faceQuality, 0, 1)
+    * (.64 + distanceQuality * .36);
+}
+
+export function optionalTowReleasePhysicallySupported(
+  requested: boolean,
+  progress: number,
+  quality: number,
+  breakingRatio: number,
+  faceQuality = 1,
+) {
+  return requested
+    && progress >= .56
+    && quality > .095
+    && breakingRatio >= .6
+    && breakingRatio <= 1.9
+    && faceQuality >= .08;
+}
+
+export type OptionalTowCraftState = {
+  x: number;
+  z: number;
+  velocityX: number;
+  velocityZ: number;
+  heading: number;
+};
+
+export function advanceOptionalTowCraft(
+  state: OptionalTowCraftState,
+  desiredX: number,
+  desiredZ: number,
+  deltaSeconds: number,
+  maximumSpeed: number,
+  maximumAcceleration = 6.2,
+): OptionalTowCraftState & { speed: number; acceleration: number } {
+  const delta = clampValue(deltaSeconds, .001, .05);
+  let requestedVelocityX = (desiredX - state.x) / delta;
+  let requestedVelocityZ = (desiredZ - state.z) / delta;
+  const requestedSpeed = Math.hypot(
+    requestedVelocityX,
+    requestedVelocityZ,
+  );
+  const speedLimit = Math.max(.1, maximumSpeed);
+  if (requestedSpeed > speedLimit) {
+    const scale = speedLimit / requestedSpeed;
+    requestedVelocityX *= scale;
+    requestedVelocityZ *= scale;
+  }
+  let changeX = requestedVelocityX - state.velocityX;
+  let changeZ = requestedVelocityZ - state.velocityZ;
+  const requestedChange = Math.hypot(changeX, changeZ);
+  const maximumChange = Math.max(.1, maximumAcceleration) * delta;
+  if (requestedChange > maximumChange) {
+    const scale = maximumChange / requestedChange;
+    changeX *= scale;
+    changeZ *= scale;
+  }
+  const velocityX = state.velocityX + changeX;
+  const velocityZ = state.velocityZ + changeZ;
+  const speed = Math.hypot(velocityX, velocityZ);
+  return {
+    x: state.x + velocityX * delta,
+    z: state.z + velocityZ * delta,
+    velocityX,
+    velocityZ,
+    heading: speed > .05
+      ? Math.atan2(velocityX, velocityZ)
+      : state.heading,
+    speed,
+    acceleration: Math.hypot(changeX, changeZ) / delta,
+  };
+}
+
+export type OptionalTowRopeState = {
+  x: number;
+  z: number;
+  velocityX: number;
+  velocityZ: number;
+};
+
+export function advanceOptionalTowRope(
+  state: OptionalTowRopeState,
+  craft: OptionalTowCraftState,
+  deltaSeconds: number,
+  ropeLength = 7,
+): OptionalTowRopeState & { ropeDistance: number } {
+  const delta = clampValue(deltaSeconds, .001, .05);
+  const forwardX = Math.sin(craft.heading);
+  const forwardZ = Math.cos(craft.heading);
+  const desiredX = craft.x - forwardX * ropeLength;
+  const desiredZ = craft.z - forwardZ * ropeLength;
+  const damping = 1 - Math.exp(-4.8 * delta);
+  let velocityX = state.velocityX + (
+    craft.velocityX + (desiredX - state.x) * 2.15
+      - state.velocityX
+  ) * damping;
+  let velocityZ = state.velocityZ + (
+    craft.velocityZ + (desiredZ - state.z) * 2.15
+      - state.velocityZ
+  ) * damping;
+  let x = state.x + velocityX * delta;
+  let z = state.z + velocityZ * delta;
+  let ropeX = x - craft.x;
+  let ropeZ = z - craft.z;
+  let ropeDistance = Math.hypot(ropeX, ropeZ);
+  const maximumStretch = ropeLength + .8;
+  if (ropeDistance > maximumStretch) {
+    const normalX = ropeX / ropeDistance;
+    const normalZ = ropeZ / ropeDistance;
+    x = craft.x + normalX * maximumStretch;
+    z = craft.z + normalZ * maximumStretch;
+    const separatingSpeed = (
+      velocityX - craft.velocityX
+    ) * normalX + (
+      velocityZ - craft.velocityZ
+    ) * normalZ;
+    if (separatingSpeed > 0) {
+      velocityX -= normalX * separatingSpeed;
+      velocityZ -= normalZ * separatingSpeed;
+    }
+    ropeX = x - craft.x;
+    ropeZ = z - craft.z;
+    ropeDistance = Math.hypot(ropeX, ropeZ);
+  }
+  return {
+    x,
+    z,
+    velocityX,
+    velocityZ,
+    ropeDistance,
+  };
 }
 
 export type GameStats = {
@@ -5765,9 +6839,22 @@ export type GameStats = {
   nearVan: boolean;
   towAvailable: boolean;
   towMode: boolean;
+  towReturning: boolean;
   nearJetSki: boolean;
   towProgress: number;
   towReleaseQuality: number;
+  towFaceQuality: number;
+  towTargetDistance: number;
+  towBreakingRatio: number;
+  towHeadingAlignment: number;
+  towSpeedMatch: number;
+  towHullElevation: number;
+  towHullTargetElevation: number;
+  towHullVerticalVelocity: number;
+  towHullPitch: number;
+  towHullRoll: number;
+  towHullDraft: number;
+  towHullMinimumFreeboard: number;
   towBestRelease: boolean;
   inLineup: boolean;
   lineupOutsideMargin: number;
@@ -5914,9 +7001,22 @@ export const INITIAL_STATS: GameStats = {
   nearVan: false,
   towAvailable: false,
   towMode: false,
+  towReturning: false,
   nearJetSki: false,
   towProgress: 0,
   towReleaseQuality: 0,
+  towFaceQuality: 0,
+  towTargetDistance: 0,
+  towBreakingRatio: 0,
+  towHeadingAlignment: 0,
+  towSpeedMatch: 0,
+  towHullElevation: 0,
+  towHullTargetElevation: 0,
+  towHullVerticalVelocity: 0,
+  towHullPitch: 0,
+  towHullRoll: 0,
+  towHullDraft: 0,
+  towHullMinimumFreeboard: 0,
   towBestRelease: false,
   inLineup: false,
   lineupOutsideMargin: 0,
@@ -5998,45 +7098,98 @@ export function reachedSurfTrainingStep(
   return reached;
 }
 
-function positiveModulo(value: number, divisor: number) {
-  return ((value % divisor) + divisor) % divisor;
+const DEFAULT_SPECTRAL_SETTINGS: SessionSettings = {
+  mode: "training",
+  assist: "guided",
+  board: "performance",
+  waveHeight: 1.8,
+  wavePeriod: 10,
+  waveDirection: 156,
+  swellHeight: 1.45,
+  swellPeriod: 10,
+  swellDirection: 156,
+  currentStrength: .35,
+  currentDirection: 156,
+  windSpeed: 10,
+  windDirection: 156,
+  waterTemperature: 20,
+  airTemperature: 23,
+  coastHeading: 156,
+  tide: 0,
+  timeOfDay: 16,
+  weatherCode: 1,
+};
+
+function crestBank(
+  settings = DEFAULT_SPECTRAL_SETTINGS,
+  character?: BreakCharacter,
+) {
+  return coastWaveModelAt(0, settings, character).bank;
 }
 
-function waveGroupOrdinal(crestIndex: number) {
-  // A fixed observer sees crest indices decrease as the train travels shoreward.
-  // The longer irregular spectrum avoids a repeating "three-wave set" cadence
-  // while remaining deterministic on CPU and GPU.
-  return positiveModulo(-crestIndex, WAVE_ENERGY_SEQUENCE.length);
+function crestEnergyAtOrdinal(
+  bank: WaveComponentBank,
+  crestOrdinal: number,
+) {
+  return spectralCrestAtOrdinal(bank, crestOrdinal).crestEnergy;
 }
 
-function crestEnergy(crestIndex: number) {
-  return WAVE_ENERGY_SEQUENCE[waveGroupOrdinal(crestIndex)];
-}
-
-export function waveEnergyForPhase(phase: number) {
+export function waveEnergyForPhase(
+  phase: number,
+  settings = DEFAULT_SPECTRAL_SETTINGS,
+  character?: BreakCharacter,
+) {
+  const bank = crestBank(settings, character);
   const crestCoordinate = (phase - Math.PI * .5) / (Math.PI * 2);
   const lowerCrest = Math.floor(crestCoordinate);
   const blend = crestCoordinate - lowerCrest;
   const easedBlend = blend * blend * (3 - 2 * blend);
-  const lowerEnergy = crestEnergy(lowerCrest);
-  return lowerEnergy + (crestEnergy(lowerCrest + 1) - lowerEnergy) * easedBlend;
+  const lowerEnergy = crestEnergyAtOrdinal(bank, lowerCrest);
+  const upperEnergy = crestEnergyAtOrdinal(bank, lowerCrest + 1);
+  return lowerEnergy + (upperEnergy - lowerEnergy) * easedBlend;
 }
 
-export function waveCrestPropertiesAtPhase(crestPhase: number) {
-  const energy = waveEnergyForPhase(crestPhase);
+export function waveCrestPropertiesAtPhase(
+  crestPhase: number,
+  settings = DEFAULT_SPECTRAL_SETTINGS,
+  character?: BreakCharacter,
+) {
+  const bank = crestBank(settings, character);
+  const crest = dominantCrestPropertiesAtPhase(
+    bank,
+    crestPhase - Math.PI * .5,
+  );
+  const energy = crest.crestEnergy;
   return {
     energy,
     surfable: energy >= SURFABLE_CREST_ENERGY,
+    crestId: crest.crestId,
   };
 }
 
-function waveReadStateForPhase(phase: number, wavePeriod: number) {
+function waveReadStateForPhase(
+  phase: number,
+  wavePeriod: number,
+  bank: WaveComponentBank,
+  realizedCrestEnergy?: number,
+) {
   const period = Math.max(4, wavePeriod);
   const angularSpeed = Math.PI * 2 / period;
   const crestCoordinate = (phase - Math.PI * .5) / (Math.PI * 2);
   const closestCrest = Math.round(crestCoordinate);
-  const energy = waveEnergyForPhase(phase);
-  const currentCrestEnergy = crestEnergy(closestCrest);
+  const lowerCrest = Math.floor(crestCoordinate);
+  const blend = crestCoordinate - lowerCrest;
+  const easedBlend = blend * blend * (3 - 2 * blend);
+  const lowerEnergy = crestEnergyAtOrdinal(bank, lowerCrest);
+  const upperEnergy = crestEnergyAtOrdinal(bank, lowerCrest + 1);
+  const modeledEnergy = lowerEnergy
+    + (upperEnergy - lowerEnergy) * easedBlend;
+  const currentCrestEnergy = Number.isFinite(realizedCrestEnergy)
+    ? clampValue(realizedCrestEnergy ?? 0, 0, 1)
+    : crestEnergyAtOrdinal(bank, closestCrest);
+  const energy = Number.isFinite(realizedCrestEnergy)
+    ? currentCrestEnergy
+    : modeledEnergy;
   const crestPhase = Math.PI * .5 + closestCrest * Math.PI * 2;
   const crestPhaseError = Math.atan2(
     Math.sin(phase - crestPhase),
@@ -6047,9 +7200,9 @@ function waveReadStateForPhase(phase: number, wavePeriod: number) {
   const upcomingCrest = Math.floor(crestCoordinate + .000001);
   let secondsToPeak = Number.POSITIVE_INFINITY;
   let nextSurfableEnergy = currentCrestEnergy;
-  for (let offset = 0; offset <= WAVE_ENERGY_SEQUENCE.length; offset += 1) {
+  for (let offset = 0; offset <= 48; offset += 1) {
     const candidate = upcomingCrest - offset;
-    const candidateEnergy = crestEnergy(candidate);
+    const candidateEnergy = crestEnergyAtOrdinal(bank, candidate);
     if (candidateEnergy < SURFABLE_CREST_ENERGY) continue;
     const candidatePhase = Math.PI * .5 + candidate * Math.PI * 2;
     secondsToPeak = Math.max(0, phase - candidatePhase) / angularSpeed;
@@ -6059,7 +7212,7 @@ function waveReadStateForPhase(phase: number, wavePeriod: number) {
   return {
     energy,
     secondsToPeak: secondsToPeak < .45 ? 0 : secondsToPeak,
-    cycle: period * WAVE_ENERGY_SEQUENCE.length,
+    cycle: 0,
     waveCount: 0,
     setWaveIndex: 0,
     setActive: crestSurfable && crestProximity > .08,
@@ -6067,8 +7220,8 @@ function waveReadStateForPhase(phase: number, wavePeriod: number) {
     crestPhase,
     crestPhaseError,
     crestProximity,
-    crestIndex: waveGroupOrdinal(closestCrest) + 1,
-    crestSequenceLength: WAVE_ENERGY_SEQUENCE.length,
+    crestIndex: closestCrest,
+    crestSequenceLength: 0,
     crestSurfable,
     nextSurfableEnergy,
   };
@@ -6076,7 +7229,16 @@ function waveReadStateForPhase(phase: number, wavePeriod: number) {
 
 export function waveSetState(elapsed: number, wavePeriod: number) {
   const period = Math.max(4, wavePeriod);
-  return waveReadStateForPhase(-elapsed * (Math.PI * 2 / period), period);
+  const settings = {
+    ...DEFAULT_SPECTRAL_SETTINGS,
+    wavePeriod: period,
+    swellPeriod: period,
+  };
+  return waveReadStateForPhase(
+    -elapsed * (Math.PI * 2 / period),
+    period,
+    crestBank(settings),
+  );
 }
 
 export function waveSetStateAt(
@@ -6086,25 +7248,142 @@ export function waveSetStateAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
+  const surface = sampleCoastWaveSurface(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
+  const phase = (surface.dominant?.phase ?? 0) + Math.PI * .5;
   return waveReadStateForPhase(
-    primaryWavePhaseAt(x, z, elapsed, settings, character),
+    phase,
     settings.wavePeriod,
+    coastWaveModelAt(x, settings, character).bank,
+    surface.dominant?.crestEnergy,
   );
 }
 
-function breakingWaveProfile(phase: number, nonlinearity: number) {
-  // A continuous, crest-focused profile. The harmonics sharpen the forward
-  // wall while the powered positive half-wave gives the crest a real ridge
-  // instead of leaving the ocean as a gently tinted sine plane.
-  const shape = Math.max(0, Math.min(.9, nonlinearity));
-  const fundamental = Math.sin(phase);
-  const crestRidge = Math.pow(Math.max(0, fundamental), 5);
-  const troughDraw = Math.pow(Math.max(0, -fundamental), 2);
-  return fundamental
-    - shape * .48 * Math.cos(phase * 2)
-    - shape * .22 * Math.sin(phase * 3)
-    + shape * .72 * crestRidge
-    - shape * .12 * troughDraw;
+export type VisibleWaveForecast = {
+  secondsToPeak: number;
+  crestEnergy: number;
+};
+
+const VISIBLE_WAVE_FORECAST_CACHE = new WeakMap<
+  WaveComponentBank,
+  Map<string, VisibleWaveForecast>
+>();
+
+/**
+ * Forecasts the next crest from the same coherent dominant-partition signal
+ * that the ocean and board sample now.
+ *
+ * The older HUD forecast advanced a single component's deterministic ordinal
+ * pattern. Once rendering moved to the full partition, that could announce a
+ * high-energy wave while destructive interference left the visible surface
+ * calm. A bounded Newton search follows successive zero-phase crossings of
+ * the realized group instead. Results are cached in half-second/spatial
+ * buckets because the instruments do not need a frame-rate forecast.
+ */
+export function nextVisibleSurfableWaveAt(
+  x: number,
+  z: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+): VisibleWaveForecast {
+  const bank = coastWaveModelAt(x, settings, character).bank;
+  let bankCache = VISIBLE_WAVE_FORECAST_CACHE.get(bank);
+  if (!bankCache) {
+    bankCache = new Map();
+    VISIBLE_WAVE_FORECAST_CACHE.set(bank, bankCache);
+  }
+  const cacheKey = [
+    Math.round(x / 6),
+    Math.round(z / 6),
+    Math.floor(elapsed * 2),
+    Math.round(settings.tide * 20),
+  ].join(":");
+  const cached = bankCache.get(cacheKey);
+  if (cached) return cached;
+
+  const initial = sampleCoastDominantWave(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
+  if (!initial) {
+    return {
+      secondsToPeak: Number.POSITIVE_INFINITY,
+      crestEnergy: 0,
+    };
+  }
+  const tau = Math.PI * 2;
+  const currentPhaseError = Math.atan2(
+    Math.sin(initial.phase),
+    Math.cos(initial.phase),
+  );
+  if (
+    initial.crestEnergy >= SURFABLE_CREST_ENERGY
+    && Math.abs(currentPhaseError) <= .12
+  ) {
+    return {
+      secondsToPeak: 0,
+      crestEnergy: initial.crestEnergy,
+    };
+  }
+
+  const positivePhase = ((initial.phase % tau) + tau) % tau;
+  let targetOrdinal = Math.floor(initial.phase / tau);
+  let candidateTime = elapsed
+    + positivePhase / Math.max(.1, initial.angularFrequency);
+  let result: VisibleWaveForecast = {
+    secondsToPeak: Number.POSITIVE_INFINITY,
+    crestEnergy: initial.crestEnergy,
+  };
+  for (let offset = 0; offset < 48; offset += 1) {
+    const targetPhase = targetOrdinal * tau;
+    let candidate = sampleCoastDominantWave(
+      x,
+      z,
+      candidateTime,
+      settings,
+      character,
+    );
+    for (
+      let iteration = 0;
+      candidate && iteration < 3;
+      iteration += 1
+    ) {
+      candidateTime += (candidate.phase - targetPhase)
+        / Math.max(.1, candidate.angularFrequency);
+      candidate = sampleCoastDominantWave(
+        x,
+        z,
+        candidateTime,
+        settings,
+        character,
+      );
+    }
+    if (!candidate) break;
+    if (candidate.crestEnergy >= SURFABLE_CREST_ENERGY) {
+      result = {
+        secondsToPeak: Math.max(0, candidateTime - elapsed),
+        crestEnergy: candidate.crestEnergy,
+      };
+      break;
+    }
+    targetOrdinal -= 1;
+    candidateTime += tau / Math.max(
+      .1,
+      candidate.propagationAngularFrequency,
+    );
+  }
+  if (bankCache.size >= 512) bankCache.clear();
+  bankCache.set(cacheKey, result);
+  return result;
 }
 
 export function sessionGrade(score: number, rideDistance: number, maneuverCount: number): SessionGrade {
@@ -6124,9 +7403,20 @@ export function settingsFromConditions(conditions: MarineConditions, coastHeadin
     waveHeight: conditions.waveHeight,
     wavePeriod: conditions.wavePeriod,
     waveDirection: conditions.waveDirection,
+    windWaveHeight: conditions.windWaveHeight,
+    windWavePeriod: conditions.windWavePeriod,
+    windWavePeakPeriod: conditions.windWavePeakPeriod,
+    windWaveDirection: conditions.windWaveDirection,
     swellHeight: conditions.swellHeight,
     swellPeriod: conditions.swellPeriod,
     swellDirection: conditions.swellDirection,
+    swellPeakPeriod: conditions.swellPeakPeriod,
+    secondarySwellHeight: conditions.secondarySwellHeight,
+    secondarySwellPeriod: conditions.secondarySwellPeriod,
+    secondarySwellDirection: conditions.secondarySwellDirection,
+    tertiarySwellHeight: conditions.tertiarySwellHeight,
+    tertiarySwellPeriod: conditions.tertiarySwellPeriod,
+    tertiarySwellDirection: conditions.tertiarySwellDirection,
     currentStrength: conditions.currentVelocity,
     currentDirection: conditions.currentDirection,
     windSpeed: conditions.windSpeed,
@@ -6146,34 +7436,25 @@ function breakingGeometryWithTide(
   elapsed: number,
   settings: SessionSettings,
   character: BreakCharacter,
-  tideResponse: TideResponse,
 ) {
-  const coastalZ = z - shorelineShiftForTide(settings.tide);
-  const peel = character.peel ?? 0;
-  const variability = (character.variability ?? .4)
-    * tideResponse.variabilityScale;
-  const section = Math.sin(x * .07 + elapsed * .05)
-    * variability
-    * 2.3;
-  const breakingCoordinate = coastalZ
-    + x * peel * .16
-    + section
-    + BREAK_OFFSHORE_OFFSET
-    - tideResponse.breakShift;
-  const crossShoreGradientX = peel * .16
-    + Math.cos(x * .07 + elapsed * .05)
-      * .07
-      * variability
-      * 2.3;
-  const gradientMagnitude = Math.hypot(
-    crossShoreGradientX,
-    1,
+  const surface = sampleCoastWaveSurface(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
   );
+  const breakingCoordinate = Math.log(
+    Math.max(.018, surface.breakingRatio),
+  ) * 20 - 12;
+  const directionX = surface.dominant?.directionX ?? 0;
+  const directionZ = surface.dominant?.directionZ ?? 1;
   return {
     breakingCoordinate,
-    outsideDirectionX:
-      -crossShoreGradientX / gradientMagnitude,
-    outsideDirectionZ: -1 / gradientMagnitude,
+    outsideDirectionX: -directionX,
+    outsideDirectionZ: -directionZ,
+    breakingRatio: surface.breakingRatio,
+    regime: surface.regime,
   };
 }
 
@@ -6181,6 +7462,8 @@ export type WaveBreakingGeometryReading = {
   breakingCoordinate: number;
   outsideDirectionX: number;
   outsideDirectionZ: number;
+  breakingRatio?: number;
+  regime?: "deep" | "shoaling" | "breaking" | "broken";
 };
 
 /**
@@ -6196,17 +7479,12 @@ export function waveBreakingGeometryAt(
   character?: BreakCharacter,
 ) {
   const safeCharacter = character ?? DEFAULT_TIDE_BREAK;
-  const tideResponse = tideResponseForBreak(
-    settings.tide,
-    safeCharacter,
-  );
   return breakingGeometryWithTide(
     x,
     z,
     elapsed,
     settings,
     safeCharacter,
-    tideResponse,
   );
 }
 
@@ -6224,6 +7502,104 @@ export function waveBreakingCoordinateAt(
     settings,
     character,
   ).breakingCoordinate;
+}
+
+export type WaveBreakingContour = WaveBreakingGeometryReading & {
+  z: number;
+  targetRatio: number;
+  ratioError: number;
+};
+
+/**
+ * Finds the offshore-most physical depth-limited break contour. This solves in
+ * world space against Hs/(gamma*d); the dimensionless coaching coordinate is
+ * deliberately not treated as a distance.
+ */
+export function findWaveBreakingContourAt(
+  x: number,
+  elapsed: number,
+  settings: SessionSettings,
+  character?: BreakCharacter,
+  targetRatio = .9,
+): WaveBreakingContour {
+  const target = clampValue(targetRatio, .7, 1.6);
+  const offshoreZ = -360;
+  const shorewardZ = SHORELINE_REFERENCE_Z
+    + shorelineShiftForTide(settings.tide)
+    - 2;
+  const samples = 120;
+  let previousZ = offshoreZ;
+  let previous = waveBreakingGeometryAt(
+    x,
+    previousZ,
+    elapsed,
+    settings,
+    character,
+  );
+  let bestZ = previousZ;
+  let best = previous;
+  let bestError = Math.abs((previous.breakingRatio ?? 0) - target);
+  for (let index = 1; index <= samples; index += 1) {
+    const z = offshoreZ
+      + (shorewardZ - offshoreZ) * index / samples;
+    const reading = waveBreakingGeometryAt(
+      x,
+      z,
+      elapsed,
+      settings,
+      character,
+    );
+    const ratio = reading.breakingRatio ?? 0;
+    const error = Math.abs(ratio - target);
+    if (error < bestError) {
+      bestZ = z;
+      best = reading;
+      bestError = error;
+    }
+    const previousRatio = previous.breakingRatio ?? 0;
+    if (previousRatio <= target && ratio >= target) {
+      let lowZ = previousZ;
+      let highZ = z;
+      let low = previous;
+      let high = reading;
+      for (let iteration = 0; iteration < 14; iteration += 1) {
+        const middleZ = (lowZ + highZ) * .5;
+        const middle = waveBreakingGeometryAt(
+          x,
+          middleZ,
+          elapsed,
+          settings,
+          character,
+        );
+        if ((middle.breakingRatio ?? 0) < target) {
+          lowZ = middleZ;
+          low = middle;
+        } else {
+          highZ = middleZ;
+          high = middle;
+        }
+      }
+      const lowError = Math.abs((low.breakingRatio ?? 0) - target);
+      const highError = Math.abs((high.breakingRatio ?? 0) - target);
+      const resolved = lowError <= highError
+        ? { z: lowZ, reading: low, error: lowError }
+        : { z: highZ, reading: high, error: highError };
+      return {
+        ...resolved.reading,
+        z: resolved.z,
+        targetRatio: target,
+        ratioError: resolved.error,
+      };
+    }
+    previousZ = z;
+    previous = reading;
+  }
+  return {
+    ...best,
+    z: bestZ,
+    targetRatio: target,
+    ratioError: bestError,
+  };
 }
 
 export type LineupGeometryReading = {
@@ -6447,94 +7823,14 @@ export function waveHeightAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
-  const tideResponse = tideResponseForBreak(settings.tide, character ?? DEFAULT_TIDE_BREAK);
-  const power = (character?.power ?? 1) * tideResponse.powerScale;
-  const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
-  const amplitude = Math.max(0.12, settings.waveHeight * 0.78) * power * tideResponse.faceScale;
-  const period = Math.max(4, settings.wavePeriod);
-  const speed = (Math.PI * 2) / period;
-  const coastalZ = z - shorelineShiftForTide(settings.tide);
-  const breakZ = breakingGeometryWithTide(
+  return sampleCoastWaveSurface(
     x,
     z,
     elapsed,
     settings,
-    character ?? DEFAULT_TIDE_BREAK,
-    tideResponse,
-  ).breakingCoordinate;
-  const p1 = primaryWavePhaseAt(x, z, elapsed, settings, character);
-  const setEnergy = waveEnergyForPhase(p1);
-  const dynamicBreakZ = breakZ + waveBreakOffsetForEnergy(
-    setEnergy,
-    settings.waveHeight * tideResponse.faceScale,
-  );
-  const shoreBoost = .72
-    + smoothstep(-85, 8, dynamicBreakZ)
-      * (.58 + steepness * .24);
-  const setLift = 0.78 + setEnergy * 0.34;
-  const shoaling = smoothstep(-96, 9, dynamicBreakZ);
-  const primaryNonlinearity = shoaling
-    * (.18 + steepness * .32 + (character?.hollow ?? .35) * tideResponse.hollowScale * .18)
-    * (.7 + setEnergy * .3);
-  const primaryProfile = breakingWaveProfile(p1, primaryNonlinearity);
-  const relativeWaveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-  const relativeSwellAngle = ((settings.swellDirection - settings.coastHeading) * Math.PI) / 180;
-  const relativeCurrentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const relativeWindAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
-  const waveDirectionX = Math.sin(relativeWaveAngle);
-  const waveDirectionZ = Math.cos(relativeWaveAngle);
-  const currentDirectionX = Math.sin(relativeCurrentAngle);
-  const currentDirectionZ = Math.cos(relativeCurrentAngle);
-  const swellDirectionX = Math.sin(relativeSwellAngle);
-  const swellDirectionZ = Math.max(.28, Math.cos(relativeSwellAngle));
-  const swellDirectionLength = Math.hypot(swellDirectionX, swellDirectionZ);
-  const normalizedSwellX = swellDirectionX / swellDirectionLength;
-  const normalizedSwellZ = swellDirectionZ / swellDirectionLength;
-  const swellPeriod = Math.max(4, settings.swellPeriod);
-  const swellWavelength = deepWaterWavelengthForPeriod(
-    swellPeriod,
-  );
-  const swellPhase = (
-    x * normalizedSwellX + coastalZ * normalizedSwellZ
-  ) * (Math.PI * 2 / swellWavelength) - elapsed * (Math.PI * 2 / swellPeriod) + 1.7;
-  const swellShoaling = .84
-    + smoothstep(-85, 8, dynamicBreakZ) * .24;
-  // Marine swell height is crest-to-trough height, so its physical mesh
-  // amplitude is half that value. It is independent of the local breaking
-  // face control in Wave Lab.
-  const swellAmplitude = Math.max(0, settings.swellHeight * .5);
-
-  const currentBend = Math.max(0, Math.min(1, settings.currentStrength / 4));
-  const crossCurrentWeight = .12 + currentBend * .12;
-  const crossDirectionX = waveDirectionX
-    + waveDirectionZ * .62
-    + currentDirectionX * crossCurrentWeight;
-  const crossDirectionZ = Math.max(.28, waveDirectionZ - waveDirectionX * .62)
-    + currentDirectionZ * crossCurrentWeight;
-  const crossDirectionLength = Math.hypot(crossDirectionX, crossDirectionZ);
-  const crossPhase = (
-    x * crossDirectionX / crossDirectionLength
-    + coastalZ * crossDirectionZ / crossDirectionLength
-  ) * (Math.PI * 2 / 47.5) - elapsed * speed * 2.7;
-
-  const windChop = Math.max(.12, Math.min(1.45, settings.windSpeed / 24));
-  const windDirectionX = Math.sin(relativeWindAngle);
-  const windDirectionZ = Math.cos(relativeWindAngle) + .15;
-  const windDirectionLength = Math.hypot(windDirectionX, windDirectionZ);
-  const windWavelength = 8.5 + (5.4 - 8.5) * (windChop / 1.45);
-  const windPhase = (
-    x * windDirectionX / windDirectionLength
-    + coastalZ * windDirectionZ / windDirectionLength
-  ) * (Math.PI * 2 / windWavelength) - elapsed * (1.7 + windChop * 1.2) + 2.4;
-  const rawHeight = (
-    settings.tide * 0.3 +
-    amplitude * setLift * shoreBoost * primaryProfile * 0.64 +
-    swellAmplitude * swellShoaling * Math.sin(swellPhase) +
-    amplitude * Math.sin(crossPhase) * 0.11 +
-    (.035 + windChop * .065) * Math.sin(windPhase)
-  );
-  const shoreEdgeAnchor = smoothstep(-18, 8, coastalZ);
-  return rawHeight + (settings.tide * .3 - rawHeight) * shoreEdgeAnchor;
+    character,
+    false,
+  ).height;
 }
 
 export function waveSurfaceFrameAt(
@@ -6544,24 +7840,33 @@ export function waveSurfaceFrameAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
-  const sampleRadius = Math.max(.42, Math.min(.9, .42 + settings.waveHeight * .13));
-  const height = waveHeightAt(x, z, elapsed, settings, character);
-  const slopeX = (
-    waveHeightAt(x + sampleRadius, z, elapsed, settings, character)
-    - waveHeightAt(x - sampleRadius, z, elapsed, settings, character)
-  ) / (sampleRadius * 2);
-  const slopeZ = (
-    waveHeightAt(x, z + sampleRadius, elapsed, settings, character)
-    - waveHeightAt(x, z - sampleRadius, elapsed, settings, character)
-  ) / (sampleRadius * 2);
-  const normalLength = Math.hypot(slopeX, 1, slopeZ);
+  const surface = sampleCoastWaveSurface(
+    x,
+    z,
+    elapsed,
+    settings,
+    character,
+  );
   return {
-    height,
-    slopeX,
-    slopeZ,
-    normalX: -slopeX / normalLength,
-    normalY: 1 / normalLength,
-    normalZ: -slopeZ / normalLength,
+    height: surface.height,
+    slopeX: surface.gradientX,
+    slopeZ: surface.gradientZ,
+    normalX: surface.normalX,
+    normalY: surface.normalY,
+    normalZ: surface.normalZ,
+    surfaceRise: surface.timeDerivative,
+    waterVelocityX: surface.horizontalVelocityX,
+    waterVelocityZ: surface.horizontalVelocityZ,
+    verticalVelocity: surface.verticalVelocity,
+    depth: surface.depth,
+    breakingRatio: surface.breakingRatio,
+    breakingProgress: surface.breakingProgress,
+    brokenProgress: surface.brokenProgress,
+    whitewater: surface.whitewater,
+    breakerVelocityX: surface.breakerVelocityX,
+    breakerVelocityZ: surface.breakerVelocityZ,
+    regime: surface.regime,
+    dominant: surface.dominant,
   };
 }
 
@@ -6694,11 +7999,12 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
   const paddleQuality = Math.max(0, Math.min(1, sample.paddleDrive));
   const breakSupport = .52 + Math.max(0, Math.min(1, sample.breakProgress)) * .48;
   const opportunity = surfable
-    ? faceEnvelope
-      * (.18 + physicalLift * .82)
+    ? Math.min(1, faceEnvelope
+      * (.2 + physicalLift * .8)
       * breakSupport
       * (.7 + headingQuality * .3)
       * (.72 + paddleQuality * .28)
+      * 1.08)
     : 0;
   const idealFaceDistance = 2.7 + Math.min(1.8, waveHeight * .45);
   const positionQuality = 1 - smoothstep(
@@ -6734,6 +8040,48 @@ export function evaluateWaveTakeoff(sample: WaveTakeoffSample): WaveTakeoffReadi
 }
 
 /**
+ * Resolves the body-to-board handoff at the end of a pop-up.
+ *
+ * The strict capture path remains fully physical. A second, narrow grace path
+ * accepts a visibly rising surfable face when the animation finishes a few
+ * frames after the peak contact sample. It prevents a valid SPACE press from
+ * being discarded because the crest moved during the body animation, while
+ * still rejecting flat water, a lost crest, or a tumbling hull.
+ */
+export function resolvePopUpLandingSupport(
+  sample: PopUpLandingSupportSample,
+) {
+  const waterContact = clampValue(sample.waterContact, 0, 1);
+  const rollRisk = clampValue(sample.rollCapsizeRisk, 0, 1);
+  const pitchRisk = clampValue(sample.pitchOverRisk, 0, 1);
+  const overtaken = clampValue(sample.crestOvertaken, 0, 1.4);
+  if (
+    sample.lostCrest
+    || sample.interactionOutcome === "tumble"
+    || waterContact <= .16
+    || rollRisk >= .9
+    || pitchRisk >= .91
+    || overtaken >= .9
+  ) {
+    return 0;
+  }
+  if (
+    sample.boardStillEngaged
+    && waterContact > .24
+    && rollRisk < .84
+    && pitchRisk < .86
+    && overtaken < .76
+  ) {
+    return 1;
+  }
+  const readableFace = sample.surfableFace
+    && sample.faceEnvelope > .035
+    && sample.physicalLift > .06
+    && sample.waveContact > .025;
+  return readableFace ? .48 : 0;
+}
+
+/**
  * Deep-water gravity-wave dispersion: L = gT² / 2π. Keeping this relation
  * intact makes long-period groundswell travel faster and farther apart than
  * short-period wind swell before the shared shoaling compression is applied.
@@ -6743,10 +8091,6 @@ export function deepWaterWavelengthForPeriod(period: number) {
   return 9.81 * safePeriod * safePeriod / (Math.PI * 2);
 }
 
-function primaryWaveWavelength(period: number, compression: number) {
-  return deepWaterWavelengthForPeriod(period) * compression;
-}
-
 export function primaryWavePhaseAt(
   x: number,
   z: number,
@@ -6754,29 +8098,17 @@ export function primaryWavePhaseAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
-  const tideResponse = tideResponseForBreak(settings.tide, character ?? DEFAULT_TIDE_BREAK);
-  const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
-  const peel = character?.peel ?? 0;
-  const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-  const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const breakZ = breakingGeometryWithTide(
+  const dominant = sampleCoastDominantWave(
     x,
     z,
     elapsed,
     settings,
-    character ?? DEFAULT_TIDE_BREAK,
-    tideResponse,
-  ).breakingCoordinate;
-  const shoaling = smoothstep(-108, 9, breakZ);
-  const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
-  const compression = 1 + (shallowScale - 1) * shoaling;
-  const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
-  const directionZ = Math.max(.45, Math.cos(waveAngle));
-  const directionLength = Math.hypot(directionX, directionZ);
-  const curvedZ = breakZ + Math.sin(waveAngle) * .0019 * x * x;
-  const waveNumber = (Math.PI * 2) / primaryWaveWavelength(settings.wavePeriod, compression);
-  const angularSpeed = (Math.PI * 2) / Math.max(4, settings.wavePeriod);
-  return (x * directionX / directionLength + curvedZ * directionZ / directionLength) * waveNumber - elapsed * angularSpeed;
+    character,
+  );
+  // Public gameplay phases historically place a crest at π/2. The spectral
+  // core uses cosine with a crest at zero, so preserve the gameplay contract
+  // without changing the underlying phase or its derivatives.
+  return (dominant?.phase ?? 0) + Math.PI * .5;
 }
 
 export function primaryWaveVelocityAt(
@@ -6786,32 +8118,33 @@ export function primaryWaveVelocityAt(
   settings: SessionSettings,
   character?: BreakCharacter,
 ) {
-  const tideResponse = tideResponseForBreak(settings.tide, character ?? DEFAULT_TIDE_BREAK);
-  const steepness = (character?.steepness ?? .7) * tideResponse.steepnessScale;
-  const peel = character?.peel ?? 0;
-  const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-  const currentAngle = ((settings.currentDirection - settings.coastHeading) * Math.PI) / 180;
-  const breakZ = breakingGeometryWithTide(
+  const surface = sampleCoastWaveSurface(
     x,
     z,
     elapsed,
     settings,
-    character ?? DEFAULT_TIDE_BREAK,
-    tideResponse,
-  ).breakingCoordinate;
-  const shoaling = smoothstep(-108, 9, breakZ);
-  const shallowScale = .34 + (.18 - .34) * Math.max(0, Math.min(1, steepness));
-  const compression = 1 + (shallowScale - 1) * shoaling;
-  const directionX = .095 + peel * .075 + Math.sin(waveAngle) * .42 + Math.sin(currentAngle) * .035;
-  const directionZ = Math.max(.45, Math.cos(waveAngle));
-  const directionLength = Math.hypot(directionX, directionZ);
-  const wavelength = primaryWaveWavelength(settings.wavePeriod, compression);
-  const phaseSpeed = wavelength / Math.max(4, settings.wavePeriod);
+    character,
+  );
+  const dominant = surface.dominant;
+  const phaseSpeed = dominant?.celerity ?? 0;
   return {
-    x: directionX / directionLength * phaseSpeed,
-    z: directionZ / directionLength * phaseSpeed,
+    x: dominant?.celerityX ?? 0,
+    z: dominant?.celerityZ ?? 0,
+    propagationX: dominant?.celerityX ?? 0,
+    propagationZ: dominant?.celerityZ ?? 0,
     speed: phaseSpeed,
-    wavelength,
+    wavelength: dominant?.wavelength
+      ?? deepWaterWavelengthForPeriod(settings.wavePeriod),
+    waterX: surface.horizontalVelocityX,
+    waterZ: surface.horizontalVelocityZ,
+    breakerX: surface.breakerVelocityX,
+    breakerZ: surface.breakerVelocityZ,
+    verticalVelocity: surface.verticalVelocity,
+    breakingRatio: surface.breakingRatio,
+    breakingProgress: surface.breakingProgress,
+    brokenProgress: surface.brokenProgress,
+    whitewater: surface.whitewater,
+    regime: surface.regime,
   };
 }
 

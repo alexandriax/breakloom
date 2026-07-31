@@ -56,6 +56,7 @@ import {
   BOARD_SPECS,
   compassDirection,
   deepWaterWavelengthForPeriod,
+  forecastFaceHeightForBreak,
   formatClock,
   INITIAL_STATS,
   MAX_OFFSHORE_DISTANCE,
@@ -71,7 +72,6 @@ import {
   BREAKLOOM_RELEASE,
   thermalKitForConditions,
   tideResponseForBreak,
-  type TideResponse,
   type BoardType,
   type GameMode,
   type GameStats,
@@ -228,13 +228,13 @@ const LAUNCH_PRESETS: Array<{
     id: "easy",
     name: "Learning",
     kicker: "Guided",
-    description: "Extra paddle power, clear timing cues, and softer wipeouts.",
+    description: "Forgiving lines, strong turns, and automatic recovery.",
   },
   {
     id: "medium",
     name: "Natural",
     kicker: "Free surf",
-    description: "True board response with light recovery help.",
+    description: "Real board response with room to explore and recover.",
   },
   {
     id: "hard",
@@ -489,8 +489,8 @@ function breakDemand(character: BreakCharacter) {
  * peak's own power and by how the tide is treating that seabed. Two peaks on
  * one coast share a swell but rarely throw the same wave.
  */
-function peakFaceHeight(waveHeight: number, character: BreakCharacter, tide: TideResponse) {
-  return waveHeight * tide.faceScale * character.power * tide.powerScale;
+function peakFaceHeight(waveHeight: number, character: BreakCharacter, tide: number) {
+  return forecastFaceHeightForBreak(waveHeight, tide, character);
 }
 
 /** Wind read every surfer checks first: is it grooming the face or wrecking it? */
@@ -695,9 +695,20 @@ function conditionsAtForecast(base: MarineConditions, point: MarineForecastPoint
     waveHeight: point.waveHeight,
     waveDirection: point.waveDirection,
     wavePeriod: point.wavePeriod,
+    windWaveHeight: point.windWaveHeight,
+    windWaveDirection: point.windWaveDirection,
+    windWavePeriod: point.windWavePeriod,
+    windWavePeakPeriod: point.windWavePeakPeriod,
     swellHeight: point.swellHeight,
     swellDirection: point.swellDirection,
     swellPeriod: point.swellPeriod,
+    swellPeakPeriod: point.swellPeakPeriod,
+    secondarySwellHeight: point.secondarySwellHeight,
+    secondarySwellDirection: point.secondarySwellDirection,
+    secondarySwellPeriod: point.secondarySwellPeriod,
+    tertiarySwellHeight: point.tertiarySwellHeight,
+    tertiarySwellDirection: point.tertiarySwellDirection,
+    tertiarySwellPeriod: point.tertiarySwellPeriod,
     waterTemperature: point.waterTemperature,
     currentVelocity: point.currentVelocity,
     currentDirection: point.currentDirection,
@@ -1012,12 +1023,13 @@ export default function BreakloomApp() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("follow");
   const [pointerLocked, setPointerLocked] = useState(false);
   const [motionBalanceStatus, setMotionBalanceStatus] = useState<MotionBalanceStatus>("checking");
+  const [touchGameplay, setTouchGameplay] = useState(false);
   const [openSections, setOpenSections] = useState<LaunchSection[]>([]);
   const [hudMenuOpen, setHudMenuOpen] = useState(false);
   const [hudPanel, setHudPanel] = useState<HudPanel>("ocean");
   const [vanBoardPickerOpen, setVanBoardPickerOpen] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
-  const [qaScenario, setQaScenario] = useState(false);
+  const [qaScenario, setQaScenario] = useState<false | "surf" | "tow">(false);
   const [sessionKey, setSessionKey] = useState(0);
   const [personalBest, setPersonalBest] = useState<PersonalBest>({ score: 0, distance: 0, combo: 1 });
   const [recordsReady, setRecordsReady] = useState(false);
@@ -1137,18 +1149,34 @@ export default function BreakloomApp() {
   }, []);
 
   useEffect(() => {
-    const enabled = new URLSearchParams(window.location.search).get("qa") === "surf";
-    if (!enabled) return;
+    const requestedScenario = new URLSearchParams(
+      window.location.search,
+    ).get("qa");
+    const scenario = requestedScenario === "surf"
+      || requestedScenario === "tow"
+      ? requestedScenario
+      : false;
+    if (!scenario) return;
     let startTimer: number | null = null;
     const configureTimer = window.setTimeout(() => {
-      setQaScenario(true);
+      setQaScenario(scenario);
       setSettings((current) => ({
         ...current,
         mode: "playground",
         waveHeight: 2,
         wavePeriod: 8,
         swellHeight: 2,
-        swellPeriod: 10,
+        // Keep the visual QA ride on a real, energetic crest at the scripted
+        // takeoff time instead of forcing the board across a spectral lull.
+        // Reset every spectral override as well as the summary values so stale
+        // live wind-sea/peak-period data cannot describe a different ocean.
+        swellPeriod: 8.25,
+        swellPeakPeriod: 8.25,
+        windWaveHeight: .35,
+        windWavePeriod: 5.5,
+        windWavePeakPeriod: 5.5,
+        secondarySwellHeight: 0,
+        tertiarySwellHeight: 0,
         windSpeed: 5,
         tide: .1,
         timeOfDay: 16,
@@ -1190,7 +1218,7 @@ export default function BreakloomApp() {
     () => tideResponseForBreak(conditions.seaLevel, breakCharacter),
     [breakCharacter, conditions.seaLevel],
   );
-  const effectiveFaceHeight = peakFaceHeight(settings.waveHeight, breakCharacter, tideResponse);
+  const effectiveFaceHeight = peakFaceHeight(settings.waveHeight, breakCharacter, settings.tide);
   const thermalKit = useMemo(
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
@@ -1221,7 +1249,7 @@ export default function BreakloomApp() {
     return {
       zone,
       character,
-      face: peakFaceHeight(settings.waveHeight, character, tide),
+      face: peakFaceHeight(settings.waveHeight, character, settings.tide),
       tideLabel: tide.shortName,
       fit: tide.quality,
       tag: breakCharacterTag(character),
@@ -1426,6 +1454,10 @@ export default function BreakloomApp() {
     const timer = window.setTimeout(() => {
       const touchDevice = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
       const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? touchDevice;
+      setTouchGameplay(
+        (touchDevice && coarsePointer)
+          || window.matchMedia?.("(max-width: 760px)").matches === true,
+      );
       setMotionBalanceStatus("DeviceOrientationEvent" in window && touchDevice && coarsePointer ? "idle" : "unavailable");
     }, 0);
     return () => window.clearTimeout(timer);
@@ -3966,15 +3998,20 @@ export default function BreakloomApp() {
         : stats.phase === "paddling"
             ? takeoffCommitted ? "FEET" : "POP"
             : "MOVE";
+  const towRouteActive = stats.towProgress < .7;
+  const towSignal = towRouteActive
+    ? stats.towProgress
+    : stats.towReleaseQuality;
+  const towSignalPercent = Math.round(towSignal * 100);
   const towStage = stats.towProgress < .52
     ? { title: "RUNNING OUTSIDE", detail: "The tow is carrying you beyond the breaking water" }
     : stats.towProgress < .7
       ? { title: "TURNING TO PEAK", detail: "The driver is arcing onto a selected live crest" }
-      : stats.towProgress < .78
-        ? { title: "MATCHING CREST", detail: "Prepare to release as the rope loads into the face" }
-        : stats.towBestRelease
-          ? { title: "LIVE PEAK LOCKED", detail: "Release now to disengage and pop up onto the wave" }
-          : { title: "LIVE FACE", detail: "Release before the crest passes the takeoff line" };
+      : stats.towBestRelease
+        ? { title: "LIVE PEAK LOCKED", detail: "Release now to disengage and pop up onto the wave" }
+        : stats.towReleaseQuality > .18
+          ? { title: "MATCHING LIVE FACE", detail: "The driver is matching the moving takeoff point" }
+          : { title: "SEARCHING THE CREST", detail: "The tow is rescoring the rising face in real time" };
   const mobileContext = stats.vehicleMode
     ? {
         title: stats.vehicleSlip > .24 ? "SETTLE THE VAN" : vehicleSurfaceLabel,
@@ -3982,7 +4019,7 @@ export default function BreakloomApp() {
       }
     : stats.towMode
       ? {
-          title: towStage.title,
+          title: `${towStage.title} · ${towSignalPercent}% ${towRouteActive ? "route" : "lock"}`,
           detail: stats.towBestRelease
             ? "Tap RELEASE now · one tap disengages and starts the pop-up"
             : `${towStage.detail} · RELEASE works anytime`,
@@ -4043,6 +4080,21 @@ export default function BreakloomApp() {
                 detail: `~${stats.holdDownSeconds.toFixed(1)}s physical estimate · ${stats.breath}% breath · follow the leash`,
               }
             : { title: "LINE RESET", detail: "Read the next wall of water" };
+  const mobileMechanicsDetail = stats.towMode
+    ? `${towStage.detail}. Keep the selected crest in view and tap RELEASE when the control turns live.`
+    : stats.phase === "paddling"
+      ? takeoffCommitted
+        ? "Use the balance strip to keep the board level while the feet land."
+        : !stats.inLineup
+          ? paddleTraining.turnDirection === "hold"
+            ? "Push and hold the stick forward for alternating paddle strokes."
+            : `Lean the stick ${paddleTraining.turnDirection} to bias that hand and turn the nose toward the break exit.`
+          : "Steer with the stick, use the balance strip to counter roll, and tap POP when the wall supports the board."
+      : stats.phase === "riding" || standingOnBoard
+        ? "Steer with the stick and drag the balance strip toward the glowing counter-roll target."
+        : stats.phase === "shore" || stats.phase === "wading"
+          ? "Move with the stick and use the large action button when a context becomes available."
+          : "Follow the live touch controls at the bottom of the screen.";
   const balanceAccuracy = Math.round((1 - Math.min(1, Math.abs(stats.balance - stats.balanceTarget))) * 100);
   const mobileControlStyle = {
     "--rail-grip": `${Math.round(stats.railGrip * 100)}%`,
@@ -4216,7 +4268,8 @@ export default function BreakloomApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
-          qaScenario={qaScenario}
+          qaScenario={Boolean(qaScenario)}
+          qaTowScenario={qaScenario === "tow"}
           active={screen === "game" && !paused && !photoMode && !replayActive && heatAllowsGameplay}
           renderActive={screen === "game" && !paused}
           qualityLocked={photoMode || replayActive || stats.phase === "paddling" || stats.phase === "riding" || stats.phase === "wipeout"}
@@ -4784,13 +4837,38 @@ export default function BreakloomApp() {
 
       {screen === "game" && (
         <section
-          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
+          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${touchGameplay ? "is-touch" : ""} ${stats.towMode ? "is-tow" : ""} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
           style={gameUiStyle}
-          data-qa-scenario={qaScenario ? "surf" : undefined}
+          data-qa-scenario={qaScenario || undefined}
           data-qa-phase={stats.phase}
           data-qa-crest-distance={stats.crestDistance.toFixed(1)}
           data-qa-wave-surfable={stats.waveSurfable ? "true" : "false"}
           data-qa-takeoff-opportunity={stats.takeoffOpportunity.toFixed(3)}
+          data-qa-takeoff-progress={stats.takeoffCommitProgress.toFixed(3)}
+          data-qa-water-contact={stats.boardWaterContact.toFixed(3)}
+          data-qa-roll-risk={stats.capsizeRisk.toFixed(3)}
+          data-qa-pitch-risk={stats.pitchOverRisk.toFixed(3)}
+          data-qa-wave-engagement={stats.waveEngagement.toFixed(3)}
+          data-qa-prompt={stats.prompt}
+          data-qa-tow-mode={stats.towMode ? "true" : "false"}
+          data-qa-tow-returning={stats.towReturning ? "true" : "false"}
+          data-qa-tow-progress={stats.towProgress.toFixed(3)}
+          data-qa-tow-release-quality={stats.towReleaseQuality.toFixed(3)}
+          data-qa-tow-face-quality={stats.towFaceQuality.toFixed(3)}
+          data-qa-tow-target-distance={stats.towTargetDistance.toFixed(3)}
+          data-qa-tow-breaking-ratio={stats.towBreakingRatio.toFixed(3)}
+          data-qa-tow-heading-alignment={stats.towHeadingAlignment.toFixed(3)}
+          data-qa-tow-speed-match={stats.towSpeedMatch.toFixed(3)}
+          data-qa-tow-hull-elevation={stats.towHullElevation.toFixed(3)}
+          data-qa-tow-hull-target-elevation={stats.towHullTargetElevation.toFixed(3)}
+          data-qa-tow-hull-vertical-velocity={stats.towHullVerticalVelocity.toFixed(3)}
+          data-qa-tow-hull-pitch={stats.towHullPitch.toFixed(3)}
+          data-qa-tow-hull-roll={stats.towHullRoll.toFixed(3)}
+          data-qa-tow-hull-draft={stats.towHullDraft.toFixed(3)}
+          data-qa-tow-hull-minimum-freeboard={
+            stats.towHullMinimumFreeboard.toFixed(3)
+          }
+          data-qa-tow-best-release={stats.towBestRelease ? "true" : "false"}
         >
           <div
             ref={cameraLookSurface}
@@ -5176,7 +5254,7 @@ export default function BreakloomApp() {
               <div>
                 <span>LIVE BOARD COACH</span>
                 <strong>{mechanicsGuide.cue}</strong>
-                <small>{mechanicsGuide.detail}</small>
+                <small>{touchGameplay ? mobileMechanicsDetail : mechanicsGuide.detail}</small>
                 {(stats.phase === "paddling" || stats.phase === "riding") && (
                   <div
                     className="training-force-vectors"
@@ -5223,7 +5301,7 @@ export default function BreakloomApp() {
               role="status"
               aria-live="polite"
             >
-              <kbd>{gamepadConnected ? "LB" : "SHIFT / DIVE"}</kbd>
+              <kbd>{touchGameplay ? "DIVE" : gamepadConnected ? "LB" : "SHIFT / DIVE"}</kbd>
               <span>
                 <small>
                   INCOMING WALL · {Math.max(0, stats.shorebreakSeconds).toFixed(1)}S
@@ -5292,7 +5370,7 @@ export default function BreakloomApp() {
                     <i><b style={{ width: `${surfRadarFill}%` }} /></i>
                     <small>{surfRadarDetail}</small>
                   </article>
-                  <article><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s · {(deepWaterWavelengthForPeriod(settings.wavePeriod) / settings.wavePeriod).toFixed(1)} m/s deep crest</small></article>
+                  <article><span>FACE</span><strong>{effectiveFaceHeight.toFixed(1)} m</strong><small>{settings.wavePeriod.toFixed(1)} s · {(deepWaterWavelengthForPeriod(settings.wavePeriod) / settings.wavePeriod).toFixed(1)} m/s deep crest</small></article>
                   <article><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)} m</strong><small>{settings.swellPeriod.toFixed(1)} s · {degrees(settings.swellDirection)}</small></article>
                   <article><span>BREAK / TIDE</span><strong>{activeLine}</strong><small>{tideResponse.label}</small></article>
                   <article><span>WIND</span><strong>{settings.windSpeed.toFixed(0)} km/h</strong><small>{degrees(settings.windDirection)}</small></article>
@@ -5335,7 +5413,7 @@ export default function BreakloomApp() {
                     <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.towMode ? "Tow path is guided; use the camera to read the peak" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : takeoffCommitted ? "W/S places fore-aft foot pressure during the pop-up" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {(stats.phase === "riding" || takeoffCommitted) && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
-                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Release anytime; in the live window this also starts the pop-up" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? gamepadConnected ? "Compress and extend; only live lip support can release the board" : "Return to belly paddling while keeping the board's momentum" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Release anytime; a live face lock also starts the pop-up" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? gamepadConnected ? "Compress and extend; only live lip support can release the board" : "Return to belly paddling while keeping the board's momentum" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
                     {stats.phase === "paddling" && !stats.towMode && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
                     {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>{gamepadConnected ? "Return prone anytime without changing the board's momentum" : "Alternate return-prone control"}</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
@@ -5613,22 +5691,27 @@ export default function BreakloomApp() {
           <div className={`tow-instrument ${stats.towMode ? "is-active" : ""} ${stats.towBestRelease ? "is-window" : ""}`}>
             <div className="tow-dial">
               <Waves />
-              <strong>{Math.round(stats.towProgress * 100)}</strong>
-              <small>% TO PEAK</small>
+              <strong>{towSignalPercent}</strong>
+              <small>% {towRouteActive ? "ROUTE" : "FACE LOCK"}</small>
             </div>
             <div className="tow-copy">
               <span>OPTIONAL JETSKI TOW</span>
               <strong>{towStage.title} · {stats.towBestRelease ? "release + pop now" : towStage.detail}</strong>
-              <div className="tow-track" aria-label={`Tow progress ${Math.round(stats.towProgress * 100)} percent`}>
-                <i className="tow-window" />
-                <b style={{ left: `${Math.round(stats.towProgress * 100)}%` }} />
+              <div
+                className="tow-track"
+                aria-label={towRouteActive
+                  ? `Tow route ${towSignalPercent} percent`
+                  : `Live face lock ${towSignalPercent} percent`}
+              >
+                <i className="tow-signal" style={{ width: `${towSignalPercent}%` }} />
+                <b style={{ left: `${towSignalPercent}%` }} />
               </div>
-              <small>{gamepadConnected ? "A" : "SPACE"} / RELEASE disengages anytime · the live window releases directly into your pop-up</small>
+              <small>{gamepadConnected ? "A" : "SPACE"} / RELEASE disengages anytime · a live face lock releases directly into your pop-up</small>
             </div>
           </div>
 
           <div className="game-conditions">
-            <div><Waves /><span>FACE</span><strong>{(settings.waveHeight * tideResponse.faceScale).toFixed(1)} m</strong></div>
+            <div><Waves /><span>FACE</span><strong>{effectiveFaceHeight.toFixed(1)} m</strong></div>
             <div><Wind /><span>SWELL</span><strong>{settings.swellHeight.toFixed(1)}m · {settings.swellPeriod.toFixed(0)}s</strong></div>
             <div><ArrowRight /><span>BREAK / TIDE</span><strong>{activeLine} · {tideResponse.shortName}</strong></div>
             <div><Gauge /><span>SPEED</span><strong>{(stats.speed * 3.6).toFixed(0)} km/h</strong></div>
@@ -5654,7 +5737,7 @@ export default function BreakloomApp() {
               <>
                 <span><kbd>LS</kbd> {stats.vehicleMode ? "steer / throttle" : stats.towMode ? "tow path guided" : standingOnBoard ? "roll / shift stance" : stats.phase === "riding" ? "roll / stance pressure" : takeoffCommitted ? "fore-aft foot pressure" : "paddle / steer"}</span>
                 <span><kbd>LT</kbd><kbd>RT</kbd> counterweight / recover</span>
-                <span><kbd>A</kbd> {stats.towMode ? "release anytime · live window also pops up" : stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "crouch / extend" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                <span><kbd>A</kbd> {stats.towMode ? "release anytime · live face lock also pops up" : stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "crouch / extend" : stats.vehicleMode ? "exit when stopped" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
                 {((stats.phase === "paddling" && !stats.towMode) || stats.phase === "riding") && <span><kbd>LB</kbd> {stats.phase === "riding" ? "return prone anytime" : "duck dive anytime · cue marks timing"}</span>}
                 <span><kbd>RS</kbd> freelook</span>
                 <span><kbd>RB</kbd> camera · <kbd>START</kbd> pause</span>
@@ -5683,7 +5766,7 @@ export default function BreakloomApp() {
                   </>
                 ) : (
                   <>
-                    <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "apply roll torque" : stats.phase === "paddling" ? takeoffCommitted ? "steady the last stroke / heading" : "bias paddle side / pivot" : "roll onto rail"}</span>
+                    <span><kbd>A</kbd><kbd>D</kbd> {standingOnBoard ? "turn / carve (the board banks)" : stats.phase === "paddling" ? takeoffCommitted ? "steady the last stroke / heading" : "bias paddle side / pivot" : "turn / carve"}</span>
                     <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : takeoffCommitted ? "place pop-up foot pressure" : "paddle / brake"}</span>
                   </>
                 )}
@@ -5702,7 +5785,11 @@ export default function BreakloomApp() {
             <div
               className="analog-stick"
               role="group"
-              aria-label={stats.phase === "shore" || stats.phase === "wading" ? "Analog movement stick. Hold RUN while moving to sprint." : "Analog movement stick."}
+              aria-label={stats.phase === "shore" || stats.phase === "wading"
+                ? "Movement stick. Hold RUN while moving to sprint."
+                : stats.phase === "riding"
+                  ? "Turn and carve stick. Balance is controlled separately."
+                  : "Paddle and steer stick. Balance is controlled separately."}
               onPointerDown={updateJoystick}
               onPointerMove={updateJoystick}
               onPointerUp={endJoystick}
@@ -5711,7 +5798,7 @@ export default function BreakloomApp() {
             >
               <span className="analog-ring" />
               <span ref={joystickKnob} className="analog-knob"><i /></span>
-              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE" : "MOVE / STEER"}</small>
+              <small>{stats.towMode ? "GUIDED TOW" : stats.phase === "shore" || stats.phase === "wading" ? "MOVE" : stats.phase === "riding" ? "TURN / CARVE" : "PADDLE / STEER"}</small>
             </div>
             <div className={`mobile-balance-stack ${motionBalanceActive ? "is-motion" : ""}`}>
               {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
@@ -5750,7 +5837,7 @@ export default function BreakloomApp() {
                   }}
                 >
                   <span>
-                    <em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `CROUCHED ${Math.round(stats.trickCharge * 100)}%` : motionBalanceActive ? "TILT TO COUNTER ROLL" : "COUNTER BOARD ROLL"}</em>
+                    <em>{stats.maneuverActive ? `${stats.maneuverPhase.toUpperCase()} ${Math.round(stats.maneuverProgress * 100)}%` : stats.trickCharge > .04 ? `CROUCHED ${Math.round(stats.trickCharge * 100)}%` : motionBalanceActive ? "BALANCE · TILT TO RECOVER" : "BALANCE / RECOVER"}</em>
                     <strong>{stats.maneuverActive ? `${balanceAccuracy}%` : `${rollDegrees}°`}</strong>
                   </span>
                   {showPhysicalLandingGuide && <i className="touch-landing-zone" style={{ left: `${(landingMin + 1) * 50}%`, width: `${(landingMax - landingMin) * 50}%` }} />}

@@ -5,6 +5,7 @@ import {
   evaluateWaveTakeoff,
   INITIAL_STATS,
   optionalTowReleaseQuality,
+  optionalTowReleasePhysicallySupported,
   optionalTowReleaseRecommended,
   reachedSurfTrainingStep,
   BREAKLOOM_RELEASE,
@@ -21,6 +22,14 @@ const launchStyles = readFileSync(
 );
 const worldMapSource = readFileSync(
   new URL("../components/WorldMap.tsx", import.meta.url),
+  "utf8",
+);
+const surfSceneSource = readFileSync(
+  new URL("../components/SurfScene.tsx", import.meta.url),
+  "utf8",
+);
+const gameSource = readFileSync(
+  new URL("../lib/game.ts", import.meta.url),
   "utf8",
 );
 
@@ -96,7 +105,27 @@ const supportedStanding = reachedSurfTrainingStep({
   hullPatchContact: .48,
 });
 const towProgressAfterOneSecond = advanceOptionalTowProgress(0, 1);
-const idealTowReleaseQuality = optionalTowReleaseQuality(.88);
+const idealTowReleaseQuality = optionalTowReleaseQuality({
+  routeProgress: .74,
+  faceQuality: 1,
+  distanceToTarget: 0,
+  headingAlignment: 1,
+  speedMatch: 1,
+});
+const earlyRouteReleaseQuality = optionalTowReleaseQuality({
+  routeProgress: .5,
+  faceQuality: 1,
+  distanceToTarget: 0,
+  headingAlignment: 1,
+  speedMatch: 1,
+});
+const missedTargetReleaseQuality = optionalTowReleaseQuality({
+  routeProgress: .9,
+  faceQuality: 1,
+  distanceToTarget: 8,
+  headingAlignment: 1,
+  speedMatch: 1,
+});
 
 if (
   arbitraryPopUp.progress < .99
@@ -110,12 +139,15 @@ if (
   || towProgressAfterOneSecond <= .06
   || towProgressAfterOneSecond >= .065
   || idealTowReleaseQuality !== 1
-  || !optionalTowReleaseRecommended(.84)
-  || !optionalTowReleaseRecommended(.88)
-  || !optionalTowReleaseRecommended(.91)
-  || optionalTowReleaseRecommended(.82)
-  || optionalTowReleaseRecommended(.93)
+  || earlyRouteReleaseQuality >= idealTowReleaseQuality
+  || missedTargetReleaseQuality >= idealTowReleaseQuality
+  || !optionalTowReleaseRecommended(idealTowReleaseQuality)
   || optionalTowReleaseRecommended(.5)
+  || !optionalTowReleasePhysicallySupported(true, .64, 1, .9)
+  || !optionalTowReleasePhysicallySupported(true, .64, .1, .9)
+  || optionalTowReleasePhysicallySupported(true, .64, .09, .9)
+  || optionalTowReleasePhysicallySupported(true, .5, 1, .9)
+  || optionalTowReleasePhysicallySupported(true, .64, 1, 2)
   || BREAKLOOM_RELEASE.version !== 236
   || !launchSource.includes('id: "easy"')
   || !launchSource.includes('id: "medium"')
@@ -134,7 +166,85 @@ if (
   || !worldMapSource.includes("const pairedMinimum")
   || !worldMapSource.includes("refreshMarkerLayout")
   || !launchSource.includes("tow-instrument")
+  || !launchSource.includes("TURN / CARVE")
+  || !launchSource.includes("BALANCE / RECOVER")
+  || !launchSource.includes(
+    "Turn and carve stick. Balance is controlled separately.",
+  )
   || !launchSource.includes("RELEASE disengages anytime")
+  || !launchSource.includes("Live face lock")
+  || launchSource.includes('className="tow-window"')
+  || !surfSceneSource.includes("resolvePopUpLandingSupport")
+  || !surfSceneSource.includes("if (landingSupport > 0)")
+  || !surfSceneSource.includes("No face under the board")
+  || !surfSceneSource.includes("&& state.rideEngaged")
+  || !surfSceneSource.includes("transport.whitewater > .04")
+  || !surfSceneSource.includes("horizontalDisplacement")
+  || !surfSceneSource.includes("geometricNormal")
+  || surfSceneSource.includes("<LineupWaveSetVolume")
+  || surfSceneSource.includes("<BreakingWave")
+  || !surfSceneSource.includes("stageOptionalTowCrestAtBreaker")
+  || !surfSceneSource.includes("optionalTowReleaseFaceQuality")
+  || !surfSceneSource.includes("optionalTowTakeoffTargetScore")
+  || !surfSceneSource.includes("optionalTowNavigableZ")
+  || !surfSceneSource.includes("resolveOptionalTowHullAttitude")
+  || !surfSceneSource.includes("advanceOptionalTowHullFloat")
+  || !surfSceneSource.includes("const targetOriginY = displacementOriginY")
+  || !surfSceneSource.includes("const renderedPoseContactFloor = Math.max(")
+  || !surfSceneSource.includes("const minimumContactElevation = Math.max(")
+  || !surfSceneSource.includes("const hullAnticipationSeconds = .1")
+  || !surfSceneSource.includes("const anticipatedSupportElevation = Math.max(")
+  || !surfSceneSource.includes("const predictedContactVelocity = (")
+  || !surfSceneSource.includes("minimumContactElevation,")
+  || !surfSceneSource.includes("predictedContactVelocity,")
+  || surfSceneSource.includes("hullAttitude.minimumSafeElevation")
+  || gameSource.includes("minimumSafeElevation")
+  || gameSource.includes("maximumContactElevation")
+  || !gameSource.includes("referenceAcceleration")
+  || !gameSource.includes("const maximumRenderedAcceleration = 24")
+  || !gameSource.includes("predictedContactVelocity - previousWorldVelocity")
+  || !gameSource.includes("integrationVelocity = verticalVelocity")
+  || !gameSource.includes("OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION")
+  || !surfSceneSource.includes("hullMinimumFreeboard")
+  || surfSceneSource.includes("const hullSamples = [")
+  || surfSceneSource.includes("requiredOriginY")
+  || surfSceneSource.includes("hullBottomOffset")
+  || !surfSceneSource.includes("craftTowAttachment")
+  || surfSceneSource.includes('planeGeometry args={[1.8, 5.8]}')
+  || !surfSceneSource.includes("const safeCraftZ = routeNavigableTowZAt(")
+  || !surfSceneSource.includes("const resolvedCraftStep = {")
+  || !surfSceneSource.includes("const safeReturnZ = routeNavigableTowZAt(")
+  || !surfSceneSource.includes("const returnStep = advanceOptionalTowCraft(")
+  || !launchSource.includes('requestedScenario === "tow"')
+  || !launchSource.includes('data-qa-tow-progress=')
+  || !launchSource.includes('data-qa-tow-release-quality=')
+  || !launchSource.includes('data-qa-tow-face-quality=')
+  || !launchSource.includes('data-qa-tow-target-distance=')
+  || !launchSource.includes('data-qa-tow-hull-draft=')
+  || !launchSource.includes('data-qa-tow-hull-minimum-freeboard=')
+  || !surfSceneSource.includes(
+    "const towReleaseRequested = actionPressed",
+  )
+  || !surfSceneSource.includes("* .34;")
+  || !surfSceneSource.includes(
+    "paddleVelocity.current.x,\n                paddleVelocity.current.y,",
+  )
+  || !surfSceneSource.includes(
+    "const towReleaseSupportActive = towPopUpPending.current",
+  )
+  || !surfSceneSource.includes("candidateIndex < 12")
+  || !surfSceneSource.includes("towTakeoffScan")
+  || !surfSceneSource.includes("sampleCoastDominantWave")
+  || !surfSceneSource.includes(
+    "desiredTowZ = routeNavigableTowZAt(",
+  )
+  || !surfSceneSource.includes("const SURFER_MODEL_SCALE = .86")
+  || !surfSceneSource.includes("distanceToTarget: towTargetDistance")
+  || surfSceneSource.includes("liveCrest.normalX * 9.5")
+  || !surfSceneSource.includes("towMotion.current.targetWavePhase -= Math.PI * 2")
+  || surfSceneSource.includes("actionPressed || towMotion.current.progress >= 1")
+  || surfSceneSource.includes("targetZ -= waveBreakingGeometryAt")
+  || surfSceneSource.includes("towMotion.current.position.x - forwardX * 4.1")
   // The coast atlas, the map, and the peak list are first-screen decisions:
   // none of them may retreat behind an optional disclosure.
   || launchSource.indexOf("<WorldMap") > launchSource.indexOf('className="setup-panel"')
@@ -157,5 +267,7 @@ console.log(JSON.stringify({
   optionalTow: {
     progressAfterOneSecond: towProgressAfterOneSecond,
     idealReleaseQuality: idealTowReleaseQuality,
+    earlyRouteReleaseQuality,
+    missedTargetReleaseQuality,
   },
 }, null, 2));

@@ -2,6 +2,9 @@ import {
   advanceBoardHeaveDynamics,
   advanceBoardPitchDynamics,
   advanceBoardRollDynamics,
+  advanceOptionalTowCraft,
+  advanceOptionalTowProgress,
+  advanceOptionalTowRope,
   advancePaddleboardDynamics,
   advancePaddleStrokeCycle,
   advancePopUpBodyTransition,
@@ -28,10 +31,29 @@ import {
   evaluatePopUpTransition,
   evaluateProneBoardFailure,
   evaluateWaveTakeoff,
+  findWaveBreakingContourAt,
+  forecastFaceHeightForBreak,
   INITIAL_STATS,
   paddleStrokeWorkDelta,
   paddlingStaminaDelta,
   popUpStaminaDelta,
+  optionalTowReleasePhysicallySupported,
+  optionalTowReleaseFaceQuality,
+  optionalTowReleaseQuality,
+  optionalTowNavigableZ,
+  optionalTowRouteClearance,
+  optionalTowTakeoffTargetScore,
+  OPTIONAL_TOW_BERTH_OFFSHORE,
+  OPTIONAL_TOW_DURATION_SECONDS,
+  OPTIONAL_TOW_HULL_BOW_REACH,
+  OPTIONAL_TOW_HULL_HALF_BEAM,
+  OPTIONAL_TOW_HULL_HALF_LENGTH,
+  OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION,
+  OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED,
+  OPTIONAL_TOW_HULL_STERN_REACH,
+  OPTIONAL_TOW_LAUNCH_CLEARANCE_PROGRESS,
+  OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+  OPTIONAL_TOW_RETURN_BERTH_PROGRESS,
   primaryWaveVelocityAt,
   readCrestTimingMechanics,
   readDuckDiveCue,
@@ -50,6 +72,9 @@ import {
   resolveSurfboardPlaning,
   resolveDuckDiveInitiation,
   resolveLineupFromBreakingGeometry,
+  advanceOptionalTowHullFloat,
+  resolveOptionalTowHullAttitude,
+  resolvePopUpLandingSupport,
   resolveSurfboardFailureRelease,
   resolveSurfboardLeashReaction,
   resolveSurfboardLeashTorque,
@@ -67,6 +92,7 @@ import {
   resolveTakeoffSpeedMatch,
   resolveWaveCrestPhaseIdentity,
   resolveWaveLineSide,
+  resolveWavePocketDrive,
   resolveWavePocketFrame,
   resolveWaveSectionPressure,
   resolveWaveTubePressure,
@@ -74,7 +100,10 @@ import {
   RIDE_RESULT_LINE_Z,
   rideRailInputFromPaddleSteer,
   SHALLOW_DISMOUNT_Z,
+  SHORELINE_REFERENCE_Z,
   shorelineRideOutProgress,
+  shorelineShiftForTide,
+  stageOptionalTowCrestAtBreaker,
   stabilizeHeadingGuideDegrees,
   surfboardLandingSucceeded,
   surfboardReleaseVerticalImpulse,
@@ -87,13 +116,23 @@ import {
   waveCrestDistanceAtPhase,
   waveCrestPropertiesAtPhase,
   waveFacePositionAtPhase,
-  waveHeightAt,
   waveBreakingGeometryAt,
   waveBreakingCoordinateAt,
+  waveHeightAt,
   waveSetStateAt,
   waveSetState,
   waveSurfaceFrameAt,
 } from "../lib/game.ts";
+import {
+  BEACHES,
+  getBreakCharacter,
+} from "../lib/beaches.ts";
+import { shorelineReferenceAt } from "../lib/bathymetry.ts";
+import {
+  OCEAN_SHORELINE_WORLD_Z,
+  sampleCoastDominantWave,
+  sampleCoastWaveSurface,
+} from "../lib/ocean.ts";
 
 function engagementFor(seconds, sample, hz = 60, initial = 0) {
   let engagement = initial;
@@ -253,14 +292,24 @@ const shortPeriodTransport = primaryWaveVelocityAt(
   0,
   -180,
   10,
-  { ...settings, wavePeriod: 5 },
+  {
+    ...settings,
+    wavePeriod: 5,
+    swellHeight: 1.95,
+    swellPeriod: 5,
+  },
   character,
 );
 const longPeriodTransport = primaryWaveVelocityAt(
   0,
   -180,
   10,
-  { ...settings, wavePeriod: 20 },
+  {
+    ...settings,
+    wavePeriod: 20,
+    swellHeight: 1.95,
+    swellPeriod: 20,
+  },
   character,
 );
 if (
@@ -272,10 +321,2395 @@ if (
     twentySecondWavelength / tenSecondWavelength - 4,
   ) > .000001
   || longPeriodTransport.speed
-    <= shortPeriodTransport.speed * 3.95
+    <= shortPeriodTransport.speed * 1.15
+  || longPeriodTransport.wavelength
+    <= shortPeriodTransport.wavelength * 3
+  || longPeriodTransport.wavelength
+    >= twentySecondWavelength
 ) {
   throw new Error(
-    "Wave period no longer controls wavelength and crest celerity through deep-water dispersion",
+    "Finite-depth wave transport no longer preserves dispersion and shallow-water slowing",
+  );
+}
+
+const physicalTowContour = findWaveBreakingContourAt(
+  8,
+  12,
+  settings,
+  character,
+  .9,
+);
+const stagedTowCrest = stageOptionalTowCrestAtBreaker(
+  8,
+  -48,
+  31,
+  -82,
+  .6,
+  .8,
+);
+const stagedTowTangentX = stagedTowCrest.x - 8
+  - stagedTowCrest.normalOffset * .6;
+const stagedTowTangentZ = stagedTowCrest.z + 48
+  - stagedTowCrest.normalOffset * .8;
+const stagedTowTangentOffset = stagedTowTangentX * .8
+  + stagedTowTangentZ * -.6;
+const originalTowNormalOffset = (31 - 8) * .6 + (-82 + 48) * .8;
+const originalTowTangentX = 31 - 8 - originalTowNormalOffset * .6;
+const originalTowTangentZ = -82 + 48 - originalTowNormalOffset * .8;
+const supportedTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: .94,
+  crestPhaseError: .58,
+  faceSlope: .075,
+  surfaceRise: .28,
+  whitewater: .14,
+});
+const flatTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: .94,
+  crestPhaseError: -.8,
+  faceSlope: 0,
+  surfaceRise: -.12,
+  whitewater: 0,
+});
+const foamedTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: .94,
+  crestPhaseError: .58,
+  faceSlope: .075,
+  surfaceRise: .28,
+  whitewater: .92,
+});
+const spentTowFaceQuality = optionalTowReleaseFaceQuality({
+  breakingRatio: 1.45,
+  crestPhaseError: .58,
+  faceSlope: .075,
+  surfaceRise: .28,
+  whitewater: .14,
+});
+const idealTowInterceptQuality = optionalTowReleaseQuality({
+  routeProgress: .72,
+  faceQuality: supportedTowFaceQuality,
+  distanceToTarget: .4,
+  headingAlignment: .96,
+  speedMatch: .94,
+});
+const missedTowInterceptQuality = optionalTowReleaseQuality({
+  routeProgress: .92,
+  faceQuality: supportedTowFaceQuality,
+  distanceToTarget: 9,
+  headingAlignment: .96,
+  speedMatch: .94,
+});
+const scaledTowTargetScore = optionalTowTakeoffTargetScore(
+  supportedTowFaceQuality,
+  4,
+  2.5,
+);
+const lipTowTargetScore = optionalTowTakeoffTargetScore(
+  supportedTowFaceQuality,
+  1.35,
+  2.5,
+);
+const towClampedFromSand = optionalTowNavigableZ(14, 12);
+const towAlreadyOffshore = optionalTowNavigableZ(-20, 12);
+const towCustomClearance = optionalTowNavigableZ(8, 12, 8);
+const towBerthClearance = optionalTowNavigableZ(12, 12, .5);
+const launchClearances = Array.from(
+  { length: OPTIONAL_TOW_DURATION_SECONDS * 60 + 1 },
+  (_, frame) => optionalTowRouteClearance(
+    frame / (OPTIONAL_TOW_DURATION_SECONDS * 60),
+  ),
+);
+const returnClearances = Array.from(
+  { length: 8.5 * 60 + 1 },
+  (_, frame) => optionalTowRouteClearance(
+    frame / (8.5 * 60),
+    true,
+  ),
+);
+const maximumClearanceFrameDelta = (values) => Math.max(
+  ...values.slice(1).map((value, index) => (
+    Math.abs(value - values[index])
+  )),
+);
+const towSurveySettingsFor = (beach) => ({
+  ...settings,
+  mode: "playground",
+  board: "gun",
+  waveHeight: beach.fallback.waveHeight,
+  wavePeriod: beach.fallback.wavePeriod,
+  waveDirection: beach.fallback.waveDirection,
+  swellHeight: beach.fallback.waveHeight * .8,
+  swellPeriod: beach.fallback.wavePeriod,
+  swellDirection: beach.fallback.waveDirection,
+  currentStrength: .4,
+  currentDirection: beach.heading,
+  windSpeed: beach.fallback.windSpeed,
+  windDirection: beach.heading,
+  waterTemperature: beach.fallback.waterTemperature,
+  airTemperature: beach.fallback.waterTemperature + 2,
+  coastHeading: beach.heading,
+  tide: 0,
+});
+const towBerthSurvey = BEACHES.flatMap((beach) => (
+  beach.zones.map((zone) => {
+    const character = getBreakCharacter(beach.id, zone.name);
+    const zoneSettings = towSurveySettingsFor(beach);
+    const centerX = 10;
+    const shorelineWorldZ = OCEAN_SHORELINE_WORLD_Z
+      + shorelineReferenceAt(beach.id, zone.name, centerX);
+    const centerZ = optionalTowNavigableZ(
+      shorelineWorldZ,
+      shorelineWorldZ,
+      OPTIONAL_TOW_BERTH_OFFSHORE,
+    );
+    const centerSurface = sampleCoastWaveSurface(
+      centerX,
+      centerZ,
+      0,
+      zoneSettings,
+      character,
+    );
+    return {
+      id: `${beach.id}:${zone.name}`,
+      centerDepth: centerSurface.depth,
+      shoreCollapse: centerSurface.shoreCollapse,
+      interactionDistance: Math.hypot(
+        centerX - centerX,
+        centerZ - shorelineWorldZ,
+      ),
+    };
+  })
+));
+const surveyTowHullFootprint = (
+  coastId,
+  zoneName,
+  clearance,
+) => {
+  const beach = BEACHES.find((candidate) => (
+    candidate.id === coastId
+  ));
+  if (!beach) {
+    throw new Error(`Unknown tow survey coast: ${coastId}`);
+  }
+  const zone = beach.zones.find((candidate) => (
+    candidate.name === zoneName
+  ));
+  if (!zone) {
+    throw new Error(
+      `Unknown tow survey zone: ${coastId}:${zoneName}`,
+    );
+  }
+  const character = getBreakCharacter(coastId, zoneName);
+  const zoneSettings = towSurveySettingsFor(beach);
+  const centerX = 10;
+  const shorelineWorldZ = OCEAN_SHORELINE_WORLD_Z
+    + shorelineReferenceAt(coastId, zoneName, centerX);
+  const centerZ = optionalTowNavigableZ(
+    shorelineWorldZ,
+    shorelineWorldZ,
+    clearance,
+  );
+  const heading = Math.sign(character.peel || 1) * Math.PI / 2;
+  const forwardX = Math.sin(heading);
+  const forwardZ = Math.cos(heading);
+  const rightX = Math.cos(heading);
+  const rightZ = -Math.sin(heading);
+  let maximumProbeRange = 0;
+  let maximumPitch = 0;
+  let minimumDepth = Infinity;
+  let minimumCollapse = Infinity;
+  let minimumWaterline = Infinity;
+  let maximumWaterline = -Infinity;
+  const sampleCount = 96;
+  for (let index = 0; index < sampleCount; index += 1) {
+    const elapsed = index
+      / (sampleCount - 1)
+      * beach.fallback.wavePeriod
+      * 2;
+    const sampleAt = (localX, localZ) => (
+      sampleCoastWaveSurface(
+        centerX + rightX * localX + forwardX * localZ,
+        centerZ + rightZ * localX + forwardZ * localZ,
+        elapsed,
+        zoneSettings,
+        character,
+      )
+    );
+    const centerSurface = sampleAt(0, 0);
+    const bowSurface = sampleAt(
+      0,
+      OPTIONAL_TOW_HULL_BOW_REACH,
+    );
+    const sternSurface = sampleAt(
+      0,
+      -OPTIONAL_TOW_HULL_STERN_REACH,
+    );
+    const leftSurface = sampleAt(
+      -OPTIONAL_TOW_HULL_HALF_BEAM,
+      0,
+    );
+    const rightSurface = sampleAt(
+      OPTIONAL_TOW_HULL_HALF_BEAM,
+      0,
+    );
+    const heights = [
+      centerSurface.height,
+      bowSurface.height,
+      sternSurface.height,
+      leftSurface.height,
+      rightSurface.height,
+    ];
+    maximumProbeRange = Math.max(
+      maximumProbeRange,
+      Math.max(...heights) - Math.min(...heights),
+    );
+    const attitude = resolveOptionalTowHullAttitude({
+      centerHeight: centerSurface.height,
+      bowHeight: bowSurface.height,
+      sternHeight: sternSurface.height,
+      leftHeight: leftSurface.height,
+      rightHeight: rightSurface.height,
+      speed: 0,
+    });
+    maximumPitch = Math.max(
+      maximumPitch,
+      Math.abs(attitude.pitch),
+    );
+    minimumWaterline = Math.min(
+      minimumWaterline,
+      attitude.waterlineHeight,
+    );
+    maximumWaterline = Math.max(
+      maximumWaterline,
+      attitude.waterlineHeight,
+    );
+    minimumDepth = Math.min(
+      minimumDepth,
+      centerSurface.depth,
+    );
+    minimumCollapse = Math.min(
+      minimumCollapse,
+      centerSurface.shoreCollapse,
+    );
+  }
+  return {
+    id: `${coastId}:${zoneName}@${clearance}m`,
+    maximumProbeRange,
+    maximumPitch,
+    waterlineExcursion: maximumWaterline - minimumWaterline,
+    minimumDepth,
+    minimumCollapse,
+  };
+};
+const mavericksLegacyTowBerth = surveyTowHullFootprint(
+  "mavericks",
+  "The Bowl",
+  OPTIONAL_TOW_NAVIGABLE_OFFSHORE,
+);
+const mavericksTowBerth = surveyTowHullFootprint(
+  "mavericks",
+  "The Bowl",
+  OPTIONAL_TOW_BERTH_OFFSHORE,
+);
+const hossegorTowBerth = surveyTowHullFootprint(
+  "hossegor",
+  "La Nord",
+  OPTIONAL_TOW_BERTH_OFFSHORE,
+);
+const uluwatuTowBerth = surveyTowHullFootprint(
+  "uluwatu",
+  "The Peak",
+  OPTIONAL_TOW_BERTH_OFFSHORE,
+);
+const levelTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1,
+  bowHeight: 1,
+  sternHeight: 1,
+  leftHeight: 1,
+  rightHeight: 1,
+  speed: 0,
+});
+const climbingTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1,
+  bowHeight: 1.8,
+  sternHeight: .2,
+  leftHeight: 1,
+  rightHeight: 1,
+  speed: 11,
+});
+const bankedTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1,
+  bowHeight: 1,
+  sternHeight: 1,
+  leftHeight: .65,
+  rightHeight: 1.35,
+  speed: 8,
+});
+const convexTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: 1.7,
+  bowHeight: .9,
+  sternHeight: .9,
+  leftHeight: .9,
+  rightHeight: .9,
+  speed: 14.5,
+});
+const invalidTowHull = resolveOptionalTowHullAttitude({
+  centerHeight: Number.NaN,
+  bowHeight: Number.NaN,
+  sternHeight: Number.NaN,
+  leftHeight: Number.NaN,
+  rightHeight: Number.NaN,
+  speed: Number.NaN,
+});
+const newTowHullFloatState = () => ({
+  elevation: 0,
+  verticalVelocity: 0,
+  integrationVelocity: 0,
+  referenceVelocity: 0,
+  referenceAcceleration: 0,
+  pitch: 0,
+  pitchVelocity: 0,
+  roll: 0,
+  rollVelocity: 0,
+  targetElevation: 0,
+  targetVerticalVelocity: 0,
+  targetPitch: 0,
+  targetRoll: 0,
+  initialized: false,
+});
+const simulateTowHullStep = (framesPerSecond) => {
+  let state = newTowHullFloatState();
+  const deltaSeconds = 1 / framesPerSecond;
+  let maximumStep = 0;
+  let maximumElevation = -Infinity;
+  let maximumVerticalVelocity = 0;
+  let maximumRelativeVelocity = 0;
+  let maximumTargetError = 0;
+  let maximumWorldAcceleration = 0;
+  let previousVerticalVelocity = 0;
+  for (
+    let frame = 0;
+    frame < framesPerSecond * 3;
+    frame += 1
+  ) {
+    const elapsed = frame * deltaSeconds;
+    const riseProgress = Math.max(
+      0,
+      Math.min(1, (elapsed - .5) / .4),
+    );
+    const easedRise = riseProgress * riseProgress
+      * (3 - 2 * riseProgress);
+    const next = advanceOptionalTowHullFloat(state, {
+      targetElevation: .11 + easedRise,
+      targetPitch: -.12 * easedRise,
+      targetRoll: .1 * easedRise,
+      planing: .75,
+      deltaSeconds,
+    });
+    if (state.initialized) {
+      maximumStep = Math.max(
+        maximumStep,
+        Math.abs(next.elevation - state.elevation),
+      );
+    }
+    maximumElevation = Math.max(maximumElevation, next.elevation);
+    maximumVerticalVelocity = Math.max(
+      maximumVerticalVelocity,
+      Math.abs(next.verticalVelocity),
+    );
+    maximumRelativeVelocity = Math.max(
+      maximumRelativeVelocity,
+      Math.abs(next.integrationVelocity ?? 0),
+    );
+    maximumTargetError = Math.max(
+      maximumTargetError,
+      Math.abs(next.elevation - (.11 + easedRise)),
+    );
+    maximumWorldAcceleration = Math.max(
+      maximumWorldAcceleration,
+      Math.abs(
+        (next.verticalVelocity - previousVerticalVelocity)
+          / deltaSeconds,
+      ),
+    );
+    previousVerticalVelocity = next.verticalVelocity;
+    state = next;
+  }
+  return {
+    state,
+    maximumStep,
+    maximumElevation,
+    maximumVerticalVelocity,
+    maximumRelativeVelocity,
+    maximumTargetError,
+    maximumWorldAcceleration,
+  };
+};
+const simulateTowHullWave = (
+  framesPerSecond,
+  frequency,
+  amplitude,
+  duration,
+) => {
+  let state = newTowHullFloatState();
+  const deltaSeconds = 1 / framesPerSecond;
+  let minimumElevation = Infinity;
+  let maximumElevation = -Infinity;
+  let minimumDraft = Infinity;
+  let maximumDraft = -Infinity;
+  let maximumVerticalVelocity = 0;
+  let maximumRelativeVelocity = 0;
+  let maximumTargetError = 0;
+  let maximumWorldAcceleration = 0;
+  let maximumFrameDisplacement = 0;
+  let maximumReferenceAcceleration = 0;
+  let previousVerticalVelocity = 0;
+  let previousElevation = state.elevation;
+  for (
+    let frame = 0;
+    frame < framesPerSecond * duration;
+    frame += 1
+  ) {
+    const elapsed = frame * deltaSeconds;
+    const targetElevation = .16
+      + Math.sin(
+        elapsed * Math.PI * 2 * frequency,
+      ) * amplitude;
+    state = advanceOptionalTowHullFloat(state, {
+      targetElevation,
+      targetPitch: Math.sin(
+        elapsed * Math.PI * 2 * frequency + .4,
+      ) * .08,
+      targetRoll: Math.sin(
+        elapsed * Math.PI * 2 * frequency - .7,
+      ) * .06,
+      planing: 1,
+      deltaSeconds,
+    });
+    const frameDisplacement = state.elevation - previousElevation;
+    const worldAcceleration = (
+      state.verticalVelocity - previousVerticalVelocity
+    ) / deltaSeconds;
+    if (elapsed >= Math.min(2, duration * .25)) {
+      minimumElevation = Math.min(
+        minimumElevation,
+        state.elevation,
+      );
+      maximumElevation = Math.max(
+        maximumElevation,
+        state.elevation,
+      );
+      const workingDraft = .17
+        - (state.elevation - targetElevation);
+      minimumDraft = Math.min(minimumDraft, workingDraft);
+      maximumDraft = Math.max(maximumDraft, workingDraft);
+      maximumVerticalVelocity = Math.max(
+        maximumVerticalVelocity,
+        Math.abs(state.verticalVelocity),
+      );
+      maximumRelativeVelocity = Math.max(
+        maximumRelativeVelocity,
+        Math.abs(state.integrationVelocity ?? 0),
+      );
+      maximumTargetError = Math.max(
+        maximumTargetError,
+        Math.abs(state.elevation - targetElevation),
+      );
+      maximumWorldAcceleration = Math.max(
+        maximumWorldAcceleration,
+        Math.abs(worldAcceleration),
+      );
+      maximumFrameDisplacement = Math.max(
+        maximumFrameDisplacement,
+        Math.abs(frameDisplacement),
+      );
+      maximumReferenceAcceleration = Math.max(
+        maximumReferenceAcceleration,
+        Math.abs(state.referenceAcceleration ?? 0),
+      );
+    }
+    previousVerticalVelocity = state.verticalVelocity;
+    previousElevation = state.elevation;
+  }
+  return {
+    state,
+    amplitude: (maximumElevation - minimumElevation) * .5,
+    minimumDraft,
+    maximumDraft,
+    maximumVerticalVelocity,
+    maximumRelativeVelocity,
+    maximumTargetError,
+    maximumWorldAcceleration,
+    maximumFrameDisplacement,
+    maximumReferenceAcceleration,
+  };
+};
+const towHullStep30 = simulateTowHullStep(30);
+const towHullStep60 = simulateTowHullStep(60);
+const towHullStep120 = simulateTowHullStep(120);
+// Five footprint samples reduce local chop, but the remaining 3-6 Hz water
+// plane must still be materially attenuated by hull inertia. A full
+// half-metre, eight-second swell should pass through essentially unchanged.
+const towHullChop30 = simulateTowHullWave(30, 3, .12, 4);
+const towHullChop60 = simulateTowHullWave(60, 3, .12, 4);
+const towHullChop120 = simulateTowHullWave(120, 3, .12, 4);
+const towHullFastChop = simulateTowHullWave(60, 6, .12, 3);
+const towHullSwell = simulateTowHullWave(60, 1 / 8, .5, 16);
+const breakingTowSettings = {
+  ...settings,
+  mode: "playground",
+  board: "gun",
+  waveHeight: 3.1,
+  wavePeriod: 15,
+  waveDirection: 285,
+  swellHeight: 3.1,
+  swellPeriod: 15,
+  swellDirection: 285,
+  windSpeed: 17,
+  windDirection: 285,
+  waterTemperature: 13,
+  airTemperature: 15,
+  coastHeading: 250,
+};
+const breakingTowCharacter = {
+  kind: "reef",
+  line: "RIGHT",
+  peel: .76,
+  power: 1.34,
+  steepness: 1.06,
+  hollow: .62,
+  variability: .32,
+  length: .88,
+  coastId: "mavericks",
+  zoneName: "The Bowl",
+};
+const simulateBreakingTowHull = () => {
+  let state = newTowHullFloatState();
+  let maximumFrameDisplacement = 0;
+  let maximumTargetError = 0;
+  let minimumFreeboard = Infinity;
+  let maximumPitch = 0;
+  for (let frame = 0; frame < 24 * 60; frame += 1) {
+    const elapsed = frame / 60;
+    const surfaceAt = (x, z) => waveHeightAt(
+      x,
+      z,
+      elapsed,
+      breakingTowSettings,
+      breakingTowCharacter,
+    );
+    const centerHeight = surfaceAt(10, -60);
+    const bowHeight = surfaceAt(
+      10,
+      -60 - OPTIONAL_TOW_HULL_BOW_REACH,
+    );
+    const sternHeight = surfaceAt(
+      10,
+      -60 + OPTIONAL_TOW_HULL_STERN_REACH,
+    );
+    const leftHeight = surfaceAt(
+      10 - OPTIONAL_TOW_HULL_HALF_BEAM,
+      -60,
+    );
+    const rightHeight = surfaceAt(
+      10 + OPTIONAL_TOW_HULL_HALF_BEAM,
+      -60,
+    );
+    const attitude = resolveOptionalTowHullAttitude({
+      centerHeight,
+      bowHeight,
+      sternHeight,
+      leftHeight,
+      rightHeight,
+      speed: 12,
+    });
+    const targetElevation = attitude.waterlineHeight
+      + .145 + .04 * attitude.planing;
+    const previousElevation = state.elevation;
+    state = advanceOptionalTowHullFloat(state, {
+      targetElevation,
+      targetPitch: attitude.pitch,
+      targetRoll: attitude.roll,
+      planing: attitude.planing,
+      deltaSeconds: 1 / 60,
+    });
+    if (elapsed < 5) continue;
+    maximumFrameDisplacement = Math.max(
+      maximumFrameDisplacement,
+      Math.abs(state.elevation - previousElevation),
+    );
+    maximumTargetError = Math.max(
+      maximumTargetError,
+      Math.abs(state.elevation - targetElevation),
+    );
+    maximumPitch = Math.max(maximumPitch, Math.abs(state.pitch));
+    const bowRise = -Math.sin(state.pitch)
+      * OPTIONAL_TOW_HULL_BOW_REACH;
+    const sternRise = Math.sin(state.pitch)
+      * OPTIONAL_TOW_HULL_STERN_REACH;
+    const rightRise = Math.sin(state.roll)
+      * OPTIONAL_TOW_HULL_HALF_BEAM;
+    const leftRise = -Math.sin(state.roll)
+      * OPTIONAL_TOW_HULL_HALF_BEAM;
+    const highestWaterline = Math.max(
+      centerHeight - state.elevation,
+      bowHeight - state.elevation - bowRise,
+      sternHeight - state.elevation - sternRise,
+      leftHeight - state.elevation - leftRise,
+      rightHeight - state.elevation - rightRise,
+    );
+    minimumFreeboard = Math.min(
+      minimumFreeboard,
+      .17 - highestWaterline,
+    );
+  }
+  return {
+    state,
+    maximumFrameDisplacement,
+    maximumTargetError,
+    minimumFreeboard,
+    maximumPitch,
+  };
+};
+const breakingTowHull = simulateBreakingTowHull();
+const movingTowSettings = {
+  ...settings,
+  mode: "playground",
+  assist: "guided",
+  board: "performance",
+  waveHeight: 2,
+  wavePeriod: 8,
+  waveDirection: 330,
+  windWaveHeight: .35,
+  windWavePeriod: 5.5,
+  windWavePeakPeriod: 5.5,
+  windWaveDirection: 330,
+  swellHeight: 2,
+  swellPeriod: 8.25,
+  swellPeakPeriod: 8.25,
+  swellDirection: 330,
+  secondarySwellHeight: 0,
+  secondarySwellPeriod: 0,
+  secondarySwellDirection: 330,
+  tertiarySwellHeight: 0,
+  tertiarySwellPeriod: 0,
+  tertiarySwellDirection: 330,
+  currentStrength: .4,
+  currentDirection: 322,
+  windSpeed: 5,
+  windDirection: 322,
+  coastHeading: 322,
+  tide: .1,
+  timeOfDay: 16,
+  weatherCode: 0,
+};
+const movingTowCharacter = getBreakCharacter(
+  "pipeline",
+  "First Reef",
+);
+const clampTowValue = (value, minimum, maximum) => Math.max(
+  minimum,
+  Math.min(maximum, value),
+);
+const smoothTowValue = (value, minimum, maximum) => {
+  const unit = clampTowValue(
+    (value - minimum) / Math.max(1e-9, maximum - minimum),
+    0,
+    1,
+  );
+  return unit * unit * (3 - 2 * unit);
+};
+const smootherTowValue = (value, minimum, maximum) => {
+  const unit = clampTowValue(
+    (value - minimum) / Math.max(1e-9, maximum - minimum),
+    0,
+    1,
+  );
+  return unit * unit * unit
+    * (unit * (unit * 6 - 15) + 10);
+};
+const dampTowValue = (
+  current,
+  target,
+  responsiveness,
+  deltaSeconds,
+) => current + (target - current)
+  * (1 - Math.exp(-responsiveness * deltaSeconds));
+const dampTowAngle = (
+  current,
+  target,
+  responsiveness,
+  deltaSeconds,
+) => {
+  const difference = Math.atan2(
+    Math.sin(target - current),
+    Math.cos(target - current),
+  );
+  return current + difference
+    * (1 - Math.exp(-responsiveness * deltaSeconds));
+};
+const movingTowPointOnCrest = (
+  anchorX,
+  anchorZ,
+  elapsed,
+  targetPhase,
+) => {
+  let x = anchorX;
+  let z = anchorZ;
+  let dominant = sampleCoastDominantWave(
+    x,
+    z,
+    elapsed,
+    movingTowSettings,
+    movingTowCharacter,
+  );
+  for (let iteration = 0; iteration < 4; iteration += 1) {
+    const speed = dominant?.celerity ?? 0;
+    const normalX = (dominant?.celerityX ?? 0)
+      / Math.max(.001, speed);
+    const normalZ = (dominant?.celerityZ ?? 0)
+      / Math.max(.001, speed);
+    const phaseError = (
+      (dominant?.phase ?? 0) + Math.PI * .5
+    ) - targetPhase;
+    const waveNumber = (Math.PI * 2)
+      / Math.max(.1, dominant?.wavelength ?? 1);
+    x -= normalX * phaseError / waveNumber;
+    z -= normalZ * phaseError / waveNumber;
+    dominant = sampleCoastDominantWave(
+      x,
+      z,
+      elapsed,
+      movingTowSettings,
+      movingTowCharacter,
+    );
+  }
+  const speed = dominant?.celerity ?? 0;
+  return {
+    x,
+    z,
+    normalX: (dominant?.celerityX ?? 0)
+      / Math.max(.001, speed),
+    normalZ: (dominant?.celerityZ ?? 0)
+      / Math.max(.001, speed),
+    speed,
+  };
+};
+const simulateMovingBreakingTowHull = ({
+  label,
+  rawDeltaAtFrame,
+}) => {
+  const tideShift = shorelineShiftForTide(
+    movingTowSettings.tide,
+  );
+  const towShorelineZAt = (x) => (
+    SHORELINE_REFERENCE_Z
+      + tideShift
+      + shorelineReferenceAt(
+        "pipeline",
+        "First Reef",
+        x,
+      )
+  );
+  const towHomeX = 10;
+  const towHomeZ = optionalTowNavigableZ(
+    towShorelineZAt(towHomeX),
+    towShorelineZAt(towHomeX),
+    OPTIONAL_TOW_BERTH_OFFSHORE,
+  );
+  const routeNavigableTowZAt = (
+    x,
+    targetZ,
+    routeProgress,
+  ) => optionalTowNavigableZ(
+    targetZ,
+    towShorelineZAt(x),
+    optionalTowRouteClearance(routeProgress),
+  );
+  let craft = {
+    x: towHomeX,
+    z: towHomeZ,
+    heading: Math.sign(movingTowCharacter.peel || 1)
+      * Math.PI / 2,
+    speed: 0,
+  };
+  let surfer = {
+    x: towHomeX - 1.7,
+    z: towHomeZ + 1.2,
+    velocityX: 0,
+    velocityZ: 0,
+  };
+  let visualHeading = craft.heading;
+  let hullState = newTowHullFloatState();
+  let elapsed = 0;
+  let progress = 0;
+  let duration = OPTIONAL_TOW_DURATION_SECONDS;
+  let targetWavePhase = 0;
+  let targetX = 0;
+  let targetZ = 0;
+  let towStarted = false;
+  let scanRefreshAt = -1;
+  let targetFaceDistance = clampTowValue(
+    2.8 + movingTowSettings.waveHeight * .32,
+    3,
+    4.6,
+  );
+  let currentFaceDistance = targetFaceDistance;
+  let scanFaceQuality = 0;
+  let scanTransportSpeed = 8;
+  let maximumFrameDisplacement = 0;
+  let maximumQuarterSecondDisplacement = 0;
+  let maximumTargetError = 0;
+  let maximumTargetErrorSample = null;
+  let maximumDraft = -Infinity;
+  let minimumFreeboard = Infinity;
+  let minimumFreeboardSample = null;
+  let minimumElevation = Infinity;
+  let maximumElevation = -Infinity;
+  let maximumPitch = 0;
+  let maximumPitchFrameStep = 0;
+  let maximumPitchAngularVelocity = 0;
+  let maximumVerticalVelocity = 0;
+  let maximumWorldAcceleration = 0;
+  let maximumVelocityConsistencyError = 0;
+  let maximumWorldAccelerationSample = null;
+  let maximumTargetAcceleration = 0;
+  let maximumMinimumContactAcceleration = 0;
+  let previousTargetElevation = null;
+  let previousTargetVelocity = 0;
+  let previousMinimumContactElevation = null;
+  let previousMinimumContactVelocity = 0;
+  let maximumSupportLag = 0;
+  let maximumSupportLagSample = null;
+  let supportLagDuration = 0;
+  let maximumSupportLagDuration = 0;
+  let submergedDuration = 0;
+  let maximumSubmergedDuration = 0;
+  let maximumBelowTarget = 0;
+  let maximumAboveTarget = 0;
+  let maximumQuarterSecondRelativeDisplacement = 0;
+  let previousVerticalVelocity = 0;
+  let previousSample = null;
+  let maximumRawDelta = 0;
+  let maximumCraftSpeed = 0;
+  let finalLiveTargetDistance = Infinity;
+  let finalCraftTargetDistance = Infinity;
+  let frame = 0;
+  const targetFaceHeight = forecastFaceHeightForBreak(
+    movingTowSettings.waveHeight,
+    movingTowSettings.tide,
+    movingTowCharacter,
+  );
+  while (
+    elapsed < 45
+    && (!towStarted || progress < .84)
+  ) {
+    const rawDelta = rawDeltaAtFrame(frame);
+    const simulationDelta = Math.min(rawDelta, .05);
+    elapsed += rawDelta;
+    maximumRawDelta = Math.max(maximumRawDelta, rawDelta);
+    if (!towStarted && elapsed >= 3.2) {
+      towStarted = true;
+      const towSide = movingTowCharacter.peel < 0 ? -1 : 1;
+      targetX = towSide * 8;
+      targetZ = findWaveBreakingContourAt(
+        targetX,
+        elapsed,
+        movingTowSettings,
+        movingTowCharacter,
+        .9,
+      ).z;
+      const crestArrivalProgress = .94;
+      const minimumArrival =
+        OPTIONAL_TOW_DURATION_SECONDS * crestArrivalProgress;
+      const maximumArrival = 27.5 * crestArrivalProgress;
+      let arrivalSeconds = minimumArrival;
+      let primeWavePhase = (
+        sampleCoastDominantWave(
+          targetX,
+          targetZ,
+          elapsed + minimumArrival,
+          movingTowSettings,
+          movingTowCharacter,
+        )?.phase ?? 0
+      ) + Math.PI * .5;
+      let primeScore = -1;
+      for (
+        let candidateArrival = minimumArrival;
+        candidateArrival <= maximumArrival + .001;
+        candidateArrival += .2
+      ) {
+        const candidate = waveSetStateAt(
+          targetX,
+          targetZ,
+          elapsed + candidateArrival,
+          movingTowSettings,
+          movingTowCharacter,
+        );
+        const crestProximity = 1 - smoothTowValue(
+          Math.abs(candidate.crestPhaseError),
+          .08,
+          .62,
+        );
+        const score = candidate.crestEnergy
+          * (.32 + crestProximity * .68)
+          + (candidate.crestSurfable ? .12 : 0);
+        if (score <= primeScore) continue;
+        primeScore = score;
+        arrivalSeconds = candidateArrival;
+        primeWavePhase = candidate.crestPhase;
+      }
+      duration = clampTowValue(
+        arrivalSeconds / crestArrivalProgress,
+        OPTIONAL_TOW_DURATION_SECONDS,
+        27.5,
+      );
+      targetWavePhase = primeWavePhase;
+    }
+
+    if (towStarted) {
+      progress = advanceOptionalTowProgress(
+        progress,
+        simulationDelta,
+        duration,
+      );
+      const towSide = movingTowCharacter.peel < 0 ? -1 : 1;
+      const outboundX = towSide * 22;
+      const outboundZ = targetZ - 24;
+      let desiredTowX = craft.x;
+      let desiredTowZ = craft.z;
+      let liveTakeoffX = surfer.x;
+      let liveTakeoffZ = surfer.z;
+      let liveTakeoffTransportSpeed = 8;
+      let liveCraftX = craft.x;
+      let liveCraftZ = craft.z;
+      if (progress >= .38) {
+        const liveCrest = movingTowPointOnCrest(
+          targetX,
+          targetZ,
+          elapsed,
+          targetWavePhase,
+        );
+        const stagedCrest = stageOptionalTowCrestAtBreaker(
+          targetX,
+          targetZ,
+          liveCrest.x,
+          liveCrest.z,
+          liveCrest.normalX,
+          liveCrest.normalZ,
+        );
+        if (elapsed >= scanRefreshAt) {
+          const firstScan = scanRefreshAt < 0;
+          let bestTakeoffScore = -1;
+          let bestFaceDistance = targetFaceDistance;
+          let bestFaceQuality = scanFaceQuality;
+          let bestTransportSpeed = scanTransportSpeed;
+          for (
+            let candidateIndex = 0;
+            candidateIndex < 12;
+            candidateIndex += 1
+          ) {
+            const faceDistance = 1.35 + candidateIndex * .52;
+            const candidateX = stagedCrest.x
+              + liveCrest.normalX * faceDistance;
+            const candidateZ = stagedCrest.z
+              + liveCrest.normalZ * faceDistance;
+            const candidateSurface = waveSurfaceFrameAt(
+              candidateX,
+              candidateZ,
+              elapsed,
+              movingTowSettings,
+              movingTowCharacter,
+            );
+            const candidateSlope = Math.max(
+              0,
+              -(
+                candidateSurface.slopeX * liveCrest.normalX
+                  + candidateSurface.slopeZ * liveCrest.normalZ
+              ),
+            );
+            const candidateFaceQuality = optionalTowReleaseFaceQuality({
+              breakingRatio: candidateSurface.breakingRatio,
+              crestPhaseError: (
+                (candidateSurface.dominant?.phase ?? 0)
+                  + Math.PI * .5
+              ) - targetWavePhase,
+              faceSlope: candidateSlope,
+              surfaceRise: candidateSurface.surfaceRise,
+              whitewater: candidateSurface.whitewater,
+            });
+            const candidateScore = optionalTowTakeoffTargetScore(
+              candidateFaceQuality,
+              faceDistance,
+              targetFaceHeight,
+            );
+            if (candidateScore <= bestTakeoffScore) continue;
+            bestTakeoffScore = candidateScore;
+            bestFaceDistance = faceDistance;
+            bestFaceQuality = candidateFaceQuality;
+            bestTransportSpeed =
+              candidateSurface.dominant?.celerity
+                ?? bestTransportSpeed;
+          }
+          targetFaceDistance = bestFaceDistance;
+          if (firstScan) currentFaceDistance = bestFaceDistance;
+          scanFaceQuality = bestFaceQuality;
+          scanTransportSpeed = bestTransportSpeed;
+          scanRefreshAt = elapsed + .1;
+        }
+        currentFaceDistance = dampTowValue(
+          currentFaceDistance,
+          targetFaceDistance,
+          12,
+          simulationDelta,
+        );
+        liveTakeoffX = stagedCrest.x
+          + liveCrest.normalX * currentFaceDistance;
+        liveTakeoffZ = stagedCrest.z
+          + liveCrest.normalZ * currentFaceDistance;
+        liveTakeoffTransportSpeed = scanTransportSpeed;
+        liveCraftX = liveTakeoffX + liveCrest.normalX * 7;
+        liveCraftZ = liveTakeoffZ + liveCrest.normalZ * 7;
+      }
+      if (progress < .38) {
+        const outboundProgress = smootherTowValue(
+          progress,
+          0,
+          .38,
+        );
+        desiredTowX = towHomeX
+          + (outboundX - towHomeX) * outboundProgress;
+        desiredTowZ = towHomeZ
+          + (outboundZ - towHomeZ) * outboundProgress;
+      } else if (progress < .6) {
+        const turnProgress = smootherTowValue(
+          progress,
+          .38,
+          .6,
+        );
+        desiredTowX = outboundX
+          + (liveCraftX - outboundX) * turnProgress;
+        desiredTowZ = outboundZ
+          + (liveCraftZ - outboundZ) * turnProgress;
+      } else {
+        desiredTowX = liveCraftX;
+        desiredTowZ = liveCraftZ;
+      }
+      desiredTowZ = routeNavigableTowZAt(
+        desiredTowX,
+        desiredTowZ,
+        progress,
+      );
+      const routeSpeedLimit = 10.5 + (
+        14.5 - 10.5
+      ) * smootherTowValue(progress, .42, .72);
+      const liveTargetDistance = Math.hypot(
+        surfer.x - liveTakeoffX,
+        surfer.z - liveTakeoffZ,
+      );
+      const matchedFaceSpeed = clampTowValue(
+        liveTakeoffTransportSpeed * .88,
+        5.5,
+        11,
+      );
+      const catchupDemand = smoothTowValue(
+        liveTargetDistance,
+        4,
+        22,
+      );
+      const interceptSpeedLimit = matchedFaceSpeed
+        + (14.5 - matchedFaceSpeed) * catchupDemand;
+      const maximumTowSpeed = progress < .6
+        ? routeSpeedLimit
+        : Math.min(routeSpeedLimit, interceptSpeedLimit);
+      const previousCraftX = craft.x;
+      const previousCraftZ = craft.z;
+      const craftStep = advanceOptionalTowCraft(
+        {
+          x: craft.x,
+          z: craft.z,
+          velocityX: Math.sin(craft.heading) * craft.speed,
+          velocityZ: Math.cos(craft.heading) * craft.speed,
+          heading: craft.heading,
+        },
+        desiredTowX,
+        desiredTowZ,
+        simulationDelta,
+        maximumTowSpeed,
+      );
+      const safeCraftZ = routeNavigableTowZAt(
+        craftStep.x,
+        craftStep.z,
+        progress,
+      );
+      const shorelineClamped = safeCraftZ
+        < craftStep.z - .0001;
+      const resolvedVelocityX = (
+        craftStep.x - previousCraftX
+      ) / simulationDelta;
+      const resolvedVelocityZ = (
+        safeCraftZ - previousCraftZ
+      ) / simulationDelta;
+      craft = {
+        x: craftStep.x,
+        z: shorelineClamped ? safeCraftZ : craftStep.z,
+        speed: shorelineClamped
+          ? Math.min(
+              maximumTowSpeed,
+              Math.hypot(resolvedVelocityX, resolvedVelocityZ),
+            )
+          : craftStep.speed,
+        heading: shorelineClamped && craftStep.speed > .08
+          ? Math.atan2(resolvedVelocityX, resolvedVelocityZ)
+          : craftStep.heading,
+      };
+      const ropeStep = advanceOptionalTowRope(
+        surfer,
+        {
+          ...craftStep,
+          ...craft,
+          velocityX: shorelineClamped
+            ? resolvedVelocityX
+            : craftStep.velocityX,
+          velocityZ: shorelineClamped
+            ? resolvedVelocityZ
+            : craftStep.velocityZ,
+        },
+        simulationDelta,
+        7,
+      );
+      surfer = {
+        x: ropeStep.x,
+        z: ropeStep.z,
+        velocityX: ropeStep.velocityX,
+        velocityZ: ropeStep.velocityZ,
+      };
+      maximumCraftSpeed = Math.max(
+        maximumCraftSpeed,
+        craft.speed,
+      );
+      finalLiveTargetDistance = Math.hypot(
+        surfer.x - liveTakeoffX,
+        surfer.z - liveTakeoffZ,
+      );
+      finalCraftTargetDistance = Math.hypot(
+        craft.x - liveCraftX,
+        craft.z - liveCraftZ,
+      );
+    }
+
+    visualHeading = towStarted
+      ? dampTowAngle(
+          visualHeading,
+          craft.heading,
+          12,
+          rawDelta,
+        )
+      : craft.heading;
+    const forwardX = Math.sin(visualHeading);
+    const forwardZ = Math.cos(visualHeading);
+    const rightX = Math.cos(visualHeading);
+    const rightZ = -Math.sin(visualHeading);
+    const surfaceAtHullPoint = (localX, localZ) => waveHeightAt(
+      craft.x + rightX * localX + forwardX * localZ,
+      craft.z + rightZ * localX + forwardZ * localZ,
+      elapsed,
+      movingTowSettings,
+      movingTowCharacter,
+    );
+    const centerHeight = surfaceAtHullPoint(0, 0);
+    const bowHeight = surfaceAtHullPoint(
+      0,
+      OPTIONAL_TOW_HULL_BOW_REACH,
+    );
+    const sternHeight = surfaceAtHullPoint(
+      0,
+      -OPTIONAL_TOW_HULL_STERN_REACH,
+    );
+    const leftHeight = surfaceAtHullPoint(
+      -OPTIONAL_TOW_HULL_HALF_BEAM,
+      0,
+    );
+    const rightHeight = surfaceAtHullPoint(
+      OPTIONAL_TOW_HULL_HALF_BEAM,
+      0,
+    );
+    const attitude = resolveOptionalTowHullAttitude({
+      centerHeight,
+      bowHeight,
+      sternHeight,
+      leftHeight,
+      rightHeight,
+      speed: craft.speed,
+    });
+    const displacementOriginY = attitude.waterlineHeight
+      + .145 + .04 * attitude.planing;
+    const targetElevation = displacementOriginY;
+    const hullAnticipationSeconds = .1;
+    const anticipatedCenterX = craft.x
+      + forwardX
+        * craft.speed
+        * hullAnticipationSeconds;
+    const anticipatedCenterZ = craft.z
+      + forwardZ
+        * craft.speed
+        * hullAnticipationSeconds;
+    const anticipatedSurfaceAtHullPoint = (
+      localX,
+      localZ,
+    ) => waveHeightAt(
+      anticipatedCenterX
+        + rightX * localX
+        + forwardX * localZ,
+      anticipatedCenterZ
+        + rightZ * localX
+        + forwardZ * localZ,
+      elapsed + hullAnticipationSeconds,
+      movingTowSettings,
+      movingTowCharacter,
+    );
+    const anticipatedCenterHeight =
+      anticipatedSurfaceAtHullPoint(0, 0);
+    const anticipatedBowHeight =
+      anticipatedSurfaceAtHullPoint(
+        0,
+        OPTIONAL_TOW_HULL_BOW_REACH,
+      );
+    const anticipatedSternHeight =
+      anticipatedSurfaceAtHullPoint(
+        0,
+        -OPTIONAL_TOW_HULL_STERN_REACH,
+      );
+    const anticipatedLeftHeight =
+      anticipatedSurfaceAtHullPoint(
+        -OPTIONAL_TOW_HULL_HALF_BEAM,
+        0,
+      );
+    const anticipatedRightHeight =
+      anticipatedSurfaceAtHullPoint(
+        OPTIONAL_TOW_HULL_HALF_BEAM,
+        0,
+      );
+    const anticipatedAttitude = resolveOptionalTowHullAttitude({
+      centerHeight: anticipatedCenterHeight,
+      bowHeight: anticipatedBowHeight,
+      sternHeight: anticipatedSternHeight,
+      leftHeight: anticipatedLeftHeight,
+      rightHeight: anticipatedRightHeight,
+      speed: craft.speed,
+    });
+    const anticipatedTargetElevation =
+      anticipatedAttitude.waterlineHeight
+      + .145 + .04 * anticipatedAttitude.planing;
+    const contactPitch = hullState.initialized
+      ? hullState.pitch
+      : attitude.pitch;
+    const contactRoll = hullState.initialized
+      ? hullState.roll
+      : attitude.roll;
+    const contactBowRise = -Math.sin(contactPitch)
+      * OPTIONAL_TOW_HULL_BOW_REACH;
+    const contactSternRise = Math.sin(contactPitch)
+      * OPTIONAL_TOW_HULL_STERN_REACH;
+    const contactRightRise = Math.sin(contactRoll)
+      * OPTIONAL_TOW_HULL_HALF_BEAM;
+    const contactLeftRise = -Math.sin(contactRoll)
+      * OPTIONAL_TOW_HULL_HALF_BEAM;
+    const renderedPoseContactFloor = Math.max(
+      centerHeight,
+      bowHeight - contactBowRise,
+      sternHeight - contactSternRise,
+      leftHeight - contactLeftRise,
+      rightHeight - contactRightRise,
+    ) - .2;
+    const minimumContactElevation = Math.max(
+      targetElevation,
+      renderedPoseContactFloor,
+    );
+    const anticipatedBowRise =
+      -Math.sin(anticipatedAttitude.pitch)
+        * OPTIONAL_TOW_HULL_BOW_REACH;
+    const anticipatedSternRise =
+      Math.sin(anticipatedAttitude.pitch)
+        * OPTIONAL_TOW_HULL_STERN_REACH;
+    const anticipatedRightRise =
+      Math.sin(anticipatedAttitude.roll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+    const anticipatedLeftRise =
+      -Math.sin(anticipatedAttitude.roll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+    const anticipatedContactFloor = Math.max(
+      anticipatedCenterHeight,
+      anticipatedBowHeight - anticipatedBowRise,
+      anticipatedSternHeight - anticipatedSternRise,
+      anticipatedLeftHeight - anticipatedLeftRise,
+      anticipatedRightHeight - anticipatedRightRise,
+    ) - .2;
+    const anticipatedSupportElevation = Math.max(
+      anticipatedTargetElevation,
+      anticipatedContactFloor,
+    );
+    const predictedContactVelocity = (
+      anticipatedSupportElevation - minimumContactElevation
+    ) / hullAnticipationSeconds;
+    const targetPitch = attitude.pitch + .6 * Math.atan2(
+      Math.sin(anticipatedAttitude.pitch - attitude.pitch),
+      Math.cos(anticipatedAttitude.pitch - attitude.pitch),
+    );
+    const targetRoll = attitude.roll + .6 * Math.atan2(
+      Math.sin(anticipatedAttitude.roll - attitude.roll),
+      Math.cos(anticipatedAttitude.roll - attitude.roll),
+    );
+    const previousElevation = hullState.elevation;
+    const previousPitch = hullState.pitch;
+    hullState = advanceOptionalTowHullFloat(hullState, {
+      targetElevation,
+      minimumContactElevation,
+      predictedContactVelocity,
+      targetPitch,
+      targetRoll,
+      planing: attitude.planing,
+      deltaSeconds: rawDelta,
+    });
+    if (towStarted && progress >= .28) {
+      const renderedBowRise = -Math.sin(hullState.pitch)
+        * OPTIONAL_TOW_HULL_BOW_REACH;
+      const renderedSternRise = Math.sin(hullState.pitch)
+        * OPTIONAL_TOW_HULL_STERN_REACH;
+      const renderedRightRise = Math.sin(hullState.roll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const renderedLeftRise = -Math.sin(hullState.roll)
+        * OPTIONAL_TOW_HULL_HALF_BEAM;
+      const highestLocalWaterline = Math.max(
+        centerHeight - hullState.elevation,
+        bowHeight - hullState.elevation - renderedBowRise,
+        sternHeight - hullState.elevation - renderedSternRise,
+        leftHeight - hullState.elevation - renderedLeftRise,
+        rightHeight - hullState.elevation - renderedRightRise,
+      );
+      maximumFrameDisplacement = Math.max(
+        maximumFrameDisplacement,
+        Math.abs(hullState.elevation - previousElevation),
+      );
+      minimumElevation = Math.min(
+        minimumElevation,
+        hullState.elevation,
+      );
+      maximumElevation = Math.max(
+        maximumElevation,
+        hullState.elevation,
+      );
+      maximumPitch = Math.max(
+        maximumPitch,
+        Math.abs(hullState.pitch),
+      );
+      const pitchFrameStep = Math.abs(
+        hullState.pitch - previousPitch,
+      );
+      maximumPitchFrameStep = Math.max(
+        maximumPitchFrameStep,
+        pitchFrameStep,
+      );
+      maximumPitchAngularVelocity = Math.max(
+        maximumPitchAngularVelocity,
+        pitchFrameStep / Math.max(1e-9, rawDelta),
+      );
+      const targetError = Math.abs(
+        hullState.elevation - targetElevation,
+      );
+      if (targetError > maximumTargetError) {
+        maximumTargetError = targetError;
+        maximumTargetErrorSample = {
+          elapsed,
+          progress,
+          craftX: craft.x,
+          craftZ: craft.z,
+          craftSpeed: craft.speed,
+          visualHeading,
+          elevation: hullState.elevation,
+          targetElevation,
+          anticipatedTargetElevation,
+          previousTargetElevation,
+          previousTargetVelocity,
+          minimumContactElevation,
+          previousMinimumContactElevation,
+          previousMinimumContactVelocity,
+          pitch: hullState.pitch,
+          targetPitch: attitude.pitch,
+          roll: hullState.roll,
+          targetRoll: attitude.roll,
+          centerHeight,
+          bowHeight,
+          sternHeight,
+          leftHeight,
+          rightHeight,
+        };
+      }
+      const contactViolation = minimumContactElevation
+        - hullState.elevation;
+      if (contactViolation > maximumSupportLag) {
+        maximumSupportLag = contactViolation;
+        maximumSupportLagSample = {
+          elapsed,
+          progress,
+          rawDelta,
+          craftX: craft.x,
+          craftZ: craft.z,
+          craftSpeed: craft.speed,
+          elevation: hullState.elevation,
+          verticalVelocity: hullState.verticalVelocity,
+          integrationVelocity: hullState.integrationVelocity,
+          referenceVelocity: hullState.referenceVelocity,
+          targetElevation,
+          anticipatedTargetElevation,
+          previousTargetElevation,
+          minimumContactElevation,
+          previousMinimumContactElevation,
+          pitch: hullState.pitch,
+          targetPitch: attitude.pitch,
+          centerHeight,
+          bowHeight,
+          sternHeight,
+          leftHeight,
+          rightHeight,
+        };
+      }
+      supportLagDuration = contactViolation > .04
+        ? supportLagDuration + rawDelta
+        : 0;
+      maximumSupportLagDuration = Math.max(
+        maximumSupportLagDuration,
+        supportLagDuration,
+      );
+      maximumBelowTarget = Math.max(
+        maximumBelowTarget,
+        targetElevation - hullState.elevation,
+      );
+      maximumAboveTarget = Math.max(
+        maximumAboveTarget,
+        hullState.elevation - targetElevation,
+      );
+      maximumDraft = Math.max(
+        maximumDraft,
+        attitude.waterlineHeight - hullState.elevation + .33,
+      );
+      const freeboard = .17 - highestLocalWaterline;
+      submergedDuration = freeboard < -.03
+        ? submergedDuration + rawDelta
+        : 0;
+      maximumSubmergedDuration = Math.max(
+        maximumSubmergedDuration,
+        submergedDuration,
+      );
+      if (freeboard < minimumFreeboard) {
+        minimumFreeboard = freeboard;
+        minimumFreeboardSample = {
+          elapsed,
+          progress,
+          craftX: craft.x,
+          craftZ: craft.z,
+          craftSpeed: craft.speed,
+          visualHeading,
+          elevation: hullState.elevation,
+          targetElevation,
+          displacementOriginY,
+          pitch: hullState.pitch,
+          targetPitch: attitude.pitch,
+          roll: hullState.roll,
+          targetRoll: attitude.roll,
+          centerHeight,
+          bowHeight,
+          sternHeight,
+          leftHeight,
+          rightHeight,
+          freeboard,
+        };
+      }
+      maximumVerticalVelocity = Math.max(
+        maximumVerticalVelocity,
+        Math.abs(hullState.verticalVelocity),
+      );
+      maximumVelocityConsistencyError = Math.max(
+        maximumVelocityConsistencyError,
+        Math.abs(
+          hullState.verticalVelocity
+            - (
+              (hullState.referenceVelocity ?? 0)
+                + (hullState.integrationVelocity ?? 0)
+            )
+        ),
+      );
+      const worldAcceleration = Math.abs(
+        hullState.verticalVelocity - previousVerticalVelocity,
+      ) / Math.max(1e-9, rawDelta);
+      if (worldAcceleration > maximumWorldAcceleration) {
+        maximumWorldAcceleration = worldAcceleration;
+        maximumWorldAccelerationSample = {
+          elapsed,
+          progress,
+          rawDelta,
+          elevation: hullState.elevation,
+          previousElevation,
+          verticalVelocity: hullState.verticalVelocity,
+          previousVerticalVelocity,
+          integrationVelocity: hullState.integrationVelocity,
+          referenceVelocity: hullState.referenceVelocity,
+          targetElevation,
+          previousTargetElevation,
+          previousTargetVelocity,
+          minimumContactElevation,
+          previousMinimumContactElevation,
+          previousMinimumContactVelocity,
+          pitch: hullState.pitch,
+          targetPitch: attitude.pitch,
+          centerHeight,
+          bowHeight,
+          sternHeight,
+          leftHeight,
+          rightHeight,
+        };
+      }
+      if (previousTargetElevation !== null) {
+        const targetVelocity = (
+          targetElevation - previousTargetElevation
+        ) / Math.max(1e-9, rawDelta);
+        maximumTargetAcceleration = Math.max(
+          maximumTargetAcceleration,
+          Math.abs(
+            targetVelocity - previousTargetVelocity,
+          ) / Math.max(1e-9, rawDelta),
+        );
+        previousTargetVelocity = targetVelocity;
+      }
+      if (previousMinimumContactElevation !== null) {
+        const minimumContactVelocity = (
+          minimumContactElevation
+            - previousMinimumContactElevation
+        ) / Math.max(1e-9, rawDelta);
+        maximumMinimumContactAcceleration = Math.max(
+          maximumMinimumContactAcceleration,
+          Math.abs(
+            minimumContactVelocity
+              - previousMinimumContactVelocity,
+          ) / Math.max(1e-9, rawDelta),
+        );
+        previousMinimumContactVelocity =
+          minimumContactVelocity;
+      }
+      previousTargetElevation = targetElevation;
+      previousMinimumContactElevation =
+        minimumContactElevation;
+      if (
+        previousSample
+        && elapsed - previousSample.elapsed >= .24
+      ) {
+        maximumQuarterSecondDisplacement = Math.max(
+          maximumQuarterSecondDisplacement,
+          Math.abs(
+            hullState.elevation - previousSample.elevation,
+          ),
+        );
+        maximumQuarterSecondRelativeDisplacement = Math.max(
+          maximumQuarterSecondRelativeDisplacement,
+          Math.abs(
+            (hullState.elevation - targetElevation)
+              - previousSample.relativeElevation,
+          ),
+        );
+        previousSample = {
+          elapsed,
+          elevation: hullState.elevation,
+          relativeElevation:
+            hullState.elevation - targetElevation,
+        };
+      } else if (!previousSample) {
+        previousSample = {
+          elapsed,
+          elevation: hullState.elevation,
+          relativeElevation:
+            hullState.elevation - targetElevation,
+        };
+      }
+    }
+    previousVerticalVelocity = hullState.verticalVelocity;
+    frame += 1;
+  }
+  return {
+    label,
+    progress,
+    duration,
+    elapsed,
+    maximumRawDelta,
+    maximumCraftSpeed,
+    finalLiveTargetDistance,
+    finalCraftTargetDistance,
+    maximumFrameDisplacement,
+    maximumQuarterSecondDisplacement,
+    maximumQuarterSecondRelativeDisplacement,
+    maximumTargetError,
+    maximumTargetErrorSample,
+    maximumSupportLag,
+    maximumSupportLagSample,
+    maximumSupportLagDuration,
+    maximumSubmergedDuration,
+    maximumBelowTarget,
+    maximumAboveTarget,
+    maximumDraft,
+    minimumFreeboard,
+    minimumFreeboardSample,
+    minimumElevation,
+    maximumElevation,
+    maximumPitch,
+    maximumPitchFrameStep,
+    maximumPitchAngularVelocity,
+    maximumVerticalVelocity,
+    maximumWorldAcceleration,
+    maximumVelocityConsistencyError,
+    maximumWorldAccelerationSample,
+    maximumTargetAcceleration,
+    maximumMinimumContactAcceleration,
+    state: hullState,
+  };
+};
+const movingTowHullSteady = simulateMovingBreakingTowHull({
+  label: "steady-60fps",
+  rawDeltaAtFrame: () => 1 / 60,
+});
+const movingTowHullStalled = simulateMovingBreakingTowHull({
+  label: "100-250ms-stalls",
+  rawDeltaAtFrame: (frame) => {
+    if (frame > 0 && frame % 180 === 120) return .25;
+    if (frame > 0 && frame % 180 === 60) return .1;
+    return 1 / 60;
+  },
+});
+const towHullStepCadences = [
+  { label: "30fps", deltas: [1 / 30] },
+  { label: "60fps", deltas: [1 / 60] },
+  { label: "120fps", deltas: [1 / 120] },
+  {
+    label: "irregular",
+    deltas: [1 / 30, 1 / 120, 1 / 45, 1 / 90, 1 / 60, 1 / 72],
+  },
+];
+const simulateTowHullTargetDiscontinuity = (
+  targetStep,
+  cadence,
+) => {
+  let state = advanceOptionalTowHullFloat(
+    newTowHullFloatState(),
+    {
+      targetElevation: 0,
+      targetPitch: 0,
+      targetRoll: 0,
+      planing: 1,
+      deltaSeconds: 1 / 60,
+    },
+  );
+  let elapsed = 0;
+  let frame = 0;
+  let previousFrameVelocity = 0;
+  let previousDelta = cadence.deltas[0];
+  let firstFrameDisplacement = 0;
+  let maximumFrameDisplacement = 0;
+  let maximumFrameVelocity = 0;
+  let maximumFrameAcceleration = 0;
+  let maximumIntegrationAcceleration = 0;
+  let maximumVelocityMismatch = 0;
+  let maximumOvershoot = 0;
+  while (elapsed < 6 - 1e-9) {
+    const requestedDelta = cadence.deltas[
+      frame % cadence.deltas.length
+    ];
+    const deltaSeconds = Math.min(
+      requestedDelta,
+      6 - elapsed,
+    );
+    if (deltaSeconds < 1e-6) break;
+    const previousElevation = state.elevation;
+    const previousIntegrationVelocity =
+      state.integrationVelocity ?? state.verticalVelocity;
+    const next = advanceOptionalTowHullFloat(state, {
+      targetElevation: targetStep,
+      targetPitch: .12,
+      targetRoll: -.1,
+      planing: 1,
+      deltaSeconds,
+    });
+    const displacement = next.elevation - previousElevation;
+    const frameVelocity = displacement / deltaSeconds;
+    const velocitySampleSpacing = (
+      previousDelta + deltaSeconds
+    ) * .5;
+    const frameAcceleration = (
+      frameVelocity - previousFrameVelocity
+    ) / Math.max(1e-6, velocitySampleSpacing);
+    const integrationAcceleration = (
+      (next.integrationVelocity ?? next.verticalVelocity)
+        - previousIntegrationVelocity
+    ) / deltaSeconds;
+    if (frame === 0) firstFrameDisplacement = displacement;
+    maximumFrameDisplacement = Math.max(
+      maximumFrameDisplacement,
+      Math.abs(displacement),
+    );
+    maximumFrameVelocity = Math.max(
+      maximumFrameVelocity,
+      Math.abs(frameVelocity),
+    );
+    maximumFrameAcceleration = Math.max(
+      maximumFrameAcceleration,
+      Math.abs(frameAcceleration),
+    );
+    maximumIntegrationAcceleration = Math.max(
+      maximumIntegrationAcceleration,
+      Math.abs(integrationAcceleration),
+    );
+    maximumVelocityMismatch = Math.max(
+      maximumVelocityMismatch,
+      Math.abs(frameVelocity - next.verticalVelocity),
+    );
+    maximumOvershoot = Math.max(
+      maximumOvershoot,
+      Math.max(0, next.elevation - targetStep),
+    );
+    previousFrameVelocity = frameVelocity;
+    previousDelta = deltaSeconds;
+    state = next;
+    elapsed += deltaSeconds;
+    frame += 1;
+  }
+  return {
+    label: cadence.label,
+    targetStep,
+    state,
+    firstFrameDisplacement,
+    maximumFrameDisplacement,
+    maximumFrameVelocity,
+    maximumFrameAcceleration,
+    maximumIntegrationAcceleration,
+    maximumVelocityMismatch,
+    maximumOvershoot,
+    finalError: Math.abs(state.elevation - targetStep),
+  };
+};
+const towHullDiscontinuities = [0.25, 1, 3].flatMap(
+  (targetStep) => towHullStepCadences.map(
+    (cadence) => simulateTowHullTargetDiscontinuity(
+      targetStep,
+      cadence,
+    ),
+  ),
+);
+const simulateTowHullTargetReversal = (cadence) => {
+  let state = advanceOptionalTowHullFloat(
+    newTowHullFloatState(),
+    {
+      targetElevation: 0,
+      targetPitch: 0,
+      targetRoll: 0,
+      planing: 1,
+      deltaSeconds: 1 / 60,
+    },
+  );
+  let elapsed = 0;
+  let frame = 0;
+  while (elapsed < .28 - 1e-9) {
+    const deltaSeconds = Math.min(
+      cadence.deltas[frame % cadence.deltas.length],
+      .28 - elapsed,
+    );
+    state = advanceOptionalTowHullFloat(state, {
+      targetElevation: 1,
+      targetPitch: .08,
+      targetRoll: -.06,
+      planing: 1,
+      deltaSeconds,
+    });
+    elapsed += deltaSeconds;
+    frame += 1;
+  }
+
+  const reversalTarget = -1;
+  const targetDistanceBefore = Math.abs(
+    reversalTarget - state.elevation,
+  );
+  const velocityBefore = state.integrationVelocity ?? 0;
+  let reversalElapsed = 0;
+  let reversalFrame = 0;
+  let firstFrameDisplacement = 0;
+  let firstFrameDelta = 0;
+  let maximumRelativeAcceleration = 0;
+  let maximumSpeedBoundExcess = 0;
+  while (reversalElapsed < 3 - 1e-9) {
+    const deltaSeconds = Math.min(
+      cadence.deltas[frame % cadence.deltas.length],
+      3 - reversalElapsed,
+    );
+    const previousElevation = state.elevation;
+    const previousVelocity = state.integrationVelocity ?? 0;
+    const next = advanceOptionalTowHullFloat(state, {
+      targetElevation: reversalTarget,
+      targetPitch: -.08,
+      targetRoll: .06,
+      planing: 1,
+      deltaSeconds,
+    });
+    const displacement = next.elevation - previousElevation;
+    if (reversalFrame === 0) {
+      firstFrameDisplacement = displacement;
+      firstFrameDelta = deltaSeconds;
+    }
+    maximumRelativeAcceleration = Math.max(
+      maximumRelativeAcceleration,
+      Math.abs(
+        ((next.integrationVelocity ?? 0) - previousVelocity)
+          / deltaSeconds,
+      ),
+    );
+    maximumSpeedBoundExcess = Math.max(
+      maximumSpeedBoundExcess,
+      Math.abs(displacement)
+        - OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED * deltaSeconds,
+    );
+    state = next;
+    reversalElapsed += deltaSeconds;
+    frame += 1;
+    reversalFrame += 1;
+  }
+  return {
+    label: cadence.label,
+    velocityBefore,
+    targetDistanceBefore,
+    firstFrameDisplacement,
+    firstFrameDelta,
+    maximumRelativeAcceleration,
+    maximumSpeedBoundExcess,
+    finalError: Math.abs(state.elevation - reversalTarget),
+  };
+};
+const towHullReversals = towHullStepCadences.map(
+  simulateTowHullTargetReversal,
+);
+const invalidTowHullFloat = advanceOptionalTowHullFloat(
+  newTowHullFloatState(),
+  {
+    targetElevation: Number.NaN,
+    targetPitch: Number.NaN,
+    targetRoll: Number.NaN,
+    planing: Number.NaN,
+    deltaSeconds: Number.NaN,
+  },
+);
+if (
+  physicalTowContour.ratioError > .002
+  || Math.abs((physicalTowContour.breakingRatio ?? 0) - .9) > .002
+  || Math.abs(stagedTowCrest.normalOffset) > 3.500001
+  || Math.abs(stagedTowCrest.tangentOffset) > 12.000001
+  || Math.abs(stagedTowTangentOffset - 12) > 1e-9
+  || Math.hypot(
+    stagedTowTangentX - originalTowTangentX,
+    stagedTowTangentZ - originalTowTangentZ,
+  ) < 20
+  || supportedTowFaceQuality < .65
+  || flatTowFaceQuality !== 0
+  || foamedTowFaceQuality !== 0
+  || spentTowFaceQuality >= supportedTowFaceQuality * .2
+  || idealTowInterceptQuality <= missedTowInterceptQuality * 2
+  || scaledTowTargetScore <= lipTowTargetScore
+  || towClampedFromSand !== 6
+  || towAlreadyOffshore !== -20
+  || towCustomClearance !== 4
+  || towBerthClearance !== 11.5
+  || OPTIONAL_TOW_BERTH_OFFSHORE !== .5
+  || OPTIONAL_TOW_NAVIGABLE_OFFSHORE !== 6
+  || OPTIONAL_TOW_LAUNCH_CLEARANCE_PROGRESS !== .16
+  || OPTIONAL_TOW_RETURN_BERTH_PROGRESS !== .68
+  || launchClearances[0] !== OPTIONAL_TOW_BERTH_OFFSHORE
+  || launchClearances.at(-1) !== OPTIONAL_TOW_NAVIGABLE_OFFSHORE
+  || returnClearances[0] !== OPTIONAL_TOW_NAVIGABLE_OFFSHORE
+  || returnClearances.at(-1) !== OPTIONAL_TOW_BERTH_OFFSHORE
+  || launchClearances.some((value, index) => (
+    index > 0 && value < launchClearances[index - 1]
+  ))
+  || returnClearances.some((value, index) => (
+    index > 0 && value > returnClearances[index - 1]
+  ))
+  || maximumClearanceFrameDelta(launchClearances) > .07
+  || maximumClearanceFrameDelta(returnClearances) > .07
+  || towBerthSurvey.length !== 41
+  || towBerthSurvey.some((survey) => survey.centerDepth < .3)
+  || towBerthSurvey.some((survey) => survey.shoreCollapse <= .99)
+  || towBerthSurvey.some((survey) => (
+    survey.interactionDistance >= 4.8
+  ))
+  || mavericksLegacyTowBerth.waterlineExcursion <= 3
+  || mavericksTowBerth.waterlineExcursion >= .65
+  || mavericksTowBerth.maximumProbeRange >= .65
+  || mavericksTowBerth.maximumPitch >= .01
+  || hossegorTowBerth.waterlineExcursion >= .65
+  || hossegorTowBerth.maximumProbeRange >= .65
+  || hossegorTowBerth.maximumPitch >= .01
+  || uluwatuTowBerth.waterlineExcursion >= .65
+  || uluwatuTowBerth.maximumProbeRange >= .65
+  || uluwatuTowBerth.maximumPitch >= .01
+  || OPTIONAL_TOW_HULL_BOW_REACH !== 2.08
+  || OPTIONAL_TOW_HULL_STERN_REACH !== 1.76
+  || OPTIONAL_TOW_HULL_HALF_LENGTH !== 1.92
+  || OPTIONAL_TOW_HULL_HALF_BEAM !== .8
+  || levelTowHull.waterlineHeight !== 1
+  || levelTowHull.pitch !== 0
+  || levelTowHull.roll !== 0
+  || climbingTowHull.pitch >= -.2
+  || climbingTowHull.pitch < -.500001
+  || bankedTowHull.roll <= .16
+  || bankedTowHull.roll > .180001
+  || convexTowHull.waterlineHeight < 1.16
+  || convexTowHull.waterlineHeight > 1.18
+  || convexTowHull.planing !== 1
+  || !Object.values(invalidTowHull).every(Number.isFinite)
+  || towHullStep30.maximumStep > .13
+  || towHullStep60.maximumStep > .065
+  || towHullStep120.maximumStep > .033
+  || towHullStep30.maximumElevation > 1.31
+  || towHullStep60.maximumElevation > 1.31
+  || towHullStep120.maximumElevation > 1.31
+  || towHullStep30.state.elevation < 1.08
+  || towHullStep60.state.elevation < 1.08
+  || towHullStep120.state.elevation < 1.08
+  || towHullStep30.maximumRelativeVelocity > 3.200001
+  || towHullStep60.maximumRelativeVelocity > 3.200001
+  || towHullStep120.maximumRelativeVelocity > 3.200001
+  || towHullStep30.maximumTargetError > .49
+  || towHullStep60.maximumTargetError > .49
+  || towHullStep120.maximumTargetError > .49
+  || towHullStep30.maximumWorldAcceleration > 11.51
+  || towHullStep60.maximumWorldAcceleration > 11.51
+  || towHullStep120.maximumWorldAcceleration > 11.51
+  || Math.abs(
+    towHullStep30.state.elevation
+      - towHullStep120.state.elevation,
+  ) > .012
+  || towHullChop30.amplitude < .025
+  || towHullChop60.amplitude < .025
+  || towHullChop120.amplitude < .025
+  || towHullChop30.amplitude > .05
+  || towHullChop60.amplitude > .05
+  || towHullChop120.amplitude > .05
+  || towHullChop30.maximumWorldAcceleration > 11.51
+  || towHullChop60.maximumWorldAcceleration > 11.51
+  || towHullChop120.maximumWorldAcceleration > 11.51
+  || towHullChop30.maximumReferenceAcceleration > 6.200001
+  || towHullChop60.maximumReferenceAcceleration > 6.200001
+  || towHullChop120.maximumReferenceAcceleration > 6.200001
+  || Math.abs(
+    towHullChop30.amplitude - towHullChop120.amplitude,
+  ) > .005
+  || towHullFastChop.amplitude > .015
+  || towHullFastChop.maximumWorldAcceleration > 11.51
+  || towHullSwell.amplitude < .49
+  || towHullSwell.amplitude > .51
+  || towHullSwell.maximumTargetError > .005
+  || towHullSwell.maximumWorldAcceleration > .5
+  || breakingTowHull.maximumFrameDisplacement > .054
+  || breakingTowHull.maximumTargetError > .5
+  || breakingTowHull.minimumFreeboard < -.07
+  || breakingTowHull.maximumPitch > .51
+  || movingTowHullSteady.maximumRawDelta !== 1 / 60
+  || movingTowHullSteady.maximumFrameDisplacement > .065
+  || movingTowHullSteady
+    .maximumQuarterSecondRelativeDisplacement > .06
+  || movingTowHullSteady.maximumTargetError > .08
+  || movingTowHullSteady.maximumSupportLag > .04
+  || movingTowHullSteady.maximumSupportLagDuration > .05
+  || movingTowHullSteady.maximumSubmergedDuration > .05
+  || movingTowHullSteady.maximumBelowTarget > .04
+  || movingTowHullSteady.maximumAboveTarget > .08
+  || movingTowHullSteady.maximumDraft > .2
+  || movingTowHullSteady.minimumFreeboard < -.03
+  || movingTowHullSteady.maximumVerticalVelocity > 4.5
+  || movingTowHullSteady.maximumWorldAcceleration > 24.000001
+  || movingTowHullSteady.maximumVelocityConsistencyError > 1e-9
+  || movingTowHullSteady.maximumCraftSpeed > 13.3
+  || movingTowHullSteady.finalLiveTargetDistance > 4
+  || movingTowHullSteady.finalCraftTargetDistance > 4.1
+  || movingTowHullSteady.maximumPitch > .51
+  || movingTowHullSteady.maximumPitchFrameStep > .03
+  || movingTowHullSteady.maximumPitchAngularVelocity > 1.6
+  || movingTowHullStalled.maximumRawDelta !== .25
+  || movingTowHullStalled.maximumFrameDisplacement > .140001
+  || movingTowHullStalled
+    .maximumQuarterSecondRelativeDisplacement > .06
+  || movingTowHullStalled.maximumTargetError > .08
+  || movingTowHullStalled.maximumSupportLag > .04
+  || movingTowHullStalled.maximumSupportLagDuration > .05
+  || movingTowHullStalled.maximumSubmergedDuration > .05
+  || movingTowHullStalled.maximumBelowTarget > .04
+  || movingTowHullStalled.maximumAboveTarget > .08
+  || movingTowHullStalled.maximumDraft > .2
+  || movingTowHullStalled.minimumFreeboard < -.03
+  || movingTowHullStalled.maximumVerticalVelocity > 4.5
+  || movingTowHullStalled.maximumWorldAcceleration > 24.000001
+  || movingTowHullStalled.maximumVelocityConsistencyError > 1e-9
+  || movingTowHullStalled.maximumCraftSpeed > 13.3
+  || movingTowHullStalled.finalLiveTargetDistance > 4
+  || movingTowHullStalled.finalCraftTargetDistance > 4.1
+  || movingTowHullStalled.maximumPitch > .51
+  || movingTowHullStalled.maximumPitchFrameStep > .06
+  || movingTowHullStalled.maximumPitchAngularVelocity > 1.65
+  || towHullDiscontinuities.some((response) => (
+    Math.abs(response.firstFrameDisplacement) > .008
+      || response.maximumFrameDisplacement > .107
+      || response.maximumFrameVelocity
+        > OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED + 1e-9
+      || response.maximumFrameAcceleration
+        > OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION + .15
+      || response.maximumIntegrationAcceleration
+        > OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION + 1e-6
+      || response.maximumVelocityMismatch > 1e-10
+      || response.maximumOvershoot > .025
+      || response.finalError > .002
+  ))
+  || towHullReversals.some((response) => (
+    response.velocityBefore < 1
+      || Math.abs(response.firstFrameDisplacement)
+        > OPTIONAL_TOW_HULL_MAX_VERTICAL_SPEED
+          * response.firstFrameDelta + 1e-9
+      || Math.abs(response.firstFrameDisplacement)
+        >= response.targetDistanceBefore * .1
+      || response.maximumRelativeAcceleration
+        > OPTIONAL_TOW_HULL_MAX_VERTICAL_ACCELERATION + 1e-6
+      || response.maximumSpeedBoundExcess > 1e-9
+      || response.finalError > .002
+  ))
+  || !Object.values(invalidTowHullFloat).every((value) => (
+    typeof value === "boolean" || Number.isFinite(value)
+  ))
+  || !optionalTowReleasePhysicallySupported(
+    true,
+    .64,
+    idealTowInterceptQuality,
+    .9,
+    supportedTowFaceQuality,
+  )
+  || !optionalTowReleasePhysicallySupported(true, .64, .1, .9, 1)
+  || optionalTowReleasePhysicallySupported(true, .64, .09, .9, 1)
+  || optionalTowReleasePhysicallySupported(true, .5, .9, .9, 1)
+  || optionalTowReleasePhysicallySupported(true, .64, .9, .9, 0)
+  || optionalTowReleasePhysicallySupported(true, .64, .9, .4, 1)
+  || optionalTowReleasePhysicallySupported(true, .64, .9, 2, 1)
+  || optionalTowReleasePhysicallySupported(false, .64, .9, .9, 1)
+) {
+  throw new Error(
+    `Tow targeting or flotation contract failed: ${JSON.stringify({
+      climbingPitch: climbingTowHull.pitch,
+      bankedRoll: bankedTowHull.roll,
+      convexWaterline: convexTowHull.waterlineHeight,
+      launchClearances: {
+        first: launchClearances[0],
+        last: launchClearances.at(-1),
+        maximumStep: maximumClearanceFrameDelta(
+          launchClearances,
+        ),
+      },
+      returnClearances: {
+        first: returnClearances[0],
+        last: returnClearances.at(-1),
+        maximumStep: maximumClearanceFrameDelta(
+          returnClearances,
+        ),
+      },
+      berthSurvey: {
+        count: towBerthSurvey.length,
+        minimumDepth: Math.min(
+          ...towBerthSurvey.map((survey) => survey.centerDepth),
+        ),
+        minimumCollapse: Math.min(
+          ...towBerthSurvey.map((survey) => survey.shoreCollapse),
+        ),
+        maximumInteractionDistance: Math.max(
+          ...towBerthSurvey.map(
+            (survey) => survey.interactionDistance,
+          ),
+        ),
+      },
+      mavericksLegacyTowBerth,
+      mavericksTowBerth,
+      hossegorTowBerth,
+      uluwatuTowBerth,
+      step30: towHullStep30,
+      step60: towHullStep60,
+      step120: towHullStep120,
+      chop30: towHullChop30,
+      chop60: towHullChop60,
+      chop120: towHullChop120,
+      fastChop: towHullFastChop,
+      swell: towHullSwell,
+      breakingTowHull,
+      movingTowHullSteady,
+      movingTowHullStalled,
+      discontinuities: towHullDiscontinuities,
+      reversals: towHullReversals,
+      invalidTowHullFloat,
+    })}`,
+  );
+}
+
+const landwardForecastTransport = primaryWaveVelocityAt(
+  -8,
+  physicalTowContour.z,
+  12,
+  {
+    ...settings,
+    waveDirection: 70,
+    swellDirection: 70,
+    coastHeading: 322,
+  },
+  {
+    ...character,
+    kind: "reef",
+    coastId: "pipeline",
+    zoneName: "First Reef",
+  },
+);
+if (
+  landwardForecastTransport.z <= .05
+  || landwardForecastTransport.propagationZ <= .05
+) {
+  throw new Error(
+    "A forecast bearing behind the local coast regained offshore/backwards surf propagation",
+  );
+}
+
+let towCraft = {
+  x: 10,
+  z: 4,
+  velocityX: 0,
+  velocityZ: 0,
+  heading: Math.PI,
+};
+let towSurfer = {
+  x: 10,
+  z: 7,
+  velocityX: 0,
+  velocityZ: 0,
+};
+let maximumTowSpeed = 0;
+let maximumTowAcceleration = 0;
+let maximumRopeDistance = 0;
+let maximumSurferVelocityStep = 0;
+for (let frame = 0; frame < 16 * 60; frame += 1) {
+  const progress = frame / (16 * 60 - 1);
+  const desiredX = 10 + Math.sin(progress * Math.PI) * 24;
+  const desiredZ = 4 - progress * 112;
+  const nextCraft = advanceOptionalTowCraft(
+    towCraft,
+    desiredX,
+    desiredZ,
+    1 / 60,
+    10.5 + progress * 4,
+  );
+  const priorSurferVelocityX = towSurfer.velocityX;
+  const priorSurferVelocityZ = towSurfer.velocityZ;
+  const nextSurfer = advanceOptionalTowRope(
+    towSurfer,
+    nextCraft,
+    1 / 60,
+    7,
+  );
+  maximumTowSpeed = Math.max(maximumTowSpeed, nextCraft.speed);
+  maximumTowAcceleration = Math.max(
+    maximumTowAcceleration,
+    nextCraft.acceleration,
+  );
+  maximumRopeDistance = Math.max(
+    maximumRopeDistance,
+    nextSurfer.ropeDistance,
+  );
+  maximumSurferVelocityStep = Math.max(
+    maximumSurferVelocityStep,
+    Math.hypot(
+      nextSurfer.velocityX - priorSurferVelocityX,
+      nextSurfer.velocityZ - priorSurferVelocityZ,
+    ),
+  );
+  towCraft = nextCraft;
+  towSurfer = nextSurfer;
+}
+if (
+  maximumTowSpeed > 14.51
+  || maximumTowAcceleration > 6.21
+  || maximumRopeDistance > 7.801
+  || maximumSurferVelocityStep > .8
+) {
+  throw new Error(
+    "Tow craft or rope motion regained a speed cap snap, stretch teleport, or frame impulse",
+  );
+}
+
+let returningTowCraft = {
+  x: 34,
+  z: -82,
+  velocityX: 8,
+  velocityZ: 4,
+  heading: Math.atan2(8, 4),
+};
+const returningTowStart = {
+  x: returningTowCraft.x,
+  z: returningTowCraft.z,
+};
+const returningTowHome = { x: 10, z: 6 };
+let returningTowProgress = 0;
+let maximumReturnSpeed = 0;
+let maximumReturnAcceleration = 0;
+let maximumReturnStep = 0;
+for (let frame = 0; frame < 20 * 60; frame += 1) {
+  returningTowProgress = Math.min(
+    1,
+    returningTowProgress + (1 / 60) / 8.5,
+  );
+  const progress = returningTowProgress * returningTowProgress
+    * (3 - 2 * returningTowProgress);
+  const inverse = 1 - progress;
+  const controlX = (
+    returningTowStart.x + returningTowHome.x
+  ) * .5 - 18;
+  const controlZ = Math.min(
+    returningTowStart.z,
+    returningTowHome.z,
+  ) - 20;
+  const desiredX = inverse * inverse * returningTowStart.x
+    + 2 * inverse * progress * controlX
+    + progress * progress * returningTowHome.x;
+  const desiredZ = inverse * inverse * returningTowStart.z
+    + 2 * inverse * progress * controlZ
+    + progress * progress * returningTowHome.z;
+  const homeDistanceBeforeStep = Math.hypot(
+    returningTowCraft.x - returningTowHome.x,
+    returningTowCraft.z - returningTowHome.z,
+  );
+  const returnSpeedLimit = Math.max(
+    .35,
+    Math.min(
+      13.5,
+      Math.sqrt(2 * 5.6 * homeDistanceBeforeStep) * .82,
+    ),
+  );
+  const nextReturn = advanceOptionalTowCraft(
+    returningTowCraft,
+    desiredX,
+    desiredZ,
+    1 / 60,
+    returnSpeedLimit,
+    5.6,
+  );
+  maximumReturnSpeed = Math.max(
+    maximumReturnSpeed,
+    nextReturn.speed,
+  );
+  maximumReturnAcceleration = Math.max(
+    maximumReturnAcceleration,
+    nextReturn.acceleration,
+  );
+  maximumReturnStep = Math.max(
+    maximumReturnStep,
+    Math.hypot(
+      nextReturn.x - returningTowCraft.x,
+      nextReturn.z - returningTowCraft.z,
+    ),
+  );
+  returningTowCraft = nextReturn;
+}
+const returningTowHomeError = Math.hypot(
+  returningTowCraft.x - returningTowHome.x,
+  returningTowCraft.z - returningTowHome.z,
+);
+if (
+  maximumReturnSpeed > 13.51
+  || maximumReturnAcceleration > 5.61
+  || maximumReturnStep > .226
+  || returningTowHomeError > .55
+  || returningTowCraft.speed > .8
+) {
+  throw new Error(
+    `Tow return no longer converges through the capped craft integrator: ${JSON.stringify({
+      maximumReturnSpeed,
+      maximumReturnAcceleration,
+      maximumReturnStep,
+      returningTowHomeError,
+      finalSpeed: returningTowCraft.speed,
+    })}`,
+  );
+}
+
+let orbitalReversed = false;
+let minimumPropagationAlignment = 1;
+let minimumBoardHeadingAlignment = 1;
+const referenceTowTransport = primaryWaveVelocityAt(
+  8,
+  physicalTowContour.z,
+  0,
+  settings,
+  character,
+);
+const referenceTowNormalX = referenceTowTransport.x
+  / referenceTowTransport.speed;
+const referenceTowNormalZ = referenceTowTransport.z
+  / referenceTowTransport.speed;
+const referenceTowHeading = Math.atan2(
+  referenceTowNormalX,
+  referenceTowNormalZ,
+);
+for (let index = 0; index < 80; index += 1) {
+  const elapsed = index * settings.wavePeriod / 80;
+  const transport = primaryWaveVelocityAt(
+    8,
+    physicalTowContour.z,
+    elapsed,
+    settings,
+    character,
+  );
+  const propagationAlignment = (
+    transport.x * referenceTowNormalX
+      + transport.z * referenceTowNormalZ
+  ) / Math.max(.001, transport.speed);
+  minimumPropagationAlignment = Math.min(
+    minimumPropagationAlignment,
+    propagationAlignment,
+  );
+  if (
+    transport.waterX * referenceTowNormalX
+      + transport.waterZ * referenceTowNormalZ < -.02
+  ) {
+    orbitalReversed = true;
+  }
+  const boardReading = evaluateBoardWaterInteraction({
+    boardHeading: referenceTowHeading,
+    velocityX: referenceTowNormalX * 2,
+    velocityZ: referenceTowNormalZ * 2,
+    waveVelocityX: transport.x,
+    waveVelocityZ: transport.z,
+    slopeX: -referenceTowNormalX * .16,
+    slopeZ: -referenceTowNormalZ * .16,
+    surfaceRise: .35,
+    surfaceLift: .6,
+    crestDistance: 3,
+    crestEnergy: .8,
+    crestSurfable: true,
+    boardStability: 1,
+    waveHeight: 2,
+  });
+  minimumBoardHeadingAlignment = Math.min(
+    minimumBoardHeadingAlignment,
+    boardReading.headingAlignment,
+  );
+}
+if (
+  !orbitalReversed
+  || minimumPropagationAlignment < .995
+  || minimumBoardHeadingAlignment < .995
+) {
+  throw new Error(
+    "Crest propagation and reversing orbital flow became conflated, allowing a backward capture frame",
   );
 }
 
@@ -306,6 +2740,20 @@ const peelingBreakCoordinate = waveBreakingCoordinateAt(
 );
 const peelingBreakGeometry = waveBreakingGeometryAt(
   80,
+  -18,
+  12,
+  settings,
+  character,
+);
+const peelingBreakCoordinateLeft = waveBreakingCoordinateAt(
+  79.99,
+  -18,
+  12,
+  settings,
+  character,
+);
+const peelingBreakCoordinateRight = waveBreakingCoordinateAt(
+  80.01,
   -18,
   12,
   settings,
@@ -410,10 +2858,16 @@ const setOuterShorebreakLoad = resolveShorebreakBandLoad({
   breakingCoordinate: -20,
 });
 if (
-  Math.abs(peelingBreakCoordinate - centerBreakCoordinate) < 1.5
+  // The old 1.5-unit threshold was satisfied by the now-removed 12 m wave
+  // profile snap. Require a genuine alongshore peel while also proving that
+  // centimeter-scale motion cannot jump between different wave fields.
+  Math.abs(peelingBreakCoordinate - centerBreakCoordinate) < .25
+  || Math.abs(
+    peelingBreakCoordinateRight - peelingBreakCoordinateLeft,
+  ) > .012
   || Math.abs(breakNormalMagnitude - 1) > .000001
   || outsideProbeCoordinate
-    >= peelingBreakGeometry.breakingCoordinate - 4.8
+    >= peelingBreakGeometry.breakingCoordinate - 3.6
   || geometricGroundAlignment < .995
   || !enteredLineup.outsideBreak
   || !heldLineup.outsideBreak
@@ -432,33 +2886,103 @@ if (
     outerBoundaryLoad.power - innerBoundaryLoad.power,
   ) > .004
 ) {
-  throw new Error("Animated breaking-band geometry no longer separates continuous wall load from lineup coaching state");
+  throw new Error(
+    "Animated breaking-band geometry no longer separates continuous wall load "
+      + `from lineup coaching state: ${JSON.stringify({
+        centerBreakCoordinate,
+        peelingBreakCoordinate,
+        peelingBreakCoordinateLeft,
+        peelingBreakCoordinateRight,
+        outsideProbeCoordinate,
+        breakNormalMagnitude,
+        geometricGroundAlignment,
+        enteredLineup,
+        heldLineup,
+        exitedLineup,
+        prematureLineup,
+        outsideShorebreakLoad,
+        heldLineupShorebreakLoad,
+        outerBoundaryLoad,
+        innerBoundaryLoad,
+        peakShorebreakLoad,
+        shorewardShorebreakLoad,
+        lullOuterShorebreakLoad,
+        setOuterShorebreakLoad,
+      })}`,
+  );
 }
 const setCycle = Array.from(
-  { length: 24 },
+  { length: 96 },
   (_, index) => waveSetState(index * 9, 9),
 );
-const openingLull = setCycle.slice(0, 6);
-const firstSet = setCycle.slice(6, 12);
-const secondLull = setCycle.slice(12, 17);
-const secondSet = setCycle.slice(17, 22);
+let longestSurfableRun = 0;
+let longestLull = 0;
+let surfableRun = 0;
+let lullRun = 0;
+for (const crest of setCycle) {
+  surfableRun = crest.crestSurfable
+    ? surfableRun + 1
+    : 0;
+  lullRun = crest.crestSurfable
+    ? 0
+    : lullRun + 1;
+  longestSurfableRun = Math.max(
+    longestSurfableRun,
+    surfableRun,
+  );
+  longestLull = Math.max(longestLull, lullRun);
+}
+const firstHalf = setCycle
+  .slice(0, 48)
+  .map((crest) => crest.crestEnergy.toFixed(4))
+  .join(",");
+const secondHalf = setCycle
+  .slice(48)
+  .map((crest) => crest.crestEnergy.toFixed(4))
+  .join(",");
+const surfableCount = setCycle.filter(
+  (crest) => crest.crestSurfable,
+).length;
 if (
-  setCycle[0].crestSequenceLength !== 24
-  || openingLull.some((crest) => crest.crestSurfable)
-  || firstSet.filter((crest) => crest.crestSurfable).length < 5
-  || secondLull.some((crest) => crest.crestSurfable)
-  || secondSet.filter((crest) => crest.crestSurfable).length < 5
-  || Math.max(...firstSet.map((crest) => crest.crestEnergy)) < .8
-  || Math.max(...secondSet.map((crest) => crest.crestEnergy)) < .75
+  setCycle[0].crestSequenceLength !== 0
+  || surfableCount < 8
+  || surfableCount > 60
+  || longestSurfableRun < 3
+  || longestSurfableRun > 8
+  || longestLull < 3
+  || longestLull > 8
+  || firstHalf === secondHalf
+  || Math.max(...setCycle.map((crest) => crest.crestEnergy)) < .5
 ) {
   throw new Error(
-    "Swell sequencing no longer produces distinct multi-wave sets and paddle-out lulls",
+    "Spectral interference no longer produces non-repeating wave groups and natural lulls",
   );
 }
 
 const x = 0;
 const z = -34;
-const lookback = .16;
+
+if (
+  SURF_ASSIST_PROFILES.guided.surfTurnAuthority
+    <= SURF_ASSIST_PROFILES.natural.surfTurnAuthority
+  || SURF_ASSIST_PROFILES.natural.surfTurnAuthority
+    <= SURF_ASSIST_PROFILES.raw.surfTurnAuthority
+  || SURF_ASSIST_PROFILES.guided.automaticCounterweight
+    <= SURF_ASSIST_PROFILES.natural.automaticCounterweight
+  || SURF_ASSIST_PROFILES.natural.automaticCounterweight
+    <= SURF_ASSIST_PROFILES.raw.automaticCounterweight
+  || SURF_ASSIST_PROFILES.guided.ridingStabilityScale
+    <= SURF_ASSIST_PROFILES.natural.ridingStabilityScale
+  || SURF_ASSIST_PROFILES.natural.ridingStabilityScale
+    <= SURF_ASSIST_PROFILES.raw.ridingStabilityScale
+  || SURF_ASSIST_PROFILES.raw.surfTurnAuthority !== 1
+  || SURF_ASSIST_PROFILES.raw.automaticCounterweight !== 0
+  || SURF_ASSIST_PROFILES.raw.ridingStabilityScale !== 1
+) {
+  throw new Error(
+    "Surf assists no longer progress from forgiving Guided through Natural to unmodified Raw",
+  );
+}
 
 function staminaAfter(seconds, effort) {
   let stamina = 100;
@@ -489,6 +3013,8 @@ const shallowMidpointProgress = shorelineRideOutProgress(
 );
 if (
   shorelineRideOutProgress(RIDE_RESULT_LINE_Z) !== 0
+  || SHALLOW_DISMOUNT_Z - RIDE_RESULT_LINE_Z > 1.5
+  || RIDE_RESULT_LINE_Z < 6.8
   || !Number.isFinite(shallowMidpointProgress)
   || Math.abs(shallowMidpointProgress - .5) > .000001
   || shorelineRideOutProgress(SHALLOW_DISMOUNT_Z) !== 1
@@ -608,10 +3134,7 @@ function readingAt(time, alignment, paddleDrive, mode, sampleZ = z) {
     0,
     -(frame.slopeX * normalX + frame.slopeZ * normalZ),
   );
-  const surfaceRise = (
-    frame.height
-    - waveHeightAt(x, sampleZ, time - lookback, session, character)
-  ) / lookback;
+  const surfaceRise = frame.surfaceRise;
   return evaluateWaveTakeoff({
     crestDistance: waveCrestDistanceAtPhase(
       state.crestPhaseError,
@@ -676,27 +3199,27 @@ function verifyFaceSpans(label, spans, minimumMedian) {
 const idealTraining = verifyFaceSpans(
   "ideal training takeoff",
   supportedFaceSpans(1, .85, "training"),
-  2.2,
+  1.55,
 );
 const marginalTraining = verifyFaceSpans(
   "marginal training takeoff",
   supportedFaceSpans(.35, .15, "training"),
-  1.9,
+  1.15,
 );
 const idealAdvanced = verifyFaceSpans(
   "ideal advanced takeoff",
   supportedFaceSpans(1, .85, "advanced"),
-  2,
+  1.55,
 );
 const marginalAdvanced = verifyFaceSpans(
   "marginal advanced takeoff",
   supportedFaceSpans(.35, .15, "advanced"),
-  1.7,
+  1.15,
 );
 const insideReform = verifyFaceSpans(
   "inside reform takeoff",
   supportedFaceSpans(.55, .35, "training", -20),
-  1.6,
+  1.1,
 );
 
 if (
@@ -862,6 +3385,69 @@ if (flatWater.surfable || flatWater.opportunity !== 0) {
   throw new Error("Flat water must not produce physical takeoff opportunity");
 }
 
+const strictPopUpSupport = resolvePopUpLandingSupport({
+  lostCrest: false,
+  boardStillEngaged: true,
+  interactionOutcome: "capture",
+  waterContact: .86,
+  rollCapsizeRisk: .18,
+  pitchOverRisk: .16,
+  crestOvertaken: .22,
+  surfableFace: true,
+  faceEnvelope: .5,
+  physicalLift: .62,
+  waveContact: .74,
+});
+const readableFaceGrace = resolvePopUpLandingSupport({
+  lostCrest: false,
+  boardStillEngaged: false,
+  interactionOutcome: "glide",
+  waterContact: .58,
+  rollCapsizeRisk: .34,
+  pitchOverRisk: .32,
+  crestOvertaken: .62,
+  surfableFace: true,
+  faceEnvelope: .2,
+  physicalLift: .3,
+  waveContact: .16,
+});
+const flatPopUpSupport = resolvePopUpLandingSupport({
+  lostCrest: false,
+  boardStillEngaged: false,
+  interactionOutcome: "stand",
+  waterContact: .9,
+  rollCapsizeRisk: .05,
+  pitchOverRisk: .05,
+  crestOvertaken: 0,
+  surfableFace: false,
+  faceEnvelope: 0,
+  physicalLift: 0,
+  waveContact: 0,
+});
+const passedCrestSupport = resolvePopUpLandingSupport({
+  lostCrest: true,
+  boardStillEngaged: true,
+  interactionOutcome: "capture",
+  waterContact: .9,
+  rollCapsizeRisk: .05,
+  pitchOverRisk: .05,
+  crestOvertaken: .95,
+  surfableFace: true,
+  faceEnvelope: .4,
+  physicalLift: .7,
+  waveContact: .8,
+});
+if (
+  strictPopUpSupport !== 1
+  || readableFaceGrace < .46
+  || flatPopUpSupport !== 0
+  || passedCrestSupport !== 0
+) {
+  throw new Error(
+    "Pop-up landing no longer accepts a readable moving face while rejecting flat water and a lost crest",
+  );
+}
+
 const sharedBoardWater = {
   boardHeading: Math.atan2(0, 1),
   velocityX: 0,
@@ -931,6 +3517,47 @@ if (angleSweep.find(({ degrees }) => degrees === 75).reading.capture >= .2) {
 }
 if (angleSweep.find(({ degrees }) => degrees === 45).reading.capture <= .3) {
   throw new Error("A diagonal 45-degree takeoff cannot engage the open shoulder");
+}
+
+const unsupportedDiagonalTrim = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: 60 * Math.PI / 180,
+  velocityZ: 3.4,
+});
+const supportedDiagonalTrim = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: 60 * Math.PI / 180,
+  velocityZ: 3.4,
+  faceTrimSupport: 1,
+});
+const unsupportedTangentTrim = evaluateBoardWaterInteraction({
+  ...sharedBoardWater,
+  boardHeading: Math.PI / 2,
+  velocityZ: 3.4,
+  faceTrimSupport: 1,
+});
+if (
+  supportedDiagonalTrim.outcome !== "capture"
+  || supportedDiagonalTrim.capture
+    <= unsupportedDiagonalTrim.capture * 1.5
+  || supportedDiagonalTrim.crossWaveLoad
+    >= unsupportedDiagonalTrim.crossWaveLoad * .5
+  || supportedDiagonalTrim.wipeoutRisk
+    >= unsupportedDiagonalTrim.wipeoutRisk * .5
+) {
+  throw new Error(
+    "An engaged rail no longer supports diagonal down-the-line trim",
+  );
+}
+if (
+  unsupportedTangentTrim.outcome !== "tumble"
+  || unsupportedTangentTrim.capture > .02
+  || unsupportedTangentTrim.crossWaveLoad
+    < supportedDiagonalTrim.crossWaveLoad * 3
+) {
+  throw new Error(
+    "Face trim incorrectly protected a fully broadside board",
+  );
 }
 
 const stillWaterStand = evaluateBoardWaterInteraction({
@@ -1359,6 +3986,41 @@ const broadsideWavePressure = resolveSurfboardWavePressure({
   waveHeight: dynamicsSample.waveHeight,
   stance: 0,
 });
+const diagonalStandingPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 3,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: -.12,
+});
+const diagonalTrimPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 3,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: -.12,
+  faceTrimSupport: 1,
+});
+const broadsideTrimPressure = resolveSurfboardWavePressure({
+  velocityX: 0,
+  velocityZ: 2,
+  heading: Math.PI / 2,
+  waveVelocityX: 0,
+  waveVelocityZ: 6,
+  waveContact: .8,
+  waterContact: 1,
+  waveHeight: 2,
+  stance: -.12,
+  faceTrimSupport: 1,
+});
 const stillWaterPressure = resolveSurfboardWavePressure({
   velocityX: 0,
   velocityZ: 0,
@@ -1519,6 +4181,12 @@ if (
   || Math.abs(alignedWavePressure.lateralLoad) > .001
   || Math.abs(broadsideWavePressure.forwardDrive) > .001
   || Math.abs(broadsideWavePressure.lateralLoad) < 1
+  || diagonalTrimPressure.forwardDrive
+    <= diagonalStandingPressure.forwardDrive * 1.35
+  || Math.abs(diagonalTrimPressure.lateralLoad)
+    >= Math.abs(diagonalStandingPressure.lateralLoad) * .72
+  || Math.abs(broadsideTrimPressure.forwardDrive) > .001
+  || Math.abs(broadsideTrimPressure.lateralLoad) < 1
   || stillWaterPressure.pressure !== 0
 ) {
   throw new Error("Shared wave pressure no longer distinguishes aligned drive, broadside load, and still water");
@@ -1754,11 +4422,68 @@ const longboardTurn = dynamicsAfterOneSecond({
   boardTurn: .82,
   boardStability: 1.28,
 });
+const naturalPerformanceTurn = dynamicsAfterOneSecond({
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  boardStability: 1,
+  turningAuthority:
+    SURF_ASSIST_PROFILES.natural.surfTurnAuthority,
+  momentumRetention:
+    SURF_ASSIST_PROFILES.natural.momentumRetention,
+});
+const guidedPerformanceTurn = dynamicsAfterOneSecond({
+  boardLength: 2.5,
+  boardWidth: .32,
+  boardTurn: 1,
+  boardStability: 1,
+  turningAuthority:
+    SURF_ASSIST_PROFILES.guided.surfTurnAuthority,
+  momentumRetention:
+    SURF_ASSIST_PROFILES.guided.momentumRetention,
+});
+function coastingAfterOneSecond(momentumRetention) {
+  let state = {
+    velocityX: 0,
+    velocityZ: 5,
+    heading: 0,
+    yawRate: 0,
+  };
+  for (let frame = 0; frame < 60; frame += 1) {
+    state = advanceSurfboardDynamics(state, {
+      ...dynamicsSample,
+      waveContact: 0,
+      momentumRetention,
+    });
+  }
+  return Math.hypot(state.velocityX, state.velocityZ);
+}
+const rawCoastingSpeed = coastingAfterOneSecond(
+  SURF_ASSIST_PROFILES.raw.momentumRetention,
+);
+const naturalCoastingSpeed = coastingAfterOneSecond(
+  SURF_ASSIST_PROFILES.natural.momentumRetention,
+);
+const guidedCoastingSpeed = coastingAfterOneSecond(
+  SURF_ASSIST_PROFILES.guided.momentumRetention,
+);
 if (performanceTurn.heading < .3) {
   throw new Error(`A loaded performance rail failed to redirect momentum: ${performanceTurn.heading.toFixed(2)}rad`);
 }
 if (longboardTurn.heading >= performanceTurn.heading * .78) {
   throw new Error("Longboard yaw inertia no longer distinguishes it from a shortboard");
+}
+if (
+  naturalPerformanceTurn.heading
+    <= performanceTurn.heading * 1.06
+  || guidedPerformanceTurn.heading
+    <= naturalPerformanceTurn.heading * 1.08
+  || naturalCoastingSpeed <= rawCoastingSpeed + .02
+  || guidedCoastingSpeed <= naturalCoastingSpeed + .02
+) {
+  throw new Error(
+    "Guided and Natural assists no longer add progressive turn authority and momentum retention",
+  );
 }
 function simulateTakeoffBottomTurn(railInput) {
   let state = {
@@ -2025,6 +4750,34 @@ function instabilityAfterOneSecond(hz) {
 }
 const standingInstability60 = instabilityAfterOneSecond(60);
 const engagedInstability120 = instabilityAfterOneSecond(120);
+let guidedInstability = 0;
+for (let frame = 0; frame < 30; frame += 1) {
+  guidedInstability = advanceSurfboardInstability(
+    guidedInstability,
+    {
+      ...sharedInstabilitySample,
+      deltaSeconds: 1 / 60,
+      loadScale:
+        SURF_ASSIST_PROFILES.guided.instabilityLoadScale,
+      recoveryScale:
+        SURF_ASSIST_PROFILES.guided.instabilityRecoveryScale,
+    },
+  ).instability;
+}
+let rawInstability = 0;
+for (let frame = 0; frame < 30; frame += 1) {
+  rawInstability = advanceSurfboardInstability(
+    rawInstability,
+    {
+      ...sharedInstabilitySample,
+      deltaSeconds: 1 / 60,
+      loadScale:
+        SURF_ASSIST_PROFILES.raw.instabilityLoadScale,
+      recoveryScale:
+        SURF_ASSIST_PROFILES.raw.instabilityRecoveryScale,
+    },
+  ).instability;
+}
 if (
   Math.abs(
     standingInstability60 - engagedInstability120
@@ -2035,8 +4788,26 @@ if (
     sharedInstabilitySample.pitchOverRisk,
   )
   || surfboardWipeoutTriggered(.2, .2, .2)
+  || guidedInstability >= rawInstability * .55
+  || !surfboardWipeoutTriggered(1.5, .2, .2)
+  || surfboardWipeoutTriggered(
+    1.5,
+    .2,
+    .2,
+    SURF_ASSIST_PROFILES.guided.wipeoutThresholdScale,
+    SURF_ASSIST_PROFILES.guided.failureMargin,
+  )
+  || !surfboardWipeoutTriggered(
+    0,
+    .99,
+    0,
+    SURF_ASSIST_PROFILES.guided.wipeoutThresholdScale,
+    SURF_ASSIST_PROFILES.guided.failureMargin,
+  )
 ) {
-  throw new Error("Instability or wipeout threshold changed across engagement");
+  throw new Error(
+    "Instability or the progressive Guided/Natural/Raw wipeout thresholds changed across engagement",
+  );
 }
 const sharedWipeoutSample = {
   waveHeight: 2.4,
@@ -3318,11 +6089,39 @@ const counterweightedCrossWave = rollForFrames(75, {
   whitewater: .3,
   counterweight: crossWaveProbe.balanceTarget,
 });
+const automaticallyBalancedCrossWave = rollForFrames(75, {
+  ...rollSample,
+  speed: 1.2,
+  planing: .12,
+  crossSlope: .12,
+  crossWaveLoad: .72,
+  whitewater: .3,
+  automaticCounterweight:
+    SURF_ASSIST_PROFILES.guided.automaticCounterweight,
+  railTorqueScale:
+    SURF_ASSIST_PROFILES.guided.railTorqueScale,
+});
+const guidedLoadedRail = rollForFrames(60, {
+  ...rollSample,
+  railInput: .8,
+  automaticCounterweight:
+    SURF_ASSIST_PROFILES.guided.automaticCounterweight,
+  railTorqueScale:
+    SURF_ASSIST_PROFILES.guided.railTorqueScale,
+});
 if (
   unbalancedCrossWave.edgeRisk < .35
   || Math.abs(counterweightedCrossWave.rollAngle) >= Math.abs(unbalancedCrossWave.rollAngle) * .55
+  || Math.abs(automaticallyBalancedCrossWave.rollAngle)
+    >= Math.abs(unbalancedCrossWave.rollAngle) * .72
+  || Math.abs(
+    automaticallyBalancedCrossWave.effectiveCounterweight,
+  ) < .08
+  || guidedLoadedRail.effectiveRail < .24
 ) {
-  throw new Error("Counterweight is not physically opposing cross-wave roll torque");
+  throw new Error(
+    "Independent manual/automatic counterweight no longer opposes cross-wave torque while leaving a turnable rail",
+  );
 }
 const airborneRoll = rollForFrames(45, {
   ...rollSample,
@@ -5256,6 +8055,236 @@ if (
   throw new Error("Wave engagement no longer evolves independently from the body transition");
 }
 
+// --- Pocket propulsion: the breaking face must push hardest in the pocket
+// under the curl, fade across the shoulder, and vanish on unbroken water. ---
+const pocketDriveBase = {
+  linePosition: 0,
+  facePosition: .35,
+  waveEnergy: .85,
+  waveSpeed: 6,
+  waveNormalX: 0,
+  waveNormalZ: 1,
+  lineSide: 1,
+  boardHeading: .93,
+  forwardSpeed: 4,
+  waveContact: .85,
+  whitewater: 0,
+  tubePressure: .2,
+};
+const pocketDriveReading = resolveWavePocketDrive(pocketDriveBase);
+const shoulderDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: 1.05,
+});
+const deepDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: -1.1,
+});
+const flatsDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: 1.45,
+  facePosition: -1,
+  waveContact: .06,
+});
+if (
+  pocketDriveReading.driveMagnitude <= .8
+  || pocketDriveReading.driveMagnitude
+    <= shoulderDriveReading.driveMagnitude * 2
+  || deepDriveReading.driveMagnitude <= 0
+  || deepDriveReading.driveMagnitude
+    >= pocketDriveReading.driveMagnitude * .5
+  || flatsDriveReading.driveMagnitude > .05
+) {
+  throw new Error("Pocket drive is not concentrated under the curl");
+}
+// Each gate must zero the drive on its own: a perfectly positioned board on
+// dead water (contact alone) and a trough position on a live face (face
+// envelope alone) both stay quiet.
+const contactOnlyDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  waveContact: .04,
+});
+const troughDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  facePosition: -1,
+  waveContact: .6,
+});
+if (
+  contactOnlyDriveReading.driveMagnitude > .5
+  || troughDriveReading.driveMagnitude > .001
+) {
+  throw new Error("Pocket drive gates are not independently zeroing the push");
+}
+// Glide decay keys on face support: solid contact keeps the pocket and a
+// trough bottom turn leak-free, while unbroken water bleeds momentum.
+if (
+  flatsDriveReading.glideDragBonus <= .015
+  || pocketDriveReading.glideDragBonus > 1e-9
+  || troughDriveReading.glideDragBonus > 1e-9
+) {
+  throw new Error("Glide decay is not keyed on face contact");
+}
+const straightInDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: 0,
+});
+const offshoreDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: Math.PI,
+});
+if (
+  pocketDriveReading.driveMagnitude
+    <= straightInDriveReading.driveMagnitude * 1.2
+  || offshoreDriveReading.driveMagnitude > .001
+) {
+  throw new Error("Down-the-line trim is not outrunning a straight-to-shore or offshore line");
+}
+const overSpeedDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  forwardSpeed: 18,
+});
+const foamDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  whitewater: 1,
+});
+if (
+  overSpeedDriveReading.driveMagnitude > .01
+  || foamDriveReading.driveMagnitude
+    >= pocketDriveReading.driveMagnitude * .6
+  || foamDriveReading.glideDragBonus > .001
+) {
+  throw new Error("Pocket drive is not saturating with board speed or foam");
+}
+// The curl's throw steers toward the peel on both line sides, and a left
+// mirrors a right exactly.
+const rightThrowDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: 0,
+  tubePressure: .9,
+});
+const leftThrowDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: 0,
+  tubePressure: .9,
+  lineSide: -1,
+});
+const mirroredDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  lineSide: -1,
+  boardHeading: -.93,
+});
+if (
+  rightThrowDriveReading.driveX <= .1
+  || leftThrowDriveReading.driveX >= -.1
+  || Math.abs(mirroredDriveReading.driveX + pocketDriveReading.driveX) > 1e-9
+  || Math.abs(mirroredDriveReading.driveZ - pocketDriveReading.driveZ) > 1e-9
+) {
+  throw new Error("Down-the-line throw is not steering toward the peel on both line sides");
+}
+// Assist plumbing: the window widens only the shoulder side, and the drive
+// scale multiplies through with its clamp.
+const windowedShoulderDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: 1.05,
+  pocketWindowScale: 1.3,
+});
+const windowedDeepDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: -1.1,
+  pocketWindowScale: 1.3,
+});
+const scaledDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  driveScale: 1.3,
+});
+const overScaledDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  driveScale: 5,
+});
+if (
+  windowedShoulderDriveReading.driveMagnitude
+    <= shoulderDriveReading.driveMagnitude * 1.5
+  || Math.abs(
+    windowedDeepDriveReading.driveMagnitude
+      - deepDriveReading.driveMagnitude,
+  ) > 1e-9
+  || Math.abs(
+    scaledDriveReading.driveMagnitude
+      - pocketDriveReading.driveMagnitude * 1.3,
+  ) > 1e-9
+  || Math.abs(
+    overScaledDriveReading.driveMagnitude
+      - pocketDriveReading.driveMagnitude * 1.6,
+  ) > 1e-9
+) {
+  throw new Error("Assist window/scale plumbing is not shaping the pocket drive as declared");
+}
+const nanLineDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  linePosition: Number.NaN,
+});
+const nanHeadingDriveReading = resolveWavePocketDrive({
+  ...pocketDriveBase,
+  boardHeading: Number.NaN,
+});
+if (
+  nanLineDriveReading.driveMagnitude !== 0
+  || nanLineDriveReading.driveX !== 0
+  || nanLineDriveReading.driveZ !== 0
+  || nanLineDriveReading.glideDragBonus !== 0
+  || nanHeadingDriveReading.driveX !== 0
+  || Number.isNaN(nanLineDriveReading.driveZ)
+  || Number.isNaN(nanHeadingDriveReading.driveZ)
+) {
+  throw new Error("A non-finite pocket sample is leaking into the drive vector");
+}
+const drivenDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveDriveX: 0,
+  waveDriveZ: 3,
+});
+const undrivenDynamics = advanceSurfboardDynamics(dynamicsState, dynamicsSample);
+const explicitZeroDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveDriveX: 0,
+  waveDriveZ: 0,
+  glideDragBonus: 0,
+});
+if (
+  JSON.stringify(undrivenDynamics) !== JSON.stringify(explicitZeroDynamics)
+) {
+  throw new Error("Absent pocket-drive fields no longer match explicit zeros bit-for-bit");
+}
+const airborneDrivenDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waveDriveX: 0,
+  waveDriveZ: 3,
+  waterContact: 0,
+});
+const airborneUndrivenDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  waterContact: 0,
+});
+if (
+  JSON.stringify(airborneDrivenDynamics)
+    !== JSON.stringify(airborneUndrivenDynamics)
+) {
+  throw new Error("An airborne board is still receiving pocket drive through some channel");
+}
+const glideDynamics = advanceSurfboardDynamics(dynamicsState, {
+  ...dynamicsSample,
+  glideDragBonus: .05,
+});
+const driveVelocityGain = drivenDynamics.velocityZ - undrivenDynamics.velocityZ;
+if (
+  Math.abs(drivenDynamics.waveDriveForward - 3) > 1e-9
+  || undrivenDynamics.waveDriveForward !== 0
+  || glideDynamics.velocityZ >= undrivenDynamics.velocityZ
+  || Math.abs(driveVelocityGain - 3 * dynamicsSample.deltaSeconds) > 1e-9
+) {
+  throw new Error("Wave drive is not integrating exactly through hull contact or glide drag is inert");
+}
+
 console.log(JSON.stringify({
   trainingProgression: {
     aligned: reachedSurfTrainingStep(alignedTrainingState),
@@ -5274,6 +8303,29 @@ console.log(JSON.stringify({
     twentySecondWavelength,
     shortPeriodCrestSpeed: shortPeriodTransport.speed,
     longPeriodCrestSpeed: longPeriodTransport.speed,
+  },
+  towFlotation: {
+    berthZones: towBerthSurvey.length,
+    minimumBerthDepth: Math.min(
+      ...towBerthSurvey.map((survey) => survey.centerDepth),
+    ),
+    minimumBerthCollapse: Math.min(
+      ...towBerthSurvey.map((survey) => survey.shoreCollapse),
+    ),
+    maximumInteractionDistance: Math.max(
+      ...towBerthSurvey.map(
+        (survey) => survey.interactionDistance,
+      ),
+    ),
+    mavericksLegacyTowBerth,
+    mavericksTowBerth,
+    hossegorTowBerth,
+    uluwatuTowBerth,
+    movingBreakingRoute: {
+      steady: movingTowHullSteady,
+      stalled: movingTowHullStalled,
+    },
+    reversals: towHullReversals,
   },
   breakGeometry: {
     centerBreakCoordinate,
@@ -5387,6 +8439,12 @@ console.log(JSON.stringify({
       capture: reading.capture,
       crossWaveLoad: reading.crossWaveLoad,
     })),
+    diagonalTrim: {
+      unsupportedLoad: unsupportedDiagonalTrim.crossWaveLoad,
+      supportedLoad: supportedDiagonalTrim.crossWaveLoad,
+      supportedCapture: supportedDiagonalTrim.capture,
+      tangentOutcome: unsupportedTangentTrim.outcome,
+    },
   },
   dynamics: {
     downhillAcceleration: downhillDynamics.accelerationZ,
