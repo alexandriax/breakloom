@@ -256,7 +256,7 @@ const PASSPORT_KEY = "breakloom-world-tour-v1";
 const GUIDANCE_KEY = "breakloom-coaching-v1";
 
 /**
- * The game stored progress under a surfscape- prefix before it was renamed.
+ * The game stored progress under a legacy prefix before it was renamed.
  * Anyone who played it then keeps their personal bests, World Tour stamps, and
  * coaching preference: the old entry is copied across once and then removed.
  */

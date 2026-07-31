@@ -1,6 +1,6 @@
 const CACHE_NAME = "breakloom-shell-v236";
 const CACHE_PREFIX = "breakloom-shell-";
-// The game shipped as Surfscape; drop those caches rather than leaving a dead
+// Drop caches from the retired pre-rename namespace rather than leaving a dead
 // copy of the old shell on every device that ever installed it.
 const RETIRED_CACHE_PREFIXES = ["surfscape-shell-"];
 const scopeUrl = new URL(self.registration.scope);

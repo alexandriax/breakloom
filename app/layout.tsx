@@ -8,6 +8,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.breakloom.com"),
   title: "Breakloom - Read the Ocean",
   description:
     "A living, browser-based surf experience powered by real marine conditions from the world's most iconic breaks.",
@@ -30,11 +31,25 @@ export const metadata: Metadata = {
     title: "Breakloom - Read the Ocean",
     description: "Choose a real break. Read a living ocean. Chase the clean line.",
     type: "website",
+    images: [
+      {
+        url: "/breakloom-og.jpg",
+        width: 1200,
+        height: 630,
+        alt: "Breakloom surfer carving a glassy wave at golden hour",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Breakloom - Read the Ocean",
     description: "A living surf experience in your browser.",
+    images: [
+      {
+        url: "/breakloom-og.jpg",
+        alt: "Breakloom surfer carving a glassy wave at golden hour",
+      },
+    ],
   },
 };
 
@@ -59,11 +74,6 @@ export default function RootLayout({
             gtag('config', 'G-WS9Q79XZNG');
           `}
         </Script>
-        <meta property="og:image" content="./og.jpg" />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content="Breakloom surfer carving a glassy wave at golden hour" />
-        <meta name="twitter:image" content="./og.jpg" />
       </head>
       <body>{children}</body>
     </html>

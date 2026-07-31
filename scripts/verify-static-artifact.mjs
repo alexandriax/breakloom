@@ -28,6 +28,7 @@ async function requireFile(relativePath) {
 const requiredFiles = [
   "index.html",
   "404.html",
+  "breakloom-og.jpg",
   "favicon.svg",
   "manifest.webmanifest",
   "sw.js",
@@ -51,6 +52,9 @@ function artifactPathForReference(reference) {
 }
 
 const indexHtml = await readFile(resolve(output, "index.html"), "utf8");
+if (!indexHtml.includes("breakloom-og.jpg")) {
+  failures.push("Generated page does not reference the Breakloom social preview");
+}
 const localReferences = new Set(
   [...indexHtml.matchAll(/(?:src|href)="([^"]+)"/g)]
     .map((match) => match[1])
