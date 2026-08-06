@@ -1,6 +1,7 @@
 import {
   advanceWavePumpDrive,
   createWavePumpState,
+  recognizeSurfboardSurfaceManeuver,
   resolveSurfboardAerialControl,
   INITIAL_STATS,
   WAVE_PUMP_TUNING,
@@ -156,6 +157,55 @@ invariant(
 );
 invariant(!longboardFlying.grabActive, "a neutral hand registered as a grab");
 
+// The surface recognizer names the deeper trick signatures without losing
+// its existing vocabulary.
+const carveBase = {
+  durationSeconds: .9,
+  startFacePosition: .3,
+  endFacePosition: .1,
+  startLinePosition: .1,
+  endLinePosition: -.05,
+  accumulatedYaw: .6,
+  peakYawRate: .9,
+  peakRailLoad: .6,
+  nosePressureSeconds: 0,
+  minimumWaterContact: .8,
+  endPlaning: .7,
+  endWaveContact: .6,
+  boardLength: 2.5,
+};
+const tailslide = recognizeSurfboardSurfaceManeuver({
+  ...carveBase,
+  peakRailSlip: .78,
+  endRailSlip: .3,
+});
+invariant(
+  tailslide?.name === "Tailslide",
+  "a released-and-recovered rail no longer names a Tailslide",
+);
+const layback = recognizeSurfboardSurfaceManeuver({
+  ...carveBase,
+  peakCounterweight: .8,
+});
+invariant(
+  layback?.name === "Layback Snap",
+  "a thrown counterweight through a hard top turn no longer names a Layback Snap",
+);
+const plainCarve = recognizeSurfboardSurfaceManeuver(carveBase);
+invariant(
+  plainCarve?.name === "Power Carve",
+  "the existing carve vocabulary regressed",
+);
+const spunOut = recognizeSurfboardSurfaceManeuver({
+  ...carveBase,
+  peakRailSlip: .78,
+  endRailSlip: .6,
+});
+invariant(
+  spunOut?.name !== "Tailslide",
+  "a slide without re-grip counts as a Tailslide",
+);
+
 // The scene wiring, scoring layer, stats contract, and HUD all carry the
 // flow mechanics.
 invariant(
@@ -182,7 +232,7 @@ invariant(
   "the 540 rotation tier is gone",
 );
 invariant(
-  sceneSource.includes('${attempt.grabSide < 0 ? "Melon" : "Indy"}'),
+  sceneSource.includes('attempt.grabSide < 0 ? "Melon" : "Indy"'),
   "grabbed airs are no longer named",
 );
 invariant(
@@ -224,6 +274,28 @@ invariant(
 invariant(
   appSource.includes("-MOVE CHAIN"),
   "the maneuver toast no longer announces the chain",
+);
+invariant(
+  sceneSource.includes('rideManeuverRepeats.current.get("Barrel Escape")')
+    && sceneSource.includes("barrelRun >= .9"),
+  "a made barrel is no longer a scored chain event",
+);
+invariant(
+  sceneSource.includes('closeoutLaunch ? "Closeout" : ""')
+    && sceneSource.includes("closeoutLaunch ? 160 : 0"),
+  "punting a closing section no longer pays its reading bonus",
+);
+invariant(
+  sceneSource.includes("maneuverGrabSide:"),
+  "the live grab channel left the stats contract",
+);
+invariant(
+  appSource.includes('className={`air-ticker'),
+  "the airborne spin ticker left the HUD",
+);
+invariant(
+  appSource.includes('maneuverToast.name.startsWith("Barrel")'),
+  "the barrel toast lost its MADE IT framing",
 );
 
 console.log(JSON.stringify({

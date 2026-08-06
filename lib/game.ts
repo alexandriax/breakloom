@@ -5206,10 +5206,13 @@ export type SurfboardSurfaceManeuverSample = {
   endPlaning: number;
   endWaveContact: number;
   boardLength: number;
+  peakRailSlip?: number;
+  endRailSlip?: number;
+  peakCounterweight?: number;
 };
 
 export type SurfboardSurfaceManeuverReading = {
-  name: "Nose Ride" | "Bottom Turn" | "Pocket Cutback" | "Roundhouse Cutback" | "Rail Carve" | "Power Carve";
+  name: "Nose Ride" | "Bottom Turn" | "Pocket Cutback" | "Roundhouse Cutback" | "Rail Carve" | "Power Carve" | "Tailslide" | "Layback Snap";
   family: "trim" | "carve";
   base: number;
   strength: number;
@@ -5275,6 +5278,50 @@ export function recognizeSurfboardSurfaceManeuver(
     0,
     1,
   );
+  // A layback reads from the body itself: the counterweight thrown far past
+  // the loaded rail through a hard upper-face turn, then recovered enough to
+  // keep planing. It outranks the generic carve names because its signature
+  // is a superset of theirs.
+  const peakCounterweight = Math.abs(sample.peakCounterweight ?? 0);
+  if (
+    peakCounterweight > .62
+    && peakRailLoad > .52
+    && accumulatedYaw > .5
+    && sample.startFacePosition > .12
+  ) {
+    return {
+      name: "Layback Snap",
+      family: "carve",
+      base: 430,
+      strength: clampValue(
+        strength * .72 + peakCounterweight * .28,
+        0,
+        1,
+      ),
+    };
+  }
+  // A tailslide is a turn whose fins measurably broke free and then re-gripped
+  // before the board stopped planing — released slip without the recovery is
+  // just a spin-out and never reaches this recognizer's contact gate.
+  const peakRailSlip = clampValue(sample.peakRailSlip ?? 0, 0, 1);
+  const endRailSlip = clampValue(sample.endRailSlip ?? 0, 0, 1);
+  if (
+    peakRailSlip > .62
+    && endRailSlip < .45
+    && accumulatedYaw > .38
+    && peakYawRate > .5
+  ) {
+    return {
+      name: "Tailslide",
+      family: "carve",
+      base: 365,
+      strength: clampValue(
+        strength * .7 + (peakRailSlip - endRailSlip) * .42,
+        0,
+        1,
+      ),
+    };
+  }
   if (sample.startFacePosition < -.24 && faceGain > .2) {
     return {
       name: "Bottom Turn",
@@ -7020,6 +7067,7 @@ export type GameStats = {
   maneuverRotation: number;
   maneuverRotationTarget: number;
   maneuverPeakAirborne: number;
+  maneuverGrabSide: number;
   trickCharge: number;
   maneuverAirborne: boolean;
   landingTarget: number;
@@ -7184,6 +7232,7 @@ export const INITIAL_STATS: GameStats = {
   maneuverRotation: 0,
   maneuverRotationTarget: 0,
   maneuverPeakAirborne: 0,
+  maneuverGrabSide: 0,
   trickCharge: 0,
   maneuverAirborne: false,
   landingTarget: 0,

@@ -1334,6 +1334,10 @@ input:focus-visible {
   0%, 100% { text-shadow: 0 0 10px rgba(143, 247, 201, 0.45); }
   50% { text-shadow: 0 0 20px rgba(143, 247, 201, 0.9); }
 }
+.air-ticker { position: absolute; top: 118px; left: 50%; transform: translateX(-50%); display: flex; align-items: baseline; gap: 8px; pointer-events: none; }
+.air-ticker strong { font-family: Impact, sans-serif; font-size: 30px; letter-spacing: 0.06em; color: #eaf9ff; text-shadow: 0 0 12px rgba(111, 227, 255, 0.55); }
+.air-ticker.is-big strong { color: #8ff7c9; text-shadow: 0 0 18px rgba(143, 247, 201, 0.85); }
+.air-ticker span { font-size: 10px; letter-spacing: 0.16em; color: #6fe3ff; }
 
 .set-panel {
   position: absolute;

@@ -1091,6 +1091,7 @@ export default function BreakloomApp() {
   const previousHydrodynamicLoad = useRef(false);
   const previousResurface = useRef(false);
   const previousWaveEngaged = useRef(stats.waveEngaged);
+  const previousFlowActive = useRef(false);
   const heatRemainingValue = useRef(HEAT_DURATION_SECONDS);
   const heatStarted = useRef(false);
   const heatLastSecond = useRef(HEAT_DURATION_SECONDS);
@@ -2331,6 +2332,17 @@ export default function BreakloomApp() {
     previousGripWarning.current = gripWarning;
     previousPocketLock.current = pocketLock;
   }, [stats.lineControl, stats.phase, stats.railGrip, stats.sectionPressure]);
+
+  useEffect(() => {
+    const flowActive = stats.combo >= 5
+      && stats.phase === "riding"
+      && !replayActive;
+    if (flowActive && !previousFlowActive.current) {
+      audio.current?.effect("release");
+      haptic([10, 26, 14]);
+    }
+    previousFlowActive.current = flowActive;
+  }, [replayActive, stats.combo, stats.phase]);
 
   useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
@@ -4148,8 +4160,8 @@ export default function BreakloomApp() {
         kind: "maneuver",
         tone: maneuverToast.quality >= .82 ? "clean" : maneuverToast.quality >= .48 ? "accent" : "warning",
         eyebrow: maneuverToast.chain >= 2
-          ? `${maneuverToast.chain}-MOVE CHAIN · ${landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`
-          : `${landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`,
+          ? `${maneuverToast.chain}-MOVE CHAIN · ${maneuverToast.name.startsWith("Barrel") ? "MADE IT" : landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`
+          : `${maneuverToast.name.startsWith("Barrel") ? "MADE IT" : landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`,
         title: maneuverToast.name,
         value: `+${maneuverToast.points.toLocaleString()}`,
       };
@@ -5485,6 +5497,17 @@ export default function BreakloomApp() {
               ))}
             </div>
           </div>
+
+          {stats.maneuverActive
+            && (stats.maneuverAirborne || stats.maneuverPeakAirborne > .05)
+            && (
+              <div className={`air-ticker ${Math.abs(stats.maneuverRotation) >= Math.PI * 1.8 ? "is-big" : ""}`}>
+                <strong>{Math.round(Math.abs(stats.maneuverRotation) * 180 / Math.PI / 10) * 10}°</strong>
+                {stats.maneuverGrabSide !== 0 && (
+                  <span>{stats.maneuverGrabSide < 0 ? "MELON" : "INDY"}</span>
+                )}
+              </div>
+            )}
 
           <div className="hud-event-slot" aria-live="polite" aria-atomic="true">
             <div

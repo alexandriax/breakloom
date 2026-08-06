@@ -802,6 +802,8 @@ type ManeuverAttempt = {
   minimumWaterContact: number;
   grabSeconds: number;
   grabSide: number;
+  peakRailSlip: number;
+  peakCounterweight: number;
 };
 
 type VehicleMotionState = {
@@ -13331,6 +13333,8 @@ function Simulation({
   const rideManeuverRepeats = useRef(new Map<string, number>());
   const pumpState = useRef(createWavePumpState());
   const pumpRhythm = useRef(0);
+  const barrelEnteredAt = useRef(-1);
+  const barrelPeakIntensity = useRef(0);
   const stamina = useRef(100);
   const maxCombo = useRef(1);
   const maneuver = useRef("");
@@ -14560,6 +14564,8 @@ function Simulation({
         minimumWaterContact: sample.waterContact,
         grabSeconds: 0,
         grabSide: 0,
+        peakRailSlip: railSlip.current,
+        peakCounterweight: Math.abs(physicalBalance),
       };
       if (release.verticalImpulse > .05) {
         waterRide.current.velocity = THREE.MathUtils.clamp(
@@ -16196,6 +16202,8 @@ function Simulation({
           rideManeuverRepeats.current.clear();
           pumpState.current = createWavePumpState();
           pumpRhythm.current = 0;
+          barrelEnteredAt.current = -1;
+          barrelPeakIntensity.current = 0;
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
           if (engaged) {
@@ -16740,6 +16748,22 @@ function Simulation({
         }
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
+        // Off the wave the chain has no linker working for it: coasting in
+        // unengaged water lets the window lapse at the plain rate and bleeds
+        // any leftover pump rhythm.
+        if (!rideEngaged.current) {
+          rideChainHeat.current = Math.max(
+            0,
+            rideChainHeat.current - delta / 7.2,
+          );
+          if (rideChainHeat.current <= 0 && rideChain.current > 0) {
+            rideChain.current = 0;
+          }
+          pumpRhythm.current = Math.max(
+            0,
+            pumpRhythm.current - delta * .8,
+          );
+        }
         const returnProne = advanceReturnProneTransition(
           motion.current.proneTransition,
           {
@@ -17665,6 +17689,7 @@ function Simulation({
               rideChain.current = 0;
               rideChainHeat.current = 0;
               pumpRhythm.current = 0;
+              barrelEnteredAt.current = -1;
               motion.current.wipeout = 0;
               motion.current.wipeoutProgress = 0;
               motion.current.wipeoutPower = tumblePower;
@@ -18420,6 +18445,8 @@ function Simulation({
             minimumWaterContact: boardWaterContact,
             grabSeconds: 0,
             grabSide: 0,
+            peakRailSlip: railSlip.current,
+            peakCounterweight: Math.abs(physicalBalance),
           };
         }
         const attempt = activeManeuver.current;
@@ -18493,6 +18520,14 @@ function Simulation({
           attempt.peakTailPressure = Math.max(
             attempt.peakTailPressure,
             tailPressure,
+          );
+          attempt.peakRailSlip = Math.max(
+            attempt.peakRailSlip,
+            railSlip.current,
+          );
+          attempt.peakCounterweight = Math.max(
+            attempt.peakCounterweight,
+            Math.abs(physicalBalance),
           );
           if (nosePressure > noseRidePressure) {
             attempt.nosePressureSeconds += delta;
@@ -18642,9 +18677,72 @@ function Simulation({
           rideMaxSpeed.current = Math.max(rideMaxSpeed.current, speed);
         }
         if (inBarrel && !finishing) {
+          if (barrelEnteredAt.current < 0) {
+            barrelEnteredAt.current = t;
+            barrelPeakIntensity.current = 0;
+          }
+          barrelPeakIntensity.current = Math.max(
+            barrelPeakIntensity.current,
+            barrelIntensity,
+          );
           barrelTime.current += delta;
           combo.current = Math.min(8, combo.current + delta * 0.23);
           score.current += (26 + barrelTime.current * 4) * controlQuality * combo.current * delta;
+        } else if (!inBarrel && barrelEnteredAt.current >= 0) {
+          // Coming out of the tube still riding is its own scored event — the
+          // made barrel is the heaviest single beat in surfing. It links the
+          // chain like any landed maneuver but deliberately does not count
+          // toward maneuver variety, which already credits barrel seconds.
+          const barrelRun = t - barrelEnteredAt.current;
+          barrelEnteredAt.current = -1;
+          if (
+            barrelRun >= .9
+            && !finishing
+            && rideEngaged.current
+          ) {
+            const barrelRepeat = rideManeuverRepeats.current.get("Barrel Escape") ?? 0;
+            const barrelRepetitionScale = Math.max(.4, 1 - barrelRepeat * .22);
+            rideChain.current = rideChainHeat.current > 0
+              ? rideChain.current + 1
+              : 1;
+            rideChainBest.current = Math.max(
+              rideChainBest.current,
+              rideChain.current,
+            );
+            rideChainHeat.current = 1;
+            const barrelChainScale = 1 + Math.min(
+              .4,
+              Math.max(0, rideChain.current - 1) * .08,
+            );
+            const barrelFlowScale = combo.current >= 5 ? 1.2 : 1;
+            const barrelPoints = Math.round(
+              (230 + barrelRun * 240 + barrelPeakIntensity.current * 200)
+                * barrelRepetitionScale
+                * barrelChainScale
+                * barrelFlowScale
+                * boardSpec.score
+                * (.88 + boardCrestEnergy * .28)
+                * combo.current,
+            );
+            score.current += barrelPoints;
+            combo.current = Math.min(
+              8,
+              combo.current + .34 + Math.min(.5, barrelRun * .16),
+            );
+            maxCombo.current = Math.max(maxCombo.current, combo.current);
+            rideManeuverRepeats.current.set("Barrel Escape", barrelRepeat + 1);
+            maneuver.current = barrelRepeat > 0
+              ? `Barrel Escape ×${barrelRepeat + 1} · ${barrelRun.toFixed(1)}s`
+              : `Barrel Escape · ${barrelRun.toFixed(1)}s`;
+            maneuverScore.current = barrelPoints;
+            maneuverQuality.current = THREE.MathUtils.clamp(
+              .5 + barrelPeakIntensity.current * .5,
+              0,
+              1,
+            );
+            maneuverId.current += 1;
+            motion.current.impact = .5 + barrelPeakIntensity.current * .3;
+          }
         }
         const turnBonus = Math.abs(railLoad) * (
           12 + compression * 5 + Math.abs(physicalFacePosition) * 3.5
@@ -18712,6 +18810,9 @@ function Simulation({
               endPlaning: boardPlaning,
               endWaveContact: rideInteraction.waveContact,
               boardLength: boardSpec.length,
+              peakRailSlip: attempt.peakRailSlip,
+              endRailSlip: railSlip.current,
+              peakCounterweight: attempt.peakCounterweight,
             })
           : null;
         const recognizedLipManeuver = attempt?.family === "lip"
@@ -18825,10 +18926,19 @@ function Simulation({
             // premium.
             const grabbedAir = attempt.family === "air"
               && attempt.grabSeconds >= .22;
-            const styledName = grabbedAir
-              ? `${attempt.grabSide < 0 ? "Melon" : "Indy"} ${resolvedName}`
-              : resolvedName;
-            const styledBase = resolvedBase + (grabbedAir ? 130 : 0);
+            // Punting the section that was about to shut down is the classic
+            // closeout read: the launch position deep behind the peel marks
+            // it, and the landing still has to be made like any other air.
+            const closeoutLaunch = attempt.family === "air"
+              && attempt.startLinePosition < -.45;
+            const styledName = [
+              closeoutLaunch ? "Closeout" : "",
+              grabbedAir ? (attempt.grabSide < 0 ? "Melon" : "Indy") : "",
+              resolvedName,
+            ].filter(Boolean).join(" ");
+            const styledBase = resolvedBase
+              + (grabbedAir ? 130 : 0)
+              + (closeoutLaunch ? 160 : 0);
             const repeatCount = rideManeuverRepeats.current.get(styledName)
               ?? 0;
             const repetitionScale = Math.max(.4, 1 - repeatCount * .22);
@@ -19118,6 +19228,7 @@ function Simulation({
           rideChain.current = 0;
           rideChainHeat.current = 0;
           pumpRhythm.current = 0;
+          barrelEnteredAt.current = -1;
           railSlip.current = 1;
           activeManeuver.current = null;
           motion.current.impact = .45;
@@ -21059,6 +21170,9 @@ function Simulation({
         maneuverRotation: activeManeuver.current?.accumulatedYaw ?? 0,
         maneuverRotationTarget: activeManeuver.current?.rotation ?? 0,
         maneuverPeakAirborne: activeManeuver.current?.peakAirborne ?? 0,
+        maneuverGrabSide: (activeManeuver.current?.grabSeconds ?? 0) > .08
+          ? activeManeuver.current?.grabSide ?? 0
+          : 0,
         trickCharge: motion.current.trickCharge,
         maneuverAirborne,
         landingTarget,
