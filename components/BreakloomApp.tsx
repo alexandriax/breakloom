@@ -1036,7 +1036,7 @@ export default function BreakloomApp() {
   const [passport, setPassport] = useState<SurfPassport>({});
   const [passportReady, setPassportReady] = useState(false);
   const [passportAward, setPassportAward] = useState<PassportAward | null>(null);
-  const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number } | null>(null);
+  const [maneuverToast, setManeuverToast] = useState<{ id: number; name: string; points: number; quality: number; chain: number } | null>(null);
   const [rideToast, setRideToast] = useState<RideToast | null>(null);
   const [hudEventToast, setHudEventToast] = useState<HudEventToast | null>(null);
   const [hudEventVisible, setHudEventVisible] = useState(false);
@@ -1091,6 +1091,7 @@ export default function BreakloomApp() {
   const previousHydrodynamicLoad = useRef(false);
   const previousResurface = useRef(false);
   const previousWaveEngaged = useRef(stats.waveEngaged);
+  const previousFlowActive = useRef(false);
   const heatRemainingValue = useRef(HEAT_DURATION_SECONDS);
   const heatStarted = useRef(false);
   const heatLastSecond = useRef(HEAT_DURATION_SECONDS);
@@ -2333,9 +2334,20 @@ export default function BreakloomApp() {
   }, [stats.lineControl, stats.phase, stats.railGrip, stats.sectionPressure]);
 
   useEffect(() => {
+    const flowActive = stats.combo >= 5
+      && stats.phase === "riding"
+      && !replayActive;
+    if (flowActive && !previousFlowActive.current) {
+      audio.current?.effect("release");
+      haptic([10, 26, 14]);
+    }
+    previousFlowActive.current = flowActive;
+  }, [replayActive, stats.combo, stats.phase]);
+
+  useEffect(() => {
     if (stats.maneuverId > 0 && stats.maneuverId !== previousManeuverId.current) {
       previousManeuverId.current = stats.maneuverId;
-      setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore, quality: stats.maneuverQuality });
+      setManeuverToast({ id: stats.maneuverId, name: stats.maneuver, points: stats.maneuverScore, quality: stats.maneuverQuality, chain: stats.rideChain });
       const captureQuality = .62 + stats.maneuverQuality * .23 + Math.min(.08, stats.maneuverScore / 12000);
       if (maneuverCaptureCount.current < 2 && captureQuality > requestedCaptureQuality.current + .045) {
         maneuverCaptureCount.current += 1;
@@ -2346,7 +2358,7 @@ export default function BreakloomApp() {
       const timer = window.setTimeout(() => setManeuverToast(null), 1800);
       return () => window.clearTimeout(timer);
     }
-  }, [requestRideFrame, stats.maneuver, stats.maneuverId, stats.maneuverQuality, stats.maneuverScore]);
+  }, [requestRideFrame, stats.maneuver, stats.maneuverId, stats.maneuverQuality, stats.maneuverScore, stats.rideChain]);
 
   useEffect(() => {
     if (stats.phase !== "riding") {
@@ -4147,7 +4159,9 @@ export default function BreakloomApp() {
         key: `maneuver-${maneuverToast.id}`,
         kind: "maneuver",
         tone: maneuverToast.quality >= .82 ? "clean" : maneuverToast.quality >= .48 ? "accent" : "warning",
-        eyebrow: `${landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`,
+        eyebrow: maneuverToast.chain >= 2
+          ? `${maneuverToast.chain}-MOVE CHAIN · ${maneuverToast.name.startsWith("Barrel") ? "MADE IT" : landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`
+          : `${maneuverToast.name.startsWith("Barrel") ? "MADE IT" : landingLabel} · ${Math.round(maneuverToast.quality * 100)}%`,
         title: maneuverToast.name,
         value: `+${maneuverToast.points.toLocaleString()}`,
       };
@@ -5425,16 +5439,21 @@ export default function BreakloomApp() {
             </div>
           </aside>
 
-          <div className="score-panel">
+          <div className="score-panel" data-flow={stats.combo >= 5 && stats.phase === "riding" ? "on" : "off"}>
             <span>{sessionFormat === "heat" ? "HEAT TOTAL" : "SESSION SCORE"} <b>{sessionFormat === "heat" ? heatWaves.length : stats.grade}</b></span>
             <strong>{sessionFormat === "heat" ? heatTotal.toFixed(2) : stats.score.toLocaleString()}</strong>
             <div><i style={{ width: `${sessionFormat === "heat" ? Math.min(100, heatTotal / 20 * 100) : Math.min(100, stats.combo * 12.5)}%` }} /></div>
+            {stats.phase === "riding" && (
+              <div className="pump-meter" data-live={stats.pumpRhythm > .04 ? "on" : "off"}>
+                <i style={{ width: `${Math.round(stats.pumpRhythm * 100)}%` }} />
+              </div>
+            )}
             <small>
               {sessionFormat === "heat"
                 ? heatWon
                   ? `qualified · coast best ${Math.max(currentCoastRecord.bestHeat, heatTotal).toFixed(2)}`
                   : `${heatNeed.toFixed(2)} needed · best ${currentCoastRecord.bestHeat.toFixed(2)}`
-                : `${stats.combo.toFixed(1)}× flow · best ${personalBest.score.toLocaleString()}`}
+                : `${stats.combo >= 5 && stats.phase === "riding" ? "IN THE FLOW · " : ""}${stats.combo.toFixed(1)}× flow${stats.rideChain >= 2 ? ` · ${stats.rideChain} chained` : ""} · best ${personalBest.score.toLocaleString()}`}
             </small>
           </div>
 
@@ -5478,6 +5497,17 @@ export default function BreakloomApp() {
               ))}
             </div>
           </div>
+
+          {stats.maneuverActive
+            && (stats.maneuverAirborne || stats.maneuverPeakAirborne > .05)
+            && (
+              <div className={`air-ticker ${Math.abs(stats.maneuverRotation) >= Math.PI * 1.8 ? "is-big" : ""}`}>
+                <strong>{Math.round(Math.abs(stats.maneuverRotation) * 180 / Math.PI / 10) * 10}°</strong>
+                {stats.maneuverGrabSide !== 0 && (
+                  <span>{stats.maneuverGrabSide < 0 ? "MELON" : "INDY"}</span>
+                )}
+              </div>
+            )}
 
           <div className="hud-event-slot" aria-live="polite" aria-atomic="true">
             <div

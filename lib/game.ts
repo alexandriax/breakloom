@@ -1205,6 +1205,159 @@ export function resolveWavePocketDrive(
   };
 }
 
+export const WAVE_PUMP_TUNING = {
+  maxDriveAcceleration: 2.9,
+  minSwingRate: .16,
+  minSwingTravel: .12,
+  cadenceFloor: .34,
+  cadenceIdeal: .95,
+  cadenceCeiling: 2.4,
+  rhythmGain: .42,
+  rhythmDecay: .38,
+  staminaWorkScale: .34,
+} as const;
+
+export type WavePumpState = {
+  previousFacePosition: number;
+  faceRate: number;
+  swingDirection: number;
+  swingTravel: number;
+  lastSwingAt: number;
+  rhythm: number;
+};
+
+export const createWavePumpState = (): WavePumpState => ({
+  previousFacePosition: 0,
+  faceRate: 0,
+  swingDirection: 0,
+  swingTravel: 0,
+  lastSwingAt: -10,
+  rhythm: 0,
+});
+
+export type WavePumpSample = {
+  elapsed: number;
+  deltaSeconds: number;
+  facePosition: number;
+  pocketEnvelope: number;
+  waveContact: number;
+  waterContact: number;
+  planing: number;
+  compression: number;
+  forwardSpeed: number;
+  waveSpeed: number;
+  tubePressure: number;
+  whitewater: number;
+};
+
+export type WavePumpReading = {
+  rhythm: number;
+  driveMagnitude: number;
+  swinging: boolean;
+};
+
+/**
+ * Tracks the rider's own climb-and-drop line across the face and converts a
+ * sustained rhythm into bounded extra drive. The physical basis is standard
+ * pumping: high on the face the rising water does work on the weighted hull,
+ * and driving down converts that stored height back into board speed, so
+ * repeated swings at wave-matched cadence extract net propulsion the way a
+ * straight trim line cannot. The swing detector reads the measured face
+ * position only — there is no pump button — and the drive obeys the same
+ * speed-headroom law as the pocket drive, so pumping cannot push the hull
+ * past the crest's transport budget. Score, combo, and mode are absent.
+ */
+export function advanceWavePumpDrive(
+  state: WavePumpState,
+  sample: WavePumpSample,
+): WavePumpReading {
+  const delta = Math.max(.0001, sample.deltaSeconds);
+  const face = clampValue(sample.facePosition, -1.2, 1.2);
+  const instantRate = (face - state.previousFacePosition) / delta;
+  state.previousFacePosition = face;
+  // Low-pass the measured rate so crest-phase jitter cannot register as a
+  // pump swing.
+  const rateBlend = 1 - Math.exp(-delta * 9);
+  state.faceRate += (clampValue(instantRate, -6, 6) - state.faceRate)
+    * rateBlend;
+  const support = clampValue(sample.waveContact, 0, 1)
+    * clampValue(sample.waterContact, 0, 1);
+  const direction = state.faceRate > WAVE_PUMP_TUNING.minSwingRate
+    ? 1
+    : state.faceRate < -WAVE_PUMP_TUNING.minSwingRate
+      ? -1
+      : 0;
+  if (direction !== 0 && direction === state.swingDirection) {
+    state.swingTravel += Math.abs(state.faceRate) * delta;
+  }
+  if (direction !== 0 && direction !== state.swingDirection) {
+    if (
+      state.swingDirection !== 0
+      && state.swingTravel >= WAVE_PUMP_TUNING.minSwingTravel
+      && support > .22
+    ) {
+      const cadence = sample.elapsed - state.lastSwingAt;
+      const cadenceQuality = smoothstep(
+        WAVE_PUMP_TUNING.cadenceFloor,
+        WAVE_PUMP_TUNING.cadenceIdeal,
+        cadence,
+      ) * (1 - smoothstep(
+        WAVE_PUMP_TUNING.cadenceIdeal,
+        WAVE_PUMP_TUNING.cadenceCeiling,
+        cadence,
+      ));
+      // Bearing down through the swing (a compressed body) loads the hull
+      // while the face is doing work on it; an upright rider extracts less.
+      const weightTiming = .62 + clampValue(sample.compression, 0, 1) * .38;
+      state.rhythm = clampValue(
+        state.rhythm
+          + cadenceQuality
+            * weightTiming
+            * WAVE_PUMP_TUNING.rhythmGain
+            * support,
+        0,
+        1,
+      );
+    }
+    state.lastSwingAt = sample.elapsed;
+    state.swingDirection = direction;
+    state.swingTravel = 0;
+  }
+  // Rhythm dies once the line goes still: a stalled swing decays much faster
+  // than an active one, so gliding straight bleeds the pump within a couple
+  // of seconds.
+  const idleSeconds = sample.elapsed - state.lastSwingAt;
+  const decayScale = 1 + smoothstep(
+    WAVE_PUMP_TUNING.cadenceIdeal,
+    WAVE_PUMP_TUNING.cadenceCeiling * 1.4,
+    idleSeconds,
+  ) * 2.6;
+  state.rhythm = Math.max(
+    0,
+    state.rhythm
+      - state.rhythm * WAVE_PUMP_TUNING.rhythmDecay * decayScale * delta,
+  );
+  const headroomRatio = WAVE_DRIVE_TUNING.speedHeadroomRatio
+    + clampValue(sample.tubePressure, 0, 1)
+      * WAVE_DRIVE_TUNING.tubeHeadroomBonus;
+  const speedRatio = sample.waveSpeed < .001
+    ? 1
+    : Math.max(0, sample.forwardSpeed) / (sample.waveSpeed * headroomRatio);
+  const headroom = 1 - smoothstep(.5, .98, speedRatio);
+  const driveMagnitude = WAVE_PUMP_TUNING.maxDriveAcceleration
+    * state.rhythm
+    * (.3 + clampValue(sample.pocketEnvelope, 0, 1) * .7)
+    * support
+    * (.45 + clampValue(sample.planing, 0, 1) * .55)
+    * (1 - clampValue(sample.whitewater, 0, 1) * .55)
+    * headroom;
+  return {
+    rhythm: state.rhythm,
+    driveMagnitude,
+    swinging: direction !== 0,
+  };
+}
+
 export type SurfboardTurbulenceSample = {
   elapsed: number;
   positionX: number;
@@ -2244,6 +2397,60 @@ export function surfboardReleaseYawImpulse(
     -8,
     8,
   );
+}
+
+export type SurfboardAerialControlSample = {
+  deltaSeconds: number;
+  steerInput: number;
+  grabInput: number;
+  airborneHeight: number;
+  waterContact: number;
+  boardLength: number;
+};
+
+export type SurfboardAerialControlReading = {
+  yawTorque: number;
+  grabActive: boolean;
+  grabSide: number;
+  attitudeDamping: number;
+};
+
+/**
+ * Resolves the small mid-air authority a surfer's body actually has. Airborne
+ * rotation control comes from trading angular momentum against the arms and
+ * torso, so the torque budget is a fraction of the launch impulse and scales
+ * inversely with the board's yaw inertia. Grabbing a rail couples the board
+ * to the body: the combined system absorbs the board's independent roll and
+ * pitch flutter, which is why grabbed airs reconnect more predictably. The
+ * water keeps full authority — any hull contact removes the aerial budget.
+ */
+export function resolveSurfboardAerialControl(
+  sample: SurfboardAerialControlSample,
+): SurfboardAerialControlReading {
+  const airborne = smoothstep(.05, .28, Math.max(0, sample.airborneHeight))
+    * (1 - clampValue(sample.waterContact, 0, 1));
+  if (airborne <= .01) {
+    return {
+      yawTorque: 0,
+      grabActive: false,
+      grabSide: 0,
+      attitudeDamping: 0,
+    };
+  }
+  const steer = clampValue(sample.steerInput, -1, 1);
+  const yawInertia = Math.pow(
+    Math.max(1.6, sample.boardLength) / 2.1,
+    1.38,
+  );
+  const yawTorque = steer * 2.6 * airborne / yawInertia;
+  const grab = clampValue(sample.grabInput, -1, 1);
+  const grabActive = Math.abs(grab) > .35;
+  return {
+    yawTorque,
+    grabActive,
+    grabSide: grabActive ? Math.sign(grab) : 0,
+    attitudeDamping: grabActive ? 3.1 * airborne : 0,
+  };
 }
 
 export type SurfboardBodyReleaseSample = SurfboardReleaseSample & {
@@ -4999,10 +5206,13 @@ export type SurfboardSurfaceManeuverSample = {
   endPlaning: number;
   endWaveContact: number;
   boardLength: number;
+  peakRailSlip?: number;
+  endRailSlip?: number;
+  peakCounterweight?: number;
 };
 
 export type SurfboardSurfaceManeuverReading = {
-  name: "Nose Ride" | "Bottom Turn" | "Pocket Cutback" | "Roundhouse Cutback" | "Rail Carve" | "Power Carve";
+  name: "Nose Ride" | "Bottom Turn" | "Pocket Cutback" | "Roundhouse Cutback" | "Rail Carve" | "Power Carve" | "Tailslide" | "Layback Snap";
   family: "trim" | "carve";
   base: number;
   strength: number;
@@ -5068,6 +5278,50 @@ export function recognizeSurfboardSurfaceManeuver(
     0,
     1,
   );
+  // A layback reads from the body itself: the counterweight thrown far past
+  // the loaded rail through a hard upper-face turn, then recovered enough to
+  // keep planing. It outranks the generic carve names because its signature
+  // is a superset of theirs.
+  const peakCounterweight = Math.abs(sample.peakCounterweight ?? 0);
+  if (
+    peakCounterweight > .62
+    && peakRailLoad > .52
+    && accumulatedYaw > .5
+    && sample.startFacePosition > .12
+  ) {
+    return {
+      name: "Layback Snap",
+      family: "carve",
+      base: 430,
+      strength: clampValue(
+        strength * .72 + peakCounterweight * .28,
+        0,
+        1,
+      ),
+    };
+  }
+  // A tailslide is a turn whose fins measurably broke free and then re-gripped
+  // before the board stopped planing — released slip without the recovery is
+  // just a spin-out and never reaches this recognizer's contact gate.
+  const peakRailSlip = clampValue(sample.peakRailSlip ?? 0, 0, 1);
+  const endRailSlip = clampValue(sample.endRailSlip ?? 0, 0, 1);
+  if (
+    peakRailSlip > .62
+    && endRailSlip < .45
+    && accumulatedYaw > .38
+    && peakYawRate > .5
+  ) {
+    return {
+      name: "Tailslide",
+      family: "carve",
+      base: 365,
+      strength: clampValue(
+        strength * .7 + (peakRailSlip - endRailSlip) * .42,
+        0,
+        1,
+      ),
+    };
+  }
   if (sample.startFacePosition < -.24 && faceGain > .2) {
     return {
       name: "Bottom Turn",
@@ -6784,6 +7038,7 @@ export type GameStats = {
   railLoad: number;
   railGrip: number;
   stance: number;
+  pumpRhythm: number;
   barrelTime: number;
   barrelIntensity: number;
   stamina: number;
@@ -6812,6 +7067,7 @@ export type GameStats = {
   maneuverRotation: number;
   maneuverRotationTarget: number;
   maneuverPeakAirborne: number;
+  maneuverGrabSide: number;
   trickCharge: number;
   maneuverAirborne: boolean;
   landingTarget: number;
@@ -6829,6 +7085,7 @@ export type GameStats = {
   ridePowerQuality: number;
   rideMaxSpeed: number;
   rideMaxCombo: number;
+  rideChain: number;
   rideOutProgress: number;
   vehicleMode: boolean;
   vehicleGear: "P" | "D" | "R";
@@ -6946,6 +7203,7 @@ export const INITIAL_STATS: GameStats = {
   railLoad: 0,
   railGrip: 1,
   stance: 0,
+  pumpRhythm: 0,
   barrelTime: 0,
   barrelIntensity: 0,
   stamina: 100,
@@ -6974,6 +7232,7 @@ export const INITIAL_STATS: GameStats = {
   maneuverRotation: 0,
   maneuverRotationTarget: 0,
   maneuverPeakAirborne: 0,
+  maneuverGrabSide: 0,
   trickCharge: 0,
   maneuverAirborne: false,
   landingTarget: 0,
@@ -6991,6 +7250,7 @@ export const INITIAL_STATS: GameStats = {
   ridePowerQuality: 0,
   rideMaxSpeed: 0,
   rideMaxCombo: 1,
+  rideChain: 0,
   rideOutProgress: 0,
   vehicleMode: false,
   vehicleGear: "P",
