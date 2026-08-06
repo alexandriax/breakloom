@@ -1323,6 +1323,17 @@ input:focus-visible {
 .game-ui.is-heat .score-panel > span b { border-color: #efb873; color: #ffd7a4; }
 .game-ui.is-heat .score-panel > div i { background: linear-gradient(90deg, #b56c51, #efb873); box-shadow: 0 0 8px rgba(239, 184, 115, .72); }
 .game-ui.is-heat .score-panel > small { color: #ffd7a4; }
+.score-panel > .pump-meter { height: 2px; margin-top: 4px; background: rgba(255, 255, 255, 0.1); }
+.score-panel > .pump-meter i { display: block; height: 100%; background: #6fe3ff; box-shadow: 0 0 6px rgba(111, 227, 255, 0.6); transition: width 0.14s ease; opacity: 0.35; }
+.score-panel > .pump-meter[data-live="on"] i { opacity: 1; }
+.score-panel[data-flow="on"] { border-left-color: #8ff7c9; }
+.score-panel[data-flow="on"] > strong { color: #b9ffe2; text-shadow: 0 0 14px rgba(143, 247, 201, 0.65); animation: flow-pulse 1.1s ease-in-out infinite; }
+.score-panel[data-flow="on"] > div i { background: linear-gradient(90deg, #6fe3ff, #8ff7c9); box-shadow: 0 0 10px rgba(143, 247, 201, 0.8); }
+.score-panel[data-flow="on"] > small { color: #b9ffe2; }
+@keyframes flow-pulse {
+  0%, 100% { text-shadow: 0 0 10px rgba(143, 247, 201, 0.45); }
+  50% { text-shadow: 0 0 20px rgba(143, 247, 201, 0.9); }
+}
 
 .set-panel {
   position: absolute;

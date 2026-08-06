@@ -10,7 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import { shorelineReferenceAt } from "@/lib/bathymetry";
 import type { BoardType, GamePhase, GameStats, OptionalTowHullFloatState, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketDrive, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWavePumpDrive, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, createWavePumpState, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardAerialControl, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketDrive, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, WAVE_PUMP_TUNING, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -800,6 +800,8 @@ type ManeuverAttempt = {
   peakTailPressure: number;
   nosePressureSeconds: number;
   minimumWaterContact: number;
+  grabSeconds: number;
+  grabSide: number;
 };
 
 type VehicleMotionState = {
@@ -13323,6 +13325,12 @@ function Simulation({
   const ridePowerIntegral = useRef(0);
   const rideMaxSpeed = useRef(0);
   const rideMaxCombo = useRef(1);
+  const rideChain = useRef(0);
+  const rideChainBest = useRef(0);
+  const rideChainHeat = useRef(0);
+  const rideManeuverRepeats = useRef(new Map<string, number>());
+  const pumpState = useRef(createWavePumpState());
+  const pumpRhythm = useRef(0);
   const stamina = useRef(100);
   const maxCombo = useRef(1);
   const maneuver = useRef("");
@@ -14550,6 +14558,8 @@ function Simulation({
         peakTailPressure: sample.tailPressure,
         nosePressureSeconds: sample.nosePressureSeconds,
         minimumWaterContact: sample.waterContact,
+        grabSeconds: 0,
+        grabSide: 0,
       };
       if (release.verticalImpulse > .05) {
         waterRide.current.velocity = THREE.MathUtils.clamp(
@@ -16180,6 +16190,12 @@ function Simulation({
           ridePowerIntegral.current = 0;
           rideMaxSpeed.current = rideVelocity.current.length();
           rideMaxCombo.current = combo.current;
+          rideChain.current = 0;
+          rideChainBest.current = 0;
+          rideChainHeat.current = 0;
+          rideManeuverRepeats.current.clear();
+          pumpState.current = createWavePumpState();
+          pumpRhythm.current = 0;
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
           if (engaged) {
@@ -17646,6 +17662,9 @@ function Simulation({
               rideResult.current = "wipeout";
               rideResultId.current += 1;
               combo.current = 1;
+              rideChain.current = 0;
+              rideChainHeat.current = 0;
+              pumpRhythm.current = 0;
               motion.current.wipeout = 0;
               motion.current.wipeoutProgress = 0;
               motion.current.wipeoutPower = tumblePower;
@@ -18187,6 +18206,34 @@ function Simulation({
           driveScale: assistProfile.pocketDriveScale,
           pocketWindowScale: assistProfile.pocketWindowScale,
         });
+        // Pumping: the rider's own climb-and-drop line across the face,
+        // detected from the measured face position, extracts bounded extra
+        // drive along the hull. There is no pump button — the drawn line is
+        // the input, and the same headroom law as the pocket drive caps it.
+        const pumpReading = advanceWavePumpDrive(pumpState.current, {
+          elapsed: t,
+          deltaSeconds: delta,
+          facePosition: physicalFacePosition,
+          pocketEnvelope: pocketDrive.envelope,
+          waveContact: rideInteraction.waveContact,
+          waterContact: boardWaterContact,
+          planing: ridePlaning,
+          compression: bodyCompression.current,
+          forwardSpeed: rideRelativeForwardSpeed,
+          waveSpeed: waveTransport.speed,
+          tubePressure,
+          whitewater: whitewaterPressure,
+        });
+        pumpRhythm.current = pumpReading.rhythm;
+        if (pumpReading.driveMagnitude > .01) {
+          stamina.current = Math.max(
+            0,
+            stamina.current
+              - pumpReading.driveMagnitude
+                * WAVE_PUMP_TUNING.staminaWorkScale
+                * delta,
+          );
+        }
         const dynamics = advanceSurfboardDynamics(
           {
             velocityX: previousRideVelocityX,
@@ -18226,8 +18273,10 @@ function Simulation({
             faceTrimSupport: rideFaceTrimSupport
               * railGrip
               * ridePlaning,
-            waveDriveX: pocketDrive.driveX,
-            waveDriveZ: pocketDrive.driveZ,
+            waveDriveX: pocketDrive.driveX
+              + planingForwardX * pumpReading.driveMagnitude,
+            waveDriveZ: pocketDrive.driveZ
+              + planingForwardZ * pumpReading.driveMagnitude,
             glideDragBonus: pocketDrive.glideDragBonus,
           },
         );
@@ -18369,6 +18418,8 @@ function Simulation({
             peakTailPressure: tailPressure,
             nosePressureSeconds: noseRideCandidate ? delta : 0,
             minimumWaterContact: boardWaterContact,
+            grabSeconds: 0,
+            grabSide: 0,
           };
         }
         const attempt = activeManeuver.current;
@@ -18476,6 +18527,31 @@ function Simulation({
           if (hullFree) attempt.becameAirborne = true;
           attempt.peakAirborne = Math.max(attempt.peakAirborne, airborneHeight);
           maneuverAirborne = hullFree;
+          if (attempt.family === "air" || attempt.family === "lip") {
+            // In flight the body's only authority is angular-momentum trade
+            // (A/D arm steering) and pulling the board against the feet with
+            // a rail grab (Q/E), which settles independent attitude flutter.
+            const aerialControl = resolveSurfboardAerialControl({
+              deltaSeconds: delta,
+              steerInput: rideSteer,
+              grabInput: balanceInput,
+              airborneHeight,
+              waterContact: boardWaterContact,
+              boardLength: boardSpec.length,
+            });
+            if (aerialControl.yawTorque !== 0) {
+              rideYawRate.current += aerialControl.yawTorque * delta;
+            }
+            if (aerialControl.grabActive) {
+              attempt.grabSeconds += delta;
+              attempt.grabSide = aerialControl.grabSide;
+              const attitudeSettle = Math.exp(
+                -aerialControl.attitudeDamping * delta,
+              );
+              boardRollRate.current *= attitudeSettle;
+              boardPitchRate.current *= attitudeSettle;
+            }
+          }
           maneuverPhase = surfaceMotion
             ? "load"
             : maneuverProgress < .18
@@ -18577,6 +18653,23 @@ function Simulation({
           combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15);
           maxCombo.current = Math.max(maxCombo.current, combo.current);
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
+          // The move chain stays linked only while the ride keeps working:
+          // barrel time, an active pump rhythm, or pocket control hold the
+          // window open the way a manual holds a skate combo. Cruising a fat
+          // shoulder lets it lapse.
+          const chainLinkHold = Math.max(
+            barrelIntensity,
+            pumpRhythm.current * .85,
+            lineControl * .55,
+          );
+          rideChainHeat.current = Math.max(
+            0,
+            rideChainHeat.current
+              - delta / 7.2 * (1 - Math.min(.92, chainLinkHold)),
+          );
+          if (rideChainHeat.current <= 0 && rideChain.current > 0) {
+            rideChain.current = 0;
+          }
         }
         const physicalLaunchLanding = Boolean(
           attempt
@@ -18704,29 +18797,62 @@ function Simulation({
               ?? recognizedLipManeuver?.name
               ?? (
                 attempt.family === "air"
-                  ? observedYaw >= Math.PI * 1.55
-                    ? "Full-Rotation Air"
-                    : observedYaw >= Math.PI * .72
-                      ? "Air Reverse"
-                      : "Straight Air"
+                  ? observedYaw >= Math.PI * 2.35
+                    ? "540 Air"
+                    : observedYaw >= Math.PI * 1.55
+                      ? "Full-Rotation Air"
+                      : observedYaw >= Math.PI * .72
+                        ? "Air Reverse"
+                        : "Straight Air"
                   : attempt.name
               );
             const resolvedBase = recognizedSurfaceManeuver?.base
               ?? recognizedLipManeuver?.base
               ?? (
                 attempt.family === "air"
-                  ? observedYaw >= Math.PI * 1.55
-                    ? 780
-                    : observedYaw >= Math.PI * .72
-                      ? 690
-                      : 520
+                  ? observedYaw >= Math.PI * 2.35
+                    ? 980
+                    : observedYaw >= Math.PI * 1.55
+                      ? 780
+                      : observedYaw >= Math.PI * .72
+                        ? 690
+                        : 520
                   : attempt.base
               );
-            const points = Math.round(resolvedBase * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + boardCrestEnergy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
+            // A held rail grab is a distinct trick: it earns its style points
+            // and its name, and repeating the identical move pays a judged
+            // repetition discount while a linked chain and a hot combo pay a
+            // premium.
+            const grabbedAir = attempt.family === "air"
+              && attempt.grabSeconds >= .22;
+            const styledName = grabbedAir
+              ? `${attempt.grabSide < 0 ? "Melon" : "Indy"} ${resolvedName}`
+              : resolvedName;
+            const styledBase = resolvedBase + (grabbedAir ? 130 : 0);
+            const repeatCount = rideManeuverRepeats.current.get(styledName)
+              ?? 0;
+            const repetitionScale = Math.max(.4, 1 - repeatCount * .22);
+            rideChain.current = rideChainHeat.current > 0
+              ? rideChain.current + 1
+              : 1;
+            rideChainBest.current = Math.max(
+              rideChainBest.current,
+              rideChain.current,
+            );
+            rideChainHeat.current = 1;
+            const chainScale = 1 + Math.min(
+              .4,
+              Math.max(0, rideChain.current - 1) * .08,
+            );
+            const flowScale = combo.current >= 5 ? 1.2 : 1;
+            const points = Math.round(styledBase * repetitionScale * chainScale * flowScale * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + boardCrestEnergy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
             maxCombo.current = Math.max(maxCombo.current, combo.current);
-            maneuver.current = resolvedName;
+            rideManeuverRepeats.current.set(styledName, repeatCount + 1);
+            maneuver.current = repeatCount > 0
+              ? `${styledName} ×${repeatCount + 1}`
+              : styledName;
             maneuverScore.current = points;
             maneuverQuality.current = quality;
             maneuverCount.current += 1;
@@ -18838,6 +18964,10 @@ function Simulation({
           rideEngaged.current = false;
           barrelIntensity = 0;
           if (rideDistance.current >= 8 && rideResult.current === "") {
+            score.current += Math.round(
+              Math.max(0, rideChainBest.current - 1) * 140
+                + Math.max(0, rideManeuverRepeats.current.size - 1) * 130,
+            );
             rideScore.current = Math.max(
               0,
               Math.round(score.current - rideStartScore.current),
@@ -18985,6 +19115,9 @@ function Simulation({
           rideResult.current = "wipeout";
           rideResultId.current += 1;
           combo.current = 1;
+          rideChain.current = 0;
+          rideChainHeat.current = 0;
+          pumpRhythm.current = 0;
           railSlip.current = 1;
           activeManeuver.current = null;
           motion.current.impact = .45;
@@ -18997,7 +19130,11 @@ function Simulation({
           ) > RIDE_RESULT_LINE_Z
         ) {
           if (rideResult.current === "") {
-            score.current += 750 + rideDistance.current * 11;
+            score.current += 750 + rideDistance.current * 11
+              + Math.round(
+                Math.max(0, rideChainBest.current - 1) * 140
+                  + Math.max(0, rideManeuverRepeats.current.size - 1) * 130,
+              );
             rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
             rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
             rideResult.current = "clean";
@@ -20881,6 +21018,9 @@ function Simulation({
         railLoad: motion.current.rail,
         railGrip: 1 - motion.current.slip,
         stance: stance.current,
+        pumpRhythm: phase.current === "riding"
+          ? Number(pumpRhythm.current.toFixed(2))
+          : 0,
         barrelTime: Number(barrelTime.current.toFixed(1)),
         barrelIntensity: motion.current.barrel,
         stamina: Math.round(stamina.current),
@@ -20942,6 +21082,7 @@ function Simulation({
           : 0,
         rideMaxSpeed: rideMaxSpeed.current,
         rideMaxCombo: rideMaxCombo.current,
+        rideChain: phase.current === "riding" ? rideChain.current : 0,
         rideOutProgress,
         vehicleMode: phase.current === "driving",
         vehicleGear: phase.current !== "driving" || (Math.abs(vanSpeed.current) < .35 && Math.abs(vanThrottle.current) < .08)
