@@ -10,7 +10,7 @@ import type { Beach, BreakCharacter, CoastBiome } from "@/lib/beaches";
 import { getBreakCharacter, getCoastBiome } from "@/lib/beaches";
 import { shorelineReferenceAt } from "@/lib/bathymetry";
 import type { BoardType, GamePhase, GameStats, OptionalTowHullFloatState, SessionSettings, ThermalKit } from "@/lib/game";
-import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketDrive, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
+import { advanceBoardHeaveDynamics, advanceBoardPitchDynamics, advanceBoardRollDynamics, advanceOptionalTowCraft, advanceOptionalTowHullFloat, advanceOptionalTowProgress, advanceOptionalTowRope, advancePaddleboardDynamics, advancePaddleStrokeCycle, advancePopUpBodyTransition, advanceProneBoardAttitude, advanceProneShorebreakResponse, advanceReturnProneTransition, advanceRideCaptureState, advanceSeparatedSurferHorizontalDynamics, advanceSeparatedSurferRecovery, advanceSeparatedSurferVerticalDynamics, advanceSurferCompression, advanceSurferCounterweightDynamics, advanceSurfboardDynamics, advanceSurfboardInstability, advanceSurfboardRailSlip, advanceSurfboardStance, advanceSurfboardTumble, advanceWaveEngagement, advanceWavePumpDrive, boardRailContactFrame, BOARD_SPECS, BREAK_OFFSHORE_OFFSET, createWavePumpState, duckDiveSubmersionAt, evaluateBoardWaterInteraction, evaluatePopUpTransitionAtProgress, evaluateProneBoardFailure, evaluateWaveTakeoff, findWaveBreakingContourAt, forecastFaceHeightForBreak, maximumSetBreakOffset, nextVisibleSurfableWaveAt, OPTIONAL_TOW_BERTH_OFFSHORE, OPTIONAL_TOW_DURATION_SECONDS, OPTIONAL_TOW_HULL_BOW_REACH, OPTIONAL_TOW_HULL_HALF_BEAM, OPTIONAL_TOW_HULL_STERN_REACH, optionalTowNavigableZ, optionalTowReleaseFaceQuality, optionalTowReleasePhysicallySupported, optionalTowReleaseQuality, optionalTowRouteClearance, optionalTowTakeoffTargetScore, OUTER_PADDLE_LIMIT_Z, paddleStrokeWorkDelta, paddlingStaminaDelta, popUpStaminaDelta, primaryWavePhaseAt, primaryWaveVelocityAt, readDuckDiveCue, recognizeSurfboardLipManeuver, recognizeSurfboardSurfaceManeuver, resolveBoardTakeoffOpportunity, resolveDuckDiveInitiation, resolveLineupFromBreakingGeometry, resolveOptionalTowHullAttitude, resolvePopUpLandingSupport, resolveSeparatedSurfboardWaterForces, resolveSeparatedSurferBreakingWash, resolveSeparatedSurferProjectedArea, resolveShorebreakBandLoad, resolveSurferPassiveCompression, resolveSurfboardAerialControl, resolveSurfboardBodyRelease, resolveSurfboardContactPatchOffsets, resolveSurfboardFailureRelease, resolveSurfboardLeashReaction, resolveSurfboardLeashTorque, resolveSurfboardPlaning, resolveSurfboardRailDemand, resolveSurfboardRailGrip, resolveSurfboardTumbleRelease, resolveSurfboardTurbulence, resolveSurfboardWavePatchContact, resolveSurfboardWavePressure, resolveSurfboardWipeout, resolveTakeoffPaddleDrive, resolveTakeoffSpeedMatch, resolveWaveCrestPhaseIdentity, resolveWaveLineSide, resolveWavePocketDrive, resolveWavePocketFrame, resolveWaveSectionPressure, resolveWaveTubePressure, resolveWaveWallApproach, RIDE_RESULT_LINE_Z, rideRailInputFromPaddleSteer, sessionGrade, SHALLOW_DISMOUNT_Z, SHORELINE_REFERENCE_Z, shorelineRideOutProgress, shorelineShiftForTide, stageOptionalTowCrestAtBreaker, surfboardLandingSucceeded, surfboardLipLaunchSupport, surfboardWipeoutTriggered, surfingStaminaDelta, SURF_ASSIST_PROFILES, SURF_PHYSICS_TUNING, thermalKitForConditions, tideResponseForBreak, WAVE_PUMP_TUNING, waveBreakingGeometryAt, waveCrestDistanceAtPhase, waveFacePositionAtPhase, waveHeightAt, waveSetStateAt, waveSurfaceFrameAt } from "@/lib/game";
 import { readBufferedControlEdge } from "@/lib/input";
 import {
   createOceanRenderState,
@@ -18,7 +18,8 @@ import {
   type FloatTextureTable,
 } from "@/lib/ocean-render";
 import { sampleCoastDominantWave } from "@/lib/ocean";
-import { boundedSimulationDelta, emergencyRenderDpr, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
+import { advanceOceanClock, boundedSimulationDelta, emergencyRenderDpr, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
+import { findSurfEntry, type SurfEntry } from "@/lib/surf-session";
 import { solarPositionAt } from "@/lib/solar";
 
 export type ControlState = {
@@ -264,7 +265,10 @@ function AdaptiveRenderer({
     onQualityChange(currentQuality.current);
   }, [limits.initial, mobile, onQualityChange, setDpr]);
 
-  useFrame((_, delta) => {
+  useFrame(({ gl }, delta) => {
+    const drawCalls = gl.info.render.calls;
+    const triangles = gl.info.render.triangles;
+    gl.info.reset();
     if (!active || (typeof document !== "undefined" && document.visibilityState !== "visible")) return;
     const meter = sample.current;
     if (meter.warmup > 0) {
@@ -314,6 +318,12 @@ function AdaptiveRenderer({
     if (meter.elapsed < 2.4) return;
 
     const averageFrame = meter.elapsed / Math.max(1, meter.frames);
+    // Low-frequency local diagnostics, readable by browser QA without a debug HUD.
+    gl.domElement.dataset.frameMs = (averageFrame * 1000).toFixed(2);
+    gl.domElement.dataset.drawCalls = String(drawCalls);
+    gl.domElement.dataset.triangles = String(triangles);
+    gl.domElement.dataset.renderQuality = currentQuality.current;
+    gl.domElement.dataset.renderDpr = currentDpr.current.toFixed(2);
     const jankRatio = meter.jankFrames / Math.max(1, meter.frames);
     const severePressure = averageFrame > .0295 || jankRatio > .2;
     const slowPressure = averageFrame > .0222 || jankRatio > .085;
@@ -367,6 +377,7 @@ function AdaptiveRenderer({
 }
 
 type SurfSceneProps = {
+  sessionId: number;
   beach: Beach;
   zoneName: string;
   latitude: number;
@@ -380,6 +391,8 @@ type SurfSceneProps = {
   sunset: string;
   cameraMode: CameraMode;
   controls: MutableRefObject<ControlState>;
+  quickDrop?: number;
+  surfEntry?: SurfEntry | null;
   qaScenario?: boolean;
   qaTowScenario?: boolean;
   active: boolean;
@@ -800,6 +813,10 @@ type ManeuverAttempt = {
   peakTailPressure: number;
   nosePressureSeconds: number;
   minimumWaterContact: number;
+  grabSeconds: number;
+  grabSide: number;
+  peakRailSlip: number;
+  peakCounterweight: number;
 };
 
 type VehicleMotionState = {
@@ -2029,7 +2046,8 @@ const OCEAN_FRAGMENT = /* glsl */ `
       sin(windSurface.x * 1.72 + windSurface.y * .63 + uTime * (1.7 + wind)),
       cos(windSurface.x * .91 - windSurface.y * 1.38 - uTime * (1.35 + wind * .7))
     );
-    surfaceNormal = normalize(surfaceNormal + vec3(microFlow.x, 0.0, microFlow.y) * (.018 + wind * .024));
+    float microVisibility = 1.0 - smoothstep(.2, 1.2, length(fwidth(windSurface)));
+    surfaceNormal = normalize(surfaceNormal + vec3(microFlow.x, 0.0, microFlow.y) * (.018 + wind * .024) * microVisibility);
     if (uRain > .01) {
       vec2 rainUv = vSurface * 1.16;
       vec2 rainCell = floor(rainUv);
@@ -2041,8 +2059,12 @@ const OCEAN_FRAGMENT = /* glsl */ `
     }
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float fresnel = .028 + .972 * pow(1.0 - clamp(dot(surfaceNormal, viewDirection), 0.0, 1.0), 5.0);
-    vec3 horizonReflection = mix(vec3(.11, .31, .39), vec3(.42, .67, .69), uLight);
-    horizonReflection = mix(horizonReflection, vec3(.09, .13, .17), uCloud * .55);
+    vec3 reflectionDirection = reflect(-viewDirection, surfaceNormal);
+    float reflectedSkyHeight = smoothstep(-.08, .75, reflectionDirection.y);
+    vec3 reflectedHorizon = mix(vec3(.08, .17, .23), vec3(.64, .78, .79), uLight);
+    vec3 reflectedZenith = mix(vec3(.014, .045, .1), vec3(.12, .39, .57), uLight);
+    vec3 horizonReflection = mix(reflectedHorizon, reflectedZenith, reflectedSkyHeight);
+    horizonReflection = mix(horizonReflection, vec3(.24, .31, .35), uCloud * .55);
     color = mix(color, horizonReflection, fresnel * (.38 + uLight * .28));
     // The physical shoreline remains one continuous, fully buried mesh. Give
     // that thin film a moving optical front instead of shading the entire
@@ -2593,305 +2615,6 @@ function Ocean({
   );
 }
 
-const LINEUP_CREST_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uFaceHeight;
-  uniform float uSpan;
-  uniform float uCurl;
-  uniform float uEnergy;
-  uniform float uSeed;
-  uniform float uCenterX;
-  uniform float uPeel;
-  uniform float uVariability;
-  uniform float uWaveAngle;
-
-  varying vec2 vUv;
-  varying vec3 vWorldPosition;
-  varying vec3 vWorldNormal;
-  varying float vSection;
-
-  void main() {
-    float across = position.x * uSpan;
-    float heightFraction = pow(clamp(uv.y, 0.0, 1.0), 1.22);
-    float lip = smoothstep(.68, 1.0, uv.y);
-    float sectionPhase = (uCenterX + across) * .07 + uTime * .05;
-    float centerPhase = uCenterX * .07 + uTime * .05;
-    float section = (sin(sectionPhase) - sin(centerPhase)) * uVariability * 2.3;
-    float worldAcross = uCenterX + across;
-    float curvedSection = sin(uWaveAngle) * .0019
-      * (worldAcross * worldAcross - uCenterX * uCenterX);
-    float feather = sin(across * .18 + uSeed * 5.7 + uTime * .55)
-      * sin(across * .061 - uSeed * 2.9 - uTime * .19);
-
-    vec3 transformed = position;
-    transformed.x = across;
-    transformed.y = heightFraction * uFaceHeight;
-    transformed.z = -(section + curvedSection + across * uPeel * .16);
-    // The crest pitches in the propagation direction while the aerated wake
-    // trails offshore. Keeping these signs physical prevents the face from
-    // reading as a vertical card leaning backward into the swell.
-    transformed.z += heightFraction * (.06 + uFaceHeight * .055);
-    transformed.z += lip * lip * uCurl * (.18 + uFaceHeight * .22);
-    transformed.z += feather * (.018 + uEnergy * .035) * heightFraction;
-
-    float normalRipple = cos(across * .18 + uSeed * 5.7 + uTime * .55) * .05 * heightFraction;
-    vec3 localNormal = normalize(vec3(normalRipple, .2 + (1.0 - heightFraction) * .18, .94));
-    vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
-    vUv = uv;
-    vWorldPosition = worldPosition.xyz;
-    vWorldNormal = normalize(mat3(modelMatrix) * localNormal);
-    vSection = feather * .5 + .5;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-  }
-`;
-
-const LINEUP_CREST_FRAGMENT = /* glsl */ `
-  uniform float uTime;
-  uniform float uOpacity;
-  uniform float uLight;
-  uniform float uCloud;
-  uniform float uEnergy;
-
-  varying vec2 vUv;
-  varying vec3 vWorldPosition;
-  varying vec3 vWorldNormal;
-  varying float vSection;
-
-  float crestNoise(vec2 point) {
-    return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
-  }
-
-  void main() {
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    vec3 surfaceNormal = normalize(vWorldNormal);
-    if (!gl_FrontFacing) surfaceNormal *= -1.0;
-    float fresnel = pow(1.0 - clamp(abs(dot(surfaceNormal, viewDirection)), 0.0, 1.0), 2.2);
-    float fineNoise = crestNoise(floor(vec2(vUv.x * 190.0, vUv.y * 42.0) + uTime * vec2(.7, -.26)));
-    float feather = smoothstep(.38, .82, vSection * .68 + fineNoise * .32);
-    float foam = smoothstep(.7, .95, vUv.y + feather * .16 + uEnergy * .055);
-    foam *= .66 + fineNoise * .34;
-
-    vec3 shadowWater = mix(vec3(.016, .19, .25), vec3(.015, .31, .34), uLight);
-    vec3 bodyWater = mix(vec3(.035, .32, .39), vec3(.08, .54, .53), uLight);
-    vec3 litWater = mix(bodyWater, vec3(.22, .7, .66), fresnel * (.28 + uEnergy * .24));
-    vec3 foamColor = mix(vec3(.58, .75, .76), vec3(.91, .98, .91), uLight);
-    vec3 color = mix(shadowWater, litWater, smoothstep(.05, .9, vUv.y));
-    color = mix(color, foamColor, foam * (.58 + uLight * .3));
-    color *= 1.0 - uCloud * .17;
-
-    float sideFade = smoothstep(0.0, .07, vUv.x) * (1.0 - smoothstep(.93, 1.0, vUv.x));
-    float lowerFade = smoothstep(.015, .24, vUv.y);
-    float topFeather = 1.0 - smoothstep(.986, 1.0, vUv.y);
-    float alpha = uOpacity * sideFade * lowerFade * topFeather;
-    alpha *= .88 + fresnel * .24 + foam * .18;
-    if (alpha < .004) discard;
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
-
-const LINEUP_WHITEWATER_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uFaceHeight;
-  uniform float uSpan;
-  uniform float uTrail;
-  uniform float uCurl;
-  uniform float uEnergy;
-  uniform float uSeed;
-  uniform float uCenterX;
-  uniform float uPeel;
-  uniform float uVariability;
-  uniform float uWaveAngle;
-
-  varying vec2 vUv;
-  varying float vWake;
-  varying float vSection;
-  varying vec3 vWorldPosition;
-
-  void main() {
-    float across = position.x * uSpan;
-    float wake = clamp(uv.y, 0.0, 1.0);
-    float sectionPhase = (uCenterX + across) * .07 + uTime * .05;
-    float centerPhase = uCenterX * .07 + uTime * .05;
-    float section = (sin(sectionPhase) - sin(centerPhase)) * uVariability * 2.3;
-    float worldAcross = uCenterX + across;
-    float curvedSection = sin(uWaveAngle) * .0019
-      * (worldAcross * worldAcross - uCenterX * uCenterX);
-    float scallop = sin(across * .17 + wake * 6.4 + uSeed * 5.1 + uTime * .18);
-    float crossCurrent = sin(across * .051 - wake * 9.2 - uTime * .11 + uSeed * 2.7);
-    float trail = pow(wake, .82) * uTrail;
-
-    vec3 transformed;
-    transformed.x = across + crossCurrent * wake * (.035 + uEnergy * .07);
-    float fallingLip = 1.0 - smoothstep(.015, .34, wake);
-    float aeratedSurface = (1.0 - wake) * uFaceHeight * .045;
-    transformed.y = uFaceHeight * .82 * fallingLip
-      + aeratedSurface
-      + .035
-      - wake * .018
-      + scallop * (.012 + wake * .022);
-    transformed.z = -(section + curvedSection + across * uPeel * .16);
-    transformed.z += uCurl * (.12 + uFaceHeight * .18);
-    transformed.z -= trail;
-    transformed.z += scallop * wake * (.08 + uTrail * .018);
-
-    vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
-    vUv = uv;
-    vWake = wake;
-    vSection = scallop * .5 + .5;
-    vWorldPosition = worldPosition.xyz;
-    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-  }
-`;
-
-const LINEUP_WHITEWATER_FRAGMENT = /* glsl */ `
-  uniform float uTime;
-  uniform float uOpacity;
-  uniform float uEnergy;
-  uniform float uBreak;
-  uniform float uLight;
-  uniform float uCloud;
-  uniform float uSeed;
-
-  varying vec2 vUv;
-  varying float vWake;
-  varying float vSection;
-  varying vec3 vWorldPosition;
-
-  float foamHash(vec2 point) {
-    return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
-  }
-
-  float foamNoise(vec2 point) {
-    vec2 cell = floor(point);
-    vec2 fraction = fract(point);
-    fraction = fraction * fraction * (3.0 - 2.0 * fraction);
-    float a = foamHash(cell);
-    float b = foamHash(cell + vec2(1.0, 0.0));
-    float c = foamHash(cell + vec2(0.0, 1.0));
-    float d = foamHash(cell + vec2(1.0, 1.0));
-    return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
-  }
-
-  void main() {
-    vec2 flow = vec2(
-      vUv.x * 92.0 + uSeed * 4.2 + vWake * 3.7,
-      vUv.y * 24.0 - uTime * (.32 + uEnergy * .18)
-    );
-    float broad = foamNoise(flow);
-    float cells = foamNoise(flow * vec2(2.3, 1.7) + vec2(-uTime * .17, uTime * .11));
-    float detail = foamNoise(flow * 4.4 + vec2(uTime * .41, -uTime * .27));
-    float rollingEdge = exp(-vWake * (7.5 + uEnergy * 4.0));
-    float lace = smoothstep(.42, .68, broad)
-      * (1.0 - smoothstep(.76, .94, cells));
-    float perforation = 1.0 - smoothstep(.64, .88, detail);
-    float veins = smoothstep(.7, .94, detail) * smoothstep(.2, .78, cells);
-    float foam = rollingEdge * (.72 + cells * .28);
-    foam += lace * perforation * (.48 + vSection * .34) * (1.0 - vWake * .38);
-    foam += veins * .32 * (1.0 - smoothstep(.42, 1.0, vWake));
-    foam = clamp(foam, 0.0, 1.0);
-
-    float sideFade = smoothstep(0.0, .055, vUv.x)
-      * (1.0 - smoothstep(.945, 1.0, vUv.x));
-    float tailFade = 1.0 - smoothstep(.68, 1.0, vWake);
-    float breakPresence = (.24 + smoothstep(.12, .82, uEnergy) * .76)
-      * smoothstep(.22, .8, uBreak);
-    float distanceFade = 1.0 - smoothstep(190.0, 430.0, length(cameraPosition - vWorldPosition));
-    float alpha = foam * sideFade * tailFade * breakPresence * distanceFade;
-    alpha *= uOpacity * (1.18 + uEnergy * 1.02);
-    if (alpha < .006) discard;
-
-    vec3 shadowFoam = mix(vec3(.42, .69, .7), vec3(.69, .89, .84), uLight);
-    vec3 highlightFoam = mix(vec3(.67, .83, .83), vec3(.95, 1.0, .96), uLight);
-    vec3 color = mix(shadowFoam, highlightFoam, .46 + detail * .4 + rollingEdge * .14);
-    color *= 1.0 - uCloud * .1;
-    gl_FragColor = vec4(color, min(alpha, .82));
-  }
-`;
-
-const LINEUP_SPINDRIFT_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uFaceHeight;
-  uniform float uSpan;
-  uniform float uCurl;
-  uniform float uEnergy;
-  uniform float uSeed;
-  uniform float uCenterX;
-  uniform float uPeel;
-  uniform float uVariability;
-  uniform float uWaveAngle;
-  uniform float uWind;
-  uniform float uWindCross;
-  uniform float uWindNormal;
-  uniform float uPixelRatio;
-
-  varying float vLife;
-  varying float vBreakup;
-  varying float vDepthFade;
-
-  void main() {
-    float windRate = .032 + min(uWind, 36.0) * .0022;
-    float life = fract(position.y + uTime * windRate + uSeed * .173);
-    float across = position.x * uSpan;
-    float sectionPhase = (uCenterX + across) * .07 + uTime * .05;
-    float centerPhase = uCenterX * .07 + uTime * .05;
-    float section = (sin(sectionPhase) - sin(centerPhase)) * uVariability * 2.3;
-    float worldAcross = uCenterX + across;
-    float curvedSection = sin(uWaveAngle) * .0019
-      * (worldAcross * worldAcross - uCenterX * uCenterX);
-    float windTravel = life * life * uWind * .046;
-    float flutter = sin(life * 17.0 + across * .19 + uTime * 1.3 + uSeed * 4.1);
-    float lift = life * (.17 + uEnergy * .46 + uWind * .012);
-    float settle = life * life * (.12 + (1.0 - min(uWind / 24.0, 1.0)) * .2);
-
-    vec3 transformed;
-    transformed.x = across
-      + uWindCross * windTravel
-      + flutter * (.025 + life * .055);
-    transformed.y = uFaceHeight * (.88 + position.z * .035)
-      + lift
-      - settle;
-    transformed.z = -(section + curvedSection + across * uPeel * .16);
-    transformed.z += uCurl * (.14 + uFaceHeight * .17);
-    transformed.z += uWindNormal * windTravel + position.z * (.045 + life * .08);
-
-    vec4 viewPosition = modelViewMatrix * vec4(transformed, 1.0);
-    float perspective = clamp(48.0 / max(1.0, -viewPosition.z), .52, 2.7);
-    float particleScale = 1.1 + uEnergy * 1.25 + (1.0 - life) * .8;
-    gl_PointSize = clamp(particleScale * perspective * uPixelRatio, 1.0, 7.2);
-    gl_Position = projectionMatrix * viewPosition;
-    vLife = life;
-    vBreakup = .55 + .45 * sin(across * .37 + position.z * 13.0 + uSeed * 7.0);
-    vDepthFade = 1.0 - smoothstep(18.0, 420.0, -viewPosition.z);
-  }
-`;
-
-const LINEUP_SPINDRIFT_FRAGMENT = /* glsl */ `
-  uniform float uOpacity;
-  uniform float uEnergy;
-  uniform float uBreak;
-  uniform float uLight;
-  uniform float uCloud;
-
-  varying float vLife;
-  varying float vBreakup;
-  varying float vDepthFade;
-
-  void main() {
-    vec2 centered = gl_PointCoord - .5;
-    float droplet = 1.0 - smoothstep(.08, .5, length(centered));
-    float birth = smoothstep(0.0, .09, vLife);
-    float decay = 1.0 - smoothstep(.58, 1.0, vLife);
-    float breaking = smoothstep(.22, .78, uEnergy) * smoothstep(.32, .88, uBreak);
-    float breakup = smoothstep(.12, .86, vBreakup + uEnergy * .24);
-    float alpha = droplet * birth * decay * breaking * breakup * vDepthFade;
-    alpha *= uOpacity * (1.7 + uEnergy * 1.35);
-    if (alpha < .006) discard;
-    vec3 shade = mix(vec3(.56, .78, .79), vec3(.94, 1.0, .96), uLight);
-    shade *= 1.0 - uCloud * .12;
-    gl_FragColor = vec4(shade, min(alpha, .7));
-  }
-`;
-
 function nearestWaveCrestPointAt(
   anchorX: number,
   anchorZ: number,
@@ -2948,281 +2671,6 @@ function nearestWaveCrestPointAt(
     transport,
     targetPhase,
   };
-}
-
-// Retained as a low-detail fallback, but not layered over the physical ocean:
-// the separate plane reads as a ribbon and can cross the actual mesh crest.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function LineupWaveSetVolume({
-  settings,
-  character,
-  focusPosition,
-  light,
-  cloudCover,
-}: {
-  settings: SessionSettings;
-  character: BreakCharacter;
-  focusPosition: MutableRefObject<THREE.Vector3>;
-  light: number;
-  cloudCover: number;
-}) {
-  const quality = useRenderQuality();
-  const mobile = useMemo(() => isMobileRenderer(), []);
-  const { gl } = useThree();
-  const breakerAnchor = useRef({
-    x: Number.NaN,
-    z: -48,
-    refreshAt: -1,
-  });
-  const crestCount = mobile
-    ? quality === "reduced" ? 2 : 3
-    : quality === "high" ? 4 : 3;
-  const crestOffsets = useMemo(
-    () => crestCount === 2 ? [0, -1] : crestCount === 3 ? [-1, 0, 1] : [-2, -1, 0, 1],
-    [crestCount],
-  );
-  const groups = useRef<Array<THREE.Group | null>>([]);
-  const materials = useRef<Array<THREE.ShaderMaterial | null>>([]);
-  const tideResponse = useMemo(
-    () => tideResponseForBreak(settings.tide, character),
-    [character, settings.tide],
-  );
-  const uniforms = useMemo(
-    () => crestOffsets.map((_, index) => ({
-      uTime: { value: 0 },
-      uFaceHeight: { value: .5 },
-      uSpan: { value: mobile ? 86 : 124 },
-      uTrail: { value: 3.2 },
-      uCurl: { value: .2 },
-      uEnergy: { value: .2 },
-      uSeed: { value: index * 1.713 + .47 },
-      uCenterX: { value: 0 },
-      uPeel: { value: character.peel },
-      uVariability: { value: character.variability * tideResponse.variabilityScale },
-      uWaveAngle: { value: ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180 },
-      uOpacity: { value: 0 },
-      uLight: { value: light },
-      uCloud: { value: cloudCover / 100 },
-      uBreak: { value: 0 },
-      uWind: { value: settings.windSpeed },
-      uWindCross: { value: 0 },
-      uWindNormal: { value: 0 },
-      uPixelRatio: { value: 1 },
-    })),
-    [character.peel, character.variability, cloudCover, crestOffsets, light, mobile, settings.coastHeading, settings.waveDirection, settings.windSpeed, tideResponse.variabilityScale],
-  );
-  const sprayCount = mobile
-    ? quality === "reduced" ? 24 : 42
-    : quality === "high" ? 88 : 62;
-  const sprayPositions = useMemo(() => {
-    const positions = new Float32Array(sprayCount * 3);
-    for (let index = 0; index < sprayCount; index += 1) {
-      const offset = index * 3;
-      positions[offset] = seededRandom(index, 19.4) - .5;
-      positions[offset + 1] = seededRandom(index, 31.7);
-      positions[offset + 2] = seededRandom(index, 47.2) * 2 - 1;
-    }
-    return positions;
-  }, [sprayCount]);
-
-  useFrame(({ clock }, delta) => {
-    const elapsed = clock.elapsedTime;
-    const focus = focusPosition.current;
-    const anchorX = focus.x;
-    if (
-      elapsed >= breakerAnchor.current.refreshAt
-      || Math.abs(anchorX - breakerAnchor.current.x) >= 8
-    ) {
-      const contour = findWaveBreakingContourAt(
-        anchorX,
-        elapsed,
-        settings,
-        character,
-        .9,
-      );
-      breakerAnchor.current = {
-        x: anchorX,
-        z: contour.z,
-        refreshAt: elapsed + .8,
-      };
-    }
-    const anchorZ = breakerAnchor.current.z;
-    crestOffsets.forEach((offset, index) => {
-      const group = groups.current[index];
-      const material = materials.current[index];
-      if (!group || !material) return;
-
-      const crestPoint = nearestWaveCrestPointAt(
-        anchorX,
-        anchorZ,
-        elapsed,
-        settings,
-        character,
-        offset,
-      );
-      const sampleX = crestPoint.x;
-      const sampleZ = crestPoint.z;
-      const transport = crestPoint.transport;
-      const normalX = transport.x / transport.speed;
-      const normalZ = transport.z / transport.speed;
-      const setState = waveSetStateAt(sampleX, sampleZ, elapsed, settings, character);
-      const surface = waveSurfaceFrameAt(
-        sampleX,
-        sampleZ,
-        elapsed,
-        settings,
-        character,
-      );
-      const breakEntry = THREE.MathUtils.smoothstep(
-        surface.breakingRatio,
-        .6,
-        .98,
-      );
-      const breakExit = 1 - THREE.MathUtils.smoothstep(
-        surface.breakingRatio,
-        2.15,
-        4.8,
-      );
-      const breakBand = breakEntry * breakExit;
-      const distanceToFocus = Math.hypot(sampleX - focus.x, sampleZ - focus.z);
-      const distanceFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, 275, 430);
-      const energy = setState.crestEnergy;
-      const windAngle = ((settings.windDirection - settings.coastHeading) * Math.PI) / 180;
-      const forecastFaceHeight = settings.waveHeight
-        * tideResponse.faceScale
-        * character.power
-        * (.34 + breakBand * .66)
-        * (.62 + energy * .68);
-      const visibleCrestHeight = Math.max(
-        0,
-        surface.height - settings.tide * .3,
-      ) * 1.72;
-      const faceHeight = THREE.MathUtils.clamp(
-        Math.max(forecastFaceHeight, visibleCrestHeight),
-        .32,
-        6.2,
-      );
-      // Even a lull member still pitches and aerates when it reaches the
-      // bottom-controlled break. Energy changes scale and violence; it must
-      // not make an otherwise physical breaker visually disappear.
-      const targetOpacity = (.52 + energy * .42)
-        * breakBand
-        * distanceFade
-        * (surface.regime === "deep" ? 0 : 1);
-
-      group.visible = targetOpacity > .004;
-      group.position.set(
-        sampleX,
-        surface.height - faceHeight * .5,
-        sampleZ,
-      );
-      group.rotation.y = Math.atan2(normalX, normalZ);
-
-      const values = material.uniforms;
-      values.uTime.value = elapsed;
-      values.uFaceHeight.value = THREE.MathUtils.damp(values.uFaceHeight.value, faceHeight, 8, delta);
-      values.uSpan.value = THREE.MathUtils.damp(
-        values.uSpan.value,
-        (mobile ? 86 : 124) * (1 + character.variability * .12),
-        5,
-        delta,
-      );
-      values.uTrail.value = THREE.MathUtils.damp(
-        values.uTrail.value,
-        THREE.MathUtils.clamp(
-          (1.45 + settings.waveHeight * 1.65)
-            * (.18 + breakBand * .82)
-            * (.36 + energy * .86),
-          1.15,
-          13.5,
-        ),
-        5.5,
-        delta,
-      );
-      values.uCurl.value = THREE.MathUtils.damp(
-        values.uCurl.value,
-        (
-          .08
-            + breakBand * (.34 + character.hollow * .5)
-        ) * (.48 + energy * .52),
-        6,
-        delta,
-      );
-      values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, energy, 6, delta);
-      values.uCenterX.value = sampleX;
-      values.uPeel.value = character.peel;
-      values.uVariability.value = character.variability * tideResponse.variabilityScale;
-      values.uWaveAngle.value = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-      values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, 7, delta);
-      values.uLight.value = light;
-      values.uCloud.value = cloudCover / 100;
-      values.uBreak.value = THREE.MathUtils.damp(
-        values.uBreak.value,
-        Math.max(breakBand, surface.whitewater),
-        6,
-        delta,
-      );
-      values.uWind.value = THREE.MathUtils.damp(values.uWind.value, settings.windSpeed, 5, delta);
-      values.uWindCross.value = Math.sin(windAngle);
-      values.uWindNormal.value = Math.cos(windAngle);
-      values.uPixelRatio.value = Math.min(gl.getPixelRatio(), mobile ? 1.3 : 1.7);
-    });
-  });
-
-  const horizontalSegments = mobile ? quality === "reduced" ? 24 : 34 : quality === "high" ? 58 : 44;
-  const verticalSegments = mobile ? 7 : 10;
-  const foamTrailSegments = mobile ? quality === "reduced" ? 3 : 5 : quality === "high" ? 10 : 7;
-
-  return (
-    <group>
-      {crestOffsets.map((_, index) => (
-        <group
-          key={`${crestCount}-${index}`}
-          ref={(node) => {
-            groups.current[index] = node;
-          }}
-        >
-          <mesh frustumCulled={false} renderOrder={2}>
-            <planeGeometry args={[1, 1, horizontalSegments, verticalSegments]} />
-            <shaderMaterial
-              ref={(node) => {
-                materials.current[index] = node;
-              }}
-              uniforms={uniforms[index]}
-              vertexShader={LINEUP_CREST_VERTEX}
-              fragmentShader={LINEUP_CREST_FRAGMENT}
-              transparent
-              depthWrite={false}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-          <mesh frustumCulled={false} renderOrder={2.1}>
-            <planeGeometry args={[1, 1, horizontalSegments, foamTrailSegments]} />
-            <shaderMaterial
-              uniforms={uniforms[index]}
-              vertexShader={LINEUP_WHITEWATER_VERTEX}
-              fragmentShader={LINEUP_WHITEWATER_FRAGMENT}
-              transparent
-              depthWrite={false}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-          <points frustumCulled={false} renderOrder={2.2}>
-            <bufferGeometry>
-              <bufferAttribute attach="attributes-position" args={[sprayPositions, 3]} />
-            </bufferGeometry>
-            <shaderMaterial
-              uniforms={uniforms[index]}
-              vertexShader={LINEUP_SPINDRIFT_VERTEX}
-              fragmentShader={LINEUP_SPINDRIFT_FRAGMENT}
-              transparent
-              depthWrite={false}
-            />
-          </points>
-        </group>
-      ))}
-    </group>
-  );
 }
 
 function seabedKind(character: BreakCharacter) {
@@ -3612,149 +3060,6 @@ function UnderwaterLightShafts({
   );
 }
 
-const SHORELINE_VERTEX = /* glsl */ `
-  varying vec2 vUv;
-  varying vec2 vSurface;
-  varying vec3 vWorldPosition;
-
-  void main() {
-    vUv = uv;
-    vSurface = position.xy;
-    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const SHORELINE_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uTime;
-  uniform float uTide;
-  uniform float uWind;
-  uniform float uLight;
-  uniform vec3 uSunDirection;
-  uniform vec3 uSunColor;
-  varying vec2 vUv;
-  varying vec2 vSurface;
-  varying vec3 vWorldPosition;
-
-  float hash(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * .1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-  }
-
-  float noise(vec2 p) {
-    vec2 cell = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(cell);
-    float b = hash(cell + vec2(1.0, 0.0));
-    float c = hash(cell + vec2(0.0, 1.0));
-    float d = hash(cell + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    float land = 1.0 - vUv.y;
-    float along = vSurface.x;
-    float wind = clamp(uWind / 24.0, 0.0, 1.4);
-    float slowSet = sin(uTime * .31) * .5 + .5;
-    float edgeNoise = noise(vec2(along * .055 + uTime * .024, uTime * .055));
-    float runup = .36 + slowSet * .13 + sin(along * .038 + uTime * .16) * .035;
-    runup += (edgeNoise - .5) * .075 + uTide * .025;
-
-    float wet = 1.0 - smoothstep(runup - .02, runup + .27, land);
-    float glass = 1.0 - smoothstep(.015, .24, abs(land - runup + .11));
-    float edgeDistance = abs(land - runup + (noise(vec2(along * .19, land * 9.0 - uTime * .17)) - .5) * .028);
-    float lace = 1.0 - smoothstep(.009, .038, edgeDistance);
-    float bubbles = noise(vec2(along * .78 - uTime * .46, land * 45.0 + uTime * .24));
-    float foam = lace * smoothstep(.27, .72, bubbles);
-
-    float secondaryRunup = .19 + (1.0 - slowSet) * .09 + sin(along * .052 - uTime * .12) * .024 + uTide * .018;
-    float secondaryDistance = abs(land - secondaryRunup + (edgeNoise - .5) * .045);
-    float secondaryLace = 1.0 - smoothstep(.01, .046, secondaryDistance);
-    foam += secondaryLace * smoothstep(.38, .82, 1.0 - bubbles) * .32;
-
-    float backwashPhase = fract((land - runup) * 10.5 + uTime * .13);
-    float backwash = (1.0 - smoothstep(.0, .09, abs(backwashPhase - .5))) * wet;
-    backwash *= smoothstep(.61, .89, noise(vec2(along * .32, land * 23.0 + uTime * .08))) * .24;
-    float rivulet = smoothstep(.72, .93, bubbles) * (1.0 - smoothstep(runup - .22, runup + .04, land));
-    rivulet *= smoothstep(.03, .22, wet) * .16;
-
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    float grazing = pow(1.0 - abs(viewDirection.y), 3.0);
-    vec3 wetColor = mix(vec3(.018, .105, .12), vec3(.075, .29, .27), uLight);
-    wetColor += vec3(.18, .31, .3) * glass * grazing * (.24 + uLight * .28);
-    vec3 reflectedSun = reflect(-normalize(uSunDirection), vec3(0.0, 1.0, 0.0));
-    float sunPath = pow(max(0.0, dot(reflectedSun, viewDirection)), 34.0);
-    sunPath *= smoothstep(.18, .78, noise(vec2(along * .34 - uTime * .07, land * 13.0)));
-    wetColor += uSunColor * sunPath * glass * (.15 + uLight * .82);
-    vec3 foamColor = mix(vec3(.57, .79, .76), vec3(.94, 1.0, .96), uLight);
-    float foamMask = clamp(foam + backwash + rivulet, 0.0, .95);
-    vec3 color = mix(wetColor, foamColor, foamMask);
-    color *= .9 + noise(vec2(along * 1.9, land * 28.0 - uTime * (.08 + wind * .06))) * .1;
-
-    float sideFade = smoothstep(0.0, .025, vUv.x) * smoothstep(0.0, .025, 1.0 - vUv.x);
-    float alpha = (wet * (.15 + glass * .13) + foamMask * .78) * sideFade;
-    alpha *= smoothstep(.0, .045, land) * (1.0 - smoothstep(.9, 1.0, land));
-    gl_FragColor = vec4(color, clamp(alpha, 0.0, .92));
-  }
-`;
-
-// Retained as an optional weather-driven swash overlay.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function ShorelineWash({
-  settings,
-  light,
-  sunPosition,
-  sunColor,
-}: {
-  settings: SessionSettings;
-  light: number;
-  sunPosition: [number, number, number];
-  sunColor: string;
-}) {
-  const wash = useRef<THREE.Mesh>(null);
-  const material = useRef<THREE.ShaderMaterial>(null);
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uTide: { value: 0 },
-    uWind: { value: 0 },
-    uLight: { value: 1 },
-    uSunDirection: { value: new THREE.Vector3(-.3, .8, -.45).normalize() },
-    uSunColor: { value: new THREE.Color("#fff0ca") },
-  }), []);
-
-  const tideShift = shorelineShiftForTide(settings.tide);
-
-  useFrame(({ clock }, delta) => {
-    if (!material.current) return;
-    if (wash.current) wash.current.position.z = THREE.MathUtils.damp(wash.current.position.z, 20 + tideShift, 2.8, delta);
-    const values = material.current.uniforms;
-    values.uTime.value = clock.elapsedTime;
-    values.uTide.value = THREE.MathUtils.lerp(values.uTide.value, settings.tide, .025);
-    values.uWind.value = settings.windSpeed;
-    values.uLight.value = light;
-    values.uSunDirection.value.set(...sunPosition).normalize();
-    values.uSunColor.value.set(sunColor);
-  });
-
-  return (
-    <mesh ref={wash} position={[0, -0.405, 20 + tideShift]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
-      <planeGeometry args={[COAST_GEOMETRY_WIDTH, 32]} />
-      <shaderMaterial
-        ref={material}
-        uniforms={uniforms}
-        vertexShader={SHORELINE_VERTEX}
-        fragmentShader={SHORELINE_FRAGMENT}
-        transparent
-        depthWrite={false}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
-}
-
 function CoastalEnvironment({
   light,
   cloudFactor,
@@ -3816,596 +3121,6 @@ function CoastalEnvironment({
     >
       {rig}
     </Environment>
-  );
-}
-
-const BREAKING_WAVE_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uWaveHeight;
-  uniform float uEnergy;
-  uniform float uCurl;
-  uniform float uSide;
-  uniform float uLine;
-  uniform float uSection;
-  varying vec2 vUv;
-  varying float vPocket;
-  varying float vFoam;
-  varying float vSection;
-  varying float vEdge;
-  varying vec3 vWorldPosition;
-
-  void main() {
-    float heightRatio = uv.y;
-    float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
-    float pocketCenter = clamp(-uLine * 4.6 * uSide, -7.2, 7.2);
-    float pocketDistance = (position.x - pocketCenter) / 5.0;
-    float pocket = exp(-pocketDistance * pocketDistance);
-    float lip = smoothstep(.34, 1.0, heightRatio);
-    float sectionPulse = .5 + .5 * sin((position.x - pocketCenter) * .42 * uSide - uTime * .72);
-    float section = uSection * smoothstep(.42, .94, sectionPulse) * (.48 + pocket * .52);
-    float curl = uCurl * (.28 + pocket * .72);
-    float edge = smoothstep(0.0, .09, uv.x) * smoothstep(0.0, .09, 1.0 - uv.x);
-    vec3 p = position;
-    float concave = pow(heightRatio, 1.42);
-    float shoulderHeight = .62 + pocket * .38;
-    p.x += uSide * (curl * lip * .58 + section * lip * .18);
-    p.y = concave * faceHeight * shoulderHeight;
-    p.y += sin(heightRatio * 3.14159) * pocket * faceHeight * .055;
-    p.y += section * lip * faceHeight * .1;
-    p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
-    p.z = 2.82 - concave * (.62 + faceHeight * .035);
-    p.z -= curl * lip * lip * (1.45 + faceHeight * .38);
-    p.z -= section * lip * lip * (.3 + faceHeight * .14);
-    p.z += sin(position.x * .24 + uTime * 1.35) * .12 * (1.0 - heightRatio);
-
-    vUv = uv;
-    vPocket = pocket;
-    vFoam = smoothstep(.66, 1.0, heightRatio) * (.44 + curl * .46 + section * .42);
-    vSection = section;
-    vEdge = edge;
-    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-  }
-`;
-
-const BREAKING_WAVE_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uTime;
-  uniform float uLight;
-  uniform float uCloud;
-  uniform float uOpacity;
-  varying vec2 vUv;
-  varying float vPocket;
-  varying float vFoam;
-  varying float vSection;
-  varying float vEdge;
-  varying vec3 vWorldPosition;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-  }
-
-  float noise(vec2 p) {
-    vec2 cell = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(cell);
-    float b = hash(cell + vec2(1.0, 0.0));
-    float c = hash(cell + vec2(0.0, 1.0));
-    float d = hash(cell + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    if (dot(normal, viewDirection) < 0.0) normal *= -1.0;
-    float fresnel = .035 + .965 * pow(1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0), 4.0);
-    float faceNoise = noise(vUv * vec2(18.0, 8.0) + vec2(uTime * .24, -uTime * .42));
-    float veinNoise = noise(vUv * vec2(42.0, 13.0) + vec2(-uTime * .65, uTime * .18));
-    float verticalDepth = smoothstep(.05, .96, vUv.y);
-    vec3 deep = mix(vec3(.004, .075, .105), vec3(.025, .23, .235), verticalDepth);
-    vec3 transmitted = vec3(.04, .48, .39) * (vPocket * verticalDepth) * (.16 + uLight * .28);
-    vec3 reflection = mix(vec3(.09, .28, .34), vec3(.35, .63, .65), uLight);
-    reflection = mix(reflection, vec3(.08, .11, .15), uCloud * .48);
-    vec3 color = deep + transmitted;
-    color = mix(color, reflection, fresnel * .56);
-    color *= .9 + faceNoise * .13;
-    color = mix(color, vec3(.006, .07, .09), vSection * (.12 + verticalDepth * .16));
-
-    float lipFoam = vFoam
-      * (.42 + smoothstep(.16, .72, faceNoise) * .58)
-      * (.72 + veinNoise * .38 + vSection * .3);
-    float streaks = smoothstep(.7, .96, veinNoise) * smoothstep(.42, .95, vUv.y) * (.18 + vPocket * .36);
-    float foam = clamp(max(lipFoam, streaks), 0.0, .96);
-    vec3 foamColor = mix(vec3(.62, .88, .84), vec3(.94, 1.0, .98), uLight);
-    color = mix(color, foamColor, foam);
-
-    float lowerFade = smoothstep(.0, .1, vUv.y);
-    float alpha = uOpacity * vEdge * lowerFade * (.62 + fresnel * .24 + vPocket * .12 + vSection * .06);
-    alpha = max(alpha, foam * uOpacity * .96);
-    gl_FragColor = vec4(color, clamp(alpha, 0.0, .96));
-  }
-`;
-
-const WAVE_CURTAIN_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uWaveHeight;
-  uniform float uEnergy;
-  uniform float uCurl;
-  uniform float uSide;
-  uniform float uLine;
-  uniform float uSection;
-  varying vec2 vUv;
-  varying float vPocket;
-  varying float vEdge;
-  varying float vDrop;
-  varying float vSection;
-  varying vec3 vWorldPosition;
-
-  void main() {
-    float drop = uv.y;
-    float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
-    float pocketCenter = clamp(-uLine * 4.6 * uSide, -7.2, 7.2);
-    float pocketDistance = (position.x - pocketCenter) / 4.9;
-    float pocket = exp(-pocketDistance * pocketDistance);
-    float sectionPulse = .5 + .5 * sin((position.x - pocketCenter) * .42 * uSide - uTime * .72);
-    float section = uSection * smoothstep(.42, .94, sectionPulse) * (.48 + pocket * .52);
-    float curl = uCurl * (.24 + pocket * .76);
-    float crestHeight = faceHeight * (1.0 + section * .1);
-    float lipZ = 2.2 - curl * (1.45 + faceHeight * .38) - section * (.3 + faceHeight * .14);
-    float flutter = sin(position.x * 1.7 - uTime * 4.2 + drop * 9.0) * .055;
-    flutter += sin(position.x * .38 + uTime * 2.1) * .08;
-    vec3 p = vec3(position.x + uSide * (curl * .58 + section * .18), crestHeight, lipZ);
-    p.x += flutter * (.35 + drop * .65);
-    p.y -= drop * faceHeight * (.7 + curl * .18);
-    p.z += drop * (.12 + curl * .52) + sin(drop * 12.0 + uTime * 2.8) * .045 * curl;
-
-    vUv = uv;
-    vPocket = pocket;
-    vDrop = drop;
-    vSection = section;
-    vEdge = smoothstep(0.0, .08, uv.x) * smoothstep(0.0, .08, 1.0 - uv.x);
-    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-  }
-`;
-
-const WAVE_CURTAIN_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uTime;
-  uniform float uLight;
-  uniform float uCloud;
-  uniform float uOpacity;
-  varying vec2 vUv;
-  varying float vPocket;
-  varying float vEdge;
-  varying float vDrop;
-  varying float vSection;
-  varying vec3 vWorldPosition;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-  }
-
-  float noise(vec2 p) {
-    vec2 cell = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(cell);
-    float b = hash(cell + vec2(1.0, 0.0));
-    float c = hash(cell + vec2(0.0, 1.0));
-    float d = hash(cell + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    if (dot(normal, viewDirection) < 0.0) normal *= -1.0;
-    float fresnel = pow(1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0), 3.0);
-    float longVeins = noise(vec2(vUv.x * 58.0 - uTime * 1.4, vUv.y * 4.0 + uTime * .72));
-    float broadSheet = noise(vec2(vUv.x * 13.0 + uTime * .28, vUv.y * 7.0 - uTime * 1.2));
-    float threads = smoothstep(.56, .94, longVeins) * (.42 + broadSheet * .58);
-    float beading = smoothstep(.72, .96, noise(vec2(vUv.x * 91.0, vUv.y * 24.0 + uTime * 2.6)));
-    float verticalFade = smoothstep(.0, .055, vDrop) * (1.0 - smoothstep(.78, 1.0, vDrop));
-    float body = .07 + threads * .34 + broadSheet * .09 + beading * .18 + vSection * .08;
-    float alpha = uOpacity * vPocket * vEdge * verticalFade * body;
-    vec3 deep = mix(vec3(.015, .22, .24), vec3(.025, .4, .35), uLight);
-    deep = mix(deep, vec3(.055, .105, .13), uCloud * .38);
-    vec3 highlight = mix(vec3(.45, .86, .8), vec3(.91, 1.0, .97), clamp(threads + fresnel, 0.0, 1.0));
-    vec3 color = mix(deep, highlight, .24 + fresnel * .36 + beading * .2 + vSection * .12);
-    gl_FragColor = vec4(color, clamp(alpha, 0.0, .7));
-  }
-`;
-
-const BREAKING_FOAM_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uWaveHeight;
-  uniform float uEnergy;
-  uniform float uCurl;
-  uniform float uSide;
-  uniform float uLine;
-  uniform float uSection;
-  uniform float uOpacity;
-  varying float vAlpha;
-
-  void main() {
-    float seed = position.y;
-    float faceHeight = clamp(uWaveHeight * 1.55, 1.45, 5.8) * (.82 + uEnergy * .3);
-    float pocketCenter = clamp(-uLine * 4.6 * uSide, -7.2, 7.2);
-    float pocketDistance = (position.x - pocketCenter) / 5.0;
-    float pocket = exp(-pocketDistance * pocketDistance);
-    float sectionPulse = .5 + .5 * sin((position.x - pocketCenter) * .42 * uSide - uTime * .72);
-    float section = uSection * smoothstep(.42, .94, sectionPulse) * (.48 + pocket * .52);
-    float curl = uCurl * (.28 + pocket * .72);
-    float age = fract(seed + uTime * (.12 + uEnergy * .1));
-    float faller = step(.56, fract(seed * 17.31 + .19));
-    vec3 p = vec3(position.x, faceHeight * (1.0 + section * .1), 2.2 - curl * (1.45 + faceHeight * .38) - section * (.3 + faceHeight * .14));
-    p.x += uSide * (curl * .58 + section * .18) + sin(seed * 41.0 + uTime * 2.7) * age * (.48 + faller * .32);
-    p.y += sin(position.x * .42 + uTime * 2.1) * .055 * (.35 + uEnergy);
-    p.y += mix(age * (.28 + uEnergy * .8), -age * (.4 + curl * 1.7), faller * curl);
-    p.z += mix(-age * (.18 + curl * .32), age * (.12 + curl * .72), faller);
-    vec4 viewPosition = modelViewMatrix * vec4(p, 1.0);
-    vAlpha = pow(1.0 - age, 1.7) * uOpacity * (.38 + pocket * .52 + section * .24);
-    gl_PointSize = (2.8 + seed * 5.4) * clamp(68.0 / -viewPosition.z, 1.0, 7.0);
-    gl_Position = projectionMatrix * viewPosition;
-  }
-`;
-
-const BREAKING_FOAM_FRAGMENT = /* glsl */ `
-  precision highp float;
-  varying float vAlpha;
-  void main() {
-    vec2 point = gl_PointCoord - .5;
-    float falloff = smoothstep(.5, .08, length(point));
-    gl_FragColor = vec4(.82, 1.0, .96, falloff * vAlpha);
-  }
-`;
-
-// Retained for a future volumetric/low-detail tier. The ride now uses the
-// continuous ocean mesh itself so the visible face and hull contact coincide.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function BreakingWave({
-  motion,
-  settings,
-  character,
-  focusPosition,
-  light,
-  cloudCover,
-}: {
-  motion: MutableRefObject<MotionState>;
-  settings: SessionSettings;
-  character: BreakCharacter;
-  focusPosition: MutableRefObject<THREE.Vector3>;
-  light: number;
-  cloudCover: number;
-}) {
-  const group = useRef<THREE.Group>(null);
-  const faceMaterial = useRef<THREE.ShaderMaterial>(null);
-  const curtainMaterial = useRef<THREE.ShaderMaterial>(null);
-  const foamMaterial = useRef<THREE.ShaderMaterial>(null);
-  const lineSide = useRef(character.peel === 0 ? 1 : Math.sign(character.peel));
-  const warmupFrames = useRef(1);
-  const tideResponse = useMemo(
-    () => tideResponseForBreak(settings.tide, character),
-    [character, settings.tide],
-  );
-  const targetFaceHeight = useMemo(
-    () => forecastFaceHeightForBreak(settings.waveHeight, settings.tide, character),
-    [character, settings.tide, settings.waveHeight],
-  );
-  const faceUniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uWaveHeight: { value: 1 },
-    uEnergy: { value: 0 },
-    uCurl: { value: 0 },
-    uSide: { value: 1 },
-    uLine: { value: 0 },
-    uSection: { value: 0 },
-    uLight: { value: 1 },
-    uCloud: { value: 0 },
-    uOpacity: { value: 0 },
-  }), []);
-  const foamUniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uWaveHeight: { value: 1 },
-    uEnergy: { value: 0 },
-    uCurl: { value: 0 },
-    uSide: { value: 1 },
-    uLine: { value: 0 },
-    uSection: { value: 0 },
-    uOpacity: { value: 0 },
-  }), []);
-  const curtainUniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uWaveHeight: { value: 1 },
-    uEnergy: { value: 0 },
-    uCurl: { value: 0 },
-    uSide: { value: 1 },
-    uLine: { value: 0 },
-    uSection: { value: 0 },
-    uLight: { value: 1 },
-    uCloud: { value: 0 },
-    uOpacity: { value: 0 },
-  }), []);
-  const foamPositions = useMemo(() => {
-    const count = isMobileRenderer() ? 58 : 96;
-    const positions = new Float32Array(count * 3);
-    for (let index = 0; index < count; index += 1) {
-      positions[index * 3] = -12 + (index / (count - 1)) * 24;
-      positions[index * 3 + 1] = ((index * 37) % (count + 1)) / (count + 1);
-    }
-    return positions;
-  }, []);
-
-  useEffect(() => {
-    lineSide.current = character.peel === 0 ? 1 : Math.sign(character.peel);
-  }, [character.peel]);
-
-  useFrame(({ clock }, delta) => {
-    if (!group.current || !faceMaterial.current || !curtainMaterial.current || !foamMaterial.current) return;
-    const state = motion.current;
-    const riding = state.phase === "riding";
-    if (riding) lineSide.current = state.lineSide || lineSide.current;
-    const effectiveHollow = character.hollow * tideResponse.hollowScale;
-    const effectiveSteepness = character.steepness * tideResponse.steepnessScale;
-    const effectivePower = character.power * tideResponse.powerScale;
-    const targetCurl = riding
-      ? THREE.MathUtils.clamp(
-          (state.waveQuality * .24 + state.barrel * .92 + state.maneuver * .12) * (.72 + effectiveHollow * .3 + effectiveSteepness * .08),
-          .08,
-          1.28,
-        )
-      : 0;
-    const targetOpacity = riding
-      ? THREE.MathUtils.clamp(.58 + state.waveQuality * .2 + state.barrel * .12 + effectivePower * .035, .58, .96)
-      : 0;
-    const targetCurtain = riding
-      ? THREE.MathUtils.clamp((state.waveQuality - .5 + effectiveHollow * .14) * .82 + state.barrel * .92 + state.maneuver * .08, 0, .96)
-      : 0;
-    const focus = focusPosition.current;
-    const transport = primaryWaveVelocityAt(
-      focus.x,
-      focus.z,
-      clock.elapsedTime,
-      settings,
-      character,
-    );
-    const surface = waveSurfaceFrameAt(
-      focus.x,
-      focus.z,
-      clock.elapsedTime,
-      settings,
-      character,
-    );
-    const transportSpeed = Math.max(.01, transport.speed);
-    const normalX = transport.x / transportSpeed;
-    const normalZ = transport.z / transportSpeed;
-    const values = faceMaterial.current.uniforms;
-    values.uTime.value = clock.elapsedTime;
-    values.uWaveHeight.value = THREE.MathUtils.damp(
-      values.uWaveHeight.value,
-      targetFaceHeight,
-      3.5,
-      delta,
-    );
-    values.uEnergy.value = THREE.MathUtils.damp(values.uEnergy.value, state.setEnergy, 4, delta);
-    values.uCurl.value = THREE.MathUtils.damp(values.uCurl.value, targetCurl, 5.5, delta);
-    values.uSide.value = THREE.MathUtils.damp(values.uSide.value, lineSide.current, 3.2, delta);
-    values.uLine.value = THREE.MathUtils.damp(values.uLine.value, state.linePosition, 5.8, delta);
-    values.uSection.value = THREE.MathUtils.damp(values.uSection.value, state.sectionPressure, 4.8, delta);
-    values.uLight.value = light;
-    values.uCloud.value = cloudCover / 100;
-    values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, riding ? 7 : 4, delta);
-    // The local wave mesh is authored with +Z pointing offshore. Put its
-    // mid-face on the actual board/surface sample and rotate -Z into the
-    // finite-depth propagation direction.
-    group.current.rotation.y = Math.atan2(-normalX, -normalZ);
-    group.current.position.set(
-      focus.x + normalX * 2.35,
-      surface.height - values.uWaveHeight.value * .72,
-      focus.z + normalZ * 2.35,
-    );
-    const curtain = curtainMaterial.current.uniforms;
-    curtain.uTime.value = clock.elapsedTime;
-    curtain.uWaveHeight.value = values.uWaveHeight.value;
-    curtain.uEnergy.value = values.uEnergy.value;
-    curtain.uCurl.value = values.uCurl.value;
-    curtain.uSide.value = values.uSide.value;
-    curtain.uLine.value = values.uLine.value;
-    curtain.uSection.value = values.uSection.value;
-    curtain.uLight.value = light;
-    curtain.uCloud.value = cloudCover / 100;
-    curtain.uOpacity.value = THREE.MathUtils.damp(curtain.uOpacity.value, targetCurtain, riding ? 6 : 3.5, delta);
-    const foam = foamMaterial.current.uniforms;
-    foam.uTime.value = clock.elapsedTime;
-    foam.uWaveHeight.value = values.uWaveHeight.value;
-    foam.uEnergy.value = values.uEnergy.value;
-    foam.uCurl.value = values.uCurl.value;
-    foam.uSide.value = values.uSide.value;
-    foam.uLine.value = values.uLine.value;
-    foam.uSection.value = values.uSection.value;
-    foam.uOpacity.value = values.uOpacity.value;
-    if (warmupFrames.current > 0) {
-      warmupFrames.current -= 1;
-      group.current.visible = true;
-    } else {
-      group.current.visible = riding || values.uOpacity.value > .012;
-    }
-  });
-
-  return (
-    <group ref={group} visible={false}>
-      <mesh renderOrder={3}>
-        <planeGeometry args={[24, 1, isMobileRenderer() ? 42 : 64, isMobileRenderer() ? 14 : 22]} />
-        <shaderMaterial
-          ref={faceMaterial}
-          uniforms={faceUniforms}
-          vertexShader={BREAKING_WAVE_VERTEX}
-          fragmentShader={BREAKING_WAVE_FRAGMENT}
-          transparent
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh renderOrder={3.5}>
-        <planeGeometry args={[24, 1, isMobileRenderer() ? 34 : 54, isMobileRenderer() ? 11 : 18]} />
-        <shaderMaterial
-          ref={curtainMaterial}
-          uniforms={curtainUniforms}
-          vertexShader={WAVE_CURTAIN_VERTEX}
-          fragmentShader={WAVE_CURTAIN_FRAGMENT}
-          transparent
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <points frustumCulled={false} renderOrder={4}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[foamPositions, 3]} />
-        </bufferGeometry>
-        <shaderMaterial
-          ref={foamMaterial}
-          uniforms={foamUniforms}
-          vertexShader={BREAKING_FOAM_VERTEX}
-          fragmentShader={BREAKING_FOAM_FRAGMENT}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </points>
-    </group>
-  );
-}
-
-const PADDLE_WALL_VERTEX = /* glsl */ `
-  uniform float uTime;
-  uniform float uHeight;
-  uniform float uPower;
-  varying vec2 vUv;
-  varying float vCrest;
-  varying float vFold;
-  varying vec3 vWorldPosition;
-
-  void main() {
-    float rise = pow(uv.y, 1.34);
-    float crest = smoothstep(.66, 1.0, uv.y);
-    float fold = crest * crest * uPower;
-    vec3 p = position;
-    p.x += sin(position.x * .38 + uTime * 2.1) * (.035 + uPower * .075) * uv.y;
-    p.y = rise * uHeight + sin(position.x * .52 - uTime * 2.6) * .035 * uv.y;
-    p.z = 1.15 - rise * (.34 + uHeight * .045) - fold * (.28 + uHeight * .22);
-    vUv = uv;
-    vCrest = crest;
-    vFold = fold;
-    vWorldPosition = (modelMatrix * vec4(p, 1.0)).xyz;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-  }
-`;
-
-const PADDLE_WALL_FRAGMENT = /* glsl */ `
-  precision highp float;
-  uniform float uTime;
-  uniform float uOpacity;
-  uniform float uLight;
-  varying vec2 vUv;
-  varying float vCrest;
-  varying float vFold;
-  varying vec3 vWorldPosition;
-
-  float hash(vec2 p) {
-    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-  }
-
-  float noise(vec2 p) {
-    vec2 cell = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(cell);
-    float b = hash(cell + vec2(1.0, 0.0));
-    float c = hash(cell + vec2(0.0, 1.0));
-    float d = hash(cell + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  }
-
-  void main() {
-    vec3 normal = normalize(cross(dFdx(vWorldPosition), dFdy(vWorldPosition)));
-    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-    if (dot(normal, viewDirection) < 0.0) normal *= -1.0;
-    float fresnel = pow(1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0), 3.2);
-    float broad = noise(vUv * vec2(15.0, 7.0) + vec2(uTime * .24, -uTime * .54));
-    float veins = noise(vUv * vec2(46.0, 11.0) + vec2(-uTime * .72, uTime * .17));
-    vec3 deep = mix(vec3(.006, .08, .11), vec3(.025, .28, .27), vUv.y);
-    vec3 reflected = mix(vec3(.08, .23, .28), vec3(.34, .68, .67), uLight);
-    vec3 color = mix(deep, reflected, fresnel * .5);
-    color *= .88 + broad * .18;
-    float foamNoise = smoothstep(.34, .78, broad) * (.7 + veins * .48);
-    float feather = vCrest * foamNoise + smoothstep(.76, .96, veins) * vFold * .62;
-    color = mix(color, mix(vec3(.62, .9, .86), vec3(.97, 1.0, .98), uLight), clamp(feather, 0.0, .94));
-    float edge = smoothstep(0.0, .08, vUv.x) * smoothstep(0.0, .08, 1.0 - vUv.x);
-    float lower = smoothstep(0.0, .14, vUv.y);
-    float alpha = uOpacity * edge * lower * (.24 + fresnel * .38 + vCrest * .34 + feather * .42);
-    gl_FragColor = vec4(color, clamp(alpha, 0.0, .92));
-  }
-`;
-
-// Retained only as a possible low-detail fallback. Drawing this player-local
-// plane over the physical ocean makes a crest look like a ribbon and can put
-// it tens of metres away from the break sampled by gameplay.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function PaddleOutShorebreak({ motion, settings, light, mobile }: { motion: MutableRefObject<MotionState>; settings: SessionSettings; light: number; mobile: boolean }) {
-  const group = useRef<THREE.Group>(null);
-  const material = useRef<THREE.ShaderMaterial>(null);
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uHeight: { value: .8 },
-    uPower: { value: 0 },
-    uOpacity: { value: 0 },
-    uLight: { value: 1 },
-  }), []);
-
-  useFrame(({ clock }, delta) => {
-    if (!group.current || !material.current) return;
-    const state = motion.current;
-    const paddling = state.phase === "paddling";
-    const approaching = paddling && state.shorebreakPower > .04 && (state.shorebreakSeconds <= 2.8 || state.shorebreak > .015);
-    const values = material.current.uniforms;
-    const targetHeight = settings.waveHeight * (.32 + state.shorebreakPower * .58) + .22;
-    const preRoll = state.shorebreakSeconds > 0 ? 1 - THREE.MathUtils.smoothstep(state.shorebreakSeconds, .2, 2.8) : state.shorebreak;
-    const targetOpacity = approaching ? THREE.MathUtils.clamp(.04 + preRoll * .42 + state.shorebreak * .34, 0, .8) : 0;
-    values.uTime.value = clock.elapsedTime;
-    values.uHeight.value = THREE.MathUtils.damp(values.uHeight.value, targetHeight, 6, delta);
-    values.uPower.value = THREE.MathUtils.damp(values.uPower.value, state.shorebreakPower, 6, delta);
-    values.uOpacity.value = THREE.MathUtils.damp(values.uOpacity.value, targetOpacity, approaching ? 9 : 5, delta);
-    values.uLight.value = light;
-    const waveAngle = ((settings.waveDirection - settings.coastHeading) * Math.PI) / 180;
-    const sourceHeading = waveAngle + Math.PI;
-    const relativeHeading = sourceHeading - state.paddleHeading;
-    const wallDistance = state.shorebreakSeconds > 0 ? Math.min(12, state.shorebreakSeconds * 4.35) : 0;
-    group.current.position.x = THREE.MathUtils.damp(group.current.position.x, Math.sin(relativeHeading) * wallDistance, 11, delta);
-    group.current.position.z = THREE.MathUtils.damp(group.current.position.z, Math.cos(relativeHeading) * wallDistance, 11, delta);
-    group.current.position.y = -0.02 - state.duckDive * .18;
-    group.current.rotation.y = dampAngle(group.current.rotation.y, relativeHeading, 7, delta);
-    group.current.scale.x = THREE.MathUtils.damp(group.current.scale.x, .92 + state.shorebreakPower * .12, 5, delta);
-    group.current.visible = values.uOpacity.value > .006;
-  });
-
-  return (
-    <group ref={group} visible={false}>
-      <mesh renderOrder={3.25}>
-        <planeGeometry args={[mobile ? 22 : 28, 1, mobile ? 36 : 54, mobile ? 12 : 18]} />
-        <shaderMaterial
-          ref={material}
-          uniforms={uniforms}
-          vertexShader={PADDLE_WALL_VERTEX}
-          fragmentShader={PADDLE_WALL_FRAGMENT}
-          transparent
-          depthWrite={false}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    </group>
   );
 }
 
@@ -4484,6 +3199,7 @@ function prepareSurferScene(
     if (detail && joint) joint.attach(detail);
   });
   model.updateMatrixWorld(true);
+  const materialCache = new Map<THREE.Material, THREE.Material>();
   model.traverse((object) => {
     if (object instanceof THREE.Mesh) {
       const materialList = Array.isArray(object.material) ? object.material : [object.material];
@@ -4512,7 +3228,10 @@ function prepareSurferScene(
       object.frustumCulled = true;
       const sourceMaterials = materialList;
       const materials = sourceMaterials.map((sourceMaterial) => {
+        const cached = materialCache.get(sourceMaterial);
+        if (cached) return cached;
         const next = sourceMaterial.clone();
+        materialCache.set(sourceMaterial, next);
         if (next instanceof THREE.MeshStandardMaterial) {
           next.userData.breakloomBaseRoughness = next.roughness;
           next.userData.breakloomBaseEnv = next.envMapIntensity;
@@ -4590,7 +3309,7 @@ function PremiumSurferBody({
   const responsiveMaterials = useMemo(() => {
     const materials = new Set<THREE.MeshStandardMaterial>();
     model.traverse((object) => {
-      if (!(object instanceof THREE.Mesh) || !object.visible) return;
+      if (!(object instanceof THREE.Mesh)) return;
       const next = Array.isArray(object.material) ? object.material : [object.material];
       next.forEach((entry) => {
         if (entry instanceof THREE.MeshStandardMaterial) materials.add(entry);
@@ -4763,14 +3482,14 @@ function PremiumSurferBody({
       "UpperArm.L",
       wipeout ? 1.04 + wipeoutWave * .48 : driving ? -.7 - driveSteer * .16 : paddle ? THREE.MathUtils.lerp(stroke * 1.18 * (1 - state.duckDive) - state.duckDive * .72, -.82, takeoffPlant) : riding ? THREE.MathUtils.lerp(leftRideArmX, -.82, popPlant) : walking ? THREE.MathUtils.lerp(step * .56 + shoulderBreath * .42, leftCarryArmX, carryGrip) : 0,
       driving ? -.035 + driveSteer * .025 : riding ? -0.12 + state.rail * 0.12 : 0,
-      driving ? .69 + driveSteer * .11 : riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(1.03 + state.maneuver * 0.32 + state.slip * .16, .58, popPlant), .46, rideSettle) : paddle ? THREE.MathUtils.lerp(.14 + paddleRoll * .22, .58, takeoffPlant) : walking ? THREE.MathUtils.lerp(.08, leftCarryArmZ, carryGrip) : wipeout ? .34 : .08,
+      driving ? .69 + driveSteer * .11 : riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(.56 + Math.abs(state.rail) * .18 + state.maneuver * .32 + state.slip * .16, .58, popPlant), .46, rideSettle) : paddle ? THREE.MathUtils.lerp(.14 + paddleRoll * .22, .58, takeoffPlant) : walking ? THREE.MathUtils.lerp(.08, leftCarryArmZ, carryGrip) : wipeout ? .34 : .08,
       9,
     );
     pose(
       "UpperArm.R",
       wipeout ? -1.02 + wipeoutWave * .42 : driving ? .7 - driveSteer * .16 : paddle ? THREE.MathUtils.lerp(-stroke * 1.18 * (1 - state.duckDive) + state.duckDive * .72, .82, takeoffPlant) : riding ? THREE.MathUtils.lerp(rightRideArmX, .82, popPlant) : walking ? THREE.MathUtils.lerp(-step * .56 - shoulderBreath * .42, rightCarryArmX, carryGrip) : 0,
       driving ? .035 + driveSteer * .025 : riding ? 0.12 + state.rail * 0.12 : 0,
-      driving ? -.69 + driveSteer * .11 : riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(-1.03 - state.maneuver * 0.32 - state.slip * .16, -.58, popPlant), -.46, rideSettle) : paddle ? THREE.MathUtils.lerp(-.14 + paddleRoll * .22, -.58, takeoffPlant) : walking ? THREE.MathUtils.lerp(-.08, rightCarryArmZ, carryGrip) : wipeout ? -.34 : -.08,
+      driving ? -.69 + driveSteer * .11 : riding ? THREE.MathUtils.lerp(THREE.MathUtils.lerp(-.56 - Math.abs(state.rail) * .18 - state.maneuver * .32 - state.slip * .16, -.58, popPlant), -.46, rideSettle) : paddle ? THREE.MathUtils.lerp(-.14 + paddleRoll * .22, -.58, takeoffPlant) : walking ? THREE.MathUtils.lerp(-.08, rightCarryArmZ, carryGrip) : wipeout ? -.34 : -.08,
       9,
     );
     pose("LowerArm.L", driving ? -.9 + driveSteer * .24 : paddle ? THREE.MathUtils.lerp(-leftPull * .82 + Math.max(0, stroke) * .16 - state.duckDive * .42, -.72, takeoffPlant) : riding ? THREE.MathUtils.lerp(-.42, -.72, popPlant) : walking ? carryGrip * THREE.MathUtils.lerp(.08, .28, boardGuide) : wipeout ? .72 - wipeoutWave * .28 : 0, driving ? -.04 : paddle ? leftPull * .08 * (1 - takeoffPlant) : 0, driving ? .08 : riding ? .12 : walking ? carryGrip * .08 : 0, 10);
@@ -13157,6 +11876,8 @@ function Simulation({
   sunset,
   cameraMode,
   controls,
+  quickDrop = 0,
+  surfEntry,
   qaScenario = false,
   qaTowScenario = false,
   active,
@@ -13192,6 +11913,11 @@ function Simulation({
     settings.tide,
     character,
   );
+  // The peak is fixed to the seabed. Sampling a reference that moved with the
+  // surfer made the pocket stop peeling whenever the rider matched the crest.
+  const pocketOrigin = useMemo(() => findWaveBreakingContourAt(
+    0, surfEntry?.elapsed ?? 0, settings, character, .86,
+  ), [settings, character, surfEntry]);
   const thermalKit = useMemo(
     () => thermalKitForConditions(settings.waterTemperature, settings.airTemperature, settings.windSpeed),
     [settings.airTemperature, settings.waterTemperature, settings.windSpeed],
@@ -13323,6 +12049,14 @@ function Simulation({
   const ridePowerIntegral = useRef(0);
   const rideMaxSpeed = useRef(0);
   const rideMaxCombo = useRef(1);
+  const rideChain = useRef(0);
+  const rideChainBest = useRef(0);
+  const rideChainHeat = useRef(0);
+  const rideManeuverRepeats = useRef(new Map<string, number>());
+  const pumpState = useRef(createWavePumpState());
+  const pumpRhythm = useRef(0);
+  const barrelEnteredAt = useRef(-1);
+  const barrelPeakIntensity = useRef(0);
   const stamina = useRef(100);
   const maxCombo = useRef(1);
   const maneuver = useRef("");
@@ -13530,6 +12264,7 @@ function Simulation({
   const cameraMotionInitialized = useRef(false);
   const cameraTrackingDriving = useRef(false);
   const previousCameraImpact = useRef(0);
+  const entryApplied = useRef(false);
   const qaStartedAt = useRef(-1);
   const qaStage = useRef(0);
   const qaRideAt = useRef(-1);
@@ -13577,7 +12312,7 @@ function Simulation({
 
   useFrame(({ clock, gl }, rawDelta) => {
     if (!player.current || !van.current) return;
-    const delta = boundedSimulationDelta(rawDelta);
+    const delta = renderFrameSignal(rawDelta) === "stale" ? 0 : boundedSimulationDelta(rawDelta);
     if (delta <= 0) return;
     gl.toneMappingExposure = photoMode ? 1.08 * Math.pow(2, photoExposure) : 1.08;
     const t = clock.elapsedTime;
@@ -13752,6 +12487,33 @@ function Simulation({
           moments,
         });
       }
+    }
+    if (active && surfEntry && !entryApplied.current) {
+      entryApplied.current = true;
+      position.current.set(surfEntry.x, surfEntry.surfaceHeight + .16, surfEntry.z);
+      phase.current = "riding";
+      rideEngaged.current = true;
+      waveEngagement.current = 1;
+      rideWavePhase.current = surfEntry.crestPhase;
+      rideCrestEnergy.current = surfEntry.crestEnergy;
+      rideLineSide.current = surfEntry.lineSide;
+      rideHeading.current = surfEntry.heading;
+      playerHeading.current = surfEntry.heading;
+      player.current.rotation.y = surfEntry.heading;
+      rideVelocity.current.set(surfEntry.velocityX, surfEntry.velocityZ);
+      waterRide.current.elevation = surfEntry.surfaceHeight + .16;
+      waterRide.current.surfaceHeight = surfEntry.surfaceHeight;
+      waterRide.current.velocity = surfEntry.verticalVelocity;
+      waterRide.current.contact = 1;
+      waterRide.current.engaged = true;
+      catchQuality.current = .85;
+      rideTakeoffQuality.current = .85;
+      rideMaxSpeed.current = rideVelocity.current.length();
+      cameraPosition.current.set(surfEntry.x - Math.sin(surfEntry.heading) * 9,
+        surfEntry.surfaceHeight + 4, surfEntry.z - Math.cos(surfEntry.heading) * 9);
+      camera.position.copy(cameraPosition.current);
+      camera.lookAt(position.current);
+      cameraMotionInitialized.current = false;
     }
     if (qaScenario) {
       if (qaStartedAt.current < 0) qaStartedAt.current = t;
@@ -13981,7 +12743,7 @@ function Simulation({
         paddleVelocity.current.set(0, 0);
       }
     }
-    const sessionIntroProgress = qaScenario
+    const sessionIntroProgress = qaScenario || quickDrop > 0
       ? 1
       : reducedMotion
       ? THREE.MathUtils.smootherstep(t, .04, .58)
@@ -14550,6 +13312,10 @@ function Simulation({
         peakTailPressure: sample.tailPressure,
         nosePressureSeconds: sample.nosePressureSeconds,
         minimumWaterContact: sample.waterContact,
+        grabSeconds: 0,
+        grabSide: 0,
+        peakRailSlip: railSlip.current,
+        peakCounterweight: Math.abs(physicalBalance),
       };
       if (release.verticalImpulse > .05) {
         waterRide.current.velocity = THREE.MathUtils.clamp(
@@ -16180,6 +14946,14 @@ function Simulation({
           ridePowerIntegral.current = 0;
           rideMaxSpeed.current = rideVelocity.current.length();
           rideMaxCombo.current = combo.current;
+          rideChain.current = 0;
+          rideChainBest.current = 0;
+          rideChainHeat.current = 0;
+          rideManeuverRepeats.current.clear();
+          pumpState.current = createWavePumpState();
+          pumpRhythm.current = 0;
+          barrelEnteredAt.current = -1;
+          barrelPeakIntensity.current = 0;
           rideStartScore.current = score.current;
           rideManeuverStart.current = maneuverCount.current;
           if (engaged) {
@@ -16724,6 +15498,22 @@ function Simulation({
         }
       } else if (currentPhase === "riding") {
         takeoffQuality = catchQuality.current;
+        // Off the wave the chain has no linker working for it: coasting in
+        // unengaged water lets the window lapse at the plain rate and bleeds
+        // any leftover pump rhythm.
+        if (!rideEngaged.current) {
+          rideChainHeat.current = Math.max(
+            0,
+            rideChainHeat.current - delta / 7.2,
+          );
+          if (rideChainHeat.current <= 0 && rideChain.current > 0) {
+            rideChain.current = 0;
+          }
+          pumpRhythm.current = Math.max(
+            0,
+            pumpRhythm.current - delta * .8,
+          );
+        }
         const returnProne = advanceReturnProneTransition(
           motion.current.proneTransition,
           {
@@ -16928,12 +15718,8 @@ function Simulation({
             / Math.max(.001, standingTransport.speed);
           const standingWaveTangentX = standingWaveNormalZ;
           const standingWaveTangentZ = -standingWaveNormalX;
-          const standingNormalCoordinate = position.current.x * standingWaveNormalX
-            + position.current.z * standingWaveNormalZ;
-          const standingReferenceX = standingWaveNormalX
-            * standingNormalCoordinate;
-          const standingReferenceZ = standingWaveNormalZ
-            * standingNormalCoordinate;
+          const standingReferenceX = 0;
+          const standingReferenceZ = pocketOrigin.z;
           const standingReferencePhase = primaryWavePhaseAt(
             standingReferenceX,
             standingReferenceZ,
@@ -17646,6 +16432,10 @@ function Simulation({
               rideResult.current = "wipeout";
               rideResultId.current += 1;
               combo.current = 1;
+              rideChain.current = 0;
+              rideChainHeat.current = 0;
+              pumpRhythm.current = 0;
+              barrelEnteredAt.current = -1;
               motion.current.wipeout = 0;
               motion.current.wipeoutProgress = 0;
               motion.current.wipeoutPower = tumblePower;
@@ -17783,10 +16573,8 @@ function Simulation({
         const tailPressure = Math.max(0, -stance.current);
         const highFace = Math.max(0, physicalFacePosition);
         const lowFace = Math.max(0, -physicalFacePosition);
-        const waveNormalCoordinate = position.current.x * waveNormalX
-          + position.current.z * waveNormalZ;
-        const pocketReferenceX = waveNormalX * waveNormalCoordinate;
-        const pocketReferenceZ = waveNormalZ * waveNormalCoordinate;
+        const pocketReferenceX = 0;
+        const pocketReferenceZ = pocketOrigin.z;
         const pocketReferencePhase = primaryWavePhaseAt(
           pocketReferenceX,
           pocketReferenceZ,
@@ -18187,6 +16975,34 @@ function Simulation({
           driveScale: assistProfile.pocketDriveScale,
           pocketWindowScale: assistProfile.pocketWindowScale,
         });
+        // Pumping: the rider's own climb-and-drop line across the face,
+        // detected from the measured face position, extracts bounded extra
+        // drive along the hull. There is no pump button — the drawn line is
+        // the input, and the same headroom law as the pocket drive caps it.
+        const pumpReading = advanceWavePumpDrive(pumpState.current, {
+          elapsed: t,
+          deltaSeconds: delta,
+          facePosition: physicalFacePosition,
+          pocketEnvelope: pocketDrive.envelope,
+          waveContact: rideInteraction.waveContact,
+          waterContact: boardWaterContact,
+          planing: ridePlaning,
+          compression: bodyCompression.current,
+          forwardSpeed: rideRelativeForwardSpeed,
+          waveSpeed: waveTransport.speed,
+          tubePressure,
+          whitewater: whitewaterPressure,
+        });
+        pumpRhythm.current = pumpReading.rhythm;
+        if (pumpReading.driveMagnitude > .01) {
+          stamina.current = Math.max(
+            0,
+            stamina.current
+              - pumpReading.driveMagnitude
+                * WAVE_PUMP_TUNING.staminaWorkScale
+                * delta,
+          );
+        }
         const dynamics = advanceSurfboardDynamics(
           {
             velocityX: previousRideVelocityX,
@@ -18226,8 +17042,10 @@ function Simulation({
             faceTrimSupport: rideFaceTrimSupport
               * railGrip
               * ridePlaning,
-            waveDriveX: pocketDrive.driveX,
-            waveDriveZ: pocketDrive.driveZ,
+            waveDriveX: pocketDrive.driveX
+              + planingForwardX * pumpReading.driveMagnitude,
+            waveDriveZ: pocketDrive.driveZ
+              + planingForwardZ * pumpReading.driveMagnitude,
             glideDragBonus: pocketDrive.glideDragBonus,
           },
         );
@@ -18369,6 +17187,10 @@ function Simulation({
             peakTailPressure: tailPressure,
             nosePressureSeconds: noseRideCandidate ? delta : 0,
             minimumWaterContact: boardWaterContact,
+            grabSeconds: 0,
+            grabSide: 0,
+            peakRailSlip: railSlip.current,
+            peakCounterweight: Math.abs(physicalBalance),
           };
         }
         const attempt = activeManeuver.current;
@@ -18443,6 +17265,14 @@ function Simulation({
             attempt.peakTailPressure,
             tailPressure,
           );
+          attempt.peakRailSlip = Math.max(
+            attempt.peakRailSlip,
+            railSlip.current,
+          );
+          attempt.peakCounterweight = Math.max(
+            attempt.peakCounterweight,
+            Math.abs(physicalBalance),
+          );
           if (nosePressure > noseRidePressure) {
             attempt.nosePressureSeconds += delta;
           }
@@ -18476,6 +17306,31 @@ function Simulation({
           if (hullFree) attempt.becameAirborne = true;
           attempt.peakAirborne = Math.max(attempt.peakAirborne, airborneHeight);
           maneuverAirborne = hullFree;
+          if (attempt.family === "air" || attempt.family === "lip") {
+            // In flight the body's only authority is angular-momentum trade
+            // (A/D arm steering) and pulling the board against the feet with
+            // a rail grab (Q/E), which settles independent attitude flutter.
+            const aerialControl = resolveSurfboardAerialControl({
+              deltaSeconds: delta,
+              steerInput: rideSteer,
+              grabInput: balanceInput,
+              airborneHeight,
+              waterContact: boardWaterContact,
+              boardLength: boardSpec.length,
+            });
+            if (aerialControl.yawTorque !== 0) {
+              rideYawRate.current += aerialControl.yawTorque * delta;
+            }
+            if (aerialControl.grabActive) {
+              attempt.grabSeconds += delta;
+              attempt.grabSide = aerialControl.grabSide;
+              const attitudeSettle = Math.exp(
+                -aerialControl.attitudeDamping * delta,
+              );
+              boardRollRate.current *= attitudeSettle;
+              boardPitchRate.current *= attitudeSettle;
+            }
+          }
           maneuverPhase = surfaceMotion
             ? "load"
             : maneuverProgress < .18
@@ -18566,9 +17421,72 @@ function Simulation({
           rideMaxSpeed.current = Math.max(rideMaxSpeed.current, speed);
         }
         if (inBarrel && !finishing) {
+          if (barrelEnteredAt.current < 0) {
+            barrelEnteredAt.current = t;
+            barrelPeakIntensity.current = 0;
+          }
+          barrelPeakIntensity.current = Math.max(
+            barrelPeakIntensity.current,
+            barrelIntensity,
+          );
           barrelTime.current += delta;
           combo.current = Math.min(8, combo.current + delta * 0.23);
           score.current += (26 + barrelTime.current * 4) * controlQuality * combo.current * delta;
+        } else if (!inBarrel && barrelEnteredAt.current >= 0) {
+          // Coming out of the tube still riding is its own scored event — the
+          // made barrel is the heaviest single beat in surfing. It links the
+          // chain like any landed maneuver but deliberately does not count
+          // toward maneuver variety, which already credits barrel seconds.
+          const barrelRun = t - barrelEnteredAt.current;
+          barrelEnteredAt.current = -1;
+          if (
+            barrelRun >= .9
+            && !finishing
+            && rideEngaged.current
+          ) {
+            const barrelRepeat = rideManeuverRepeats.current.get("Barrel Escape") ?? 0;
+            const barrelRepetitionScale = Math.max(.4, 1 - barrelRepeat * .22);
+            rideChain.current = rideChainHeat.current > 0
+              ? rideChain.current + 1
+              : 1;
+            rideChainBest.current = Math.max(
+              rideChainBest.current,
+              rideChain.current,
+            );
+            rideChainHeat.current = 1;
+            const barrelChainScale = 1 + Math.min(
+              .4,
+              Math.max(0, rideChain.current - 1) * .08,
+            );
+            const barrelFlowScale = combo.current >= 5 ? 1.2 : 1;
+            const barrelPoints = Math.round(
+              (230 + barrelRun * 240 + barrelPeakIntensity.current * 200)
+                * barrelRepetitionScale
+                * barrelChainScale
+                * barrelFlowScale
+                * boardSpec.score
+                * (.88 + boardCrestEnergy * .28)
+                * combo.current,
+            );
+            score.current += barrelPoints;
+            combo.current = Math.min(
+              8,
+              combo.current + .34 + Math.min(.5, barrelRun * .16),
+            );
+            maxCombo.current = Math.max(maxCombo.current, combo.current);
+            rideManeuverRepeats.current.set("Barrel Escape", barrelRepeat + 1);
+            maneuver.current = barrelRepeat > 0
+              ? `Barrel Escape ×${barrelRepeat + 1} · ${barrelRun.toFixed(1)}s`
+              : `Barrel Escape · ${barrelRun.toFixed(1)}s`;
+            maneuverScore.current = barrelPoints;
+            maneuverQuality.current = THREE.MathUtils.clamp(
+              .5 + barrelPeakIntensity.current * .5,
+              0,
+              1,
+            );
+            maneuverId.current += 1;
+            motion.current.impact = .5 + barrelPeakIntensity.current * .3;
+          }
         }
         const turnBonus = Math.abs(railLoad) * (
           12 + compression * 5 + Math.abs(physicalFacePosition) * 3.5
@@ -18577,6 +17495,23 @@ function Simulation({
           combo.current = Math.min(8, combo.current + controlQuality * lineControl * delta * 0.12 + Math.abs(railLoad) * (1 - railSlip.current) * lineControl * delta * 0.15);
           maxCombo.current = Math.max(maxCombo.current, combo.current);
           score.current += (14 + turnBonus + waveQuality * 18) * controlQuality * combo.current * lineMatch * (.58 + lineControl * .52) * delta;
+          // The move chain stays linked only while the ride keeps working:
+          // barrel time, an active pump rhythm, or pocket control hold the
+          // window open the way a manual holds a skate combo. Cruising a fat
+          // shoulder lets it lapse.
+          const chainLinkHold = Math.max(
+            barrelIntensity,
+            pumpRhythm.current * .85,
+            lineControl * .55,
+          );
+          rideChainHeat.current = Math.max(
+            0,
+            rideChainHeat.current
+              - delta / 7.2 * (1 - Math.min(.92, chainLinkHold)),
+          );
+          if (rideChainHeat.current <= 0 && rideChain.current > 0) {
+            rideChain.current = 0;
+          }
         }
         const physicalLaunchLanding = Boolean(
           attempt
@@ -18619,6 +17554,9 @@ function Simulation({
               endPlaning: boardPlaning,
               endWaveContact: rideInteraction.waveContact,
               boardLength: boardSpec.length,
+              peakRailSlip: attempt.peakRailSlip,
+              endRailSlip: railSlip.current,
+              peakCounterweight: attempt.peakCounterweight,
             })
           : null;
         const recognizedLipManeuver = attempt?.family === "lip"
@@ -18704,29 +17642,71 @@ function Simulation({
               ?? recognizedLipManeuver?.name
               ?? (
                 attempt.family === "air"
-                  ? observedYaw >= Math.PI * 1.55
-                    ? "Full-Rotation Air"
-                    : observedYaw >= Math.PI * .72
-                      ? "Air Reverse"
-                      : "Straight Air"
+                  ? observedYaw >= Math.PI * 2.35
+                    ? "540 Air"
+                    : observedYaw >= Math.PI * 1.55
+                      ? "Full-Rotation Air"
+                      : observedYaw >= Math.PI * .72
+                        ? "Air Reverse"
+                        : "Straight Air"
                   : attempt.name
               );
             const resolvedBase = recognizedSurfaceManeuver?.base
               ?? recognizedLipManeuver?.base
               ?? (
                 attempt.family === "air"
-                  ? observedYaw >= Math.PI * 1.55
-                    ? 780
-                    : observedYaw >= Math.PI * .72
-                      ? 690
-                      : 520
+                  ? observedYaw >= Math.PI * 2.35
+                    ? 980
+                    : observedYaw >= Math.PI * 1.55
+                      ? 780
+                      : observedYaw >= Math.PI * .72
+                        ? 690
+                        : 520
                   : attempt.base
               );
-            const points = Math.round(resolvedBase * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + boardCrestEnergy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
+            // A held rail grab is a distinct trick: it earns its style points
+            // and its name, and repeating the identical move pays a judged
+            // repetition discount while a linked chain and a hot combo pay a
+            // premium.
+            const grabbedAir = attempt.family === "air"
+              && attempt.grabSeconds >= .22;
+            // Punting the section that was about to shut down is the classic
+            // closeout read: the launch position deep behind the peel marks
+            // it, and the landing still has to be made like any other air.
+            const closeoutLaunch = attempt.family === "air"
+              && attempt.startLinePosition < -.45;
+            const styledName = [
+              closeoutLaunch ? "Closeout" : "",
+              grabbedAir ? (attempt.grabSide < 0 ? "Melon" : "Indy") : "",
+              resolvedName,
+            ].filter(Boolean).join(" ");
+            const styledBase = resolvedBase
+              + (grabbedAir ? 130 : 0)
+              + (closeoutLaunch ? 160 : 0);
+            const repeatCount = rideManeuverRepeats.current.get(styledName)
+              ?? 0;
+            const repetitionScale = Math.max(.4, 1 - repeatCount * .22);
+            rideChain.current = rideChainHeat.current > 0
+              ? rideChain.current + 1
+              : 1;
+            rideChainBest.current = Math.max(
+              rideChainBest.current,
+              rideChain.current,
+            );
+            rideChainHeat.current = 1;
+            const chainScale = 1 + Math.min(
+              .4,
+              Math.max(0, rideChain.current - 1) * .08,
+            );
+            const flowScale = combo.current >= 5 ? 1.2 : 1;
+            const points = Math.round(styledBase * repetitionScale * chainScale * flowScale * boardSpec.score * (.54 + controlQuality * .3 + quality * .46 + attempt.charge * .22) * (0.88 + boardCrestEnergy * .28) * (.72 + lineControl * .38) * combo.current * (1 + barrelIntensity * .12));
             score.current += points;
             combo.current = Math.min(8, combo.current + .28 + quality * .48);
             maxCombo.current = Math.max(maxCombo.current, combo.current);
-            maneuver.current = resolvedName;
+            rideManeuverRepeats.current.set(styledName, repeatCount + 1);
+            maneuver.current = repeatCount > 0
+              ? `${styledName} ×${repeatCount + 1}`
+              : styledName;
             maneuverScore.current = points;
             maneuverQuality.current = quality;
             maneuverCount.current += 1;
@@ -18838,6 +17818,10 @@ function Simulation({
           rideEngaged.current = false;
           barrelIntensity = 0;
           if (rideDistance.current >= 8 && rideResult.current === "") {
+            score.current += Math.round(
+              Math.max(0, rideChainBest.current - 1) * 140
+                + Math.max(0, rideManeuverRepeats.current.size - 1) * 130,
+            );
             rideScore.current = Math.max(
               0,
               Math.round(score.current - rideStartScore.current),
@@ -18985,6 +17969,10 @@ function Simulation({
           rideResult.current = "wipeout";
           rideResultId.current += 1;
           combo.current = 1;
+          rideChain.current = 0;
+          rideChainHeat.current = 0;
+          pumpRhythm.current = 0;
+          barrelEnteredAt.current = -1;
           railSlip.current = 1;
           activeManeuver.current = null;
           motion.current.impact = .45;
@@ -18997,7 +17985,11 @@ function Simulation({
           ) > RIDE_RESULT_LINE_Z
         ) {
           if (rideResult.current === "") {
-            score.current += 750 + rideDistance.current * 11;
+            score.current += 750 + rideDistance.current * 11
+              + Math.round(
+                Math.max(0, rideChainBest.current - 1) * 140
+                  + Math.max(0, rideManeuverRepeats.current.size - 1) * 130,
+              );
             rideScore.current = Math.max(0, Math.round(score.current - rideStartScore.current));
             rideGrade.current = sessionGrade(rideScore.current, rideDistance.current, maneuverCount.current - rideManeuverStart.current);
             rideResult.current = "clean";
@@ -20881,6 +19873,9 @@ function Simulation({
         railLoad: motion.current.rail,
         railGrip: 1 - motion.current.slip,
         stance: stance.current,
+        pumpRhythm: phase.current === "riding"
+          ? Number(pumpRhythm.current.toFixed(2))
+          : 0,
         barrelTime: Number(barrelTime.current.toFixed(1)),
         barrelIntensity: motion.current.barrel,
         stamina: Math.round(stamina.current),
@@ -20919,6 +19914,9 @@ function Simulation({
         maneuverRotation: activeManeuver.current?.accumulatedYaw ?? 0,
         maneuverRotationTarget: activeManeuver.current?.rotation ?? 0,
         maneuverPeakAirborne: activeManeuver.current?.peakAirborne ?? 0,
+        maneuverGrabSide: (activeManeuver.current?.grabSeconds ?? 0) > .08
+          ? activeManeuver.current?.grabSide ?? 0
+          : 0,
         trickCharge: motion.current.trickCharge,
         maneuverAirborne,
         landingTarget,
@@ -20942,6 +19940,7 @@ function Simulation({
           : 0,
         rideMaxSpeed: rideMaxSpeed.current,
         rideMaxCombo: rideMaxCombo.current,
+        rideChain: phase.current === "riding" ? rideChain.current : 0,
         rideOutProgress,
         vehicleMode: phase.current === "driving",
         vehicleGear: phase.current !== "driving" || (Math.abs(vanSpeed.current) < .35 && Math.abs(vanThrottle.current) < .08)
@@ -21279,7 +20278,20 @@ function Simulation({
   );
 }
 
+/** Every CPU contact and GPU wave uniform observes the same bounded ocean time. */
+function OceanClock({ active, initialTime }: { active: boolean; initialTime: number }) {
+  const elapsed = useRef(initialTime);
+  useFrame(({ clock }, delta) => {
+    elapsed.current = advanceOceanClock(elapsed.current, delta, active);
+    clock.elapsedTime = elapsed.current;
+  }, -100);
+  return null;
+}
+
 function SurfScene(props: SurfSceneProps) {
+  const surfEntry = useMemo(() => props.quickDrop
+    ? findSurfEntry(props.settings, getBreakCharacter(props.beach.id, props.zoneName), props.quickDrop)
+    : null, [props.quickDrop, props.settings, props.beach.id, props.zoneName]);
   const mobileRenderer = useMemo(() => isMobileRenderer(), []);
   const limits = useMemo(() => rendererLimits(mobileRenderer), [mobileRenderer]);
   const [renderQuality, setRenderQuality] = useState<RenderQuality>(mobileRenderer ? "balanced" : "high");
@@ -21297,6 +20309,7 @@ function SurfScene(props: SurfSceneProps) {
         toneMapping: THREE.ACESFilmicToneMapping,
       }}
       onCreated={({ gl }) => {
+        gl.info.autoReset = false;
         gl.outputColorSpace = THREE.SRGBColorSpace;
         gl.toneMappingExposure = 1.08;
       }}
@@ -21309,7 +20322,8 @@ function SurfScene(props: SurfSceneProps) {
           qualityLocked={props.qualityLocked}
           onQualityChange={setRenderQuality}
         />
-        <Simulation {...props} />
+        <OceanClock key={props.sessionId} active={props.renderActive} initialTime={surfEntry?.elapsed ?? 0} />
+        <Simulation key={props.sessionId} {...props} surfEntry={surfEntry} />
       </RenderQualityContext.Provider>
     </Canvas>
   );

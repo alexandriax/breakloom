@@ -41,3 +41,10 @@ next-env.d.ts
 
 # Cached OpenStreetMap tiles for scripts/verify-surf-zones.mjs
 .tiles/
+
+# Generated tool/build caches
+.sites/
+.vinext/
+.wrangler/
+dist/
+*.tsbuildinfo

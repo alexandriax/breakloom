@@ -18,6 +18,27 @@ You can also walk up to the coast road, enter the Breakloom van, and drive more 
 
 Those three boards form a playable quiver: the Apex performance shortboard turns fastest and scores technical surfing, the Drift Twin fish carries speed through weaker sections, and the Horizon longboard paddles easily, stabilizes balance, and unlocks stronger nose rides. Their fiberglass shells flex and torsionally load under speed, stance, rail pressure, and landings before springing back on release.
 
+## Quick Surf
+
+Choose **Quick Surf** to drop directly into a shoaling wave at Lower Trestles.
+This practice session uses a repeatable 1.5 m, 11 s swell, light offshore wind,
+and afternoon light. **Next Wave** starts a new crest with either a left or right
+line. Your chosen board carries over; practice does not change World Tour records.
+The normal coast picker still offers live conditions, paddle-outs, and judged heats.
+
+- **A/D or left stick:** carve. Release the rail to trim; use a smooth climb and drop to pump.
+- **W/S or vertical stick:** shift pressure toward the nose/tail.
+- **Hold Space, controller A, or CROUCH:** compress; release at a supported lip to launch.
+- **Q/E or controller triggers:** counterweight on water, grab a rail in the air.
+- **Shift, controller LB, or PRONE:** return to paddling.
+
+An engaged rail now redirects water-relative momentum with energy-conserving lift.
+Fast cutbacks retain planing across the face. The peeling pocket is anchored to the
+seabed, and one bounded clock drives both the visible ocean and hull contacts,
+including after a pause or suspended tab. Guided sessions show a compact line
+readout; detailed controls and telemetry remain available in the surf computer.
+Sound preferences persist across reloads; append `?muted` for silent local testing.
+
 ## Play locally
 
 ```bash
@@ -53,9 +74,13 @@ app shell under 10 MiB and the soundtrack under 18 MiB, and fails if a track nam
 - `W` while riding: shift pressure toward the nose for trim and speed carry; it does not pull the board up the face
 - `S` while riding: shift pressure toward the tail for tighter rail response and easier pivoting
 - `A` / `D` while riding: turn and carve by banking the board onto its rails
+- Pumping has no button: draw a climb-and-drop line across the face with your turns, and a wave-matched rhythm converts the face's work on the hull into sustained board speed
+- `A` / `D` while airborne: trade angular momentum through the arms to steer a launched rotation toward completion
+- `Q` / `E` while airborne: grab the heel or toe rail; a held grab settles the board's flutter for the landing and names the air (Melon or Indy)
 - `Q` / `E`: independently shift body weight to balance or recover while prone or standing
-- Mouse horizontal position: balance while riding
+- Drag the balance gauge: optional manual counterweight while riding
 - `Space`: start a physical pop-up anywhere on the water; only a supported face completes into a ride, while an unsupported landing settles back to prone instead of creating a flat-water surf state
+- Hold `Space` while riding to crouch; release at the lip to extend into a maneuver. `Shift` returns prone.
 - `Space` at the parked van's driver door: enter; stop and press again to exit
 - `C`: cycle Follow, Surfer POV, Immersive, and Cinematic cameras
 - `P`: enter Photo Mode; frame with the same unrestricted mouse, touch, or gamepad camera, then capture and share/save a high-resolution shot
@@ -88,6 +113,12 @@ Wave sets build and fade on the swell radar and in a directional breaker sound f
 The surfboard has no hidden trough-to-lip lane and is never assigned crest velocity. It retains paddling momentum, samples the polygon surface under it, accelerates down the local slope through gravity, receives pressure from breaking water according to contact and orientation, and loses energy through longitudinal drag. Current acts through relative water velocity. A/D applies roll torque rather than yaw: board width, stability, speed, buoyancy, planing, cross-slope force, whitewater, and the rider's Q/E counterweight determine the evolving roll angle and rate. That measured bank loads the rail; only then can speed and fin grip redirect momentum. Excess bank catches an edge or capsizes the board. Nose and tail contact patches separately sample the polygon surface, so W/S stance pressure, longitudinal acceleration, local curvature, planing pressure, and immersion evolve real pitch. A buried nose decelerates into a pitch-over; a weighted tail sinks and stalls below planing speed. Vertical motion is also integrated: buoyancy, rising-water pressure, planing lift, hydrodynamic damping, and gravity determine heave. If a polygon face drops away, the hull becomes airborne and loses slope drive, wave pressure, rail authority, and water righting until it reconnects; landing load then depends on relative vertical speed and board attitude. The HUD and replay expose measured face position, roll, pitch, immersion, airborne height, and vertical velocity. Standing in flat water uses these same integrators, so the board coasts, drifts, rocks, pitches, or tips instead of entering a scripted state.
 
 The resulting longitudinal and lateral forces drive stance compression, body lean, board flex and torsion, spray, wake density, carve tracks, camera response, sound, haptics, capture loss, and wipeout energy. Maneuver release is physical too: compression, tail pressure, upper-face position, speed, planing, hull contact, and board length determine a one-time vertical velocity impulse. There is no authored air arc - the heave integrator carries the board ballistically and removes rail authority in flight. Air rotations similarly apply one yaw impulse scaled by expected flight time and the board's rotational inertia; angular momentum then advances the real board heading while its horizontal velocity remains independent. Landing alignment therefore creates genuine sideslip instead of a cosmetic spin, and an air only scores after the requested rotation and an attitude- and balance-sensitive physical reconnection. A broadside wall loads the rail and can tumble the surfer; a slow board can be overtaken by the lip; a board that carries too far onto the shoulder loses the wave. Duck dives, hold-downs, separated board and leash motion, barrels, whitewater, replay telemetry, session objectives, grades, and personal bests remain synchronized with the same live water state.
+
+Speed generation is now an active skill rather than a gift from the slope. A pump detector watches the rider's own measured climb-and-drop line across the face — there is no pump button — and sustained swings at wave-matched cadence build a rhythm that extracts bounded extra drive through the same speed-headroom law as the pocket, at a real stamina cost. The HUD carries a live pump bar under the combo strip. In the air, the body keeps the small authority it physically has: A/D trades angular momentum through the arms to finish or check a launched rotation, and holding Q or E pulls the board against the feet in a heel- or toe-rail grab that damps independent board flutter, which is why grabbed airs reconnect more predictably. A held grab names the air — Melon or Indy — adds its style value, and a rotation carried past a spin and a half resolves as a 540 Air.
+
+Scoring now reads like a run instead of a ledger. Each landed maneuver links into a ride chain that stays alive only while the surfing keeps working — barrel time, an active pump rhythm, or pocket control hold the window open the way a manual holds a skate combo, while cruising a fat shoulder lets it lapse. Linked moves pay a growing chain premium, repeating the identical trick pays a judged repetition discount, and holding the combo above five enters a flow state that lifts every maneuver score while the score panel burns green and a short cue and haptic pulse mark the entry. Clean exits bank a chain-and-variety bonus on top of the ride-out.
+
+The trick vocabulary reads deeper signatures from the same physics. Coming out of the tube still riding resolves as a Barrel Escape — a scored, chain-linking event with its own toast whose value grows with time inside and peak tube pressure, separate from the per-second barrel accrual. A turn whose fins measurably broke free and then re-gripped before the board stopped planing names a Tailslide; a counterweight thrown far past the loaded rail through a hard upper-face turn names a Layback Snap; and an air launched from deep behind the peel — the section that was about to shut down — lands as a Closeout punt with its reading bonus. While airborne, a live spin ticker counts the rotation in degrees and shows the held grab, so a 540 attempt is legible before the landing decides it.
 
 Every completed wave now carries a telemetry-backed performance signature instead of only a raw score. Breakloom integrates takeoff timing, time spent in the power pocket, balance accuracy, rail slip, live wave energy, speed, rail commitment, barrel intensity, peak speed, and ride-specific combo from takeoff through the exit or fall. The broadcast-style recap reveals Entry, Line, Control, Power, and Variety grades, highlights the ride's strongest dimension and weakest focus, and turns the actual shortfall into a board-aware next-wave coaching call. Those same physics categories now contribute to World Tour judging, so a high heat score reflects the quality of the surfing rather than distance alone.
 

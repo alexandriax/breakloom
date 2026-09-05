@@ -8,7 +8,7 @@ const source = await readFile(
 const vertexStart = source.indexOf("const OCEAN_VERTEX");
 const fragmentStart = source.indexOf("const OCEAN_FRAGMENT", vertexStart);
 const lineupStart = source.indexOf(
-  "const LINEUP_CREST_VERTEX",
+  "function nearestWaveCrestPointAt",
   fragmentStart,
 );
 
