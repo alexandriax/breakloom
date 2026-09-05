@@ -67,9 +67,10 @@ invariant(
   "shore traversal no longer has the faster walk and run speeds",
 );
 invariant(
-  appSource.includes("controls.current.returnPronePresses += 1;")
+  !appSource.includes("controls.current.returnPronePresses += 1;")
+    && appSource.includes("controls.current.actionPresses += 1;")
     && sceneSource.includes("requested: divePressed || returnPronePressed"),
-  "Space no longer starts the return-to-prone transition while riding",
+  "Space must crouch for a trick; Shift alone requests return to prone",
 );
 invariant(
   sceneSource.includes("const pickupAvailable = tow.available")

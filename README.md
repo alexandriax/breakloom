@@ -18,6 +18,27 @@ You can also walk up to the coast road, enter the Breakloom van, and drive more 
 
 Those three boards form a playable quiver: the Apex performance shortboard turns fastest and scores technical surfing, the Drift Twin fish carries speed through weaker sections, and the Horizon longboard paddles easily, stabilizes balance, and unlocks stronger nose rides. Their fiberglass shells flex and torsionally load under speed, stance, rail pressure, and landings before springing back on release.
 
+## Quick Surf
+
+Choose **Quick Surf** to drop directly into a shoaling wave at Lower Trestles.
+This practice session uses a repeatable 1.5 m, 11 s swell, light offshore wind,
+and afternoon light. **Next Wave** starts a new crest with either a left or right
+line. Your chosen board carries over; practice does not change World Tour records.
+The normal coast picker still offers live conditions, paddle-outs, and judged heats.
+
+- **A/D or left stick:** carve. Release the rail to trim; use a smooth climb and drop to pump.
+- **W/S or vertical stick:** shift pressure toward the nose/tail.
+- **Hold Space, controller A, or CROUCH:** compress; release at a supported lip to launch.
+- **Q/E or controller triggers:** counterweight on water, grab a rail in the air.
+- **Shift, controller LB, or PRONE:** return to paddling.
+
+An engaged rail now redirects water-relative momentum with energy-conserving lift.
+Fast cutbacks retain planing across the face. The peeling pocket is anchored to the
+seabed, and one bounded clock drives both the visible ocean and hull contacts,
+including after a pause or suspended tab. Guided sessions show a compact line
+readout; detailed controls and telemetry remain available in the surf computer.
+Sound preferences persist across reloads; append `?muted` for silent local testing.
+
 ## Play locally
 
 ```bash
@@ -57,8 +78,9 @@ app shell under 10 MiB and the soundtrack under 18 MiB, and fails if a track nam
 - `A` / `D` while airborne: trade angular momentum through the arms to steer a launched rotation toward completion
 - `Q` / `E` while airborne: grab the heel or toe rail; a held grab settles the board's flutter for the landing and names the air (Melon or Indy)
 - `Q` / `E`: independently shift body weight to balance or recover while prone or standing
-- Mouse horizontal position: balance while riding
+- Drag the balance gauge: optional manual counterweight while riding
 - `Space`: start a physical pop-up anywhere on the water; only a supported face completes into a ride, while an unsupported landing settles back to prone instead of creating a flat-water surf state
+- Hold `Space` while riding to crouch; release at the lip to extend into a maneuver. `Shift` returns prone.
 - `Space` at the parked van's driver door: enter; stop and press again to exit
 - `C`: cycle Follow, Surfer POV, Immersive, and Cinematic cameras
 - `P`: enter Photo Mode; frame with the same unrestricted mouse, touch, or gamepad camera, then capture and share/save a high-resolution shot

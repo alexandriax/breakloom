@@ -619,6 +619,12 @@ export function sampleCoastWaveSurface(
   };
 }
 
+// Phase, transport, crest forecasts, and contact repeatedly ask for the exact
+// same carrier. Cache exact coordinates/time (never quantize the physics) in a
+// bounded bank-owned table. Changing the spectrum selects a different bank;
+// tide is part of the key because it shifts the bathymetry coordinate.
+const dominantSampleCache = new WeakMap<WaveComponentBank, Map<string, ReturnType<typeof transformDominant>>>();
+
 export function sampleCoastDominantWave(
   x: number,
   worldZ: number,
@@ -627,6 +633,13 @@ export function sampleCoastDominantWave(
   character?: BreakCharacter,
 ) {
   const model = coastWaveModelAt(x, settings, character);
+  let cache = dominantSampleCache.get(model.bank);
+  if (!cache) {
+    cache = new Map();
+    dominantSampleCache.set(model.bank, cache);
+  }
+  const cacheKey = `${x}:${worldZ}:${elapsed}:${settings.tide}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey)!;
   const coastalZ = worldToBathymetryZ(worldZ, settings.tide);
   const contourCoordinate = bathymetryContourCoordinateAt(
     model.coastId,
@@ -640,7 +653,7 @@ export function sampleCoastDominantWave(
     x,
     coastalZ,
   );
-  return transformDominant(
+  const dominant = transformDominant(
     sampleDominantWave(
       model.bank,
       model.profile,
@@ -652,4 +665,7 @@ export function sampleCoastDominantWave(
     contourGradient.x,
     contourGradient.z,
   );
+  if (cache.size >= 512) cache.clear();
+  cache.set(cacheKey, dominant);
+  return dominant;
 }

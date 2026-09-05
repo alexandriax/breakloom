@@ -79,6 +79,8 @@ import {
   type SurfAssistLevel,
 } from "@/lib/game";
 import { SOUNDTRACK, BreakloomAudio, type NowPlaying } from "@/lib/audio";
+import { quickSurfSettings } from "@/lib/surf-session";
+import RideReadout from "./RideReadout";
 import TideSparkline from "./TideSparkline";
 import type { CameraMode, ControlState, ReplayControl, ReplayMoment, ReplayState, ReplayTelemetry, RideCaptureRequest, RideFrameCapture } from "./SurfScene";
 
@@ -972,6 +974,8 @@ async function rideCardFile({
 }
 
 export default function BreakloomApp() {
+  const sessionActive = useRef(false);
+  const [quickDrop, setQuickDrop] = useState(0);
   const [screen, setScreen] = useState<Screen>("launch");
   const [beach, setBeach] = useState<Beach>(DEFAULT_BEACH);
   const [latitude, setLatitude] = useState(DEFAULT_BEACH.zones[1].lat);
@@ -1139,6 +1143,8 @@ export default function BreakloomApp() {
     const timer = window.setTimeout(() => {
       try {
         carryOverRenamedProgress();
+        setSoundEnabled(window.localStorage.getItem("breakloom-sound") !== "muted"
+          && !new URLSearchParams(window.location.search).has("muted"));
         setGuidanceEnabled(
           window.localStorage.getItem(GUIDANCE_KEY) !== "hidden",
         );
@@ -1703,6 +1709,7 @@ export default function BreakloomApp() {
         .then((live) => {
           setConditions(live);
           setSettings((previous) => {
+            if (sessionActive.current) return previous;
             if (previous.mode === "playground") return { ...previous, coastHeading: beach.heading };
             return {
               ...settingsFromConditions(live, beach.heading),
@@ -1716,7 +1723,7 @@ export default function BreakloomApp() {
           if (error instanceof DOMException && error.name === "AbortError") return;
           const modeled = fallbackConditions(beach);
           setConditions(modeled);
-          setSettings((previous) => previous.mode === "playground"
+          setSettings((previous) => sessionActive.current ? previous : previous.mode === "playground"
             ? { ...previous, coastHeading: beach.heading }
             : {
                 ...settingsFromConditions(modeled, beach.heading),
@@ -1823,10 +1830,8 @@ export default function BreakloomApp() {
       if (key === " ") {
         if (!event.repeat) {
           controls.current.actionPresses += 1;
-          controls.current.returnPronePresses += 1;
         }
         controls.current.action = true;
-        controls.current.returnProne = true;
       }
       if (key === "c" && !event.repeat) {
         controls.current.lookYaw = 0;
@@ -2678,10 +2683,11 @@ export default function BreakloomApp() {
     if (screen !== "launch") return;
     const openAudio = () => {
       const engine = ensureAudio();
+      engine.setEnabled(soundEnabled);
       void engine.start().then(() => {
         engine.setEnabled(soundEnabled);
         engine.setMusicEnabled(musicEnabled);
-      });
+      }).catch(() => { /* Audio availability never blocks surfing. */ });
     };
     window.addEventListener("pointerdown", openAudio, { once: true });
     window.addEventListener("keydown", openAudio, { once: true });
@@ -2689,8 +2695,7 @@ export default function BreakloomApp() {
       window.removeEventListener("pointerdown", openAudio);
       window.removeEventListener("keydown", openAudio);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen]);
+  }, [screen, soundEnabled, musicEnabled]);
 
   /** One audio engine per session, wired to report the running order. */
   const ensureAudio = () => {
@@ -2702,9 +2707,24 @@ export default function BreakloomApp() {
     return audio.current;
   };
 
-  const startSession = async () => {
+  const startSession = async (quick = false) => {
+    sessionActive.current = true;
+    setQuickDrop(quick ? sessionKey + 1 : 0);
+    if (quick) {
+      const coast = BEACHES.find((candidate) => candidate.id === "trestles")!;
+      const zone = coast.zones.find((candidate) => candidate.name === "Lowers")!;
+      setBeach(coast);
+      setZoneLabel(zone.name);
+      setLatitude(zone.lat);
+      setLongitude(zone.lon);
+      setConditions(fallbackConditions(coast));
+      setSettings(quickSurfSettings({ ...settingsFromConditions(fallbackConditions(coast), coast.heading), board: settings.board }));
+      setSessionFormat("free");
+      setCameraMode("follow");
+    }
     const engine = ensureAudio();
-    await engine.start();
+    engine.setEnabled(soundEnabled);
+    await engine.start().catch(() => undefined);
     engine.setEnabled(soundEnabled);
     engine.setMusicEnabled(musicEnabled);
     engine.setPerspective(0, settings.windDirection, settings.coastHeading, "shore");
@@ -2740,6 +2760,8 @@ export default function BreakloomApp() {
   };
 
   const leaveSession = () => {
+    sessionActive.current = false;
+    setQuickDrop(0);
     audio.current?.setVehicle(0, false);
     audio.current?.setSurf(0, false, 0, 0);
     audio.current?.setWaveField("shore", 0, 0, 0, 1, 0, effectiveFaceHeight, settings.wavePeriod, settings.waveDirection, settings.swellHeight, settings.swellPeriod, settings.swellDirection, false, 0);
@@ -2762,6 +2784,7 @@ export default function BreakloomApp() {
   };
 
   const restartSession = () => {
+    if (quickDrop) setQuickDrop((value) => value + 1);
     controls.current = { ...EMPTY_CONTROLS };
     clearAnalogMovement();
     resetRideCapture();
@@ -2790,6 +2813,7 @@ export default function BreakloomApp() {
   const toggleSound = async () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
+    try { window.localStorage.setItem("breakloom-sound", next ? "on" : "muted"); } catch { /* Tab-local when storage is unavailable. */ }
     const engine = ensureAudio();
     await engine.start();
     engine.setEnabled(next);
@@ -3866,7 +3890,7 @@ export default function BreakloomApp() {
               }
             : {
                 cue: stats.speed > .6 ? "BOARD GLIDING" : "STANDING · NO WAVE POWER",
-                detail: "Q/E shifts body weight toward the torque target. Press SPACE to transfer back to belly paddling while the board keeps its momentum · SHIFT remains an alternate return-prone control.",
+                detail: "Q/E shifts body weight toward the torque target. Hold SPACE to crouch and release at the lip. SHIFT returns to prone while keeping momentum.",
                 rotation: 90,
                 tone: "balance",
               }
@@ -4194,36 +4218,41 @@ export default function BreakloomApp() {
         hudEventTransitionTimer.current = null;
       }, 34);
     };
-    if (rideToast) {
-      hudEventToastRef.current = null;
-      setHudEventVisible(false);
-      setHudEventToast(null);
-      return;
-    }
-    const current = hudEventToastRef.current;
-    if (!hudEventCandidate) {
-      if (!current) return;
+    // Stage CSS enter/exit states on the paint clock instead of cascading
+    // another synchronous React render during effect reconciliation.
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (rideToast) {
+        hudEventToastRef.current = null;
+        setHudEventVisible(false);
+        setHudEventToast(null);
+        return;
+      }
+      const current = hudEventToastRef.current;
+      if (!hudEventCandidate) {
+        if (!current) return;
+        setHudEventVisible(false);
+        hudEventTransitionTimer.current = window.setTimeout(() => {
+          hudEventToastRef.current = null;
+          setHudEventToast(null);
+          hudEventTransitionTimer.current = null;
+        }, 360);
+        return;
+      }
+      if (!current || current.key === hudEventCandidate.key) {
+        if (!current) reveal(hudEventCandidate);
+        else {
+          hudEventToastRef.current = hudEventCandidate;
+          setHudEventToast(hudEventCandidate);
+          setHudEventVisible(true);
+        }
+        return;
+      }
       setHudEventVisible(false);
       hudEventTransitionTimer.current = window.setTimeout(() => {
-        hudEventToastRef.current = null;
-        setHudEventToast(null);
-        hudEventTransitionTimer.current = null;
-      }, 360);
-      return;
-    }
-    if (!current || current.key === hudEventCandidate.key) {
-      if (!current) reveal(hudEventCandidate);
-      else {
-        hudEventToastRef.current = hudEventCandidate;
-        setHudEventToast(hudEventCandidate);
-        setHudEventVisible(true);
-      }
-      return;
-    }
-    setHudEventVisible(false);
-    hudEventTransitionTimer.current = window.setTimeout(() => {
-      reveal(hudEventCandidate);
-    }, 220);
+        reveal(hudEventCandidate);
+      }, 220);
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
   }, [hudEventCandidate, rideToast]);
 
   useEffect(() => () => {
@@ -4232,11 +4261,12 @@ export default function BreakloomApp() {
 
   useEffect(() => {
     if (!stats.nearVan || stats.vehicleMode || rideToast || hudEventToast) {
-      setVanBoardPickerOpen(false);
+      const frame = window.requestAnimationFrame(() => setVanBoardPickerOpen(false));
+      return () => window.cancelAnimationFrame(frame);
     }
   }, [hudEventToast, rideToast, stats.nearVan, stats.vehicleMode]);
 
-  const sessionIntroActive = !qaScenario && stats.sessionIntro < .999;
+  const sessionIntroActive = !quickDrop && !qaScenario && stats.sessionIntro < .999;
   const sessionIntroOpacity = stats.sessionIntro < .09
     ? stats.sessionIntro / .09
     : stats.sessionIntro > .72
@@ -4268,7 +4298,8 @@ export default function BreakloomApp() {
     <main className={`breakloom ${screen === "game" ? "is-playing" : "is-launch"}`} style={accentStyle}>
       <div className="scene-layer" aria-hidden={screen === "launch"}>
         <SurfScene
-          key={`${beach.id}-${sessionKey}`}
+          key={beach.id}
+          sessionId={sessionKey}
           beach={beach}
           zoneName={zoneLabel}
           latitude={latitude}
@@ -4282,6 +4313,7 @@ export default function BreakloomApp() {
           sunset={sessionConditions.sunset}
           cameraMode={cameraMode}
           controls={controls}
+          quickDrop={quickDrop}
           qaScenario={Boolean(qaScenario)}
           qaTowScenario={qaScenario === "tow"}
           active={screen === "game" && !paused && !photoMode && !replayActive && heatAllowsGameplay}
@@ -4347,13 +4379,25 @@ export default function BreakloomApp() {
                   <Download /><span>Install</span>
                 </button>
               )}
-              <button type="button" className="tool-button is-wide" onClick={() => setShowHowTo(true)}>
+              <button type="button" className="tool-button is-wide" aria-label="How to surf" onClick={() => setShowHowTo(true)}>
                 <Sparkles /><span>How to surf</span>
               </button>
             </div>
           </header>
 
           <div className="launch-body">
+            <section className="flow-hero" aria-labelledby="flow-title">
+              <div className="flow-hero-art" aria-hidden="true" />
+              <div className="flow-hero-copy">
+                <span className="flow-eyebrow"><i /> THE NEXT WAVE IS YOURS</span>
+                <h1 id="flow-title">Find your <em>flow.</em></h1>
+                <p>Draw your line. Load the rail. Fly off the lip.<br />Make every wave your own.</p>
+                <button className="flow-play" onClick={() => void startSession(true)}><Play fill="currentColor" /> QUICK SURF <ArrowRight /></button>
+                <span className="flow-caption">LOWER TRESTLES · GOLDEN HOUR · GUIDED</span>
+              </div>
+              <div className="flow-hero-footer"><span>01 / DROP STRAIGHT IN</span><span>CARVE → PUMP → LINK → LAND</span><span>KEYBOARD · TOUCH · CONTROLLER</span></div>
+            </section>
+            <div className="coast-divider"><span>Or explore the world</span><small>13 coasts. Your board. The live ocean.</small></div>
             <section className="step" aria-labelledby="step-coast-title">
               <div className="step-head">
                 <span className="step-number" aria-hidden="true">1</span>
@@ -4841,7 +4885,7 @@ export default function BreakloomApp() {
               <div><span>Board</span><strong>{BOARD_SPECS[settings.board].name}</strong></div>
               <div><span>Challenge</span><strong>{sessionFormat === "heat" ? "World Tour heat" : selectedLaunchChoice.name}</strong></div>
             </div>
-            <button className="launch-button" onClick={startSession}>
+            <button className="launch-button" onClick={() => void startSession()}>
               <span>{sessionFormat === "heat" ? "START THE HEAT" : "PADDLE OUT"}</span>
               <i><Play fill="currentColor" /></i>
             </button>
@@ -4851,8 +4895,13 @@ export default function BreakloomApp() {
 
       {screen === "game" && (
         <section
-          className={`game-ui phase-${stats.phase} hud-panel-${hudPanel} ${touchGameplay ? "is-touch" : ""} ${stats.towMode ? "is-tow" : ""} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
+          className={`game-ui ${settings.assist !== "raw" && guidanceEnabled ? "is-guided" : ""} ${quickDrop ? "is-quick-surf" : ""} phase-${stats.phase} hud-panel-${hudPanel} ${touchGameplay ? "is-touch" : ""} ${stats.towMode ? "is-tow" : ""} ${hudMenuOpen ? "is-hud-open" : ""} ${vanBoardPickerOpen ? "is-van-board-picker" : ""} ${paused ? "is-paused" : ""} ${photoMode ? "is-photo" : ""} ${replayActive ? "is-replay" : ""} ${sessionFormat === "heat" ? "is-heat" : ""} ${heatComplete ? "is-heat-complete" : ""} ${sessionIntroActive ? "is-intro" : ""} ${rideToast || hudEventToast ? "has-hud-message" : ""}`}
           style={gameUiStyle}
+          data-qa-speed={stats.speed.toFixed(3)}
+          data-qa-distance={stats.rideDistance.toFixed(2)}
+          data-qa-face={stats.facePosition.toFixed(3)}
+          data-qa-line={stats.linePosition.toFixed(3)}
+          data-qa-prone={stats.proneTransition.toFixed(3)}
           data-qa-scenario={qaScenario || undefined}
           data-qa-phase={stats.phase}
           data-qa-crest-distance={stats.crestDistance.toFixed(1)}
@@ -5148,6 +5197,12 @@ export default function BreakloomApp() {
             data-hud-stability="persistent"
           >
           {/* HUD_STABILITY_BOUNDARY: keep every live gameplay surface mounted in this paint layer. */}
+          {quickDrop > 0 && (
+            <div className="flow-session-strip">
+              <div><span>QUICK SURF</span><strong>{stats.phase === "wipeout" ? "Shake it off. Go again." : stats.waveEngaged ? "Find the pocket. Make it yours." : "Ready for another line?"}</strong></div>
+              <button onClick={restartSession} aria-label="Drop into the next wave"><RotateCcw /><span>NEXT WAVE</span></button>
+            </div>
+          )}
           <header className="game-topbar">
             <div className="game-brand">
               <Waves />
@@ -5427,9 +5482,9 @@ export default function BreakloomApp() {
                     <p><kbd>{gamepadConnected ? "LS" : "WASD"}</kbd><strong>{stats.vehicleMode ? "Drive and steer" : stats.towMode ? "Tow path is guided; use the camera to read the peak" : standingOnBoard ? "A/D rolls the board · W/S shifts stance" : stats.phase === "riding" ? "A/D rolls onto the rail · W/S shifts board pressure" : takeoffCommitted ? "W/S places fore-aft foot pressure during the pop-up" : "W paddles · A/D sets board heading"}</strong></p>
                     <p><kbd>{gamepadConnected ? "RS" : "MOUSE"}</kbd><strong>Look freely in every direction</strong></p>
                     {(stats.phase === "riding" || takeoffCommitted) && <p><kbd>{gamepadConnected ? "LT/RT" : "Q/E"}</kbd><strong>Counterweight and recover from impact</strong></p>}
-                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Release anytime; a live face lock also starts the pop-up" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? gamepadConnected ? "Compress and extend; only live lip support can release the board" : "Return to belly paddling while keeping the board's momentum" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
+                    <p><kbd>{gamepadConnected ? "A" : "SPACE"}</kbd><strong>{stats.towMode ? "Release anytime; a live face lock also starts the pop-up" : stats.nearJetSki ? "Connect the optional tow" : stats.phase === "riding" ? "Hold to crouch; release at the lip to launch" : stats.nearVan ? "Enter the van" : stats.phase === "paddling" ? "Stand anytime" : "Context action"}</strong></p>
                     {stats.phase === "paddling" && !stats.towMode && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>Duck dive anytime · the lip cue marks useful timing</strong></p>}
-                    {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>{gamepadConnected ? "Return prone anytime without changing the board's momentum" : "Alternate return-prone control"}</strong></p>}
+                    {stats.phase === "riding" && <p><kbd>{gamepadConnected ? "LB" : "SHIFT"}</kbd><strong>{"Return prone while keeping your momentum"}</strong></p>}
                     <p><kbd>{gamepadConnected ? "RB" : "C"}</kbd><strong>Change camera</strong></p>
                     {!gamepadConnected && <p><kbd>R</kbd><strong>Center view</strong></p>}
                   </div>
@@ -5668,6 +5723,7 @@ export default function BreakloomApp() {
             </div>
           )}
 
+          {guidanceEnabled && settings.assist !== "raw" && stats.phase === "riding" && <RideReadout stats={stats} />}
           <div className={`balance-instrument ${stats.phase === "riding" || (stats.phase === "paddling" && !stats.towMode) ? "is-active" : ""} ${stats.phase === "paddling" ? "is-prone" : ""} ${standingOnBoard ? "is-standing" : ""} ${ridingOut ? "is-exit" : ""} ${showPhysicalLandingGuide ? "is-landing" : ""} ${!stats.maneuverActive && stats.trickCharge > .04 ? "is-charging" : ""}`}>
             <div className="balance-label">
               <span>{stats.phase === "paddling" ? "PRONE HULL" : standingOnBoard && stats.trickCharge <= .04 ? rollInstrumentTitle : ridingOut ? "SHALLOW EXIT" : stats.maneuverActive ? stats.maneuverPhase.toUpperCase() : stats.trickCharge > .04 ? "BODY COMPRESSION" : rollInstrumentTitle} <em className={showPhysicalLandingGuide ? "is-landing" : stats.trickCharge > .04 ? "is-charging" : stats.barrelIntensity > 0.2 ? "is-barrel" : ""}>{stats.phase === "paddling" ? `${Math.round(stats.boardWaterContact * 100)}% CONTACT · ${pitchDirection} ${pitchDegrees}°` : standingOnBoard && stats.trickCharge <= .04 ? standingLoadLabel : ridingOut ? "CLEAN LINE · FULL WATER LOAD" : stats.maneuverActive ? `${stats.maneuverPhase === "air" ? "AIRBORNE" : "HULL RELEASED"} · ${Math.round(stats.maneuverProgress * 100)}% OBSERVED` : stats.trickCharge > .04 ? `${Math.round(stats.trickCharge * 100)}% CROUCH · ${stats.lipLaunchSupport > .42 ? `LIP SUPPORT ${Math.round(stats.lipLaunchSupport * 100)}%` : "NO LIP SUPPORT"}` : stats.barrelIntensity > 0.2 ? `IN THE BARREL · ${stats.barrelTime.toFixed(1)}s · ${Math.round(stats.barrelIntensity * 100)}% PRESSURE` : hydrodynamicLoadLabel}</em></span>
@@ -5698,7 +5754,7 @@ export default function BreakloomApp() {
             <div className={`grip-track ${stats.railGrip < .5 ? "is-releasing" : ""}`}>
               <span>RAIL GRIP</span><i><b style={{ width: `${Math.round(stats.railGrip * 100)}%` }} /></i><strong>{Math.round(stats.railGrip * 100)}%</strong>
             </div>
-            <small>{stats.phase === "paddling" ? "The nose, tail, and both rails sample the live polygon surface · Q/E shifts prone body weight toward the marker" : standingOnBoard && stats.trickCharge <= .04 ? gamepadConnected ? "A/D applies roll torque · Q/E counterweights · A compresses the body · LB returns prone" : "A/D applies roll torque · Q/E counterweights · SPACE returns to belly paddling · SHIFT also returns prone" : ridingOut ? "Keep steering and counterweighting · wave pressure and wipeout risk remain live until the shallow dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Counter unwanted roll and pitch; rail authority returns only when the hull reconnects with water" : "The board is tracing its own lip path; separation and reconnection will name the result" : stats.trickCharge > .04 ? "Your legs are storing compression; extension redirects the board only when its loaded tail still has live lip support" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D creates board roll · W/S shifts nose-to-tail pressure · Q/E arrests unwanted roll"}</small>
+            <small>{stats.phase === "paddling" ? "The nose, tail, and both rails sample the live polygon surface · Q/E shifts prone body weight toward the marker" : standingOnBoard && stats.trickCharge <= .04 ? gamepadConnected ? "A/D applies roll torque · Q/E counterweights · A compresses the body · LB returns prone" : "A/D applies roll torque · Q/E counterweights · SPACE crouches for a lip release · SHIFT returns prone" : ridingOut ? "Keep steering and counterweighting · wave pressure and wipeout risk remain live until the shallow dismount" : stats.maneuverActive ? stats.maneuverAirborne ? "Counter unwanted roll and pitch; rail authority returns only when the hull reconnects with water" : "The board is tracing its own lip path; separation and reconnection will name the result" : stats.trickCharge > .04 ? "Your legs are storing compression; extension redirects the board only when its loaded tail still has live lip support" : stats.whitewaterPressure > .28 ? `Broken water is loading the board · drive ${stats.lineSide > 0 ? "right" : "left"} toward the open face` : stats.barrelIntensity > .28 ? "Stay compact, hold the high line, and make small counterweight corrections through the tube" : stats.sectionPressure > .48 ? "Steer back toward the illuminated power pocket" : "A/D creates board roll · W/S shifts nose-to-tail pressure · Q/E arrests unwanted roll"}</small>
           </div>
 
           <div className={`vehicle-instrument ${stats.vehicleMode ? "is-active" : ""} ${stats.vehicleSlip > .24 ? "is-slipping" : ""}`}>
@@ -5800,8 +5856,8 @@ export default function BreakloomApp() {
                     <span><kbd>W</kbd><kbd>S</kbd> {standingOnBoard || stats.phase === "riding" ? "shift nose / tail pressure" : takeoffCommitted ? "place pop-up foot pressure" : "paddle / brake"}</span>
                   </>
                 )}
-                <span><kbd>SPACE</kbd> {stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "drop to belly paddle" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
-                {(stats.phase === "paddling" || stats.phase === "riding") && <span><kbd>SHIFT</kbd> {stats.phase === "riding" ? "alternate return prone" : "duck dive anytime · cue marks timing"}</span>}
+                <span><kbd>SPACE</kbd> {stats.nearJetSki ? "connect optional tow" : stats.phase === "riding" ? "hold to crouch · release at the lip" : stats.nearVan ? "drive van" : stats.phase === "paddling" ? "stand anytime" : "context action"}</span>
+                {(stats.phase === "paddling" || stats.phase === "riding") && <span><kbd>SHIFT</kbd> {stats.phase === "riding" ? "return prone" : "duck dive anytime · cue marks timing"}</span>}
                 <span><kbd>C</kbd> camera · <kbd>R</kbd> center view</span>
                 <span>{stats.phase === "riding" || stats.phase === "paddling" ? <><kbd>Q</kbd><kbd>E</kbd> counterweight / recover</> : <><span className="mouse-icon" /> click to lock 360° view</>}</span>
               </>
@@ -6060,7 +6116,7 @@ export default function BreakloomApp() {
                 )}
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Breakloom</button>}
                 <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={restartSession}><RotateCcw /> Restart session</button>
+                <button onClick={restartSession}><RotateCcw /> {quickDrop ? "Drop into the next wave" : "Restart session"}</button>
               </div>
             </div>
           )}

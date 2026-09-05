@@ -1,5 +1,6 @@
 import type { MarineConditions } from "./marine";
 import type { BreakCharacter } from "./beaches";
+import { redirectRailMomentum } from "./surf-dynamics.ts";
 import {
   coastWaveModelAt,
   oceanTideShorelineShift,
@@ -5763,6 +5764,22 @@ export function advanceSurfboardDynamics(
 
   let velocityX = state.velocityX + accelerationX * delta;
   let velocityZ = state.velocityZ + accelerationZ * delta;
+  const railTurn = redirectRailMomentum({
+    velocityX,
+    velocityZ,
+    currentX: sample.currentVelocityX,
+    currentZ: sample.currentVelocityZ,
+    headingDelta: heading - state.heading,
+    deltaSeconds: delta,
+    grip,
+    planing,
+    waterContact: hullContact,
+    whitewater,
+  });
+  velocityX = railTurn.velocityX;
+  velocityZ = railTurn.velocityZ;
+  accelerationX += railTurn.accelerationX;
+  accelerationZ += railTurn.accelerationZ;
   const speed = Math.hypot(velocityX, velocityZ);
   const speedLimit = Math.max(18, waveSpeed * 1.62 + sample.waveHeight * .8);
   if (speed > speedLimit) {
@@ -5889,7 +5906,7 @@ export function evaluateBoardWaterInteraction(
         * (.72 + Math.max(0, Math.min(1, sample.crestEnergy)) * .28),
     ),
   );
-  const planing = Math.max(
+  const normalPlaning = Math.max(
     0,
     Math.min(
       1,
@@ -5901,8 +5918,16 @@ export function evaluateBoardWaterInteraction(
     0,
     1,
   );
-  const diagonalTrim = faceTrimSupport
-    * smoothstep(.08, .72, headingAlignment);
+  // Once up and planing, the hull is supported by water moving beneath it,
+  // including across the face and back toward the pocket in a cutback.
+  // Crest-normal speed is an entry criterion, not the definition of planing.
+  const hullForwardSpeed = sample.velocityX * boardForwardX
+    + sample.velocityZ * boardForwardZ;
+  const trimPlaning = smoothstep(1.2, 4.2, hullForwardSpeed);
+  const planing = Math.max(normalPlaning, trimPlaning * faceTrimSupport);
+  const diagonalTrim = faceTrimSupport * Math.max(
+    smoothstep(.08, .72, headingAlignment), trimPlaning * .85,
+  );
   // A surfboard can angle into a shoulder, but it cannot acquire planing trim
   // while presenting most of its rail to the wave. Preserve useful diagonal
   // entries while making the final quarter-turn toward broadside lose capture
@@ -5929,7 +5954,7 @@ export function evaluateBoardWaterInteraction(
   const stability = Math.max(.62, Math.sqrt(Math.max(.35, sample.boardStability)));
   const crossFlowSpeed = Math.max(0, relativeWaveSpeed)
     * broadside
-    * (1 - diagonalTrim * .58);
+    * (1 - diagonalTrim * (.58 + trimPlaning * .2));
   const planformScale = clampValue(
     Math.sqrt(
       (

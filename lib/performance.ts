@@ -63,6 +63,12 @@ export function boundedSimulationDelta(delta: number) {
   return Math.min(delta, MAX_SIMULATION_DELTA);
 }
 
+/** A suspended tab contributes no ocean time on its first returning frame. */
+export function advanceOceanClock(elapsed: number, delta: number, active: boolean) {
+  if (!active || renderFrameSignal(delta) === "stale") return elapsed;
+  return elapsed + boundedSimulationDelta(delta);
+}
+
 export function shadowMapSizeForQuality(quality: RenderQuality) {
   if (quality === "high") return 2048;
   if (quality === "balanced") return 1024;
