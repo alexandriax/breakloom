@@ -18,7 +18,7 @@ import {
   type FloatTextureTable,
 } from "@/lib/ocean-render";
 import { sampleCoastDominantWave } from "@/lib/ocean";
-import { advanceOceanClock, boundedSimulationDelta, emergencyRenderDpr, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
+import { advanceOceanClock, boundedSimulationDelta, emergencyRenderDpr, renderFrameBudget, renderFrameSignal, renderQualityAfterPressure, shadowMapSizeForQuality, type RenderQuality } from "@/lib/performance";
 import { findSurfEntry, type SurfEntry } from "@/lib/surf-session";
 import { solarPositionAt } from "@/lib/solar";
 
@@ -242,6 +242,7 @@ function AdaptiveRenderer({
   const currentDpr = useRef(limits.initial);
   const currentQuality = useRef<RenderQuality>(mobile ? "balanced" : "high");
   const sample = useRef({
+    frameTimes: [] as number[],
     elapsed: 0,
     frames: 0,
     jankFrames: 0,
@@ -254,6 +255,7 @@ function AdaptiveRenderer({
     currentDpr.current = limits.initial;
     currentQuality.current = mobile ? "balanced" : "high";
     sample.current = {
+      frameTimes: [],
       elapsed: 0,
       frames: 0,
       jankFrames: 0,
@@ -277,6 +279,7 @@ function AdaptiveRenderer({
     }
     const frameSignal = renderFrameSignal(delta);
     if (frameSignal === "stale") {
+      meter.frameTimes.length = 0;
       meter.elapsed = 0;
       meter.frames = 0;
       meter.jankFrames = 0;
@@ -286,6 +289,7 @@ function AdaptiveRenderer({
       return;
     }
     if (frameSignal === "pressure") {
+      meter.frameTimes.length = 0;
       const pressureStrikes = Math.min(6, meter.badWindows + 1);
       const emergencyDpr = emergencyRenderDpr(
         currentDpr.current,
@@ -295,7 +299,7 @@ function AdaptiveRenderer({
         currentDpr.current = emergencyDpr;
         setDpr(emergencyDpr);
       }
-      const emergencyQuality = renderQualityAfterPressure(
+      const emergencyQuality = emergencyDpr > limits.minimum + .025 ? currentQuality.current : renderQualityAfterPressure(
         currentQuality.current,
         pressureStrikes,
       );
@@ -312,7 +316,8 @@ function AdaptiveRenderer({
       meter.warmup = 1.15;
       return;
     }
-    meter.elapsed += Math.min(delta, .05);
+    meter.elapsed += delta;
+    meter.frameTimes.push(delta);
     meter.frames += 1;
     if (delta > .028) meter.jankFrames += 1;
     if (meter.elapsed < 2.4) return;
@@ -320,14 +325,15 @@ function AdaptiveRenderer({
     const averageFrame = meter.elapsed / Math.max(1, meter.frames);
     // Low-frequency local diagnostics, readable by browser QA without a debug HUD.
     gl.domElement.dataset.frameMs = (averageFrame * 1000).toFixed(2);
+    meter.frameTimes.sort((a, b) => a - b);
+    gl.domElement.dataset.frameP95Ms = (meter.frameTimes[Math.floor((meter.frameTimes.length - 1) * .95)] * 1000).toFixed(2);
+    gl.domElement.dataset.jankPercent = (meter.jankFrames / Math.max(1, meter.frames) * 100).toFixed(1);
     gl.domElement.dataset.drawCalls = String(drawCalls);
     gl.domElement.dataset.triangles = String(triangles);
     gl.domElement.dataset.renderQuality = currentQuality.current;
     gl.domElement.dataset.renderDpr = currentDpr.current.toFixed(2);
     const jankRatio = meter.jankFrames / Math.max(1, meter.frames);
-    const severePressure = averageFrame > .0295 || jankRatio > .2;
-    const slowPressure = averageFrame > .0222 || jankRatio > .085;
-    const sustainedHeadroom = averageFrame < .0183 && jankRatio < .025;
+    const { severe: severePressure, slow: slowPressure, headroom: sustainedHeadroom } = renderFrameBudget(averageFrame, jankRatio);
     meter.badWindows = severePressure
       ? Math.min(6, meter.badWindows + 2)
       : slowPressure
@@ -353,8 +359,10 @@ function AdaptiveRenderer({
     const qualityOrder: RenderQuality[] = ["reduced", "balanced", "high"];
     const currentIndex = qualityOrder.indexOf(currentQuality.current);
     let nextIndex = currentIndex;
-    const downgradeNeeded = severePressure
-      || (meter.badWindows >= 2 && nextDpr <= limits.minimum + .16);
+    // Shed fill cost first. Rebuilding geometry during a turn can create the
+    // very hitch adaptation is trying to cure; require sustained floor pressure.
+    const downgradeNeeded = meter.badWindows >= (qualityLocked ? 4 : 2)
+      && nextDpr <= limits.minimum + .025;
     const upgradeReady = !qualityLocked
       && meter.goodWindows >= 4
       && nextDpr >= limits.maximum - .075;
@@ -371,6 +379,7 @@ function AdaptiveRenderer({
     meter.elapsed = 0;
     meter.frames = 0;
     meter.jankFrames = 0;
+    meter.frameTimes.length = 0;
   });
 
   return null;
@@ -10715,7 +10724,6 @@ function AdaptiveImagePipeline({
   mobile: boolean;
   reducedMotion: boolean;
 }) {
-  const quality = useRenderQuality();
   const pass = useRef<ShaderPass>(null);
   const exposure = useRef(1.08);
   const previousDepth = useRef(0);
@@ -10737,7 +10745,6 @@ function AdaptiveImagePipeline({
     lensWetness: 0,
     rain: 0,
   });
-  const gradeEnabled = !(mobile && quality === "reduced");
 
   useFrame(({ clock, gl: renderer, size }, delta) => {
     const depth = THREE.MathUtils.clamp(motion.current.submersion, 0, 1);
@@ -10865,12 +10872,11 @@ function AdaptiveImagePipeline({
     uniforms.uFlow.value.set(Math.sin(flowAngle), Math.cos(flowAngle));
   });
 
-  if (!gradeEnabled) return null;
-
   return (
     <Effects
-      key={`cinematic-${mobile ? "mobile" : "desktop"}-${quality}`}
-      multisamping={mobile ? 0 : quality === "high" ? 2 : 0}
+      // Keep the composer and its render targets alive through quality changes.
+      // This is the sole antialiasing stage; the canvas only receives its quad.
+      multisamping={mobile ? 0 : 2}
       type={mobile ? THREE.UnsignedByteType : THREE.HalfFloatType}
       depthBuffer
       stencilBuffer={false}
@@ -20303,7 +20309,7 @@ function SurfScene(props: SurfSceneProps) {
       frameloop={props.renderActive ? "always" : "demand"}
       camera={{ position: [0, 4.8, 44], fov: 58, near: 0.08, far: 650 }}
       gl={{
-        antialias: !mobileRenderer,
+        antialias: false,
         alpha: false,
         powerPreference: "high-performance",
         toneMapping: THREE.ACESFilmicToneMapping,

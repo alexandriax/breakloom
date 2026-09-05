@@ -22,6 +22,7 @@ import {
   Gauge,
   Gamepad2,
   Grid3X3,
+  Home,
   LoaderCircle,
   MapPin,
   Maximize2,
@@ -5473,6 +5474,7 @@ export default function BreakloomApp() {
                     <span><Waves /> {BOARD_SPECS[settings.board].name}</span>
                     <span><Trophy /> Best {personalBest.score.toLocaleString()}</span>
                   </div>
+                  <button type="button" className="main-menu-button" onClick={leaveSession}><Home /> Main menu</button>
                 </div>
               )}
               {hudPanel === "controls" && (
@@ -6098,12 +6100,14 @@ export default function BreakloomApp() {
           )}
 
           {paused && (
-            <div className="pause-overlay">
+            <div className="pause-overlay" role="dialog" aria-modal="true" aria-labelledby="pause-title">
               <div className="pause-card">
                 <span className="overline">SESSION PAUSED</span>
-                <h2>Listen to the break.</h2>
+                <h2 id="pause-title">Take a breath.</h2>
                 <p>{zoneLabel} is running {effectiveFaceHeight.toFixed(1)} m at {settings.wavePeriod.toFixed(1)} seconds. Session grade {stats.grade} · personal best {personalBest.score.toLocaleString()}.</p>
                 <button className="primary-pause" onClick={() => { clearAnalogMovement(); setPaused(false); }}><Play /> Return to water</button>
+                <button type="button" className="main-menu-button" onClick={leaveSession}><Home /> Main menu</button>
+                <button onClick={restartSession}><RotateCcw /> {quickDrop ? "Drop into the next wave" : "Restart session"}</button>
                 <button className={`music-toggle ${musicEnabled ? "" : "is-off"}`} onClick={toggleMusic}><AudioLines /> {musicEnabled ? `${nowPlaying.title} · ${nowPlaying.index} of ${nowPlaying.total}` : "Soundtrack · Off"}</button>
                 {motionBalanceStatus !== "unavailable" && motionBalanceStatus !== "checking" && (
                   <button
@@ -6115,8 +6119,6 @@ export default function BreakloomApp() {
                   </button>
                 )}
                 {installPrompt && <button onClick={() => void installApp()}><Download /> Install Breakloom</button>}
-                <button onClick={leaveSession}><MapPin /> Choose another break</button>
-                <button onClick={restartSession}><RotateCcw /> {quickDrop ? "Drop into the next wave" : "Restart session"}</button>
               </div>
             </div>
           )}

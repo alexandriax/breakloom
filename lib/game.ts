@@ -8114,7 +8114,6 @@ export function waveHeightAt(
     elapsed,
     settings,
     character,
-    false,
   ).height;
 }
 
