@@ -403,9 +403,13 @@ export function varianceToSignificantHeight(variance: number) {
   return 4 * Math.sqrt(positiveOr(variance, 0));
 }
 
-/**
- * Solves omega² = g k tanh(kh) with a guarded Newton iteration.
- */
+// The same exact frequency/depth pairs recur in reference transport, phase
+// integration, and the three surface-gradient samples. Reuse the Newton result
+// without rounding depth or changing the dispersion relation. Both dimensions
+// are bounded so travelling along a coast cannot grow the cache indefinitely.
+const dispersionCache = new Map<number, Map<number, number>>();
+
+/** Solves omega² = g k tanh(kh) with a guarded Newton iteration. */
 export function solveFiniteDepthWaveNumber(
   angularFrequency: number,
   depth: number,
@@ -413,6 +417,14 @@ export function solveFiniteDepthWaveNumber(
   const omega = positiveOr(angularFrequency, 0);
   const safeDepth = Math.max(MIN_DEPTH, positiveOr(depth, MIN_DEPTH));
   if (omega === 0) return 0;
+  let depths = dispersionCache.get(omega);
+  if (!depths) {
+    if (dispersionCache.size >= 96) dispersionCache.clear();
+    depths = new Map();
+    dispersionCache.set(omega, depths);
+  }
+  const cached = depths.get(safeDepth);
+  if (cached !== undefined) return cached;
   const deepGuess = omega * omega / GRAVITY;
   const shallowGuess = omega / Math.sqrt(GRAVITY * safeDepth);
   let waveNumber = Math.max(1e-7, Math.max(deepGuess, shallowGuess));
@@ -427,6 +439,8 @@ export function solveFiniteDepthWaveNumber(
     waveNumber = Math.max(1e-8, Number.isFinite(next) ? next : waveNumber);
     if (Math.abs(residual) < 1e-11 * Math.max(1, omega * omega)) break;
   }
+  if (depths.size >= 256) depths.clear();
+  depths.set(safeDepth, waveNumber);
   return waveNumber;
 }
 

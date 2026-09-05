@@ -443,6 +443,8 @@ function transformDominant(
   } satisfies DominantWaveState;
 }
 
+const surfaceSampleCache = new WeakMap<WaveComponentBank, Map<string, CoastWaveSurfaceSample>>();
+
 export function sampleCoastWaveSurface(
   x: number,
   worldZ: number,
@@ -459,6 +461,17 @@ export function sampleCoastWaveSurface(
         character,
       )
     : Math.max(0, settings.waveHeight);
+  // Board contact, transport, camera height, and wave instruments often sample
+  // the identical point in the same frame. Cache the full exact result; never
+  // round coordinates/time or reuse a different tide, breaker, or gradient mode.
+  let cache = surfaceSampleCache.get(model.bank);
+  if (!cache) {
+    cache = new Map();
+    surfaceSampleCache.set(model.bank, cache);
+  }
+  const cacheKey = `${x}:${worldZ}:${elapsed}:${settings.tide}:${targetFaceHeight}:${character?.power ?? 1}:${character?.steepness ?? .78}:${character?.hollow ?? .45}:${resolveBreakingDepthGradient}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
   const coastalZ = worldToBathymetryZ(worldZ, settings.tide);
   const shorelineZ = shorelineReferenceAt(
     model.coastId,
@@ -577,7 +590,7 @@ export function sampleCoastWaveSurface(
   horizontalVelocityX *= transition.horizontalScale;
   horizontalVelocityZ *= transition.horizontalScale;
   const normalLength = Math.hypot(gradientX, 1, gradientZ);
-  return {
+  const result: CoastWaveSurfaceSample = {
     ...core,
     height: transition.height,
     displacementY: transition.height,
@@ -617,6 +630,9 @@ export function sampleCoastWaveSurface(
     shoreAnchorHeight: transition.anchorHeight,
     shoreBurial: transition.burial,
   };
+  if (cache.size >= 256) cache.clear();
+  cache.set(cacheKey, result);
+  return result;
 }
 
 // Phase, transport, crest forecasts, and contact repeatedly ask for the exact

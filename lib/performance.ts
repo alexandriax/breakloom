@@ -1,6 +1,15 @@
 export type RenderQuality = "reduced" | "balanced" | "high";
 export type RenderFrameSignal = "normal" | "pressure" | "stale";
 
+/** Preserve headroom for input and HUD work instead of upscaling at 55 fps. */
+export function renderFrameBudget(averageSeconds: number, jankRatio: number) {
+  return {
+    severe: averageSeconds > .025 || jankRatio > .2,
+    slow: averageSeconds > .0178 || jankRatio > .085,
+    headroom: averageSeconds < .0172 && jankRatio < .025,
+  };
+}
+
 const RENDER_QUALITY_ORDER: RenderQuality[] = [
   "reduced",
   "balanced",

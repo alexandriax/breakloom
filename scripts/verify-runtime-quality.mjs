@@ -3,6 +3,7 @@ import {
   emergencyRenderDpr,
   lowerRenderQuality,
   renderFrameSignal,
+  renderFrameBudget,
   renderQualityAfterPressure,
   shadowMapSizeForQuality,
 } from "../lib/performance.ts";
@@ -46,6 +47,14 @@ invariant(shadowMapSizeForQuality("reduced") === 512, "reduced shadows exceed th
 invariant(renderFrameSignal(1 / 60) === "normal", "healthy frames report pressure");
 invariant(renderFrameSignal(.18) === "pressure", "a real stall no longer sheds detail");
 invariant(renderFrameSignal(.9) === "stale", "tab resumes incorrectly downgrade graphics");
+invariant(!renderFrameBudget(1 / 55, 0).headroom, "55 fps incorrectly permits more pixel load");
+invariant(renderFrameBudget(1 / 55, 0).slow, "sustained 55 fps does not relieve pixel load");
+invariant(!renderFrameBudget(1 / 60, 0).slow, "stable 60 fps unnecessarily loses resolution");
+invariant(renderFrameBudget(1 / 60, 0).headroom, "a 60 Hz display cannot recover after a transient stall");
+invariant(renderFrameBudget(1 / 50, 0).slow, "sustained 50 fps is accepted as smooth");
+invariant(renderFrameBudget(1 / 80, 0).headroom, "real headroom cannot restore detail");
+invariant(renderFrameBudget(1 / 70, .25).severe, "average frame time hides repeated jank");
+invariant(!sceneSource.includes('key={`cinematic-'), "quality changes remount the image pipeline");
 invariant(
   Math.abs(boundedSimulationDelta(1 / 60) - 1 / 60) < 1e-9,
   "healthy simulation time is altered",

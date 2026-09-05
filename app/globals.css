@@ -1802,6 +1802,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 
 .pause-card {
   width: min(420px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 34px;
   border: 1px solid var(--line);
   background: linear-gradient(145deg, rgba(8, 28, 36, 0.95), rgba(3, 15, 21, 0.98));
@@ -1811,6 +1814,9 @@ kbd { min-width: 19px; height: 19px; display: grid; place-items: center; border:
 .pause-card p { margin: 0 0 23px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .pause-card button { width: 100%; height: 46px; display: flex; align-items: center; justify-content: center; gap: 9px; margin-top: 7px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); cursor: pointer; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; }
 .pause-card button.primary-pause { background: var(--coral); border-color: var(--coral); font-weight: 800; }
+.main-menu-button { min-height: 46px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: inherit; cursor: pointer; }
+.main-menu-button svg { width: 16px; height: 16px; }
+.pause-card button.main-menu-button { color: #d9ef9d; border-color: #d9ef9d66; }
 .pause-card button.music-toggle { border-color: rgba(113, 225, 211, .34); color: #b9fff6; }
 .pause-card button.music-toggle.is-off { border-color: var(--line); color: var(--muted); }
 .pause-card button.motion-toggle { border-color: rgba(124, 228, 211, .42); background: linear-gradient(90deg, rgba(61, 191, 173, .13), rgba(255, 255, 255, .025)); color: #bffff3; }
