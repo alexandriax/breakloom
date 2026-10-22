@@ -3,7 +3,7 @@
   "version": "0.236.0-rc.1",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "next dev",
@@ -25,9 +25,9 @@
     "@react-three/fiber": "^9.6.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.25.0",
-    "next": "^16.2.11",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "next": "16.4.2",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
     "three": "^0.185.1"
   },
   "devDependencies": {
@@ -37,12 +37,12 @@
     "@types/react-dom": "19.2.3",
     "@types/three": "^0.185.1",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.4.2",
     "typescript": "5.9.3"
   },
   "overrides": {
-    "postcss": "^8.5.22",
-    "sharp": "^0.35.3"
+    "postcss": "8.5.31",
+    "sharp": "0.35.5"
   },
   "type": "module"
 }
